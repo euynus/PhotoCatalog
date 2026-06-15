@@ -83,6 +83,23 @@ enum PipelineCheck {
         }
         check(thumbsExist, "thumbnails + previews written to disk cache")
         check(assets.allSatisfy { $0.contentHash != nil && $0.quickHash != nil }, "content + quick hashes computed")
+        var knownByPath: [String: Asset] = [:]
+        for asset in assets {
+            if let path = asset.localPath {
+                knownByPath[path] = asset
+                knownByPath[URL(fileURLWithPath: path).resolvingSymlinksInPath().path] = asset
+            }
+        }
+        let changedURL = src.appendingPathComponent("IMG_0001.jpg")
+        let originalQuickHash = knownByPath[changedURL.path]?.quickHash
+            ?? knownByPath[changedURL.resolvingSymlinksInPath().path]?.quickHash
+        try? fm.removeItem(at: changedURL)
+        writeTestImage(to: changedURL, width: 320, height: 240, seed: 99)
+        let changedAssets = coordinator.scanChanged(in: src, knownAssetsByPath: knownByPath)
+        let changedAsset = changedAssets.first { $0.filename == changedURL.lastPathComponent }
+        check(changedAsset?.width == 320 && changedAsset?.height == 240
+              && originalQuickHash != nil && changedAsset?.quickHash != originalQuickHash,
+              "incremental scan refreshes modified originals")
 
         // 4. persist + reload roundtrip
         try? store.upsert(assets)

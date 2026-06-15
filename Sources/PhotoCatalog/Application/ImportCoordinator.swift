@@ -55,6 +55,19 @@ final class ImportCoordinator: @unchecked Sendable {
         return process(files, folder: folder, mode: mode, autoTag: autoTag, control: nil, progress: nil)
     }
 
+    /// Incremental: reprocess known originals whose quick hash changed so metadata and caches stay fresh.
+    func scanChanged(in folder: URL, knownAssetsByPath: [String: Asset], mode: ImportMode = .referenced,
+                     autoTag: Bool = false) -> [Asset] {
+        let files = FileScanner.scan(folder).filter { url in
+            let known = knownAssetsByPath[url.path] ?? knownAssetsByPath[url.resolvingSymlinksInPath().path]
+            guard let known else { return false }
+            guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+                  let size = attrs[.size] as? Int64 else { return true }
+            return HashService.quickHash(url, fileSize: size) != known.quickHash
+        }
+        return process(files, folder: folder, mode: mode, autoTag: autoTag, control: nil, progress: nil)
+    }
+
     private func process(_ files: [URL], folder: URL, mode: ImportMode, autoTag: Bool,
                          control: ImportControl?, progress: ((ImportProgress) -> Void)?) -> [Asset] {
         let folderId = "src-" + shortHash(folder.path)

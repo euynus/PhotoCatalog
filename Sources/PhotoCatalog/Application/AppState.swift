@@ -649,24 +649,47 @@ final class AppState: ObservableObject {
     private func incrementalRescan() {
         guard let coordinator, let store else { return }
         let roots = watchedRoots
-        let knownPaths = Set(assets.compactMap { $0.localPath })
+        var knownAssetsByPath: [String: Asset] = [:]
+        for asset in assets where !asset.deleted {
+            if let path = asset.localPath {
+                knownAssetsByPath[path] = asset
+                knownAssetsByPath[URL(fileURLWithPath: path).resolvingSymlinksInPath().path] = asset
+            }
+        }
+        let knownPaths = Set(knownAssetsByPath.keys)
         let vision = visionEnabled
-        Task { [weak self, coordinator, store, roots, knownPaths, vision] in
-            let fresh = await Task.detached(priority: .utility) {
+        Task { [weak self, coordinator, store, roots, knownAssetsByPath, knownPaths, vision] in
+            let delta = await Task.detached(priority: .utility) {
                 var fresh: [Asset] = []
+                var changed: [Asset] = []
                 for root in roots {
                     fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
                                                                  mode: .referenced, autoTag: vision))
+                    changed.append(contentsOf: coordinator.scanChanged(in: root,
+                                                                       knownAssetsByPath: knownAssetsByPath,
+                                                                       mode: .referenced,
+                                                                       autoTag: vision))
                 }
-                return fresh
+                return (fresh: fresh, changed: changed)
             }.value
             guard let self else { return }
-            let trulyNew = fresh.filter { a in !self.assets.contains { $0.id == a.id } }
-            if !trulyNew.isEmpty {
+            let trulyNew = delta.fresh.filter { a in !self.assets.contains { $0.id == a.id } }
+            let changedAssets = delta.changed.filter { a in self.assets.contains { $0.id == a.id } }
+            if !trulyNew.isEmpty || !changedAssets.isEmpty {
                 self.assets.append(contentsOf: trulyNew)
-                try? store.upsert(trulyNew)
+                for asset in changedAssets {
+                    if let index = self.assets.firstIndex(where: { $0.id == asset.id }) {
+                        self.assets[index] = asset
+                    }
+                }
+                try? store.upsert(trulyNew + changedAssets)
                 self.recomputeDuplicates()
-                self.push("检测到 \(trulyNew.count) 张新照片", "importIcon")
+                if !trulyNew.isEmpty {
+                    self.push("检测到 \(trulyNew.count) 张新照片", "importIcon")
+                }
+                if !changedAssets.isEmpty {
+                    self.push("已更新 \(changedAssets.count) 张修改过的照片", "refresh")
+                }
             }
             self.detectMissingRealAssets()
         }
