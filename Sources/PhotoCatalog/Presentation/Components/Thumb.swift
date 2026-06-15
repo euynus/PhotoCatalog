@@ -33,12 +33,17 @@ func gradientFor(_ pid: Int) -> LinearGradient {
 }
 
 /// Shared in-memory image cache so grid scrolling doesn't refetch.
+@MainActor
 final class ThumbLoader: ObservableObject {
     @Published var image: NSImage?
     @Published var failed = false
     private static let cache = NSCache<NSString, NSImage>()
-    private var task: URLSessionDataTask?
+    private var task: Task<Void, Never>?
     private var loadedURL: String?
+
+    deinit {
+        task?.cancel()
+    }
 
     func load(_ source: String) {
         // already showing / fetching this exact source
@@ -55,31 +60,36 @@ final class ThumbLoader: ObservableObject {
         }
         image = nil
 
-        if source.hasPrefix("http") {
-            guard let url = URL(string: source) else { failed = true; return }
-            task = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
-                self?.finish(source, data.flatMap { NSImage(data: $0) })
+        task = Task { [weak self, source] in
+            let data: Data?
+            if source.hasPrefix("http") {
+                guard let url = URL(string: source) else {
+                    self?.failed = true
+                    return
+                }
+                data = try? await URLSession.shared.data(from: url).0
+            } else {
+                data = await Self.readImageData(at: source)
             }
-            task?.resume()
-        } else {
-            // local cached thumbnail / original file path
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let img = NSImage(contentsOfFile: source)
-                self?.finish(source, img)
-            }
+            guard !Task.isCancelled else { return }
+            self?.finish(source, data.flatMap { NSImage(data: $0) })
         }
     }
 
     private func finish(_ source: String, _ img: NSImage?) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.loadedURL == source else { return }
-            if let img {
-                Self.cache.setObject(img, forKey: source as NSString)
-                withAnimation(.easeOut(duration: 0.3)) { self.image = img }
-            } else {
-                self.failed = true
-            }
+        guard loadedURL == source else { return }
+        if let img {
+            Self.cache.setObject(img, forKey: source as NSString)
+            withAnimation(.easeOut(duration: 0.3)) { image = img }
+        } else {
+            failed = true
         }
+    }
+
+    private static func readImageData(at path: String) async -> Data? {
+        await Task.detached(priority: .userInitiated) {
+            try? Data(contentsOf: URL(fileURLWithPath: path))
+        }.value
     }
 }
 
