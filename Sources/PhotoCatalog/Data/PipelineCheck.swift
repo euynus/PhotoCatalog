@@ -218,6 +218,16 @@ enum PipelineCheck {
                                                             existingIds: [], strategy: .skipExact)
         check(skippedDedup.fresh.count == 6 && skippedDedup.skipped == 1,
               "import duplicate strategy skips exact duplicates")
+        var sameHashDifferentSize = assets[1]
+        sameHashDifferentSize.contentHash = assets[0].contentHash
+        sameHashDifferentSize.fileMB = assets[0].fileMB + 1
+        let sizeAwareDedup = ImportDeduplicationService.apply(
+            imported: [sameHashDifferentSize],
+            existingAssets: [assets[0]],
+            existingIds: [],
+            strategy: .skipExact)
+        check(sizeAwareDedup.fresh.count == 1 && sizeAwareDedup.skipped == 0,
+              "import duplicate strategy requires matching size and content hash")
         let postKeywords = ImportPostActionService.normalizeKeywords("客户精选，旅行,客户精选")
         let postAssets = ImportPostActionService.apply(
             to: [assets[0]],
@@ -333,6 +343,8 @@ enum PipelineCheck {
         // 6. exact-duplicate detection (the identical pair)
         let dupes = HashService.exactDuplicateGroups(assets)
         check(dupes.contains { $0.items.count == 2 }, "exact-duplicate group found for the identical pair")
+        let falseDupes = HashService.exactDuplicateGroups([assets[0], sameHashDifferentSize])
+        check(falseDupes.isEmpty, "exact-duplicate detection requires matching size and content hash")
         let suspectPair = assets.enumerated().compactMap { index, lhs -> (Asset, Asset)? in
             assets.dropFirst(index + 1).first { rhs in
                 lhs.width == rhs.width && lhs.height == rhs.height && lhs.contentHash != rhs.contentHash

@@ -18,18 +18,18 @@ enum ImportDeduplicationService {
             return ImportDeduplicationResult(fresh: pathFresh, skipped: pathSkipped)
         }
 
-        var seenHashes = Set(existingAssets.compactMap(\.contentHash))
+        var seenKeys = Set(existingAssets.compactMap(HashService.exactDuplicateKey))
         var fresh: [Asset] = []
         var exactSkipped = 0
         for asset in pathFresh {
-            guard let hash = asset.contentHash else {
+            guard let key = HashService.exactDuplicateKey(asset) else {
                 fresh.append(asset)
                 continue
             }
-            if seenHashes.contains(hash) {
+            if seenKeys.contains(key) {
                 exactSkipped += 1
             } else {
-                seenHashes.insert(hash)
+                seenKeys.insert(key)
                 fresh.append(asset)
             }
         }

@@ -34,10 +34,9 @@ enum HashService {
 
     /// Group assets that share an identical content hash (size-bucketed first).
     static func exactDuplicateGroups(_ assets: [Asset]) -> [DuplicateGroup] {
-        // bucket by rounded size, then by content hash within each bucket
-        var bySize: [Int: [Asset]] = [:]
+        var bySize: [Int64: [Asset]] = [:]
         for a in assets where a.contentHash != nil {
-            bySize[Int(a.fileMB * 1000), default: []].append(a)
+            bySize[fileSizeBytes(a), default: []].append(a)
         }
         var groups: [DuplicateGroup] = []
         var n = 0
@@ -50,6 +49,10 @@ enum HashService {
             }
         }
         return groups
+    }
+
+    static func exactDuplicateKey(_ asset: Asset) -> String? {
+        asset.contentHash.map { "\(fileSizeBytes(asset))|\($0)" }
     }
 
     /// Group likely duplicates before expensive similarity checks (PRD DUP-002).
@@ -83,6 +86,10 @@ enum HashService {
             "\(asset.width)x\(asset.height)",
             "\(timeBucket)",
         ].joined(separator: "|")
+    }
+
+    private static func fileSizeBytes(_ asset: Asset) -> Int64 {
+        Int64((asset.fileMB * 1024 * 1024).rounded())
     }
 
     private static func normalizedFilename(_ filename: String) -> String {
