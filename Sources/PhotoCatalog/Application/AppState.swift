@@ -1036,6 +1036,10 @@ final class AppState: ObservableObject {
 
     // ---------- apply filter bar + search + sort ----------
     var list: [Asset] {
+        let calendar = Calendar.current
+        let now = Date.now
+        let currentDate = calendar.dateComponents([.year, .month], from: now)
+        let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
         var l = baseList.filter { a in
             if filters.minRating > 0 && a.rating < filters.minRating { return false }
             if filters.flag != "any" && a.flag.rawValue != filters.flag { return false }
@@ -1044,11 +1048,22 @@ final class AppState: ObservableObject {
                 if filters.type == "RAW" && !a.isRaw { return false }
                 if filters.type != "RAW" && a.type != filters.type { return false }
             }
-            let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+            if filters.date != "any" {
+                let assetDate = calendar.dateComponents([.year, .month], from: a.date)
+                if filters.date == "thisYear" && assetDate.year != currentDate.year { return false }
+                if filters.date == "thisMonth" &&
+                    (assetDate.year != currentDate.year || assetDate.month != currentDate.month) {
+                    return false
+                }
+            }
+            let hasGPS = !(a.gps.0 == 0 && a.gps.1 == 0)
+            if filters.gps == "yes" && !hasGPS { return false }
+            if filters.gps == "no" && hasGPS { return false }
+            if filters.status != "any" && a.status.rawValue != filters.status { return false }
             if !q.isEmpty {
-                let hay = ([a.filename, a.camera, a.lens, a.title, a.caption, a.location]
-                    + a.keywords).joined(separator: " ").lowercased()
-                if !hay.contains(q) { return false }
+                let haystack = ([a.filename, a.camera, a.lens, a.title, a.caption, a.location]
+                    + a.keywords).joined(separator: " ")
+                if !haystack.localizedStandardContains(q) { return false }
             }
             return true
         }

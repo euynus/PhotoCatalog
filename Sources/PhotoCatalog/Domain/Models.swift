@@ -123,10 +123,15 @@ struct Filters: Equatable {
     var flag: String = "any"     // any / pick / reject
     var color: String = "any"    // any / red / orange / ...
     var type: String = "any"     // any / RAW / HEIC
+    var date: String = "any"     // any / thisMonth / thisYear
+    var gps: String = "any"      // any / yes / no
+    var status: String = "any"   // any / ready / missing / offline
 
     var activeCount: Int {
         (minRating > 0 ? 1 : 0) + (flag != "any" ? 1 : 0)
             + (color != "any" ? 1 : 0) + (type != "any" ? 1 : 0)
+            + (date != "any" ? 1 : 0) + (gps != "any" ? 1 : 0)
+            + (status != "any" ? 1 : 0)
     }
     var isEmpty: Bool { activeCount == 0 }
 }

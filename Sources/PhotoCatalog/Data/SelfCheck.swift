@@ -45,6 +45,8 @@ enum SelfCheck {
         assert(folder("fld-iceland") == 12, "iceland count")
         assert(folder("fld-street") == 8, "street count")
         assert(DemoData.duplicateGroups.count == 3, "duplicate groups")
+        let filters = Filters(minRating: 3, date: "thisYear", gps: "yes", status: "missing")
+        assert(filters.activeCount == 4, "extended filter active count")
         print("--- all structural assertions passed ---")
     }
 }

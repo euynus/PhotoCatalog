@@ -7,26 +7,33 @@ struct FilterBar: View {
     @EnvironmentObject var app: AppState
 
     var body: some View {
-        HStack(spacing: 14) {
-            ratingGroup
-            sep
-            flagGroup
-            sep
-            colorGroup
-            sep
-            typeGroup
-            if app.filters.activeCount > 0 {
-                Spacer()
-                Button {
-                    app.setFilters(Filters())
-                } label: {
-                    Text("清除筛选").font(.system(size: 12)).foregroundStyle(Theme.accent)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                ratingGroup
+                sep
+                flagGroup
+                sep
+                colorGroup
+                sep
+                typeGroup
+                sep
+                dateGroup
+                sep
+                gpsGroup
+                sep
+                statusGroup
+                if app.filters.activeCount > 0 {
+                    Button {
+                        app.setFilters(Filters())
+                    } label: {
+                        Text("清除筛选").font(.system(size: 12)).foregroundStyle(Theme.accent)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+            .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 16)
         .frame(height: Theme.filterbarH)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(hex: "#232326"))
@@ -130,6 +137,52 @@ struct FilterBar: View {
                 ],
                 value: app.filters.type,
                 onChange: { v in var f = app.filters; f.type = v; app.setFilters(f) },
+                size: "sm")
+        }
+    }
+
+    private var dateGroup: some View {
+        HStack(spacing: 8) {
+            label("日期")
+            Segmented(
+                options: [
+                    SegOption(value: "any", label: "全部"),
+                    SegOption(value: "thisMonth", label: "本月"),
+                    SegOption(value: "thisYear", label: "今年"),
+                ],
+                value: app.filters.date,
+                onChange: { v in var f = app.filters; f.date = v; app.setFilters(f) },
+                size: "sm")
+        }
+    }
+
+    private var gpsGroup: some View {
+        HStack(spacing: 8) {
+            label("GPS")
+            Segmented(
+                options: [
+                    SegOption(value: "any", label: "全部"),
+                    SegOption(value: "yes", label: "有"),
+                    SegOption(value: "no", label: "无"),
+                ],
+                value: app.filters.gps,
+                onChange: { v in var f = app.filters; f.gps = v; app.setFilters(f) },
+                size: "sm")
+        }
+    }
+
+    private var statusGroup: some View {
+        HStack(spacing: 8) {
+            label("状态")
+            Segmented(
+                options: [
+                    SegOption(value: "any", label: "全部"),
+                    SegOption(value: "ready", label: "正常"),
+                    SegOption(value: "missing", label: "缺失"),
+                    SegOption(value: "offline", label: "离线"),
+                ],
+                value: app.filters.status,
+                onChange: { v in var f = app.filters; f.status = v; app.setFilters(f) },
                 size: "sm")
         }
     }
