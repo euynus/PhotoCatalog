@@ -127,6 +127,23 @@ enum PipelineCheck {
             fm.fileExists(atPath: coordinator.thumbnails.cachePath(assetId: $0.id, kind: .thumb256).path)
         }
         check(thumb256Exist, "256px thumbnails written to disk cache")
+        let defaultPreview2048Exist = assets.allSatisfy {
+            $0.preview == coordinator.thumbnails.cachePath(assetId: $0.id, kind: .preview2048).path
+        }
+        check(defaultPreview2048Exist, "default previews use 2048px cache")
+        let preview1600Src = tmp.appendingPathComponent("preview-1600")
+        try? fm.createDirectory(at: preview1600Src, withIntermediateDirectories: true)
+        writeTestImage(to: preview1600Src.appendingPathComponent("SMALL_PREVIEW.jpg"),
+                       width: 640, height: 480, seed: 42)
+        let preview1600Assets = coordinator.importFolder(preview1600Src, previewMaxPixel: 1600)
+        if let preview1600Asset = preview1600Assets.first {
+            let expectedPreview = coordinator.thumbnails.cachePath(assetId: preview1600Asset.id,
+                                                                   kind: .preview1600).path
+            check(preview1600Asset.preview == expectedPreview && fm.fileExists(atPath: expectedPreview),
+                  "configurable previews use 1600px cache")
+        } else {
+            check(false, "configurable previews use 1600px cache")
+        }
         check(assets.allSatisfy { $0.contentHash != nil && $0.quickHash != nil }, "content + quick hashes computed")
         let groupedDedup = ImportDeduplicationService.apply(imported: assets, existingAssets: [],
                                                             existingIds: [], strategy: .groupExact)

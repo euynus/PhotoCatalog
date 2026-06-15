@@ -33,31 +33,36 @@ final class ImportCoordinator: @unchecked Sendable {
     /// Full import of a folder (managed mode copies originals into Originals/YYYY/MM/DD;
     /// autoTag runs on-device Vision scene tagging + face detection).
     func importFolder(_ folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
+                      previewMaxPixel: Int = 2048,
                       control: ImportControl? = nil,
                       progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
         let files = FileScanner.scan(folder)
         progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
-        return process(files, folder: folder, mode: mode, autoTag: autoTag, control: control, progress: progress)
+        return process(files, folder: folder, mode: mode, autoTag: autoTag,
+                       previewMaxPixel: previewMaxPixel, control: control, progress: progress)
     }
 
     /// Retry/import a known file list while preserving the original source folder identity.
     func importFiles(_ files: [URL], from folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
+                     previewMaxPixel: Int = 2048,
                      control: ImportControl? = nil,
                      progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
         progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
-        return process(files, folder: folder, mode: mode, autoTag: autoTag, control: control, progress: progress)
+        return process(files, folder: folder, mode: mode, autoTag: autoTag,
+                       previewMaxPixel: previewMaxPixel, control: control, progress: progress)
     }
 
     /// Incremental: only files not already imported by path (for FSEvents rescans, §12.8).
     func scanNew(in folder: URL, knownPaths: Set<String>, mode: ImportMode = .referenced,
-                 autoTag: Bool = false) -> [Asset] {
+                 autoTag: Bool = false, previewMaxPixel: Int = 2048) -> [Asset] {
         let files = FileScanner.scan(folder).filter { !knownPaths.contains($0.path) }
-        return process(files, folder: folder, mode: mode, autoTag: autoTag, control: nil, progress: nil)
+        return process(files, folder: folder, mode: mode, autoTag: autoTag,
+                       previewMaxPixel: previewMaxPixel, control: nil, progress: nil)
     }
 
     /// Incremental: reprocess known originals whose quick hash changed so metadata and caches stay fresh.
     func scanChanged(in folder: URL, knownAssetsByPath: [String: Asset], mode: ImportMode = .referenced,
-                     autoTag: Bool = false) -> [Asset] {
+                     autoTag: Bool = false, previewMaxPixel: Int = 2048) -> [Asset] {
         let files = FileScanner.scan(folder).filter { url in
             let known = knownAssetsByPath[url.path] ?? knownAssetsByPath[url.resolvingSymlinksInPath().path]
             guard let known else { return false }
@@ -65,11 +70,13 @@ final class ImportCoordinator: @unchecked Sendable {
                   let size = attrs[.size] as? Int64 else { return true }
             return HashService.quickHash(url, fileSize: size) != known.quickHash
         }
-        return process(files, folder: folder, mode: mode, autoTag: autoTag, control: nil, progress: nil)
+        return process(files, folder: folder, mode: mode, autoTag: autoTag,
+                       previewMaxPixel: previewMaxPixel, control: nil, progress: nil)
     }
 
     private func process(_ files: [URL], folder: URL, mode: ImportMode, autoTag: Bool,
-                         control: ImportControl?, progress: ((ImportProgress) -> Void)?) -> [Asset] {
+                         previewMaxPixel: Int, control: ImportControl?,
+                         progress: ((ImportProgress) -> Void)?) -> [Asset] {
         let folderId = "src-" + shortHash(folder.path)
         let folderName = folder.lastPathComponent
         var assets: [Asset] = []
@@ -84,7 +91,8 @@ final class ImportCoordinator: @unchecked Sendable {
                 continue
             }
             if let asset = makeAsset(source: url, folderId: folderId, folderName: folderName,
-                                     mode: mode, autoTag: autoTag) {
+                                     mode: mode, autoTag: autoTag,
+                                     previewMaxPixel: previewMaxPixel) {
                 assets.append(asset)
                 prog.processed += 1
                 prog.latestAsset = asset
@@ -100,7 +108,7 @@ final class ImportCoordinator: @unchecked Sendable {
     }
 
     private func makeAsset(source url: URL, folderId: String, folderName: String,
-                           mode: ImportMode, autoTag: Bool) -> Asset? {
+                           mode: ImportMode, autoTag: Bool, previewMaxPixel: Int) -> Asset? {
         let meta = MetadataReader.read(url)
         guard meta.width > 0, meta.height > 0 else { return nil }
         let finalURL = mode == .managed ? (copyToOriginals(url, date: meta.captureDate) ?? url) : url
@@ -110,7 +118,8 @@ final class ImportCoordinator: @unchecked Sendable {
         let pid = (Int(hash.prefix(6), radix: 16) ?? 0) % 100000
         let quick = HashService.quickHash(finalURL, fileSize: meta.fileSize)
         let content = HashService.contentHash(finalURL)
-        let (thumb, preview) = thumbnails.generateAll(from: finalURL, assetId: assetId)
+        let (thumb, preview) = thumbnails.generateAll(from: finalURL, assetId: assetId,
+                                                      previewMaxPixel: previewMaxPixel)
         let ext = finalURL.pathExtension.uppercased()
         let isRaw = UTType(filenameExtension: finalURL.pathExtension.lowercased())?.conforms(to: .rawImage) ?? false
             || ["CR2", "CR3", "NEF", "ARW", "RAF", "ORF", "RW2", "DNG"].contains(ext)

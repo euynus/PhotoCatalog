@@ -61,6 +61,12 @@ final class AppState: ObservableObject {
     }() {
         didSet { UserDefaults.standard.set(cacheLimitMB, forKey: "pc_cacheLimitMB") }
     }
+    @Published var previewMaxPixel: Int = {
+        let saved = UserDefaults.standard.integer(forKey: "pc_previewMaxPixel")
+        return saved == 1600 ? 1600 : 2_048
+    }() {
+        didSet { UserDefaults.standard.set(previewMaxPixel, forKey: Self.previewMaxPixelKey) }
+    }
     @Published var automaticBackupFrequency =
         UserDefaults.standard.string(forKey: "pc_autoBackupFrequency") ?? "weekly" {
         didSet { UserDefaults.standard.set(automaticBackupFrequency, forKey: "pc_autoBackupFrequency") }
@@ -84,6 +90,7 @@ final class AppState: ObservableObject {
     private static let lastAutoBackupKey = "pc_lastAutoBackupAt"
     private static let pinnedSidebarItemsKey = "pc_pinnedSidebarItems"
     private static let sourcePrioritiesKey = "pc_sourcePriorities"
+    private static let previewMaxPixelKey = "pc_previewMaxPixel"
 
     // ----- selection / view -----
     @Published var selection = Selection(type: .lib, id: "all", name: "全部照片")
@@ -486,6 +493,7 @@ final class AppState: ObservableObject {
         activeImportJobId = jobId
         lastImportSessionPersistedCount = 0
         let vision = visionEnabled
+        let previewSize = previewMaxPixel
         importing = true
         sheet = "import"
         try? store.startImportSession(id: run.id.uuidString, startedAt: run.startedAt)
@@ -493,9 +501,10 @@ final class AppState: ObservableObject {
                                   mode: mode, autoTag: vision)
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: folder)
-        Task { [weak self, coordinator, store, folder, mode, vision, bookmark, existingIds, run, control] in
-            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, vision, control] in
-                coordinator.importFolder(folder, mode: mode, autoTag: vision, control: control) { progress in
+        Task { [weak self, coordinator, store, folder, mode, vision, previewSize, bookmark, existingIds, run, control] in
+            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, vision, previewSize, control] in
+                coordinator.importFolder(folder, mode: mode, autoTag: vision,
+                                         previewMaxPixel: previewSize, control: control) { progress in
                     Task { @MainActor [weak self] in
                         self?.recordImportProgress(progress, for: run.id)
                     }
@@ -732,10 +741,12 @@ final class AppState: ObservableObject {
                                        totalCount: runningRun.total, importedCount: runningRun.imported,
                                        skippedCount: runningRun.skipped, failedCount: runningRun.failed)
         push("正在恢复导入「\(folder.lastPathComponent)」…", "refresh")
+        let previewSize = previewMaxPixel
 
-        Task { [weak self, coordinator, store, folder, mode, autoTag, existingIds, runningRun, control] in
-            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, autoTag, control] in
-                coordinator.importFolder(folder, mode: mode, autoTag: autoTag, control: control) { progress in
+        Task { [weak self, coordinator, store, folder, mode, autoTag, previewSize, existingIds, runningRun, control] in
+            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, autoTag, previewSize, control] in
+                coordinator.importFolder(folder, mode: mode, autoTag: autoTag,
+                                         previewMaxPixel: previewSize, control: control) { progress in
                     Task { @MainActor [weak self] in
                         self?.recordImportProgress(progress, for: runningRun.id)
                     }
@@ -794,15 +805,16 @@ final class AppState: ObservableObject {
         activeImportJobId = jobId
         lastImportSessionPersistedCount = 0
         let vision = visionEnabled
+        let previewSize = previewMaxPixel
         importing = true
         try? store.startImportSession(id: retry.id.uuidString, startedAt: retry.startedAt)
         try? store.startImportJob(id: jobId, sessionId: retry.id.uuidString, sourcePath: folder.path,
                                   mode: retry.mode, autoTag: vision)
         push("正在重试 \(files.count) 个失败文件…", "refresh")
-        Task { [weak self, coordinator, store, folder, files, existingIds, retry, vision, control] in
-            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, files, retry, vision, control] in
+        Task { [weak self, coordinator, store, folder, files, existingIds, retry, vision, previewSize, control] in
+            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, files, retry, vision, previewSize, control] in
                 coordinator.importFiles(files, from: folder, mode: retry.mode, autoTag: vision,
-                                        control: control) { progress in
+                                        previewMaxPixel: previewSize, control: control) { progress in
                     Task { @MainActor [weak self] in
                         self?.recordImportProgress(progress, for: retry.id)
                     }
@@ -867,17 +879,20 @@ final class AppState: ObservableObject {
         }
         let knownPaths = Set(knownAssetsByPath.keys)
         let vision = visionEnabled
-        Task { [weak self, coordinator, store, roots, knownAssetsByPath, knownPaths, vision] in
+        let previewSize = previewMaxPixel
+        Task { [weak self, coordinator, store, roots, knownAssetsByPath, knownPaths, vision, previewSize] in
             let delta = await Task.detached(priority: .utility) {
                 var fresh: [Asset] = []
                 var changed: [Asset] = []
                 for root in roots {
                     fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
-                                                                 mode: .referenced, autoTag: vision))
+                                                                 mode: .referenced, autoTag: vision,
+                                                                 previewMaxPixel: previewSize))
                     changed.append(contentsOf: coordinator.scanChanged(in: root,
                                                                        knownAssetsByPath: knownAssetsByPath,
                                                                        mode: .referenced,
-                                                                       autoTag: vision))
+                                                                       autoTag: vision,
+                                                                       previewMaxPixel: previewSize))
                 }
                 return (fresh: fresh, changed: changed)
             }.value
@@ -1096,11 +1111,19 @@ final class AppState: ObservableObject {
         let real = assets.filter { !$0.isDemo && $0.localPath != nil }
         guard !real.isEmpty else { push("无已导入照片", "warning"); return }
         push("正在重建缩略图…", "refresh")
-        Task { [weak self, coordinator, real] in
+        let previewSize = previewMaxPixel
+        Task { [weak self, coordinator, real, previewSize] in
             await Task.detached(priority: .utility) {
                 for a in real {
                     if let path = a.localPath {
-                        _ = coordinator.thumbnails.generateAll(from: URL(fileURLWithPath: path), assetId: a.id)
+                        let original = URL(fileURLWithPath: path)
+                        _ = coordinator.thumbnails.generate(from: original, assetId: a.id, kind: .thumb256)
+                        _ = coordinator.thumbnails.generate(from: original, assetId: a.id, kind: .thumb512)
+                        _ = coordinator.thumbnails.generate(
+                            from: original,
+                            assetId: a.id,
+                            kind: ThumbnailService.previewKind(forCachePath: a.preview,
+                                                               fallbackMaxPixel: previewSize))
                     }
                 }
             }.value
@@ -1113,7 +1136,7 @@ final class AppState: ObservableObject {
         guard let store else { push("无目录库", "warning"); return }
         let fm = FileManager.default
         try? fm.removeItem(at: store.cacheURL)
-        for dir in [store.thumb256URL, store.thumb512URL, store.preview2048URL] {
+        for dir in [store.thumb256URL, store.thumb512URL, store.preview1600URL, store.preview2048URL] {
             try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         push("已清理缩略图缓存", "trash")
@@ -1139,8 +1162,11 @@ final class AppState: ObservableObject {
         let original = URL(fileURLWithPath: localPath)
         let assetId = asset.id
         let thumbnails = coordinator.thumbnails
+        let resolvedKind = kind.isPreview
+            ? ThumbnailService.previewKind(forCachePath: requestedSource, fallbackMaxPixel: previewMaxPixel)
+            : kind
         let restored = await Task.detached(priority: .userInitiated) {
-            thumbnails.ensureCached(from: original, assetId: assetId, kind: kind)
+            thumbnails.ensureCached(from: original, assetId: assetId, kind: resolvedKind)
         }.value
         return restored?.path ?? requestedSource
     }

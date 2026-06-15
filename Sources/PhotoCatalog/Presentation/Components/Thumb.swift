@@ -109,7 +109,7 @@ struct Thumb: View {
     private var cacheKind: ThumbnailService.Kind {
         kind ?? (urlString == nil || urlString == asset.thumb ? .thumb512 : .preview2048)
     }
-    private var loadKey: String { "\(asset.id)|\(source)|\(cacheKind.maxPixel)" }
+    private var loadKey: String { "\(asset.id)|\(source)|\(cacheKind.maxPixel)|\(app.previewMaxPixel)" }
 
     var body: some View {
         ZStack {

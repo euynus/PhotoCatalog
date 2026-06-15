@@ -71,6 +71,7 @@ final class CatalogStore: @unchecked Sendable {
     var cacheURL: URL { packageURL.appendingPathComponent("Cache") }
     var thumb256URL: URL { cacheURL.appendingPathComponent("Thumbnails/256") }
     var thumb512URL: URL { cacheURL.appendingPathComponent("Thumbnails/512") }
+    var preview1600URL: URL { cacheURL.appendingPathComponent("Previews/1600") }
     var preview2048URL: URL { cacheURL.appendingPathComponent("Previews/2048") }
     var backupsURL: URL { packageURL.appendingPathComponent("Backups") }
     var originalsURL: URL { packageURL.appendingPathComponent("Originals") }
@@ -88,7 +89,7 @@ final class CatalogStore: @unchecked Sendable {
         try fm.createDirectory(at: packageURL, withIntermediateDirectories: true)
         db = try Database(path: packageURL.appendingPathComponent("catalog.sqlite").path)
         // both stored properties are set now — computed URLs are safe to use
-        for dir in [cacheURL, thumb256URL, thumb512URL, preview2048URL,
+        for dir in [cacheURL, thumb256URL, thumb512URL, preview1600URL, preview2048URL,
                     backupsURL, originalsURL, logsURL] {
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }

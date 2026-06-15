@@ -107,6 +107,13 @@ struct SettingsSheet: View {
             }
 
             section("缩略图与缓存") {
+                row("预览长边") {
+                    Segmented(options: [
+                        SegOption(value: "1600", label: "1600px"),
+                        SegOption(value: "2048", label: "2048px"),
+                    ], value: "\(app.previewMaxPixel)",
+                       onChange: { app.previewMaxPixel = Int($0) ?? 2_048 }, size: "sm")
+                }
                 Stepper(value: $app.cacheLimitMB, in: 256...102_400, step: 256) {
                     Text("缓存上限 \(app.cacheLimitMB) MB")
                         .font(.system(size: 12.5)).foregroundStyle(Theme.text)

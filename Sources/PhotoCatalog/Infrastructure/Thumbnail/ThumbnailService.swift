@@ -16,15 +16,39 @@ final class ThumbnailService: @unchecked Sendable {
     init(store: CatalogStore) { self.store = store }
 
     enum Kind: Sendable {
-        case thumb256, thumb512, preview2048
-        var maxPixel: Int { self == .thumb256 ? 256 : (self == .thumb512 ? 512 : 2048) }
+        case thumb256, thumb512, preview1600, preview2048
+
+        var maxPixel: Int {
+            switch self {
+            case .thumb256: return 256
+            case .thumb512: return 512
+            case .preview1600: return 1600
+            case .preview2048: return 2048
+            }
+        }
+
+        var isPreview: Bool {
+            self == .preview1600 || self == .preview2048
+        }
+
         var baseURL: (CatalogStore) -> URL {
             switch self {
             case .thumb256: return { $0.thumb256URL }
             case .thumb512: return { $0.thumb512URL }
+            case .preview1600: return { $0.preview1600URL }
             case .preview2048: return { $0.preview2048URL }
             }
         }
+    }
+
+    static func previewKind(maxPixel: Int) -> Kind {
+        maxPixel <= 1600 ? .preview1600 : .preview2048
+    }
+
+    static func previewKind(forCachePath path: String, fallbackMaxPixel: Int) -> Kind {
+        if path.contains("/Previews/1600/") { return .preview1600 }
+        if path.contains("/Previews/2048/") { return .preview2048 }
+        return previewKind(maxPixel: fallbackMaxPixel)
     }
 
     /// Sharded path: <base>/ab/cd/<assetId>.jpg
@@ -65,11 +89,11 @@ final class ThumbnailService: @unchecked Sendable {
         return CGImageDestinationFinalize(dest) ? out : nil
     }
 
-    /// Generate both thumbnail sizes + the loupe preview (2048).
-    func generateAll(from original: URL, assetId: String) -> (thumb: URL?, preview: URL?) {
+    /// Generate both thumbnail sizes + the configured loupe preview.
+    func generateAll(from original: URL, assetId: String, previewMaxPixel: Int = 2048) -> (thumb: URL?, preview: URL?) {
         _ = generate(from: original, assetId: assetId, kind: .thumb256)
         let thumb = generate(from: original, assetId: assetId, kind: .thumb512)
-        let preview = generate(from: original, assetId: assetId, kind: .preview2048)
+        let preview = generate(from: original, assetId: assetId, kind: Self.previewKind(maxPixel: previewMaxPixel))
         return (thumb, preview)
     }
 }
