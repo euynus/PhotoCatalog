@@ -64,7 +64,7 @@ enum CatalogStoreError: Error, Equatable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    private static let latestSchemaVersion = 7
+    private static let latestSchemaVersion = 8
     let packageURL: URL
     let db: Database
 
@@ -162,6 +162,14 @@ final class CatalogStore: @unchecked Sendable {
                            [.text(Self.iso(.now))])
             }
         }
+        if current < 8 {
+            try db.transaction {
+                try db.run("ALTER TABLE assets ADD COLUMN file_modified_at REAL;")
+                try db.run("ALTER TABLE assets ADD COLUMN file_created_at REAL;")
+                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(8, ?);",
+                           [.text(Self.iso(.now))])
+            }
+        }
     }
 
     /// FTS5 full-text search returning matching asset ids (§12.7).
@@ -256,11 +264,12 @@ final class CatalogStore: @unchecked Sendable {
     id,pid,ori,thumb,preview,filename,type,is_raw,folder_id,folder_name,\
     capture_date,width,height,orientation,camera,lens,focal,aperture,shutter,iso,\
     color_space,file_mb,rating,flag,color_label,keywords,title,caption,location,gps_lat,gps_lon,\
-    status,imported_at,deleted,is_demo,local_path,capture_date_source,content_hash,quick_hash,faces
+    status,imported_at,deleted,is_demo,local_path,capture_date_source,content_hash,quick_hash,faces,\
+    file_modified_at,file_created_at
     """
 
     func upsert(_ assets: [Asset]) throws {
-        let placeholders = Array(repeating: "?", count: 40).joined(separator: ",")
+        let placeholders = Array(repeating: "?", count: 42).joined(separator: ",")
         let sql = "INSERT OR REPLACE INTO assets(\(Self.columns)) VALUES(\(placeholders));"
         try db.transaction {
             for a in assets {
@@ -581,6 +590,8 @@ final class CatalogStore: @unchecked Sendable {
             a.contentHash.map { SQLValue.text($0) } ?? .null,
             a.quickHash.map { SQLValue.text($0) } ?? .null,
             .int(a.faces),
+            a.fileModifiedAt.map { SQLValue.double($0.timeIntervalSince1970) } ?? .null,
+            a.fileCreatedAt.map { SQLValue.double($0.timeIntervalSince1970) } ?? .null,
         ]
     }
 
@@ -601,6 +612,8 @@ final class CatalogStore: @unchecked Sendable {
             focal: row.int("focal") ?? 0, aperture: row.double("aperture") ?? 0,
             shutter: row.text("shutter") ?? "", iso: row.int("iso") ?? 0,
             colorSpace: row.text("color_space") ?? "", fileMB: row.double("file_mb") ?? 0,
+            fileModifiedAt: row.double("file_modified_at").map(Date.init(timeIntervalSince1970:)),
+            fileCreatedAt: row.double("file_created_at").map(Date.init(timeIntervalSince1970:)),
             rating: row.int("rating") ?? 0,
             flag: Flag(rawValue: row.text("flag") ?? "none") ?? .none,
             colorLabel: row.text("color_label").flatMap { ColorLabel(rawValue: $0) },

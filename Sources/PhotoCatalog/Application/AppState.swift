@@ -1062,8 +1062,11 @@ final class AppState: ObservableObject {
         let ids = Set(locations.keys)
         for index in assets.indices {
             guard let url = locations[assets[index].id] else { continue }
+            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
             assets[index].filename = url.lastPathComponent
             assets[index].localPath = url.path
+            assets[index].fileModifiedAt = attrs?[.modificationDate] as? Date
+            assets[index].fileCreatedAt = attrs?[.creationDate] as? Date
             assets[index].status = .ready
         }
         persist(ids)
@@ -1964,6 +1967,8 @@ final class AppState: ObservableObject {
             $0.localPath = replacement.path
             $0.filename = replacement.lastPathComponent
             $0.fileMB = Double(size) / (1024 * 1024)
+            $0.fileModifiedAt = attrs?[.modificationDate] as? Date
+            $0.fileCreatedAt = attrs?[.creationDate] as? Date
             $0.quickHash = HashService.quickHash(replacement, fileSize: size)
             $0.contentHash = HashService.contentHash(replacement)
             $0.status = .ready

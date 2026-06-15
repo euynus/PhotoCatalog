@@ -21,6 +21,8 @@ struct ScannedMetadata {
     var captureDateSource = "文件修改时间"
     var gps: (Double, Double) = (0, 0)
     var fileSize: Int64 = 0
+    var fileModifiedAt: Date?
+    var fileCreatedAt: Date?
 }
 
 enum MetadataReader {
@@ -30,8 +32,10 @@ enum MetadataReader {
         // file attributes
         let attrs = (try? FileManager.default.attributesOfItem(atPath: url.path)) ?? [:]
         m.fileSize = (attrs[.size] as? Int64) ?? 0
-        let fileModified = (attrs[.modificationDate] as? Date) ?? Date()
+        let fileModified = (attrs[.modificationDate] as? Date) ?? .now
         let fileCreated = (attrs[.creationDate] as? Date)
+        m.fileModifiedAt = fileModified
+        m.fileCreatedAt = fileCreated
 
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]

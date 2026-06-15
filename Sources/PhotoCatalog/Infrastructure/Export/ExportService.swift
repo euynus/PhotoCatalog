@@ -84,12 +84,15 @@ enum ExportService {
     /// Export per-asset metadata as a JSON sidecar bundle (PRD §6.11 EXP-003).
     @discardableResult
     static func exportMetadataJSON(_ assets: [Asset], to fileURL: URL) -> Bool {
+        let formatter = ISO8601DateFormatter()
         let payload = assets.map { a -> [String: Any] in
             [
                 "assetId": a.id, "filename": a.filename, "rating": a.rating,
                 "flag": a.flag.rawValue, "colorLabel": a.colorLabel?.rawValue ?? NSNull(),
                 "keywords": a.keywords, "title": a.title, "caption": a.caption,
-                "captureDate": ISO8601DateFormatter().string(from: a.date),
+                "captureDate": formatter.string(from: a.date),
+                "fileModifiedAt": jsonDate(a.fileModifiedAt, formatter: formatter),
+                "fileCreatedAt": jsonDate(a.fileCreatedAt, formatter: formatter),
                 "camera": a.camera, "lens": a.lens,
                 "originalPath": a.localPath ?? a.thumb,
             ]
@@ -105,7 +108,7 @@ enum ExportService {
     static func exportMetadataCSV(_ assets: [Asset], to fileURL: URL) -> Bool {
         let header = [
             "assetId", "filename", "rating", "flag", "colorLabel", "keywords", "title", "caption",
-            "captureDate", "camera", "lens", "originalPath",
+            "captureDate", "fileModifiedAt", "fileCreatedAt", "camera", "lens", "originalPath",
         ]
         let formatter = ISO8601DateFormatter()
         let rows = assets.map { a in
@@ -119,6 +122,8 @@ enum ExportService {
                 a.title,
                 a.caption,
                 formatter.string(from: a.date),
+                a.fileModifiedAt.map { formatter.string(from: $0) } ?? "",
+                a.fileCreatedAt.map { formatter.string(from: $0) } ?? "",
                 a.camera,
                 a.lens,
                 a.localPath ?? a.thumb,
@@ -202,6 +207,10 @@ enum ExportService {
             if fm.fileExists(atPath: path) { return URL(fileURLWithPath: path) }
         }
         return nil
+    }
+
+    private static func jsonDate(_ date: Date?, formatter: ISO8601DateFormatter) -> Any {
+        date.map { formatter.string(from: $0) } ?? NSNull()
     }
 
     private static func csvField(_ value: String) -> String {

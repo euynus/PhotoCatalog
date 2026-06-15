@@ -37,6 +37,8 @@ struct Asset: Identifiable, Equatable, Sendable {
     let iso: Int
     let colorSpace: String
     var fileMB: Double
+    var fileModifiedAt: Date? = nil
+    var fileCreatedAt: Date? = nil
 
     // user metadata (mutable)
     var rating: Int

@@ -32,6 +32,12 @@ enum PipelineCheck {
                          to: src.appendingPathComponent("IMG_0000_copy.jpg"))
         // a non-image file that must be ignored
         try? "not an image".data(using: .utf8)?.write(to: src.appendingPathComponent("notes.txt"))
+        let fixedModifiedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let fixedCreatedAt = Date(timeIntervalSince1970: 1_600_000_000)
+        try? fm.setAttributes([
+            .modificationDate: fixedModifiedAt,
+            .creationDate: fixedCreatedAt,
+        ], ofItemAtPath: src.appendingPathComponent("IMG_0000.jpg").path)
 
         // 2. scanner
         let scanned = FileScanner.scan(src)
@@ -63,6 +69,10 @@ enum PipelineCheck {
         var progressSnapshots: [ImportProgress] = []
         let assets = coordinator.importFolder(src) { progressSnapshots.append($0) }
         check(assets.count == 7, "imported 7 assets — got \(assets.count)")
+        let timestampedAsset = assets.first { $0.filename == "IMG_0000.jpg" }
+        check(timestampedAsset?.fileModifiedAt.map { abs($0.timeIntervalSince(fixedModifiedAt)) < 1 } == true
+              && timestampedAsset?.fileCreatedAt != nil,
+              "file mtime/ctime read from filesystem")
         check(progressSnapshots.first?.total == 7 && progressSnapshots.last?.processed == 7,
               "import progress reported total + processed counts")
         check(progressSnapshots.contains { $0.latestAsset != nil }, "import progress reported latest processed asset")
@@ -137,6 +147,10 @@ enum PipelineCheck {
         try? store.upsert(assets)
         let reloaded = (try? store.loadAssets()) ?? []
         check(reloaded.count == 7, "reloaded 7 assets from SQLite — got \(reloaded.count)")
+        let reloadedTimestamped = reloaded.first { $0.filename == "IMG_0000.jpg" }
+        check(reloadedTimestamped?.fileModifiedAt.map { abs($0.timeIntervalSince(fixedModifiedAt)) < 1 } == true
+              && reloadedTimestamped?.fileCreatedAt != nil,
+              "file mtime/ctime persisted")
         let album = Album(id: "album-test", name: "Pipeline Picks",
                           assetIds: Array(assets.prefix(3).map(\.id)))
         try? store.saveAlbum(album)
