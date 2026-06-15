@@ -33,6 +33,7 @@ enum IconName {
         "close": "xmark",
         "chevronR": "chevron.right",
         "chevronD": "chevron.down",
+        "chevronU": "chevron.up",
         "chevronL": "chevron.left",
         "info": "info.circle",
         "aperture": "camera.aperture",

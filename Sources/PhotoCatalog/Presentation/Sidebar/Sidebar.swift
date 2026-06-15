@@ -70,7 +70,7 @@ struct Sidebar: View {
 
     private var folderSection: some View {
         SidebarSection(title: "文件夹") {
-            ForEach(app.folders) { f in
+            ForEach(app.orderedFolders) { f in
                 let count = ready.filter { $0.folderId == f.id }.count
                 row("folder", folderColor(f.status), f.name,
                     folderStatusText(f.status) ?? "\(count)", .folder, f.id, f.name)

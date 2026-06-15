@@ -83,6 +83,7 @@ final class AppState: ObservableObject {
     private static let recentCatalogsKey = "pc_recentCatalogs"
     private static let lastAutoBackupKey = "pc_lastAutoBackupAt"
     private static let pinnedSidebarItemsKey = "pc_pinnedSidebarItems"
+    private static let sourcePrioritiesKey = "pc_sourcePriorities"
 
     // ----- selection / view -----
     @Published var selection = Selection(type: .lib, id: "all", name: "全部照片")
@@ -94,6 +95,7 @@ final class AppState: ObservableObject {
     @Published var showInfo = true
     @Published var insTab = "org"
     @Published private var pinnedSidebarItems = AppState.loadPinnedSidebarItems()
+    @Published private var sourcePriorities = AppState.loadSourcePriorities()
     private var anchorId: String?
 
     // ----- filters / sort -----
@@ -774,7 +776,7 @@ final class AppState: ObservableObject {
     // ---------- FSEvents incremental watch (§12.8) ----------
     private func refreshWatcher() {
         watcher?.stop()
-        let paths = watchedRoots.map { $0.path }
+        let paths = prioritizedWatchedRoots(watchedRoots).map { $0.path }
         guard !paths.isEmpty else { watcher = nil; return }
         let w = FileWatcher(paths: paths) { [weak self] _ in self?.incrementalRescan() }
         w.start()
@@ -783,7 +785,7 @@ final class AppState: ObservableObject {
 
     private func incrementalRescan() {
         guard let coordinator, let store else { return }
-        let roots = watchedRoots
+        let roots = prioritizedWatchedRoots(watchedRoots)
         var knownAssetsByPath: [String: Asset] = [:]
         for asset in assets where !asset.deleted {
             if let path = asset.localPath {
@@ -827,6 +829,28 @@ final class AppState: ObservableObject {
                 }
             }
             self.detectMissingRealAssets()
+        }
+    }
+
+    private func prioritizedWatchedRoots(_ roots: [URL]) -> [URL] {
+        guard let store, let sourceRoots = try? store.loadSourceRoots() else { return roots }
+        var idByPath: [String: String] = [:]
+        for root in sourceRoots {
+            idByPath[URL(fileURLWithPath: root.pathHint).standardizedFileURL.path] = root.id
+        }
+        var originalOrder: [String: Int] = [:]
+        for (index, root) in roots.enumerated() where originalOrder[root.standardizedFileURL.path] == nil {
+            originalOrder[root.standardizedFileURL.path] = index
+        }
+        return roots.sorted { lhs, rhs in
+            let leftPath = lhs.standardizedFileURL.path
+            let rightPath = rhs.standardizedFileURL.path
+            let leftId = idByPath[leftPath]
+            let rightId = idByPath[rightPath]
+            let leftPriority = leftId.flatMap { sourcePriorities[$0] } ?? (originalOrder[leftPath] ?? 0)
+            let rightPriority = rightId.flatMap { sourcePriorities[$0] } ?? (originalOrder[rightPath] ?? 0)
+            if leftPriority != rightPriority { return leftPriority < rightPriority }
+            return (originalOrder[leftPath] ?? 0) < (originalOrder[rightPath] ?? 0)
         }
     }
 
@@ -1316,6 +1340,32 @@ final class AppState: ObservableObject {
         pinnedSidebarItems.compactMap(resolvePinnedSidebarItem)
     }
 
+    var orderedFolders: [Folder] {
+        let originalOrder = Dictionary(uniqueKeysWithValues: folders.enumerated().map { ($0.element.id, $0.offset) })
+        return folders.sorted { lhs, rhs in
+            let leftPriority = sourcePriorities[lhs.id] ?? (originalOrder[lhs.id] ?? 0)
+            let rightPriority = sourcePriorities[rhs.id] ?? (originalOrder[rhs.id] ?? 0)
+            if leftPriority != rightPriority { return leftPriority < rightPriority }
+            return (originalOrder[lhs.id] ?? 0) < (originalOrder[rhs.id] ?? 0)
+        }
+    }
+
+    var canPromoteSelectedSource: Bool {
+        selectedFolderIsCatalogSource && orderedFolders.first?.id != selection.id
+    }
+
+    var canDemoteSelectedSource: Bool {
+        selectedFolderIsCatalogSource && orderedFolders.last?.id != selection.id
+    }
+
+    func promoteSelectedSource() {
+        moveSelectedSourcePriority(up: true)
+    }
+
+    func demoteSelectedSource() {
+        moveSelectedSourcePriority(up: false)
+    }
+
     var canPinCurrentSelection: Bool {
         selection.type != .lib && currentPinnedSidebarItem() != nil
     }
@@ -1366,6 +1416,32 @@ final class AppState: ObservableObject {
         if let data = try? JSONEncoder().encode(pinnedSidebarItems) {
             UserDefaults.standard.set(data, forKey: Self.pinnedSidebarItemsKey)
         }
+    }
+
+    private static func loadSourcePriorities() -> [String: Int] {
+        guard let data = UserDefaults.standard.data(forKey: sourcePrioritiesKey),
+              let priorities = try? JSONDecoder().decode([String: Int].self, from: data) else {
+            return [:]
+        }
+        return priorities
+    }
+
+    private func saveSourcePriorities() {
+        if let data = try? JSONEncoder().encode(sourcePriorities) {
+            UserDefaults.standard.set(data, forKey: Self.sourcePrioritiesKey)
+        }
+    }
+
+    private func moveSelectedSourcePriority(up: Bool) {
+        var ordered = orderedFolders
+        guard let index = ordered.firstIndex(where: { $0.id == selection.id }) else { return }
+        let target = up ? index - 1 : index + 1
+        guard ordered.indices.contains(target) else { return }
+        ordered.swapAt(index, target)
+        sourcePriorities = Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($0.element.id, $0.offset) })
+        saveSourcePriorities()
+        refreshWatcher()
+        push(up ? "已提高源优先级" : "已降低源优先级", "sort")
     }
 
     private func currentPinnedSidebarItem() -> PinnedSidebarItem? {
@@ -1632,6 +1708,8 @@ final class AppState: ObservableObject {
         }
         try? store?.removeSourceRoot(id: folderId)
         folders.removeAll { $0.id == folderId }
+        sourcePriorities.removeValue(forKey: folderId)
+        saveSourcePriorities()
         watchedRoots.removeAll { root in
             indexed.contains { $0.localPath?.hasPrefix(root.path + "/") == true }
         }

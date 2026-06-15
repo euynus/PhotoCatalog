@@ -82,6 +82,14 @@ struct Titlebar: View {
                            active: app.isCurrentSelectionPinned,
                            action: { app.togglePinCurrentSelection() })
             }
+            if app.canPromoteSelectedSource {
+                ToolButton(icon: "chevronU", label: "提高源优先级",
+                           action: { app.promoteSelectedSource() })
+            }
+            if app.canDemoteSelectedSource {
+                ToolButton(icon: "chevronD", label: "降低源优先级",
+                           action: { app.demoteSelectedSource() })
+            }
             if app.canReauthorizeSelectedSource {
                 ToolButton(icon: "link", label: "重新授权源",
                            action: { app.reauthorizeSelectedSource() })
