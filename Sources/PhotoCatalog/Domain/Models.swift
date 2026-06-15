@@ -154,6 +154,36 @@ struct Filters: Equatable {
             + (status != "any" ? 1 : 0)
     }
     var isEmpty: Bool { activeCount == 0 }
+
+    func smartConditions(search: String) -> [SmartCondition] {
+        var conditions: [SmartCondition] = []
+        if minRating > 0 {
+            conditions.append(SmartCondition(field: "rating", op: ">=", value: "\(minRating)"))
+        }
+        if flag != "any" {
+            conditions.append(SmartCondition(field: "flag", op: "=", value: flag))
+        }
+        if color != "any" {
+            conditions.append(SmartCondition(field: "colorLabel", op: "=", value: color))
+        }
+        if type != "any" {
+            conditions.append(SmartCondition(field: "type", op: "=", value: type))
+        }
+        if date != "any" {
+            conditions.append(SmartCondition(field: "datePreset", op: "=", value: date))
+        }
+        if gps != "any" {
+            conditions.append(SmartCondition(field: "gps", op: "=", value: gps))
+        }
+        if status != "any" {
+            conditions.append(SmartCondition(field: "status", op: "=", value: status))
+        }
+        let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !q.isEmpty {
+            conditions.append(SmartCondition(field: "search", op: "包含", value: q))
+        }
+        return conditions
+    }
 }
 
 /// Sort descriptor for the content header.

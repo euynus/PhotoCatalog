@@ -67,6 +67,10 @@ struct Titlebar: View {
             }
 
             searchField
+            if app.canSaveCurrentFilter {
+                ToolButton(icon: "sparkles", label: "保存筛选为智能相册",
+                           action: { app.saveCurrentFilterAsSmartAlbum() })
+            }
 
             sizeSlider
 

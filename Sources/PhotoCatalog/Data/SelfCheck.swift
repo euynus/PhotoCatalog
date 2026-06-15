@@ -47,6 +47,21 @@ enum SelfCheck {
         assert(DemoData.duplicateGroups.count == 3, "duplicate groups")
         let filters = Filters(minRating: 3, date: "thisYear", gps: "yes", status: "missing")
         assert(filters.activeCount == 4, "extended filter active count")
+        let savedFilterConditions = filters.smartConditions(search: "IMG")
+        assert(savedFilterConditions.map(\.field) == ["rating", "datePreset", "gps", "status", "search"],
+               "saved filter condition fields")
+        let savedFilterRule = SmartRule(match: "all", conditions: savedFilterConditions)
+        let savedIds = Set(SmartMatcher.match(ready, savedFilterRule).map(\.id))
+        let expectedIds = Set(ready.filter { asset in
+            asset.rating >= 3
+                && asset.status == .missing
+                && !(asset.gps.0 == 0 && asset.gps.1 == 0)
+                && Calendar.current.component(.year, from: asset.date) == Calendar.current.component(.year, from: .now)
+                && [asset.filename, asset.camera, asset.lens, asset.title, asset.caption, asset.location]
+                    .joined(separator: " ")
+                    .localizedStandardContains("IMG")
+        }.map(\.id))
+        assert(savedIds == expectedIds, "saved filter rule matches converted conditions")
         print("--- all structural assertions passed ---")
     }
 }

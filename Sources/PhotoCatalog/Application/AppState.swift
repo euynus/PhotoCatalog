@@ -1394,6 +1394,29 @@ final class AppState: ObservableObject {
     func setSearch(_ s: String) { search = s; ensurePrimaryValid() }
     func setSort(_ s: Sort) { sort = s }
 
+    var canSaveCurrentFilter: Bool {
+        !filters.smartConditions(search: search).isEmpty
+    }
+
+    func saveCurrentFilterAsSmartAlbum() {
+        let conditions = filters.smartConditions(search: search)
+        guard !conditions.isEmpty else {
+            push("没有可保存的筛选条件", "warning")
+            return
+        }
+        guard let name = promptAlbumName(defaultName: defaultFilterSmartAlbumName()) else { return }
+
+        let rule = SmartRule(match: "all", conditions: conditions)
+        let count = SmartMatcher.match(assets.filter { !$0.deleted }, rule).count
+        saveSmart(name: name, rule: rule, count: count)
+    }
+
+    private func defaultFilterSmartAlbumName() -> String {
+        let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !q.isEmpty { return "筛选 · \(q)" }
+        return "当前筛选"
+    }
+
     private func ensurePrimaryValid() {
         let ids = list
         guard !ids.isEmpty else { return }

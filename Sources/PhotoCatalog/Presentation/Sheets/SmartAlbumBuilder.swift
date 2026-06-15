@@ -133,6 +133,8 @@ struct SmartAlbumBuilder: View {
         case .flag: conditions[i].value = "pick"
         case .type: conditions[i].value = "RAW"
         case .status: conditions[i].value = "ready"
+        case .datePreset: conditions[i].value = "thisYear"
+        case .gps: conditions[i].value = "yes"
         case .year: conditions[i].value = "2026"
         case .color: conditions[i].value = "red"
         case .text: conditions[i].value = ""
@@ -152,6 +154,10 @@ struct SmartAlbumBuilder: View {
             SASelect(value: conditions[i].value, options: ["RAW", "HEIC", "ARW", "CR3", "NEF", "RAF", "DNG"].map { ($0, $0) }) { conditions[i].value = $0 }
         case .status:
             SASelect(value: conditions[i].value, options: [("ready", "可访问"), ("offline", "离线"), ("missing", "缺失")]) { conditions[i].value = $0 }
+        case .datePreset:
+            SASelect(value: conditions[i].value, options: [("thisMonth", "本月"), ("thisYear", "今年")]) { conditions[i].value = $0 }
+        case .gps:
+            SASelect(value: conditions[i].value, options: [("yes", "有 GPS"), ("no", "无 GPS")]) { conditions[i].value = $0 }
         case .year:
             TextField("", text: Binding(get: { conditions[i].value }, set: { conditions[i].value = $0 }))
                 .textFieldStyle(.plain).font(.system(size: 12.5))

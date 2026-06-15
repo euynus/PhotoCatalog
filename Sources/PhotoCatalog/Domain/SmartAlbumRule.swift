@@ -25,7 +25,7 @@ struct SmartRule: Equatable, Codable, Sendable {
 
 /// Field descriptor for the rule builder UI.
 struct SmartField {
-    enum Input { case rating, flag, color, text, type, year, status }
+    enum Input { case rating, flag, color, text, type, year, status, datePreset, gps }
     let key: String
     let label: String
     let ops: [String]
@@ -42,7 +42,10 @@ enum SmartFields {
         SmartField(key: "camera", label: "相机", ops: ["包含", "="], input: .text),
         SmartField(key: "type", label: "文件类型", ops: ["="], input: .type),
         SmartField(key: "captureYear", label: "拍摄年份", ops: ["=", ">=", "<="], input: .year),
+        SmartField(key: "datePreset", label: "日期范围", ops: ["="], input: .datePreset),
+        SmartField(key: "gps", label: "GPS", ops: ["="], input: .gps),
         SmartField(key: "status", label: "文件状态", ops: ["="], input: .status),
+        SmartField(key: "search", label: "全文搜索", ops: ["包含"], input: .text),
     ]
     static func field(_ key: String) -> SmartField { all.first { $0.key == key } ?? all[0] }
 }
@@ -73,8 +76,23 @@ enum SmartMatcher {
             if c.op == ">=" { return y >= v }
             if c.op == "<=" { return y <= v }
             return y == v
+        case "datePreset":
+            let current = Calendar.current.dateComponents([.year, .month], from: .now)
+            let assetDate = Calendar.current.dateComponents([.year, .month], from: a.date)
+            if c.value == "thisYear" { return assetDate.year == current.year }
+            if c.value == "thisMonth" {
+                return assetDate.year == current.year && assetDate.month == current.month
+            }
+            return true
+        case "gps":
+            let hasGPS = !(a.gps.0 == 0 && a.gps.1 == 0)
+            return c.value == "yes" ? hasGPS : !hasGPS
         case "status":
             return a.status.rawValue == c.value
+        case "search":
+            let haystack = ([a.filename, a.camera, a.lens, a.title, a.caption, a.location]
+                + a.keywords).joined(separator: " ")
+            return haystack.localizedStandardContains(c.value)
         default:
             return true
         }
