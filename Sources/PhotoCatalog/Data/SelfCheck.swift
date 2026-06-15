@@ -83,6 +83,16 @@ enum SelfCheck {
         let suggestedKeywords = KeywordService.suggestions(for: "日本", pool: hierarchicalKeywords,
                                                            excluding: ["旅行/日本"])
         assert(suggestedKeywords == ["旅行/日本/东京"], "keyword autocomplete uses current keyword pool")
+        let stackGroup = DuplicateGroup(id: "stack-test", method: "perceptualHash",
+                                        score: 0.9, items: Array(ready.prefix(3)))
+        let stacks = PhotoStackService.stacks(from: [stackGroup])
+        let collapsedStackIds = Set(stacks.map(\.id))
+        let collapsedAssets = PhotoStackService.visibleAssets(ready, stacks: stacks,
+                                                              collapsedStackIds: collapsedStackIds)
+        let stackedIds = Set(stackGroup.items.map(\.id))
+        assert(stacks.first?.count == 3
+               && collapsedAssets.filter { stackedIds.contains($0.id) }.count == 1,
+               "photo stacks collapse to one visible representative")
         let pinned = PinnedSidebarItem(type: .folder, selectionId: "fld-tokyo", name: "2026 东京之旅")
         let pinnedData = try? JSONEncoder().encode([pinned])
         let restoredPins = pinnedData.flatMap { try? JSONDecoder().decode([PinnedSidebarItem].self, from: $0) }

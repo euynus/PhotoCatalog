@@ -29,10 +29,14 @@ struct GridView: View {
                 ScrollView {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: gap) {
                         ForEach(list) { asset in
+                            let stack = app.stackInfo(for: asset)
                             GridCell(asset: asset, size: size,
                                      selected: app.selectedIds.contains(asset.id),
                                      isPrimary: asset.id == app.primaryId,
-                                     showInfo: app.showInfo)
+                                     showInfo: app.showInfo,
+                                     stackCount: stack?.count,
+                                     stackCollapsed: stack?.collapsed == true,
+                                     onToggleStack: { app.toggleStack(containing: asset.id) })
                                 .onTapGesture(count: 2) { app.openLoupe(asset.id) }
                                 .onTapGesture {
                                     let f = NSEvent.modifierFlags
@@ -56,6 +60,9 @@ struct GridCell: View {
     let selected: Bool
     let isPrimary: Bool
     let showInfo: Bool
+    let stackCount: Int?
+    let stackCollapsed: Bool
+    let onToggleStack: () -> Void
     @State private var hover = false
 
     private var frameHeight: CGFloat { (size * 0.72).rounded() }
@@ -94,7 +101,13 @@ struct GridCell: View {
                 }.padding(5)
             }
             .overlay(alignment: .topTrailing) {
-                if asset.colorLabel != nil { ColorDot(label: asset.colorLabel, size: 11).padding(6) }
+                VStack(alignment: .trailing, spacing: 5) {
+                    if asset.colorLabel != nil { ColorDot(label: asset.colorLabel, size: 11) }
+                    if let stackCount {
+                        StackBadge(count: stackCount, collapsed: stackCollapsed, action: onToggleStack)
+                    }
+                }
+                .padding(6)
             }
             .overlay(alignment: .bottomLeading) {
                 if asset.flag != .none {
@@ -129,6 +142,31 @@ struct GridCell: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 2)
+    }
+}
+
+private struct StackBadge: View {
+    let count: Int
+    let collapsed: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Icon("album", size: 10, weight: .semibold)
+                Text("\(count)")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(collapsed ? Color.black.opacity(0.82) : Theme.text2)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 3)
+            .background(collapsed ? Theme.accent : Color.black.opacity(0.58))
+            .clipShape(Capsule())
+            .overlay(Capsule().strokeBorder(Color.white.opacity(collapsed ? 0.18 : 0.12), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .help(collapsed ? "展开堆栈" : "折叠堆栈")
     }
 }
 

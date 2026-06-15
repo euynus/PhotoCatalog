@@ -139,6 +139,14 @@ struct DuplicateGroup: Identifiable {
     let items: [Asset]
 }
 
+struct PhotoStack: Identifiable, Equatable, Sendable {
+    let id: String
+    let method: String
+    let assetIds: [String]
+
+    var count: Int { assetIds.count }
+}
+
 enum DuplicateResolutionAction {
     case removeFromCatalog
     case moveToTrash

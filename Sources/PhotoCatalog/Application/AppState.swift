@@ -20,6 +20,7 @@ final class AppState: ObservableObject {
     @Published var importing = false
     @Published var importRun: ImportRun?
     @Published var duplicateGroupsCache: [DuplicateGroup] = DemoData.duplicateGroups
+    @Published private var collapsedStackIds: Set<String> = []
 
     // ----- settings (PRD §17) -----
     @Published var importMode: ImportMode =
@@ -1423,14 +1424,21 @@ final class AppState: ObservableObject {
     /// Recompute duplicates off the main thread (dHash reads thumbnails from disk).
     func recomputeDuplicates() {
         let live = assets.filter { !$0.isDemo && !$0.deleted }
-        guard !live.isEmpty else { duplicateGroupsCache = DemoData.duplicateGroups; return }
+        guard !live.isEmpty else {
+            duplicateGroupsCache = DemoData.duplicateGroups
+            collapsedStackIds = []
+            return
+        }
         Task { [weak self, live] in
             let groups = await Task.detached(priority: .utility) {
                 HashService.exactDuplicateGroups(live)
                     + HashService.suspectedDuplicateGroups(live)
                     + PerceptualHash.similarGroups(live)
             }.value
-            self?.duplicateGroupsCache = groups
+            guard let self else { return }
+            self.duplicateGroupsCache = groups
+            let validStackIds = Set(PhotoStackService.stacks(from: groups).map(\.id))
+            self.collapsedStackIds.formIntersection(validStackIds)
         }
     }
 
@@ -1526,6 +1534,34 @@ final class AppState: ObservableObject {
     var folderTree: [FolderTreeItem] {
         FolderTreeService.build(sourceFolders: orderedFolders, assets: assets,
                                 sourceRootPaths: sourceRootPathsById)
+    }
+
+    private var photoStacks: [PhotoStack] {
+        PhotoStackService.stacks(from: duplicateGroupsCache)
+    }
+
+    func stackInfo(for asset: Asset) -> (count: Int, collapsed: Bool)? {
+        guard let stack = PhotoStackService.stack(containing: asset.id, in: photoStacks) else {
+            return nil
+        }
+        return (stack.count, collapsedStackIds.contains(stack.id))
+    }
+
+    func toggleStack(containing assetId: String) {
+        guard let stack = PhotoStackService.stack(containing: assetId, in: photoStacks) else { return }
+        if collapsedStackIds.contains(stack.id) {
+            collapsedStackIds.remove(stack.id)
+            push("已展开堆栈")
+        } else {
+            collapsedStackIds.insert(stack.id)
+            push("已折叠 \(stack.count) 张照片为堆栈")
+        }
+        normalizeSelectionToVisibleList()
+    }
+
+    func toggleStackForPrimary() {
+        guard let primaryId else { return }
+        toggleStack(containing: primaryId)
     }
 
     func countForFolderTreeItem(_ item: FolderTreeItem) -> Int {
@@ -1745,7 +1781,7 @@ final class AppState: ObservableObject {
                 return compare(a.fileMB, b.fileMB, dir)
             }
         }
-        return l
+        return PhotoStackService.visibleAssets(l, stacks: photoStacks, collapsedStackIds: collapsedStackIds)
     }
 
     private func compare(_ a: Double, _ b: Double, _ dir: Int) -> Bool {
@@ -1845,6 +1881,27 @@ final class AppState: ObservableObject {
         primaryId = ids.first { selectedIds.contains($0) }
         anchorId = primaryId
         return true
+    }
+
+    private func normalizeSelectionToVisibleList() {
+        let ids = list.map(\.id)
+        guard !ids.isEmpty else {
+            selectedIds = []
+            primaryId = nil
+            anchorId = nil
+            return
+        }
+        let visible = Set(ids)
+        selectedIds.formIntersection(visible)
+        if let primaryId, visible.contains(primaryId) {
+            if selectedIds.isEmpty { selectedIds = [primaryId] }
+            anchorId = primaryId
+            return
+        }
+        let next = ids.first { selectedIds.contains($0) } ?? ids[0]
+        primaryId = next
+        selectedIds = [next]
+        anchorId = next
     }
 
     func openLoupe(_ id: String) {
@@ -2272,6 +2329,8 @@ final class AppState: ObservableObject {
             view = (view == .loupe) ? .grid : .loupe
         case "c":
             enterCompare()
+        case "s":
+            toggleStackForPrimary()
         case "up", "down", "left", "right":
             moveSelection(key)
         case "delete", "backspace":
