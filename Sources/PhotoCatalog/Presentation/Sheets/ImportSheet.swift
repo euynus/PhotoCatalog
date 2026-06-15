@@ -233,6 +233,7 @@ struct ImportSheet: View {
 }
 
 // shared sheet helpers
+@MainActor
 func sheetClose(_ action: @escaping () -> Void) -> some View {
     Button(action: action) {
         Icon("close", size: 15).foregroundStyle(Theme.text2)
@@ -240,6 +241,7 @@ func sheetClose(_ action: @escaping () -> Void) -> some View {
     }.buttonStyle(.plain)
 }
 
+@MainActor
 func ghostButton(_ icon: String?, _ label: String, danger: Bool = false, small: Bool = false,
                  action: @escaping () -> Void) -> some View {
     Button(action: action) {
