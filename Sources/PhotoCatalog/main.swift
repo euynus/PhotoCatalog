@@ -9,4 +9,8 @@ if CommandLine.arguments.contains("--selfcheck") {
     exit(0)
 }
 
+if CommandLine.arguments.contains("--pipeline") {
+    PipelineCheck.run()   // calls exit() itself
+}
+
 PhotoCatalogApp.main()
