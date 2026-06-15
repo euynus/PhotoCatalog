@@ -528,8 +528,50 @@ final class AppState: ObservableObject {
     func setTitle(_ t: String) { mutate { $0.title = t } }
     func setCaption(_ c: String) { mutate { $0.caption = c } }
 
+    func revealInFinder(_ id: String) {
+        guard let asset = assets.first(where: { $0.id == id }), let path = asset.localPath else {
+            push("演示照片没有本地原件", "warning")
+            return
+        }
+        let url = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            push("原件不存在，请先重新定位", "warning")
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
     func locate(_ id: String) {
-        mutateAsset(id) { $0.status = .ready }
+        guard let asset = assets.first(where: { $0.id == id }) else { return }
+        guard !asset.isDemo else {
+            push("演示照片没有本地原件", "warning")
+            return
+        }
+
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "重新定位"
+        panel.message = "选择移动后的原件文件，或选择包含该原件的新文件夹。"
+        guard panel.runModal() == .OK, let selected = panel.url else { return }
+
+        guard let replacement = RelocationService.replacement(for: asset, selected: selected) else {
+            push("未找到匹配的原件", "warning")
+            return
+        }
+
+        let attrs = try? FileManager.default.attributesOfItem(atPath: replacement.path)
+        let size = (attrs?[.size] as? Int64) ?? 0
+        mutateAsset(id) {
+            $0.localPath = replacement.path
+            $0.filename = replacement.lastPathComponent
+            $0.fileMB = Double(size) / (1024 * 1024)
+            $0.quickHash = HashService.quickHash(replacement, fileSize: size)
+            $0.contentHash = HashService.contentHash(replacement)
+            $0.status = .ready
+        }
+        recomputeDuplicates()
         push("已重新定位原件", "link")
     }
 

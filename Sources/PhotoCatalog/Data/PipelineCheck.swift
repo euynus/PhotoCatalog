@@ -150,13 +150,26 @@ enum PipelineCheck {
             check(back != nil && back?.faces == va.faces, "auto-tagged asset persisted (faces column)")
         } else { check(false, "auto-tag import") }
 
-        // 17. missing detection after deleting an original
+        // 17. relocated-original matching from a user-selected folder
+        if let sample = assets.first, let path = sample.localPath {
+            let relocated = tmp.appendingPathComponent("relocated")
+            try? fm.createDirectory(at: relocated, withIntermediateDirectories: true)
+            let copy = relocated.appendingPathComponent(sample.filename)
+            try? fm.copyItem(at: URL(fileURLWithPath: path), to: copy)
+            let found = RelocationService.replacement(for: sample, selected: relocated)
+            let foundPath = found?.standardizedFileURL.path
+            let copyPath = copy.standardizedFileURL.path
+            check(foundPath == copyPath,
+                  "relocation matched moved original by folder selection - found \(found?.path ?? "nil"), expected \(copy.path)")
+        } else { check(false, "relocation sample asset") }
+
+        // 18. missing detection after deleting an original
         if let p = assets.first(where: { fm.fileExists(atPath: $0.localPath ?? "") })?.localPath {
             try? fm.removeItem(at: URL(fileURLWithPath: p))
             check(!fm.fileExists(atPath: p), "simulated missing original (file removed)")
         }
 
-        // 18. offline external-volume classification (§6.4 ORG-007)
+        // 19. offline external-volume classification (§6.4 ORG-007)
         check(VolumeMonitor.volumeRoot(of: "/Volumes/Photos/2026/a.jpg") == "/Volumes/Photos",
               "external volume root extracted")
         check(VolumeMonitor.volumeRoot(of: "/Users/me/Pictures/a.jpg") == nil, "internal path has no volume root")

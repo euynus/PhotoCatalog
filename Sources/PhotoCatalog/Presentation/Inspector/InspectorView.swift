@@ -123,7 +123,7 @@ struct InspectorView: View {
             }())
             VStack(alignment: .leading, spacing: 5) {
                 Text("原件路径").font(.system(size: 11)).foregroundStyle(Theme.text3)
-                Text("/Volumes/Photos/\(a.folderName)/\(a.filename)")
+                Text(a.localPath ?? "演示照片无本地原件")
                     .font(.system(size: 11)).foregroundStyle(Theme.text2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 9).padding(.vertical, 7)
@@ -131,7 +131,9 @@ struct InspectorView: View {
                     .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line, lineWidth: 1))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 HStack(spacing: 6) {
-                    pathButton("folder", "在访达中显示", warn: false) { app.push("已在访达中显示", "folder") }
+                    pathButton("folder", "在访达中显示", warn: false, disabled: a.localPath == nil) {
+                        app.revealInFinder(a.id)
+                    }
                     if a.status == .missing {
                         pathButton("link", "重新定位", warn: true) { app.locate(a.id) }
                     }
@@ -140,13 +142,17 @@ struct InspectorView: View {
         }
     }
 
-    private func pathButton(_ icon: String, _ label: String, warn: Bool, action: @escaping () -> Void) -> some View {
+    private func pathButton(_ icon: String, _ label: String, warn: Bool, disabled: Bool = false,
+                            action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 5) { Icon(icon, size: 13); Text(label).font(.system(size: 11.5)) }
                 .foregroundStyle(warn ? Theme.accent : Theme.text2)
                 .padding(.horizontal, 9).padding(.vertical, 5)
                 .background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: 5))
-        }.buttonStyle(.plain)
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.45 : 1)
     }
 
     // ---------- Metadata ----------
