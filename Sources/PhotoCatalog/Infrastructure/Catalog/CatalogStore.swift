@@ -4,6 +4,15 @@
 // ============================================================
 import Foundation
 
+struct SourceRootRecord: Identifiable {
+    let id: String
+    let displayName: String
+    let pathHint: String
+    let bookmarkData: Data?
+    let managementMode: String
+    let status: String
+}
+
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
     let packageURL: URL
@@ -143,6 +152,29 @@ final class CatalogStore: @unchecked Sendable {
         """, [.text(id), .text(displayName), .text(path),
               bookmark.map { SQLValue.blob($0) } ?? .null, .text("referenced"),
               .text("online"), .text(ISO8601DateFormatter().string(from: Date()))])
+    }
+
+    func loadSourceRoots() throws -> [SourceRootRecord] {
+        try db.query("""
+        SELECT id, display_name, path_hint, bookmark_data, management_mode, status
+        FROM source_roots
+        ORDER BY created_at ASC;
+        """).compactMap { row in
+            guard let id = row.text("id"),
+                  let displayName = row.text("display_name"),
+                  let pathHint = row.text("path_hint") else { return nil }
+            return SourceRootRecord(
+                id: id,
+                displayName: displayName,
+                pathHint: pathHint,
+                bookmarkData: row.blob("bookmark_data"),
+                managementMode: row.text("management_mode") ?? "referenced",
+                status: row.text("status") ?? "unknown")
+        }
+    }
+
+    func updateSourceRootStatus(id: String, status: String) throws {
+        try db.run("UPDATE source_roots SET status=? WHERE id=?;", [.text(status), .text(id)])
     }
 
     // ---------- backup (§6.12) ----------

@@ -37,6 +37,7 @@ final class AppState: ObservableObject {
     private var coordinator: ImportCoordinator?
     private var watcher: FileWatcher?
     private var watchedRoots: [URL] = []
+    private var securityScopedRoots: [URL] = []
     private var volumeMonitor: VolumeMonitor?
 
     // ----- selection / view -----
@@ -81,6 +82,12 @@ final class AppState: ObservableObject {
         if let id = first?.id { selectedIds = [id]; anchorId = id }
     }
 
+    deinit {
+        for url in securityScopedRoots {
+            url.stopAccessingSecurityScopedResource()
+        }
+    }
+
     // ---------- catalog open / load ----------
     private func loadExistingCatalog() {
         let url = CatalogStore.defaultURL
@@ -88,6 +95,7 @@ final class AppState: ObservableObject {
               let s = try? CatalogStore(packageURL: url) else { return }
         store = s
         coordinator = ImportCoordinator(store: s)
+        restoreSourceRoots(from: s)
         let real = ((try? s.loadAssets()) ?? []).filter { !$0.isDemo && !$0.deleted }
         guard !real.isEmpty else { return }
         // missing-file detection (§6.4 ORG-003)
@@ -101,6 +109,51 @@ final class AppState: ObservableObject {
             folders.append(Folder(id: fid, name: items.first?.folderName ?? fid))
         }
         recomputeDuplicates()
+    }
+
+    private func restoreSourceRoots(from store: CatalogStore) {
+        guard let roots = try? store.loadSourceRoots() else { return }
+        for root in roots {
+            let resolved = resolveSourceRoot(root)
+            try? store.updateSourceRootStatus(id: root.id, status: resolved.status)
+
+            if !folders.contains(where: { $0.id == root.id }) {
+                folders.append(Folder(id: root.id, name: root.displayName))
+            }
+            if root.managementMode == "referenced",
+               resolved.status == "online",
+               let url = resolved.url,
+               !watchedRoots.contains(url) {
+                watchedRoots.append(url)
+            }
+        }
+        refreshWatcher()
+    }
+
+    private func resolveSourceRoot(_ root: SourceRootRecord) -> (url: URL?, status: String) {
+        if let bookmark = root.bookmarkData {
+            guard let resolved = FileAccessService.resolveBookmark(bookmark) else {
+                return fallbackSourceRoot(root, preferredStatus: "permissionLost")
+            }
+            guard !resolved.isStale else {
+                return (resolved.url, "permissionLost")
+            }
+            let ok = resolved.url.startAccessingSecurityScopedResource()
+            if ok { securityScopedRoots.append(resolved.url) }
+            guard FileManager.default.fileExists(atPath: resolved.url.path) else {
+                return (resolved.url, VolumeMonitor.status(forInaccessible: resolved.url.path).rawValue)
+            }
+            return (resolved.url, "online")
+        }
+        return fallbackSourceRoot(root, preferredStatus: nil)
+    }
+
+    private func fallbackSourceRoot(_ root: SourceRootRecord, preferredStatus: String?) -> (url: URL?, status: String) {
+        let url = URL(fileURLWithPath: root.pathHint)
+        if FileManager.default.fileExists(atPath: url.path) {
+            return (url, preferredStatus ?? "online")
+        }
+        return (nil, preferredStatus ?? VolumeMonitor.status(forInaccessible: root.pathHint).rawValue)
     }
 
     private func openOrCreateCatalog() {

@@ -56,6 +56,13 @@ enum PipelineCheck {
         try? store.upsert(assets)
         let reloaded = (try? store.loadAssets()) ?? []
         check(reloaded.count == 7, "reloaded 7 assets from SQLite — got \(reloaded.count)")
+        try? store.addSourceRoot(id: "src-test-root", displayName: "source", path: src.path, bookmark: nil)
+        let roots = (try? store.loadSourceRoots()) ?? []
+        check(roots.contains { $0.id == "src-test-root" && $0.pathHint == src.path },
+              "source root persisted and reloaded")
+        try? store.updateSourceRootStatus(id: "src-test-root", status: "offline")
+        let updatedRoot = (try? store.loadSourceRoots())?.first { $0.id == "src-test-root" }
+        check(updatedRoot?.status == "offline", "source root status update persisted")
 
         // 5. edit persistence
         if let id = assets.first?.id {
