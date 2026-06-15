@@ -62,6 +62,10 @@ enum SelfCheck {
                     .localizedStandardContains("IMG")
         }.map(\.id))
         assert(savedIds == expectedIds, "saved filter rule matches converted conditions")
+        let pinned = PinnedSidebarItem(type: .folder, selectionId: "fld-tokyo", name: "2026 东京之旅")
+        let pinnedData = try? JSONEncoder().encode([pinned])
+        let restoredPins = pinnedData.flatMap { try? JSONDecoder().decode([PinnedSidebarItem].self, from: $0) }
+        assert(pinned.id == "folder:fld-tokyo" && restoredPins == [pinned], "pinned sidebar item persists")
         print("--- all structural assertions passed ---")
     }
 }

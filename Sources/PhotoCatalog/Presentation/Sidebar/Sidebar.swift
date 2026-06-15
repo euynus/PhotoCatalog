@@ -12,6 +12,7 @@ struct Sidebar: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 librarySection
+                favoriteSection
                 folderSection
                 albumSection
                 smartSection
@@ -27,6 +28,19 @@ struct Sidebar: View {
     }
 
     // ---- sections ----
+    @ViewBuilder
+    private var favoriteSection: some View {
+        if !app.pinnedSidebarFavorites.isEmpty {
+            SidebarSection(title: "收藏夹") {
+                ForEach(app.pinnedSidebarFavorites) { item in
+                    row(pinnedIcon(item), pinnedColor(item), item.name,
+                        app.countForPinnedSidebarItem(item),
+                        item.type, item.selectionId, item.name)
+                }
+            }
+        }
+    }
+
     private var librarySection: some View {
         SidebarSection(title: "资料库") {
             row("photos", nil, "全部照片", "\(ready.count)", .lib, "all", "全部照片")
@@ -122,6 +136,26 @@ struct Sidebar: View {
         case "scanning": return "扫描中"
         case "error": return "错误"
         default: return nil
+        }
+    }
+
+    private func pinnedIcon(_ item: PinnedSidebarItem) -> String {
+        switch item.type {
+        case .folder: return "folder"
+        case .album: return "album"
+        case .smart: return "sparkles"
+        case .keyword: return "tag"
+        case .lib: return "star"
+        }
+    }
+
+    private func pinnedColor(_ item: PinnedSidebarItem) -> Color? {
+        switch item.type {
+        case .folder: return Theme.folderGray
+        case .album: return Theme.albumBlue
+        case .smart: return Theme.accent
+        case .keyword: return Theme.folderGray
+        case .lib: return nil
         }
     }
 }

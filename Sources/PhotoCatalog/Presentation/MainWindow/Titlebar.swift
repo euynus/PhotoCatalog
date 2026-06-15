@@ -76,6 +76,12 @@ struct Titlebar: View {
 
             separator
 
+            if app.canPinCurrentSelection {
+                ToolButton(icon: "star",
+                           label: app.isCurrentSelectionPinned ? "取消固定" : "固定到收藏夹",
+                           active: app.isCurrentSelectionPinned,
+                           action: { app.togglePinCurrentSelection() })
+            }
             if app.canReauthorizeSelectedSource {
                 ToolButton(icon: "link", label: "重新授权源",
                            action: { app.reauthorizeSelectedSource() })

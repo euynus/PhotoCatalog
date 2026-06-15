@@ -82,6 +82,7 @@ final class AppState: ObservableObject {
     private static let catalogURLKey = "pc_catalogURL"
     private static let recentCatalogsKey = "pc_recentCatalogs"
     private static let lastAutoBackupKey = "pc_lastAutoBackupAt"
+    private static let pinnedSidebarItemsKey = "pc_pinnedSidebarItems"
 
     // ----- selection / view -----
     @Published var selection = Selection(type: .lib, id: "all", name: "全部照片")
@@ -92,6 +93,7 @@ final class AppState: ObservableObject {
     @Published var showInspector = true
     @Published var showInfo = true
     @Published var insTab = "org"
+    @Published private var pinnedSidebarItems = AppState.loadPinnedSidebarItems()
     private var anchorId: String?
 
     // ----- filters / sort -----
@@ -1308,6 +1310,88 @@ final class AppState: ObservableObject {
             .sorted { $0.count > $1.count }   // Swift 5 sort is stable
             .prefix(8)
             .map { $0 }
+    }
+
+    var pinnedSidebarFavorites: [PinnedSidebarItem] {
+        pinnedSidebarItems.compactMap(resolvePinnedSidebarItem)
+    }
+
+    var canPinCurrentSelection: Bool {
+        selection.type != .lib && currentPinnedSidebarItem() != nil
+    }
+
+    var isCurrentSelectionPinned: Bool {
+        guard let item = currentPinnedSidebarItem() else { return false }
+        return pinnedSidebarItems.contains { $0.id == item.id }
+    }
+
+    func togglePinCurrentSelection() {
+        guard let item = currentPinnedSidebarItem() else { return }
+        if let index = pinnedSidebarItems.firstIndex(where: { $0.id == item.id }) {
+            pinnedSidebarItems.remove(at: index)
+            push("已从收藏夹移除「\(item.name)」", "star")
+        } else {
+            pinnedSidebarItems.append(item)
+            push("已固定「\(item.name)」到收藏夹", "star")
+        }
+        savePinnedSidebarItems()
+    }
+
+    func countForPinnedSidebarItem(_ item: PinnedSidebarItem) -> String {
+        let live = assets.filter { !$0.deleted }
+        switch item.type {
+        case .folder:
+            return "\(live.filter { $0.folderId == item.selectionId }.count)"
+        case .album:
+            return "\(albums.first(where: { $0.id == item.selectionId })?.assetIds.count ?? 0)"
+        case .smart:
+            guard let smart = smartAlbums.first(where: { $0.id == item.selectionId }) else { return "0" }
+            return "\(SmartMatcher.match(live, smart.rule).count)"
+        case .keyword:
+            return "\(live.filter { $0.keywords.contains(item.selectionId) }.count)"
+        case .lib:
+            return ""
+        }
+    }
+
+    private static func loadPinnedSidebarItems() -> [PinnedSidebarItem] {
+        guard let data = UserDefaults.standard.data(forKey: pinnedSidebarItemsKey),
+              let items = try? JSONDecoder().decode([PinnedSidebarItem].self, from: data) else {
+            return []
+        }
+        return items
+    }
+
+    private func savePinnedSidebarItems() {
+        if let data = try? JSONEncoder().encode(pinnedSidebarItems) {
+            UserDefaults.standard.set(data, forKey: Self.pinnedSidebarItemsKey)
+        }
+    }
+
+    private func currentPinnedSidebarItem() -> PinnedSidebarItem? {
+        resolvePinnedSidebarItem(PinnedSidebarItem(type: selection.type,
+                                                   selectionId: selection.id,
+                                                   name: selection.name))
+    }
+
+    private func resolvePinnedSidebarItem(_ item: PinnedSidebarItem) -> PinnedSidebarItem? {
+        switch item.type {
+        case .folder:
+            guard let folder = folders.first(where: { $0.id == item.selectionId }) else { return nil }
+            return PinnedSidebarItem(type: .folder, selectionId: folder.id, name: folder.name)
+        case .album:
+            guard let album = albums.first(where: { $0.id == item.selectionId }) else { return nil }
+            return PinnedSidebarItem(type: .album, selectionId: album.id, name: album.name)
+        case .smart:
+            guard let smart = smartAlbums.first(where: { $0.id == item.selectionId }) else { return nil }
+            return PinnedSidebarItem(type: .smart, selectionId: smart.id, name: smart.name)
+        case .keyword:
+            let exists = assets.contains { !$0.deleted && $0.keywords.contains(item.selectionId) }
+            guard exists else { return nil }
+            return PinnedSidebarItem(type: .keyword, selectionId: item.selectionId, name: item.name)
+        case .lib:
+            return nil
+        }
     }
 
     // ---------- base collection from sidebar ----------

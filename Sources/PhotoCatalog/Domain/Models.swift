@@ -129,10 +129,18 @@ enum DuplicateResolutionAction {
 
 /// Sidebar / navigation selection.
 struct Selection: Equatable {
-    enum Kind: String { case lib, folder, album, smart, keyword }
+    enum Kind: String, Codable { case lib, folder, album, smart, keyword }
     var type: Kind
     var id: String
     var name: String
+}
+
+struct PinnedSidebarItem: Identifiable, Equatable, Codable, Sendable {
+    let type: Selection.Kind
+    let selectionId: String
+    var name: String
+
+    var id: String { "\(type.rawValue):\(selectionId)" }
 }
 
 enum ViewMode: String { case grid, loupe, compare }
