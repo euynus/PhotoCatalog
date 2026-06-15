@@ -58,6 +58,10 @@ struct ImportJobPayload: Codable, Equatable, Sendable {
     }
 }
 
+enum CatalogStoreError: Error, Equatable {
+    case incompatibleSchema(current: Int, supported: Int)
+}
+
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
     private static let latestSchemaVersion = 7
@@ -96,6 +100,9 @@ final class CatalogStore: @unchecked Sendable {
     private func migrate() throws {
         db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT);")
         let current = db.scalarInt("SELECT COALESCE(MAX(version),0) FROM schema_migrations;")
+        if current > Self.latestSchemaVersion {
+            throw CatalogStoreError.incompatibleSchema(current: current, supported: Self.latestSchemaVersion)
+        }
         if current > 0 && current < Self.latestSchemaVersion {
             try backup(stamp: "pre-migration-v\(current)-\(Self.filenameStamp(.now))")
         }

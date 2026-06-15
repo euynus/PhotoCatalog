@@ -121,7 +121,9 @@ final class AppState: ObservableObject {
         assets = a
         albums = DemoData.initialAlbums(a)
         smartAlbums = DemoData.initialSmartAlbums(a)
-        loadExistingCatalog()
+        if let error = loadExistingCatalog() {
+            push(catalogOpenFailureMessage(error), "warning")
+        }
         startVolumeMonitor()
         runAutomaticBackupIfNeeded()
         // seed the initial primary/selection from the first visible photo
@@ -151,10 +153,16 @@ final class AppState: ObservableObject {
         UserDefaults.standard.url(forKey: Self.catalogURLKey) ?? CatalogStore.defaultURL
     }
 
-    private func loadExistingCatalog() {
+    @discardableResult
+    private func loadExistingCatalog() -> Error? {
         let url = configuredCatalogURL
-        guard FileManager.default.fileExists(atPath: url.path),
-              let s = try? CatalogStore(packageURL: url) else { return }
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let s: CatalogStore
+        do {
+            s = try CatalogStore(packageURL: url)
+        } catch {
+            return error
+        }
         store = s
         coordinator = ImportCoordinator(store: s)
         rememberCatalog(url)
@@ -171,7 +179,7 @@ final class AppState: ObservableObject {
             if hasInterruptedImport {
                 recoverInterruptedImportJobs(existingAssets: [])
             }
-            return
+            return nil
         }
 
         assets = []
@@ -192,6 +200,7 @@ final class AppState: ObservableObject {
         recomputeDuplicates()
         restoreAlbums(from: s, assets: checked)
         recoverInterruptedImportJobs(existingAssets: checked)
+        return nil
     }
 
     private func restoreAlbums(from store: CatalogStore, assets: [Asset]) {
@@ -304,11 +313,13 @@ final class AppState: ObservableObject {
 
     private func openOrCreateCatalog() {
         guard store == nil else { return }
-        guard let s = try? CatalogStore(packageURL: configuredCatalogURL) else {
-            push("无法创建目录库", "warning"); return
+        do {
+            let s = try CatalogStore(packageURL: configuredCatalogURL)
+            store = s
+            coordinator = ImportCoordinator(store: s)
+        } catch {
+            push(catalogOpenFailureMessage(error, fallback: "无法创建目录库"), "warning")
         }
-        store = s
-        coordinator = ImportCoordinator(store: s)
     }
 
     func createCatalog() {
@@ -339,7 +350,7 @@ final class AppState: ObservableObject {
         } catch {
             resetToDemoCatalog()
             loadExistingCatalog()
-            push("创建目录库失败", "warning")
+            push(catalogOpenFailureMessage(error, fallback: "创建目录库失败"), "warning")
         }
     }
 
@@ -365,13 +376,13 @@ final class AppState: ObservableObject {
         closeCurrentCatalog()
         resetToDemoCatalog()
         setActiveCatalog(url)
-        loadExistingCatalog()
+        let error = loadExistingCatalog()
         if store == nil {
             forgetCatalog(url)
             setActiveCatalog(previousURL)
             resetToDemoCatalog()
             loadExistingCatalog()
-            push("打开目录库失败", "warning")
+            push(catalogOpenFailureMessage(error), "warning")
         } else {
             UserDefaults.standard.set("1", forKey: "pc_onboarded")
             onboarded = true
@@ -395,13 +406,13 @@ final class AppState: ObservableObject {
         closeCurrentCatalog()
         resetToDemoCatalog()
         setActiveCatalog(url)
-        loadExistingCatalog()
+        let error = loadExistingCatalog()
         if store == nil {
             forgetCatalog(url)
             setActiveCatalog(previousURL)
             resetToDemoCatalog()
             loadExistingCatalog()
-            push("打开目录库失败", "warning")
+            push(catalogOpenFailureMessage(error), "warning")
         } else {
             UserDefaults.standard.set("1", forKey: "pc_onboarded")
             onboarded = true
@@ -413,6 +424,14 @@ final class AppState: ObservableObject {
         recentCatalogPaths = []
         UserDefaults.standard.set(recentCatalogPaths, forKey: Self.recentCatalogsKey)
         push("已清除最近目录库", "trash")
+    }
+
+    private func catalogOpenFailureMessage(_ error: Error?, fallback: String = "打开目录库失败") -> String {
+        if let error = error as? CatalogStoreError,
+           case let .incompatibleSchema(current, supported) = error {
+            return "目录库版本过新（schema \(current)，当前支持 \(supported)），请升级 PhotoCatalog 后再打开"
+        }
+        return fallback
     }
 
     private func catalogPackageURL(from url: URL) -> URL {

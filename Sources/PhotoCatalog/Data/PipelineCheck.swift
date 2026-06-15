@@ -41,6 +41,24 @@ enum PipelineCheck {
         guard let store = try? CatalogStore(packageURL: tmp.appendingPathComponent("Lib.photolibrary")) else {
             print("  ✗ FAIL could not create catalog"); exit(1)
         }
+        let futureLibrary = tmp.appendingPathComponent("Future.photolibrary")
+        try? fm.createDirectory(at: futureLibrary, withIntermediateDirectories: true)
+        do {
+            let futureDB = try Database(path: futureLibrary.appendingPathComponent("catalog.sqlite").path)
+            futureDB.exec("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT);")
+            try futureDB.run("INSERT INTO schema_migrations(version, applied_at) VALUES(999, ?);",
+                             [.text("2026-01-01T00:00:00Z")])
+        } catch {
+            check(false, "future schema fixture created")
+        }
+        do {
+            _ = try CatalogStore(packageURL: futureLibrary)
+            check(false, "future catalog schema rejected")
+        } catch CatalogStoreError.incompatibleSchema(let current, let supported) {
+            check(current == 999 && supported < current, "future catalog schema rejected")
+        } catch {
+            check(false, "future catalog schema rejected")
+        }
         let coordinator = ImportCoordinator(store: store)
         var progressSnapshots: [ImportProgress] = []
         let assets = coordinator.importFolder(src) { progressSnapshots.append($0) }
