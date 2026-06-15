@@ -97,14 +97,15 @@ struct KeyCatcher: NSViewRepresentable {
 
         private func handle(_ event: NSEvent) -> NSEvent? {
             let cmd = event.modifierFlags.contains(.command)
+            let shift = event.modifierFlags.contains(.shift)
             let key = Self.keyString(event)
             let app = app
 
-            if cmd && key == "f" { MainActor.assumeIsolated { app.focusSearch() }; return nil }
-            if cmd && key == "i" { MainActor.assumeIsolated { app.showInspector.toggle() }; return nil }
-            if isEditingText() || cmd { return event }
+            if isEditingText() { return event }
 
-            let handled = MainActor.assumeIsolated { app.handleKey(key, hasCommand: false) }
+            let handled = MainActor.assumeIsolated {
+                app.handleKey(key, hasCommand: cmd, hasShift: shift)
+            }
             return handled ? nil : event
         }
 

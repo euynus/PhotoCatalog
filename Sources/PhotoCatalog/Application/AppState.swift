@@ -1824,6 +1824,29 @@ final class AppState: ObservableObject {
         anchorId = id
     }
 
+    @discardableResult
+    func selectAllVisible() -> Bool {
+        let ids = list.map(\.id)
+        guard !ids.isEmpty else { return false }
+        selectedIds = Set(ids)
+        if primaryId == nil || !selectedIds.contains(primaryId ?? "") {
+            primaryId = ids.first
+        }
+        anchorId = primaryId
+        return true
+    }
+
+    @discardableResult
+    func invertVisibleSelection() -> Bool {
+        let ids = list.map(\.id)
+        guard !ids.isEmpty else { return false }
+        let visible = Set(ids)
+        selectedIds = visible.subtracting(selectedIds)
+        primaryId = ids.first { selectedIds.contains($0) }
+        anchorId = primaryId
+        return true
+    }
+
     func openLoupe(_ id: String) {
         primaryId = id
         selectedIds = [id]
@@ -2206,10 +2229,26 @@ final class AppState: ObservableObject {
     // ---------- keyboard ----------
     /// Returns true if the key was handled.
     @discardableResult
-    func handleKey(_ key: String, hasCommand: Bool) -> Bool {
-        if hasCommand && key == "f" { return false }  // handled by search focus in shell
-        if hasCommand && key == "i" { showInspector.toggle(); return true }
-        if hasCommand { return false }
+    func handleKey(_ key: String, hasCommand: Bool, hasShift: Bool = false) -> Bool {
+        if hasCommand {
+            switch key {
+            case "f":
+                focusSearch()
+            case "i":
+                showInspector.toggle()
+            case "a":
+                if hasShift {
+                    guard invertVisibleSelection() else { return false }
+                    push("已反选当前列表")
+                } else {
+                    guard selectAllVisible() else { return false }
+                    push("已全选当前列表")
+                }
+            default:
+                return false
+            }
+            return true
+        }
         guard onboarded else { return false }
 
         switch key {
