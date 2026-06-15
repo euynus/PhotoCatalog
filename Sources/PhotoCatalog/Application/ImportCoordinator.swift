@@ -26,26 +26,29 @@ final class ImportCoordinator {
 
     func assetId(forPath path: String) -> String { "r" + shortHash(path) }
 
-    /// Full import of a folder (managed mode copies originals into Originals/YYYY/MM/DD).
-    func importFolder(_ folder: URL, mode: ImportMode = .referenced,
+    /// Full import of a folder (managed mode copies originals into Originals/YYYY/MM/DD;
+    /// autoTag runs on-device Vision scene tagging + face detection).
+    func importFolder(_ folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
                       progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
-        process(FileScanner.scan(folder), folder: folder, mode: mode, progress: progress)
+        process(FileScanner.scan(folder), folder: folder, mode: mode, autoTag: autoTag, progress: progress)
     }
 
     /// Incremental: only files not already imported by path (for FSEvents rescans, §12.8).
-    func scanNew(in folder: URL, knownPaths: Set<String>, mode: ImportMode = .referenced) -> [Asset] {
+    func scanNew(in folder: URL, knownPaths: Set<String>, mode: ImportMode = .referenced,
+                 autoTag: Bool = false) -> [Asset] {
         let files = FileScanner.scan(folder).filter { !knownPaths.contains($0.path) }
-        return process(files, folder: folder, mode: mode, progress: nil)
+        return process(files, folder: folder, mode: mode, autoTag: autoTag, progress: nil)
     }
 
-    private func process(_ files: [URL], folder: URL, mode: ImportMode,
+    private func process(_ files: [URL], folder: URL, mode: ImportMode, autoTag: Bool,
                          progress: ((ImportProgress) -> Void)?) -> [Asset] {
         let folderId = "src-" + shortHash(folder.path)
         let folderName = folder.lastPathComponent
         var assets: [Asset] = []
         var prog = ImportProgress(total: files.count, processed: 0, failed: 0)
         for url in files {
-            if let asset = makeAsset(source: url, folderId: folderId, folderName: folderName, mode: mode) {
+            if let asset = makeAsset(source: url, folderId: folderId, folderName: folderName,
+                                     mode: mode, autoTag: autoTag) {
                 assets.append(asset)
                 prog.processed += 1
             } else {
@@ -56,7 +59,8 @@ final class ImportCoordinator {
         return assets
     }
 
-    private func makeAsset(source url: URL, folderId: String, folderName: String, mode: ImportMode) -> Asset? {
+    private func makeAsset(source url: URL, folderId: String, folderName: String,
+                           mode: ImportMode, autoTag: Bool) -> Asset? {
         let meta = MetadataReader.read(url)
         guard meta.width > 0, meta.height > 0 else { return nil }
         let finalURL = mode == .managed ? (copyToOriginals(url, date: meta.captureDate) ?? url) : url
@@ -85,6 +89,13 @@ final class ImportCoordinator {
             status: .ready, importedAt: Date(), deleted: false,
             localPath: finalURL.path, captureDateSource: meta.captureDateSource,
             contentHash: content, quickHash: quick, isDemo: false)
+
+        // on-device Vision scene tags + face count (§4.3)
+        if autoTag {
+            let v = VisionService.analyze(finalURL)
+            asset.faces = v.faces
+            for tag in v.sceneLabels where !asset.keywords.contains(tag) { asset.keywords.append(tag) }
+        }
 
         // apply XMP sidecar metadata next to the original, if present (§6.5 META-006)
         if let sc = XMPSidecar.read(XMPSidecar.sidecarURL(for: url)) {

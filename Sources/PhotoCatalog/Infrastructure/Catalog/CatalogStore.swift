@@ -61,6 +61,13 @@ final class CatalogStore {
                            [.text(ISO8601DateFormatter().string(from: Date()))])
             }
         }
+        if current < 3 {
+            try db.transaction {
+                db.exec("ALTER TABLE assets ADD COLUMN faces INTEGER DEFAULT 0;")
+                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(3, ?);",
+                           [.text(ISO8601DateFormatter().string(from: Date()))])
+            }
+        }
     }
 
     /// FTS5 full-text search returning matching asset ids (§12.7).
@@ -97,11 +104,11 @@ final class CatalogStore {
     id,pid,ori,thumb,preview,filename,type,is_raw,folder_id,folder_name,\
     capture_date,width,height,orientation,camera,lens,focal,aperture,shutter,iso,\
     color_space,file_mb,rating,flag,color_label,keywords,title,caption,location,gps_lat,gps_lon,\
-    status,imported_at,deleted,is_demo,local_path,capture_date_source,content_hash,quick_hash
+    status,imported_at,deleted,is_demo,local_path,capture_date_source,content_hash,quick_hash,faces
     """
 
     func upsert(_ assets: [Asset]) throws {
-        let placeholders = Array(repeating: "?", count: 39).joined(separator: ",")
+        let placeholders = Array(repeating: "?", count: 40).joined(separator: ",")
         let sql = "INSERT OR REPLACE INTO assets(\(Self.columns)) VALUES(\(placeholders));"
         try db.transaction {
             for a in assets {
@@ -182,6 +189,7 @@ final class CatalogStore {
             .text(a.captureDateSource),
             a.contentHash.map { SQLValue.text($0) } ?? .null,
             a.quickHash.map { SQLValue.text($0) } ?? .null,
+            .int(a.faces),
         ]
     }
 
@@ -214,6 +222,6 @@ final class CatalogStore {
             localPath: row.text("local_path"),
             captureDateSource: row.text("capture_date_source") ?? "EXIF · DateTimeOriginal",
             contentHash: row.text("content_hash"), quickHash: row.text("quick_hash"),
-            isDemo: row.bool("is_demo"))
+            isDemo: row.bool("is_demo"), faces: row.int("faces") ?? 0)
     }
 }

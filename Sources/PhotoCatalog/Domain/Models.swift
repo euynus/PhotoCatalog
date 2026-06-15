@@ -58,6 +58,7 @@ struct Asset: Identifiable, Equatable {
     var contentHash: String? = nil
     var quickHash: String? = nil
     var isDemo: Bool = true                     // false once scanned from a real folder
+    var faces: Int = 0                          // Vision-detected face count (§4.3)
 
     var megapixels: Double { Double(width * height) / 1_000_000 }
 
