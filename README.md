@@ -36,6 +36,12 @@ Beyond the UI, the app has a working file→catalog pipeline:
 - **Export** — copy selected originals to a chosen folder (preserving mtime) + JSON metadata sidecar.
 - **Backup** — checkpointed catalog copy (click the status-bar backup item).
 - **Missing detection** — originals are re-checked on launch and flagged `missing` if gone.
+- **Managed import** — optionally copy originals into `Originals/YYYY/MM/DD` (Settings → 导入模式).
+- **XMP sidecars** — read on import and written on export / on demand (rating, label, keywords, title, caption).
+- **Similar-photo detection** — perceptual dHash + Hamming distance adds 疑似重复 groups.
+- **FSEvents watching** — referenced folders are watched; new files import and removed files flag missing automatically.
+- **FTS5 search index** + **batch rename** + **catalog health check** + **cache rebuild/clear** (Settings).
+- **Places** — a MapKit view of GPS-tagged photos (sidebar 地点).
 - Security-scoped bookmarks are created for imported source roots (PRD §12.1).
 
 Imported real photos coexist with the built-in demo set (demo assets are clearly marked and not persisted).
@@ -55,21 +61,23 @@ Sources/PhotoCatalog/
     Catalog/         .photolibrary package + schema + asset persistence + backup
     FileAccess/      security-scoped bookmarks
     Scanner/         recursive enumeration + UTType detection
-    Metadata/        Image I/O EXIF/TIFF/GPS reader (capture-date priority)
+    Metadata/        Image I/O EXIF/TIFF/GPS reader + XMP sidecar read/write
     Thumbnail/       Image I/O thumbnail/preview generation + sharded cache
-    Hash/            quick hash + SHA-256, exact-duplicate grouping
+    Hash/            quick hash + SHA-256 (exact) + dHash (perceptual)
+    Scanner/         recursive enumeration + FSEvents folder watching
+    Rename/          batch rename of originals
     Export/ Backup/  copy originals / catalog backup & restore
   Presentation/
     Components/      Thumb (remote + local cache + gradient fallback), atoms, flow layout
     MainWindow/      titlebar, filter bar, status bar, main layout, root + key handling
-    Sidebar/ Grid/ Inspector/ Loupe/ Compare/ Sheets/
+    Sidebar/ Grid/ Inspector/ Loupe/ Compare/ Map/ Sheets/ (incl. Settings)
 ```
 
 The demo dataset is a **bit-faithful port** of the prototype's generator: the same Unsplash photo IDs and the exact same seeded-RNG call sequence, so the deterministic counts match the design mock (44 photos; folders 24 / 12 / 8; smart albums 13 & 12; etc.).
 
 The built-in demo dataset is a **bit-faithful port** of the prototype's seeded RNG so the deterministic counts match the design mock; it provides an instant, populated UI on first launch. Real imported folders are scanned, persisted, and shown alongside it.
 
-> **Implemented vs. remaining (vs. PRD).** Done: catalog persistence (SQLite), folder authorization + recursive scan, referenced import, Image I/O metadata, thumbnail/preview generation + cache, missing detection, exact-duplicate detection, export, backup, search/filter/sort, ratings/flags/keywords/albums/smart-albums. Remaining (future work): FSEvents incremental watching, managed-mode import, XMP sidecar read/write, perceptual/similar-photo detection, map & people views, batch rename, and the full normalized keyword/FTS schema.
+> **Implemented vs. remaining (vs. PRD).** Done: catalog persistence (SQLite + FTS5), folder authorization + recursive scan, referenced **and** managed import, Image I/O metadata, XMP sidecar read/write, thumbnail/preview generation + cache (rebuild/clear), missing detection, exact **and** perceptual duplicate detection, FSEvents incremental watching, batch rename, export, backup + health check, a Places (map) view, search/filter/sort, ratings/flags/keywords/albums/smart-albums, and a Settings panel (§17). Remaining (v2+): face detection & people collections, Apple Photos bridge, scene/auto tagging, Sparkle auto-update, and the fully-normalized keyword table (keywords are currently stored per-asset + FTS-indexed).
 
 ## Build & run
 
