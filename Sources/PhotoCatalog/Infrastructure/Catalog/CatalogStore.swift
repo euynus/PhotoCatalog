@@ -74,8 +74,10 @@ final class CatalogStore: @unchecked Sendable {
     var preview1600URL: URL { cacheURL.appendingPathComponent("Previews/1600") }
     var preview2048URL: URL { cacheURL.appendingPathComponent("Previews/2048") }
     var backupsURL: URL { packageURL.appendingPathComponent("Backups") }
+    var configURL: URL { packageURL.appendingPathComponent("Config") }
     var originalsURL: URL { packageURL.appendingPathComponent("Originals") }
     var logsURL: URL { packageURL.appendingPathComponent("Logs") }
+    var tempURL: URL { packageURL.appendingPathComponent("Temp") }
 
     static var defaultURL: URL {
         let pics = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
@@ -90,7 +92,7 @@ final class CatalogStore: @unchecked Sendable {
         db = try Database(path: packageURL.appendingPathComponent("catalog.sqlite").path)
         // both stored properties are set now — computed URLs are safe to use
         for dir in [cacheURL, thumb256URL, thumb512URL, preview1600URL, preview2048URL,
-                    backupsURL, originalsURL, logsURL] {
+                    backupsURL, configURL, originalsURL, logsURL, tempURL] {
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         try migrate()

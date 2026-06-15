@@ -57,6 +57,11 @@ enum PipelineCheck {
         guard let store = try? CatalogStore(packageURL: tmp.appendingPathComponent("Lib.photolibrary")) else {
             print("  ✗ FAIL could not create catalog"); exit(1)
         }
+        check(fm.fileExists(atPath: store.cacheURL.path)
+              && fm.fileExists(atPath: store.configURL.path)
+              && fm.fileExists(atPath: store.logsURL.path)
+              && fm.fileExists(atPath: store.tempURL.path),
+              "catalog package created cache/config/logs/temp directories")
         let futureLibrary = tmp.appendingPathComponent("Future.photolibrary")
         try? fm.createDirectory(at: futureLibrary, withIntermediateDirectories: true)
         do {
