@@ -17,6 +17,7 @@ final class AppState: ObservableObject {
     @Published var smartAlbums: [SmartAlbum]
     @Published var folders: [Folder] = DemoData.folders
     @Published var importing = false
+    @Published var importRun: ImportRun?
     @Published var duplicateGroupsCache: [DuplicateGroup] = DemoData.duplicateGroups
 
     // ----- settings (PRD §17) -----
@@ -176,6 +177,12 @@ final class AppState: ObservableObject {
 
     // ---------- real folder import (§6.3) ----------
     func addFolder() {
+        guard !importing else {
+            sheet = "import"
+            push("已有导入任务正在运行", "warning")
+            return
+        }
+
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -187,36 +194,89 @@ final class AppState: ObservableObject {
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         openOrCreateCatalog()
         guard let coordinator, let store else { return }
+        let existingIds = Set(assets.map { $0.id })
+        let run = ImportRun(source: folder, mode: mode)
+        importRun = run
         importing = true
+        sheet = "import"
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: folder)
         let vision = visionEnabled
-        DispatchQueue.global(qos: .userInitiated).async {
-            let imported = coordinator.importFolder(folder, mode: mode, autoTag: vision)
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                let existing = Set(self.assets.map { $0.id })
-                let fresh = imported.filter { !existing.contains($0.id) }
-                self.assets.append(contentsOf: fresh)
-                try? store.upsert(fresh)
-                if let fid = fresh.first?.folderId {
-                    try? store.addSourceRoot(id: fid, displayName: folder.lastPathComponent,
-                                             path: folder.path, bookmark: bookmark)
-                    if !self.folders.contains(where: { $0.id == fid }) {
-                        self.folders.append(Folder(id: fid, name: folder.lastPathComponent))
+        Task { [weak self, coordinator, store, folder, mode, vision, bookmark, existingIds, run] in
+            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, vision] in
+                coordinator.importFolder(folder, mode: mode, autoTag: vision) { progress in
+                    Task { @MainActor [weak self] in
+                        self?.recordImportProgress(progress, for: run.id)
                     }
-                    self.select(Selection(type: .folder, id: fid, name: folder.lastPathComponent))
                 }
-                if mode == .referenced, !self.watchedRoots.contains(folder) {
-                    self.watchedRoots.append(folder)
-                    self.refreshWatcher()
-                }
-                self.importing = false
-                self.recomputeDuplicates()
-                self.push(fresh.isEmpty ? "未发现可导入的照片" : "已导入 \(fresh.count) 张照片",
-                          fresh.isEmpty ? "warning" : "check")
+            }.value
+            guard let self else { return }
+            self.finishImport(folder: folder, imported: imported, existingIds: existingIds,
+                              store: store, bookmark: bookmark, mode: mode, runId: run.id)
+        }
+    }
+
+    private func recordImportProgress(_ progress: ImportProgress, for runId: UUID) {
+        guard var run = importRun, run.id == runId, run.phase.isActive else { return }
+        run.phase = .importing
+        run.total = progress.total
+        run.processed = progress.processed
+        run.failed = progress.failed
+        if let latest = progress.latestAsset {
+            run.recentAssets.removeAll { $0.id == latest.id }
+            run.recentAssets.insert(latest, at: 0)
+            if run.recentAssets.count > 28 {
+                run.recentAssets.removeLast(run.recentAssets.count - 28)
             }
         }
+        importRun = run
+    }
+
+    private func finishImport(folder: URL, imported: [Asset], existingIds: Set<String>, store: CatalogStore,
+                              bookmark: Data?, mode: ImportMode, runId: UUID) {
+        let fresh = imported.filter { !existingIds.contains($0.id) }
+        let skipped = max(0, imported.count - fresh.count)
+        assets.append(contentsOf: fresh)
+        try? store.upsert(fresh)
+        if let fid = fresh.first?.folderId {
+            try? store.addSourceRoot(id: fid, displayName: folder.lastPathComponent,
+                                     path: folder.path, bookmark: bookmark)
+            if !folders.contains(where: { $0.id == fid }) {
+                folders.append(Folder(id: fid, name: folder.lastPathComponent))
+            }
+            select(Selection(type: .folder, id: fid, name: folder.lastPathComponent))
+        }
+        if mode == .referenced, !watchedRoots.contains(folder) {
+            watchedRoots.append(folder)
+            refreshWatcher()
+        }
+
+        if var run = importRun, run.id == runId {
+            run.phase = .complete
+            run.total = max(run.total, imported.count + run.failed)
+            run.processed = imported.count
+            run.skipped = skipped
+            run.finishedAt = .now
+            let previewAssets = fresh.isEmpty ? imported : fresh
+            run.recentAssets = Array(previewAssets.prefix(28))
+            importRun = run
+        }
+
+        importing = false
+        recomputeDuplicates()
+        let message: String
+        let icon: String
+        if fresh.isEmpty, skipped > 0 {
+            message = "已跳过 \(skipped) 张重复照片"
+            icon = "warning"
+        } else if fresh.isEmpty {
+            message = "未发现可导入的照片"
+            icon = "warning"
+        } else {
+            message = "已导入 \(fresh.count) 张照片"
+            icon = "check"
+        }
+        push(message, icon)
     }
 
     // ---------- FSEvents incremental watch (§12.8) ----------

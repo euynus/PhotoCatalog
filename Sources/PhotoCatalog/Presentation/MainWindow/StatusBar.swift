@@ -18,11 +18,20 @@ struct StatusBar: View {
             sep
             Text("引用式管理 · 原件只读").foregroundStyle(Theme.text3)
             Spacer()
-            if app.importing {
-                HStack(spacing: 5) {
-                    ProgressView().controlSize(.mini)
-                    Text("正在导入…")
-                }.foregroundStyle(Theme.accent)
+            if let run = app.importRun, run.phase.isActive {
+                Button { app.sheet = "import" } label: {
+                    HStack(spacing: 5) {
+                        if run.total > 0 {
+                            ProgressView(value: Double(run.processed + run.failed), total: Double(run.total))
+                                .frame(width: 54)
+                        } else {
+                            ProgressView().controlSize(.mini)
+                        }
+                        Text(run.total > 0 ? "导入 \(run.percent)%" : "正在扫描…")
+                    }
+                    .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
             }
             Button { app.runBackup() } label: {
                 HStack(spacing: 5) {

@@ -4,17 +4,17 @@
 import Foundation
 
 /// Pick/reject flag — `pick_flag` in the PRD schema.
-enum Flag: String, Hashable {
+enum Flag: String, Hashable, Sendable {
     case none, pick, reject
 }
 
 /// Original-file accessibility state — `status` in the PRD schema.
-enum AssetStatus: String, Hashable {
+enum AssetStatus: String, Hashable, Sendable {
     case ready, offline, missing
 }
 
 /// A photo asset — the in-memory analogue of the `assets` table (§10.2).
-struct Asset: Identifiable, Equatable {
+struct Asset: Identifiable, Equatable, Sendable {
     let id: String
     let pid: Int
     let ori: String          // "p" portrait / "l" landscape

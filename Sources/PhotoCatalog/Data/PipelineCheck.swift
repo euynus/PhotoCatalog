@@ -42,8 +42,12 @@ enum PipelineCheck {
             print("  ✗ FAIL could not create catalog"); exit(1)
         }
         let coordinator = ImportCoordinator(store: store)
-        let assets = coordinator.importFolder(src)
+        var progressSnapshots: [ImportProgress] = []
+        let assets = coordinator.importFolder(src) { progressSnapshots.append($0) }
         check(assets.count == 7, "imported 7 assets — got \(assets.count)")
+        check(progressSnapshots.first?.total == 7 && progressSnapshots.last?.processed == 7,
+              "import progress reported total + processed counts")
+        check(progressSnapshots.contains { $0.latestAsset != nil }, "import progress reported latest processed asset")
         let withDims = assets.allSatisfy { $0.width > 0 && $0.height > 0 }
         check(withDims, "every asset has real pixel dimensions from Image I/O")
         let thumbsExist = assets.allSatisfy {

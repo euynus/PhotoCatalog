@@ -7,12 +7,13 @@ import Foundation
 import CryptoKit
 import UniformTypeIdentifiers
 
-enum ImportMode: String { case referenced, managed }
+enum ImportMode: String, Sendable { case referenced, managed }
 
-struct ImportProgress {
+struct ImportProgress: Sendable {
     var total = 0
     var processed = 0
     var failed = 0
+    var latestAsset: Asset?
 }
 
 // @unchecked Sendable: holds only Sendable services; runs the scan/metadata/
@@ -32,7 +33,9 @@ final class ImportCoordinator: @unchecked Sendable {
     /// autoTag runs on-device Vision scene tagging + face detection).
     func importFolder(_ folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
                       progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
-        process(FileScanner.scan(folder), folder: folder, mode: mode, autoTag: autoTag, progress: progress)
+        let files = FileScanner.scan(folder)
+        progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
+        return process(files, folder: folder, mode: mode, autoTag: autoTag, progress: progress)
     }
 
     /// Incremental: only files not already imported by path (for FSEvents rescans, §12.8).
@@ -53,8 +56,10 @@ final class ImportCoordinator: @unchecked Sendable {
                                      mode: mode, autoTag: autoTag) {
                 assets.append(asset)
                 prog.processed += 1
+                prog.latestAsset = asset
             } else {
                 prog.failed += 1
+                prog.latestAsset = nil
             }
             progress?(prog)
         }

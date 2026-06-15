@@ -6,65 +6,33 @@ import SwiftUI
 struct ImportSheet: View {
     @EnvironmentObject var app: AppState
 
-    private let total = 1284
-    @State private var scanned = 0
-    @State private var done = 0
-    @State private var failed = 0
-    @State private var skipped = 0
-    @State private var paused = false
-    @State private var phase = "scanning"   // scanning -> importing -> complete
-    @State private var tiles: [Asset] = []
-
-    private let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
-    private var pool: [Asset] { app.assets.filter { $0.status == .ready } }
-
-    private var pct: Int {
-        phase == "scanning" ? Int(Double(scanned) / Double(total) * 100)
-                            : Int(Double(done) / Double(total) * 100)
-    }
-    private var pending: Int { max(0, scanned - done - failed - skipped) }
-
     var body: some View {
         VStack(spacing: 0) {
-            head
-            source
-            progress
-            stats
-            wall
-            foot
+            if let run = app.importRun {
+                head(run)
+                source(run)
+                progress(run)
+                stats(run)
+                wall(run)
+                foot(run)
+            } else {
+                idleHead
+                idleBody
+                idleFoot
+            }
         }
         .frame(width: 560)
         .background(Color(hex: "#232325"))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.line2, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.7), radius: 60, y: 40)
-        .onReceive(timer) { _ in tick() }
     }
 
-    private func tick() {
-        guard !paused else { return }
-        if phase == "scanning" {
-            scanned = min(total, scanned + Int.random(in: 18...43))
-            if scanned >= total { phase = "importing" }
-        } else if phase == "importing" {
-            let nd = min(total, done + Int.random(in: 14...35))
-            done = nd
-            if Double.random(in: 0...1) > 0.85 { failed += 1 }
-            if Double.random(in: 0...1) > 0.8 { skipped += 1 }
-            if !pool.isEmpty {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
-                    tiles = Array(([pool[nd % pool.count]] + tiles).prefix(28))
-                }
-            }
-            if nd >= total { phase = "complete" }
-        }
-    }
-
-    private var head: some View {
+    private var idleHead: some View {
         HStack {
             HStack(spacing: 9) {
                 Icon("importIcon", size: 17).foregroundStyle(Theme.accent)
-                Text(phase == "scanning" ? "正在扫描文件夹…" : phase == "importing" ? "正在导入照片…" : "导入完成")
+                Text("导入照片文件夹")
                     .font(.system(size: 14.5, weight: .semibold))
             }
             Spacer()
@@ -74,12 +42,67 @@ struct ImportSheet: View {
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
-    private var source: some View {
+    private var idleBody: some View {
+        VStack(spacing: 16) {
+            Icon("folder", size: 34).foregroundStyle(Theme.text3)
+                .frame(width: 68, height: 68)
+                .background(Color.black.opacity(0.22))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            Text("尚未选择源文件夹")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.text2)
+            Button { app.addFolder() } label: {
+                HStack(spacing: 8) {
+                    Icon("folder", size: 14)
+                    Text("选择文件夹…").font(.system(size: 12.5, weight: .semibold))
+                }
+                .foregroundStyle(Theme.onAccent)
+                .padding(.horizontal, 18).padding(.vertical, 9)
+                .background(Theme.accent)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, minHeight: 260)
+        .padding(18)
+    }
+
+    private var idleFoot: some View {
+        HStack {
+            Text("当前导入模式：\(app.importMode.displayName)")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.text3)
+            Spacer()
+        }
+        .padding(.horizontal, 18).padding(.vertical, 13)
+        .background(Color.black.opacity(0.18))
+        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+
+    private func head(_ run: ImportRun) -> some View {
+        HStack {
+            HStack(spacing: 9) {
+                Icon("importIcon", size: 17).foregroundStyle(Theme.accent)
+                Text(title(for: run.phase))
+                    .font(.system(size: 14.5, weight: .semibold))
+            }
+            Spacer()
+            sheetClose { app.sheet = nil }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 15)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+
+    private func source(_ run: ImportRun) -> some View {
         HStack(spacing: 9) {
             Icon("folder", size: 15).foregroundStyle(Theme.text2)
-            Text("/Volumes/Photos/2026 东京之旅").font(.system(size: 12)).foregroundStyle(Theme.text)
+            Text(run.sourcePath)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .truncationMode(.middle)
             Spacer()
-            Text("引用式").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.accent)
+            Text(run.mode.displayName).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.accent)
                 .padding(.horizontal, 8).padding(.vertical, 2)
                 .background(Theme.accentSoft).clipShape(Capsule())
         }
@@ -87,30 +110,30 @@ struct ImportSheet: View {
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
-    private var progress: some View {
+    private func progress(_ run: ImportRun) -> some View {
         HStack(spacing: 12) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Theme.surface)
                     Capsule().fill(Theme.importFill)
-                        .frame(width: geo.size.width * CGFloat(pct) / 100)
-                        .animation(.easeOut(duration: 0.2), value: pct)
+                        .frame(width: geo.size.width * CGFloat(run.percent) / 100)
+                        .animation(.easeOut(duration: 0.2), value: run.percent)
                 }
             }
             .frame(height: 7)
-            Text("\(pct)%").font(.system(size: 13, weight: .semibold)).monospacedDigit()
-                .frame(width: 42, alignment: .trailing)
+            Text(progressLabel(run)).font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                .frame(width: 50, alignment: .trailing)
         }
         .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 6)
     }
 
-    private var stats: some View {
+    private func stats(_ run: ImportRun) -> some View {
         HStack(spacing: 8) {
-            stat(scanned.formatted(), "已扫描", nil)
-            stat(pending.formatted(), "待处理", nil)
-            stat(done.formatted(), "成功", Theme.accent)
-            stat("\(skipped)", "跳过（重复）", Theme.yellow)
-            stat("\(failed)", "失败", Theme.redSoft)
+            stat(run.scanned.formatted(), "已扫描", nil)
+            stat(run.pending.formatted(), "待处理", nil)
+            stat(run.imported.formatted(), "成功", Theme.accent)
+            stat(run.skipped.formatted(), "跳过（重复）", Theme.yellow)
+            stat(run.failed.formatted(), "失败", Theme.redSoft)
         }
         .padding(.horizontal, 18).padding(.vertical, 12)
     }
@@ -128,14 +151,15 @@ struct ImportSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    private var wall: some View {
+    private func wall(_ run: ImportRun) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            if tiles.isEmpty {
-                Text("缩略图将在导入时逐步出现…").font(.system(size: 12)).foregroundStyle(Theme.text4)
+            if run.recentAssets.isEmpty {
+                Text(run.phase == .complete ? "没有新的缩略图" : "缩略图将在导入时逐步出现…")
+                    .font(.system(size: 12)).foregroundStyle(Theme.text4)
                     .frame(maxWidth: .infinity).padding(.top, 40)
             } else {
                 FlowRow(spacing: 4, lineSpacing: 4) {
-                    ForEach(Array(tiles.enumerated()), id: \.offset) { _, a in
+                    ForEach(run.recentAssets) { a in
                         Thumb(asset: a, radius: 3).frame(width: 56, height: 38)
                             .clipShape(RoundedRectangle(cornerRadius: 3))
                             .transition(.scale(scale: 0.6).combined(with: .opacity))
@@ -148,23 +172,24 @@ struct ImportSheet: View {
         .padding(.horizontal, 18).padding(.bottom, 14)
     }
 
-    private var foot: some View {
+    private func foot(_ run: ImportRun) -> some View {
         HStack(spacing: 9) {
-            if phase != "complete" {
+            if run.phase.isActive {
                 HStack(spacing: 6) {
-                    if failed > 0 {
+                    if run.failed > 0 {
                         Icon("warning", size: 13).foregroundStyle(Theme.redSoft)
-                        Text("\(failed) 个文件失败 · 可稍后重试").foregroundStyle(Theme.redSoft)
+                        Text("\(run.failed) 个文件失败 · 可稍后重试").foregroundStyle(Theme.redSoft)
+                    } else {
+                        Text(activeDetail(run)).foregroundStyle(Theme.text3)
                     }
                 }
                 .font(.system(size: 11.5))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                ghostButton(paused ? "play" : "pause", paused ? "继续" : "暂停") { paused.toggle() }
                 ghostButton(nil, "后台运行") { app.sheet = nil }
-            } else {
+            } else if run.phase == .complete {
                 HStack(spacing: 6) {
                     Icon("check", size: 14, weight: .bold).foregroundStyle(Theme.accent)
-                    Text("已导入 \(done.formatted()) 张 · \(skipped) 张跳过 · \(failed) 张失败")
+                    Text("已导入 \(run.imported.formatted()) 张 · \(run.skipped.formatted()) 张跳过 · \(run.failed.formatted()) 张失败")
                 }
                 .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -173,11 +198,37 @@ struct ImportSheet: View {
                         .padding(.horizontal, 17).padding(.vertical, 8)
                         .background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 7))
                 }.buttonStyle(.plain)
+            } else {
+                HStack(spacing: 6) {
+                    Icon("warning", size: 14).foregroundStyle(Theme.redSoft)
+                    Text(run.errorMessage ?? "导入失败")
+                }
+                .font(.system(size: 11.5)).foregroundStyle(Theme.redSoft)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                ghostButton(nil, "关闭") { app.sheet = nil }
             }
         }
         .padding(.horizontal, 18).padding(.vertical, 13)
         .background(Color.black.opacity(0.18))
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+
+    private func title(for phase: ImportPhase) -> String {
+        switch phase {
+        case .scanning: return "正在扫描文件夹…"
+        case .importing: return "正在导入照片…"
+        case .complete: return "导入完成"
+        case .failed: return "导入失败"
+        }
+    }
+
+    private func progressLabel(_ run: ImportRun) -> String {
+        run.total == 0 && run.phase.isActive ? "扫描中" : "\(run.percent)%"
+    }
+
+    private func activeDetail(_ run: ImportRun) -> String {
+        guard run.total > 0 else { return "正在扫描源文件夹…" }
+        return "正在处理 \((run.processed + run.failed).formatted()) / \(run.total.formatted()) 个文件"
     }
 }
 

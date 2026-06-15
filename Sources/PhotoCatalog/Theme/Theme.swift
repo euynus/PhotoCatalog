@@ -104,7 +104,7 @@ enum Theme {
 }
 
 /// Color-label palette — port of `COLOR_LABELS` in data.jsx.
-enum ColorLabel: String, CaseIterable, Identifiable, Hashable {
+enum ColorLabel: String, CaseIterable, Identifiable, Hashable, Sendable {
     case red, orange, yellow, green, blue, purple
     var id: String { rawValue }
     var hex: Color {
