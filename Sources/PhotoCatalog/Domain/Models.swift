@@ -52,6 +52,13 @@ struct Asset: Identifiable, Equatable {
     let importedAt: Date
     var deleted: Bool = false
 
+    // ---- real-pipeline fields (defaults keep demo data source-compatible) ----
+    var localPath: String? = nil               // original file on disk (nil for demo assets)
+    var captureDateSource: String = "EXIF · DateTimeOriginal"
+    var contentHash: String? = nil
+    var quickHash: String? = nil
+    var isDemo: Bool = true                     // false once scanned from a real folder
+
     var megapixels: Double { Double(width * height) / 1_000_000 }
 
     static func == (lhs: Asset, rhs: Asset) -> Bool { lhs.id == rhs.id }
