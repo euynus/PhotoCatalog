@@ -76,9 +76,14 @@ struct SettingsSheet: View {
             }
 
             section("缩略图与缓存") {
+                Stepper(value: $app.cacheLimitMB, in: 256...102_400, step: 256) {
+                    Text("缓存上限 \(app.cacheLimitMB) MB")
+                        .font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                }
                 HStack(spacing: 9) {
                     ghostButton("refresh", "重建缩略图", small: true) { app.rebuildThumbnails() }
                     ghostButton("trash", "清理缓存", small: true) { app.clearCache() }
+                    ghostButton("check", "应用上限", small: true) { app.pruneCacheToLimit() }
                 }
             }
 

@@ -248,6 +248,18 @@ enum PipelineCheck {
         let health = CatalogHealth.check(store, assets: assets)
         check(health.dbIntegrityOK && health.assetCount >= 7,
               "health check: db \(health.dbIntegrityOK ? "ok" : "BAD"), \(health.assetCount) assets")
+        let cacheBaseline = CatalogHealth.directorySize(store.cacheURL)
+        let pruneDir = store.cacheURL.appendingPathComponent("PruneTest")
+        try? fm.createDirectory(at: pruneDir, withIntermediateDirectories: true)
+        for i in 0..<3 {
+            let file = pruneDir.appendingPathComponent("old-\(i).bin")
+            try? Data(repeating: UInt8(i), count: 2_048).write(to: file)
+            try? fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: TimeInterval(i))],
+                                  ofItemAtPath: file.path)
+        }
+        let pruneReport = CacheService.prune(store.cacheURL, maxBytes: cacheBaseline + 2_048)
+        check(pruneReport.removedFiles >= 2 && pruneReport.afterBytes <= cacheBaseline + 2_048,
+              "cache prune enforces size limit")
 
         // 11. perceptual dHash (near pair similar, far pair dissimilar)
         let pa = src.appendingPathComponent("near_a.jpg")

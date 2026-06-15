@@ -39,6 +39,12 @@ final class AppState: ObservableObject {
     @Published var visionEnabled = UserDefaults.standard.bool(forKey: "pc_vision") {
         didSet { UserDefaults.standard.set(visionEnabled, forKey: "pc_vision") }
     }
+    @Published var cacheLimitMB: Int = {
+        let saved = UserDefaults.standard.integer(forKey: "pc_cacheLimitMB")
+        return saved > 0 ? saved : 2_048
+    }() {
+        didSet { UserDefaults.standard.set(cacheLimitMB, forKey: "pc_cacheLimitMB") }
+    }
     @Published var automaticBackupFrequency =
         UserDefaults.standard.string(forKey: "pc_autoBackupFrequency") ?? "weekly" {
         didSet { UserDefaults.standard.set(automaticBackupFrequency, forKey: "pc_autoBackupFrequency") }
@@ -481,6 +487,7 @@ final class AppState: ObservableObject {
             self.activeImportJobId = nil
         }
         recomputeDuplicates()
+        enforceCacheLimitIfNeeded()
         let failedCount = importRun?.failed ?? 0
         let message: String
         let icon: String
@@ -869,6 +876,7 @@ final class AppState: ObservableObject {
                     }
                 }
             }.value
+            self?.enforceCacheLimitIfNeeded()
             self?.push("缩略图已重建", "check")
         }
     }
@@ -881,6 +889,33 @@ final class AppState: ObservableObject {
             try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         push("已清理缩略图缓存", "trash")
+    }
+
+    func pruneCacheToLimit() {
+        guard let store else { push("无目录库", "warning"); return }
+        let report = CacheService.prune(store.cacheURL, maxBytes: cacheLimitBytes)
+        healthReport = CatalogHealth.check(store, assets: assets)
+        if report.removedFiles == 0 {
+            push("缓存已在 \(cacheLimitMB) MB 上限内", "check")
+        } else {
+            push("已清理缓存 \(formatCacheMB(report.removedBytes)) · \(report.removedFiles) 个文件", "trash")
+        }
+    }
+
+    private var cacheLimitBytes: Int64 {
+        Int64(cacheLimitMB) * 1024 * 1024
+    }
+
+    private func enforceCacheLimitIfNeeded() {
+        guard let store else { return }
+        let report = CacheService.prune(store.cacheURL, maxBytes: cacheLimitBytes)
+        if report.removedFiles > 0 {
+            healthReport = CatalogHealth.check(store, assets: assets)
+        }
+    }
+
+    private func formatCacheMB(_ bytes: Int64) -> String {
+        String(format: "%.1f MB", Double(bytes) / (1024 * 1024))
     }
 
     // ---------- export originals (§6.11) ----------
