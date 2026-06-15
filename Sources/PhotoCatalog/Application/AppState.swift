@@ -298,6 +298,15 @@ final class AppState: ObservableObject {
         return Dictionary(uniqueKeysWithValues: roots.map { ($0.id, $0) })
     }
 
+    private func setSourceFolder(id: String, name: String, path: String, status: String) {
+        sourceRootPathsById[id] = path
+        if let index = folders.firstIndex(where: { $0.id == id }) {
+            folders[index] = Folder(id: id, name: name, status: status)
+        } else {
+            folders.append(Folder(id: id, name: name, status: status))
+        }
+    }
+
     private func resolveAssetAccess(_ asset: Asset,
                                     sourceRootsById: [String: SourceRootRecord]) -> Asset {
         guard let path = asset.localPath else { return asset }
@@ -488,6 +497,8 @@ final class AppState: ObservableObject {
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         openOrCreateCatalog()
         guard let coordinator, let store else { return }
+        let sourceId = coordinator.sourceId(forFolder: folder)
+        setSourceFolder(id: sourceId, name: folder.lastPathComponent, path: folder.path, status: "scanning")
         let existingIds = Set(assets.map { $0.id })
         let run = ImportRun(source: folder, mode: mode)
         let control = ImportControl()
@@ -505,7 +516,7 @@ final class AppState: ObservableObject {
                                   mode: mode, autoTag: vision)
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: folder)
-        Task { [weak self, coordinator, store, folder, mode, vision, previewSize, bookmark, existingIds, run, control] in
+        Task { [weak self, coordinator, store, folder, mode, vision, previewSize, bookmark, existingIds, sourceId, run, control] in
             let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, vision, previewSize, control] in
                 coordinator.importFolder(folder, mode: mode, autoTag: vision,
                                          previewMaxPixel: previewSize, control: control) { progress in
@@ -517,6 +528,7 @@ final class AppState: ObservableObject {
             guard let self else { return }
             self.finishImport(folder: folder, imported: imported, existingIds: existingIds,
                               store: store, bookmark: bookmark, mode: mode, runId: run.id,
+                              sourceId: sourceId,
                               persistSourceRoot: true)
         }
     }
@@ -544,7 +556,8 @@ final class AppState: ObservableObject {
     }
 
     private func finishImport(folder: URL, imported: [Asset], existingIds: Set<String>, store: CatalogStore,
-                              bookmark: Data?, mode: ImportMode, runId: UUID, persistSourceRoot: Bool) {
+                              bookmark: Data?, mode: ImportMode, runId: UUID, sourceId: String? = nil,
+                              persistSourceRoot: Bool) {
         let dedup = ImportDeduplicationService.apply(
             imported: imported,
             existingAssets: assets.filter { !$0.deleted && !$0.isDemo },
@@ -555,18 +568,20 @@ final class AppState: ObservableObject {
         assets.append(contentsOf: fresh)
         try? store.upsert(fresh)
         var rootId: String?
-        if let fid = fresh.first?.folderId {
+        if let fid = fresh.first?.folderId ?? imported.first?.folderId ?? sourceId {
             rootId = fid
-            if persistSourceRoot {
+            if persistSourceRoot && (!fresh.isEmpty || skipped > 0) {
                 try? store.addSourceRoot(id: fid, displayName: folder.lastPathComponent,
                                          path: folder.path, bookmark: bookmark,
                                          volumeIdentifier: VolumeMonitor.volumeIdentifier(for: folder))
             }
-            sourceRootPathsById[fid] = folder.path
-            if !folders.contains(where: { $0.id == fid }) {
-                folders.append(Folder(id: fid, name: folder.lastPathComponent, status: "online"))
+            if fresh.isEmpty && skipped == 0 {
+                folders.removeAll { $0.id == fid }
+                sourceRootPathsById.removeValue(forKey: fid)
+            } else {
+                setSourceFolder(id: fid, name: folder.lastPathComponent, path: folder.path, status: "online")
+                select(Selection(type: .folder, id: fid, name: folder.lastPathComponent))
             }
-            select(Selection(type: .folder, id: fid, name: folder.lastPathComponent))
         }
         if mode == .referenced, !watchedRoots.contains(folder) {
             watchedRoots.append(folder)
@@ -739,6 +754,8 @@ final class AppState: ObservableObject {
         importControl = control
         activeImportJobId = jobId
         lastImportSessionPersistedCount = runningRun.processed + runningRun.failed
+        let sourceId = coordinator.sourceId(forFolder: folder)
+        setSourceFolder(id: sourceId, name: folder.lastPathComponent, path: folder.path, status: "scanning")
         importing = true
         sheet = "import"
         try? store.updateJob(id: jobId, state: "running")
@@ -748,7 +765,7 @@ final class AppState: ObservableObject {
         push("正在恢复导入「\(folder.lastPathComponent)」…", "refresh")
         let previewSize = previewMaxPixel
 
-        Task { [weak self, coordinator, store, folder, mode, autoTag, previewSize, existingIds, runningRun, control] in
+        Task { [weak self, coordinator, store, folder, mode, autoTag, previewSize, existingIds, sourceId, runningRun, control] in
             let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, autoTag, previewSize, control] in
                 coordinator.importFolder(folder, mode: mode, autoTag: autoTag,
                                          previewMaxPixel: previewSize, control: control) { progress in
@@ -760,6 +777,7 @@ final class AppState: ObservableObject {
             guard let self else { return }
             self.finishImport(folder: folder, imported: imported, existingIds: existingIds,
                               store: store, bookmark: nil, mode: mode, runId: runningRun.id,
+                              sourceId: sourceId,
                               persistSourceRoot: true)
         }
     }

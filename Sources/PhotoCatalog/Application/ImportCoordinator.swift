@@ -28,6 +28,7 @@ final class ImportCoordinator: @unchecked Sendable {
         thumbnails = ThumbnailService(store: store)
     }
 
+    func sourceId(forFolder folder: URL) -> String { "src-" + shortHash(folder.path) }
     func assetId(forPath path: String) -> String { "r" + shortHash(path) }
 
     /// Full import of a folder (managed mode copies originals into Originals/YYYY/MM/DD;
@@ -84,7 +85,7 @@ final class ImportCoordinator: @unchecked Sendable {
     private func process(_ files: [URL], folder: URL, mode: ImportMode, autoTag: Bool,
                          previewMaxPixel: Int, control: ImportControl?,
                          progress: ((ImportProgress) -> Void)?) -> [Asset] {
-        let folderId = "src-" + shortHash(folder.path)
+        let folderId = sourceId(forFolder: folder)
         let folderName = folder.lastPathComponent
         var assets: [Asset] = []
         var prog = ImportProgress(total: files.count, processed: 0, failed: 0)
