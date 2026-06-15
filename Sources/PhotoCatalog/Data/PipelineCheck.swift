@@ -140,6 +140,15 @@ enum PipelineCheck {
         // 8. backup
         let backup = try? BackupService.backup(store)
         check(backup != nil && fm.fileExists(atPath: backup!.path), "catalog backup written")
+        if let backup {
+            let restorePackage = tmp.appendingPathComponent("restored.photolibrary")
+            try? BackupService.restore(backup, intoPackageAt: restorePackage)
+            let restoredStore = try? CatalogStore(packageURL: restorePackage)
+            let restoredCount = (try? restoredStore?.loadAssets().count) ?? 0
+            check(restoredCount == 7, "catalog backup restored — got \(restoredCount) assets")
+        } else {
+            check(false, "catalog backup restored")
+        }
 
         // 9. FTS5 full-text search
         check(!store.search("IMG").isEmpty, "FTS5 search returns matches for 'IMG'")

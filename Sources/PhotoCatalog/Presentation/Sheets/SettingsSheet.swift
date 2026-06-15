@@ -71,6 +71,7 @@ struct SettingsSheet: View {
             section("维护") {
                 HStack(spacing: 9) {
                     ghostButton("check", "立即备份", small: true) { app.runBackup() }
+                    ghostButton("refresh", "恢复备份", small: true) { app.restoreBackup() }
                     ghostButton("info", "运行健康检查", small: true) { app.runHealthCheck() }
                 }
                 if let r = app.healthReport {

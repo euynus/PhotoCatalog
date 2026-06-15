@@ -4,6 +4,7 @@
 import SwiftUI
 import Combine
 import AppKit
+import UniformTypeIdentifiers
 
 @MainActor
 final class AppState: ObservableObject {
@@ -702,6 +703,82 @@ final class AppState: ObservableObject {
         } else {
             push("备份失败", "warning")
         }
+    }
+
+    func restoreBackup() {
+        openOrCreateCatalog()
+        guard let packageURL = store?.packageURL else {
+            push("无目录库可恢复", "warning")
+            return
+        }
+        let backupsURL = store?.backupsURL
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = backupsURL
+        panel.prompt = "恢复"
+        panel.message = "选择一个目录库 SQLite 备份文件"
+        if let sqliteType = UTType(filenameExtension: "sqlite") {
+            panel.allowedContentTypes = [sqliteType]
+        }
+        guard panel.runModal() == .OK, let backup = panel.url else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "恢复目录库备份？"
+        alert.informativeText = "当前目录库数据库会被所选备份替换。应用会先尝试创建一次当前状态备份。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "恢复")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        do {
+            if let store {
+                try store.upsert(assets.filter { !$0.isDemo })
+                _ = try BackupService.backup(store)
+            }
+            closeCatalogForRestore()
+            resetToDemoCatalog()
+            try BackupService.restore(backup, intoPackageAt: packageURL)
+            loadExistingCatalog()
+            push("已恢复备份 · \(backup.lastPathComponent)", "check")
+        } catch {
+            resetToDemoCatalog()
+            loadExistingCatalog()
+            push("恢复备份失败", "warning")
+        }
+    }
+
+    private func closeCatalogForRestore() {
+        watcher?.stop()
+        watcher = nil
+        for url in securityScopedRoots {
+            url.stopAccessingSecurityScopedResource()
+        }
+        securityScopedRoots = []
+        watchedRoots = []
+        importControl = nil
+        activeImportJobId = nil
+        importing = false
+        store = nil
+        coordinator = nil
+    }
+
+    private func resetToDemoCatalog() {
+        let a = DemoData.assets
+        assets = a
+        albums = DemoData.initialAlbums(a)
+        smartAlbums = DemoData.initialSmartAlbums(a)
+        folders = DemoData.folders
+        duplicateGroupsCache = DemoData.duplicateGroups
+        selection = Selection(type: .lib, id: "all", name: "全部照片")
+        primaryId = list.first?.id
+        selectedIds = primaryId.map { Set([$0]) } ?? []
+        anchorId = primaryId
+        compareIds = []
+        winner = nil
+        importRun = nil
+        healthReport = nil
     }
 
     // ---------- duplicate groups (§6.10): exact (content) + similar (perceptual) ----------
