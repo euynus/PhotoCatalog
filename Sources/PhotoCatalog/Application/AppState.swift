@@ -328,6 +328,33 @@ final class AppState: ObservableObject {
         }
     }
 
+    @discardableResult
+    func resolveDuplicateGroup(_ group: DuplicateGroup, keepId: String?,
+                               action: DuplicateResolutionAction) -> Bool {
+        guard group.items.contains(where: { !$0.isDemo }) else {
+            push("演示重复组不可处理", "warning")
+            return false
+        }
+
+        var updated = assets
+        let report = DuplicateResolutionService.resolve(group, keepId: keepId, in: &updated, action: action)
+        guard !report.removedIds.isEmpty else {
+            push(report.failedCount > 0 ? "重复文件处理失败" : "没有可处理的重复文件", "warning")
+            return false
+        }
+
+        assets = updated
+        persist(report.removedIds)
+        duplicateGroupsCache.removeAll { $0.id == group.id }
+        recomputeDuplicates()
+        ensurePrimaryValid()
+
+        let actionText = action == .moveToTrash ? "移到废纸篓" : "从目录库移除"
+        let failedText = report.failedCount > 0 ? " · \(report.failedCount) 失败" : ""
+        push("已\(actionText) \(report.affectedCount) 张重复照片\(failedText)", "check")
+        return report.failedCount == 0
+    }
+
     private func persist(_ ids: Set<String>) {
         guard let store else { return }
         let changed = assets.filter { ids.contains($0.id) && !$0.isDemo }

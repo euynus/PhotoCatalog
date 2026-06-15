@@ -90,10 +90,14 @@ struct DuplicatesView: View {
                     Text("保留 1 张，其余：").font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                     Spacer()
                     ghostButton(nil, "从目录库移除", small: true) {
-                        resolved[g.id] = "removed"; app.push("已处理重复组", "check")
+                        if app.resolveDuplicateGroup(g, keepId: keptId, action: .removeFromCatalog) {
+                            resolved[g.id] = "removed"
+                        }
                     }
                     ghostButton("trash", "移到废纸篓", danger: true, small: true) {
-                        resolved[g.id] = "trashed"; app.push("已处理重复组", "check")
+                        if app.resolveDuplicateGroup(g, keepId: keptId, action: .moveToTrash) {
+                            resolved[g.id] = "trashed"
+                        }
                     }
                 }
                 .padding(.horizontal, 15).padding(.bottom, 14)

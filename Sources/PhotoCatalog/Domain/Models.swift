@@ -101,6 +101,11 @@ struct DuplicateGroup: Identifiable {
     let items: [Asset]
 }
 
+enum DuplicateResolutionAction {
+    case removeFromCatalog
+    case moveToTrash
+}
+
 /// Sidebar / navigation selection.
 struct Selection: Equatable {
     enum Kind: String { case lib, folder, album, smart, keyword }

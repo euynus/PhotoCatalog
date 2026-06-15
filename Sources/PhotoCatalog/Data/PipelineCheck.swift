@@ -68,6 +68,16 @@ enum PipelineCheck {
         // 6. exact-duplicate detection (the identical pair)
         let dupes = HashService.exactDuplicateGroups(assets)
         check(dupes.contains { $0.items.count == 2 }, "exact-duplicate group found for the identical pair")
+        if let group = dupes.first(where: { $0.items.count == 2 }) {
+            var resolvedAssets = assets
+            let keepId = group.items[0].id
+            let report = DuplicateResolutionService.resolve(group, keepId: keepId, in: &resolvedAssets,
+                                                            action: .removeFromCatalog)
+            let removed = resolvedAssets.filter { report.removedIds.contains($0.id) && $0.deleted }
+            let kept = resolvedAssets.first { $0.id == keepId }
+            check(report.affectedCount == 1 && removed.count == 1 && kept?.deleted == false,
+                  "duplicate resolution removed non-kept catalog item")
+        } else { check(false, "duplicate resolution sample group") }
 
         // 7. export originals
         let report = ExportService.copyOriginals(assets, to: exportDir)
