@@ -9,13 +9,13 @@ import CoreGraphics
 import UniformTypeIdentifiers
 
 enum PipelineCheck {
-    private static var failures = 0
-    private static func check(_ cond: Bool, _ label: String) {
-        print((cond ? "  ✓ " : "  ✗ FAIL ") + label)
-        if !cond { failures += 1 }
-    }
-
     static func run() {
+        var failures = 0
+        func check(_ cond: Bool, _ label: String) {
+            print((cond ? "  ✓ " : "  ✗ FAIL ") + label)
+            if !cond { failures += 1 }
+        }
+
         print("=== PhotoCatalog real-pipeline self-check ===")
         let fm = FileManager.default
         let tmp = fm.temporaryDirectory.appendingPathComponent("pc-pipeline-\(UUID().uuidString)")
