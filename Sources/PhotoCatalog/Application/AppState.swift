@@ -95,15 +95,24 @@ final class AppState: ObservableObject {
               let s = try? CatalogStore(packageURL: url) else { return }
         store = s
         coordinator = ImportCoordinator(store: s)
-        restoreSourceRoots(from: s)
         let real = ((try? s.loadAssets()) ?? []).filter { !$0.isDemo && !$0.deleted }
-        guard !real.isEmpty else { return }
+        guard !real.isEmpty else {
+            restoreSourceRoots(from: s)
+            return
+        }
+
+        assets = []
+        albums = []
+        smartAlbums = []
+        folders = []
+        restoreSourceRoots(from: s)
+
         // missing-file detection (§6.4 ORG-003)
         let checked = real.map { a -> Asset in
             guard let p = a.localPath, !FileManager.default.fileExists(atPath: p) else { return a }
             var m = a; m.status = .missing; return m
         }
-        assets.append(contentsOf: checked)
+        assets = checked
         for (fid, items) in Dictionary(grouping: checked, by: { $0.folderId }) where
             !folders.contains(where: { $0.id == fid }) {
             folders.append(Folder(id: fid, name: items.first?.folderName ?? fid))
