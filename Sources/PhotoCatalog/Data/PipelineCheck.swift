@@ -48,6 +48,20 @@ enum PipelineCheck {
         check(progressSnapshots.first?.total == 7 && progressSnapshots.last?.processed == 7,
               "import progress reported total + processed counts")
         check(progressSnapshots.contains { $0.latestAsset != nil }, "import progress reported latest processed asset")
+        let badSrc = tmp.appendingPathComponent("bad-source")
+        try? fm.createDirectory(at: badSrc, withIntermediateDirectories: true)
+        try? Data("broken image bytes".utf8).write(to: badSrc.appendingPathComponent("BROKEN.jpg"))
+        var failureSnapshots: [ImportProgress] = []
+        let brokenAssets = coordinator.importFolder(badSrc) { failureSnapshots.append($0) }
+        let brokenFailure = failureSnapshots.last?.latestFailure
+        check(brokenAssets.isEmpty && failureSnapshots.last?.failed == 1
+              && brokenFailure?.filename == "BROKEN.jpg" && brokenFailure?.reason.isEmpty == false,
+              "import progress reported failed file and reason")
+        let missingURL = badSrc.appendingPathComponent("MISSING.jpg")
+        var retrySnapshots: [ImportProgress] = []
+        _ = coordinator.importFiles([missingURL], from: badSrc) { retrySnapshots.append($0) }
+        check(retrySnapshots.last?.failed == 1 && retrySnapshots.last?.latestFailure?.path == missingURL.path,
+              "import retry reports missing file failure")
         let withDims = assets.allSatisfy { $0.width > 0 && $0.height > 0 }
         check(withDims, "every asset has real pixel dimensions from Image I/O")
         let thumbsExist = assets.allSatisfy {

@@ -13,7 +13,11 @@ struct ImportSheet: View {
                 source(run)
                 progress(run)
                 stats(run)
-                wall(run)
+                if run.failures.isEmpty {
+                    wall(run)
+                } else {
+                    failureList(run)
+                }
                 foot(run)
             } else {
                 idleHead
@@ -172,6 +176,60 @@ struct ImportSheet: View {
         .padding(.horizontal, 18).padding(.bottom, 14)
     }
 
+    private func failureList(_ run: ImportRun) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Icon("warning", size: 13).foregroundStyle(Theme.redSoft)
+                Text("失败文件")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Theme.text2)
+                Spacer()
+                Text(run.failures.count.formatted())
+                    .font(.system(size: 11, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.redSoft)
+            }
+            ScrollView {
+                LazyVStack(spacing: 6) {
+                    ForEach(run.failures) { failure in
+                        failureRow(failure)
+                    }
+                }
+            }
+            .scrollContentBackground(.visible)
+        }
+        .frame(maxWidth: .infinity, minHeight: 120, maxHeight: 150, alignment: .topLeading)
+        .padding(.horizontal, 18).padding(.bottom, 14)
+    }
+
+    private func failureRow(_ failure: ImportFailure) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Icon("warning", size: 12).foregroundStyle(Theme.redSoft)
+                .frame(width: 16, height: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(failure.filename)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(failure.reason)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.redSoft)
+                    .lineLimit(1)
+                Text(failure.path)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Theme.text4)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 9).padding(.vertical, 7)
+        .background(Color.black.opacity(0.22))
+        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+    }
+
     private func foot(_ run: ImportRun) -> some View {
         HStack(spacing: 9) {
             if run.phase.isActive {
@@ -188,11 +246,15 @@ struct ImportSheet: View {
                 ghostButton(nil, "后台运行") { app.sheet = nil }
             } else if run.phase == .complete {
                 HStack(spacing: 6) {
-                    Icon("check", size: 14, weight: .bold).foregroundStyle(Theme.accent)
+                    Icon(run.failed > 0 ? "warning" : "check", size: 14, weight: .bold)
+                        .foregroundStyle(run.failed > 0 ? Theme.redSoft : Theme.accent)
                     Text("已导入 \(run.imported.formatted()) 张 · \(run.skipped.formatted()) 张跳过 · \(run.failed.formatted()) 张失败")
                 }
                 .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                if !run.failures.isEmpty {
+                    ghostButton("refresh", "重试失败", small: true) { app.retryFailedImport() }
+                }
                 Button { app.sheet = nil; app.push("导入完成", "check") } label: {
                     Text("完成").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.onAccent)
                         .padding(.horizontal, 17).padding(.vertical, 8)
@@ -205,6 +267,9 @@ struct ImportSheet: View {
                 }
                 .font(.system(size: 11.5)).foregroundStyle(Theme.redSoft)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                if !run.failures.isEmpty {
+                    ghostButton("refresh", "重试失败", small: true) { app.retryFailedImport() }
+                }
                 ghostButton(nil, "关闭") { app.sheet = nil }
             }
         }

@@ -27,6 +27,7 @@ struct ImportRun: Identifiable, Equatable, Sendable {
     var failed: Int
     var skipped: Int
     var recentAssets: [Asset]
+    var failures: [ImportFailure]
     var finishedAt: Date?
     var errorMessage: String?
 
@@ -42,6 +43,7 @@ struct ImportRun: Identifiable, Equatable, Sendable {
         failed = 0
         skipped = 0
         recentAssets = []
+        failures = []
         finishedAt = nil
         errorMessage = nil
     }

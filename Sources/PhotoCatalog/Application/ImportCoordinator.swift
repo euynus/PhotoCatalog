@@ -14,6 +14,7 @@ struct ImportProgress: Sendable {
     var processed = 0
     var failed = 0
     var latestAsset: Asset?
+    var latestFailure: ImportFailure?
 }
 
 // @unchecked Sendable: holds only Sendable services; runs the scan/metadata/
@@ -38,6 +39,13 @@ final class ImportCoordinator: @unchecked Sendable {
         return process(files, folder: folder, mode: mode, autoTag: autoTag, progress: progress)
     }
 
+    /// Retry/import a known file list while preserving the original source folder identity.
+    func importFiles(_ files: [URL], from folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
+                     progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
+        progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
+        return process(files, folder: folder, mode: mode, autoTag: autoTag, progress: progress)
+    }
+
     /// Incremental: only files not already imported by path (for FSEvents rescans, §12.8).
     func scanNew(in folder: URL, knownPaths: Set<String>, mode: ImportMode = .referenced,
                  autoTag: Bool = false) -> [Asset] {
@@ -52,14 +60,23 @@ final class ImportCoordinator: @unchecked Sendable {
         var assets: [Asset] = []
         var prog = ImportProgress(total: files.count, processed: 0, failed: 0)
         for url in files {
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                prog.failed += 1
+                prog.latestAsset = nil
+                prog.latestFailure = ImportFailure(url: url, reason: "文件不存在或不可访问")
+                progress?(prog)
+                continue
+            }
             if let asset = makeAsset(source: url, folderId: folderId, folderName: folderName,
                                      mode: mode, autoTag: autoTag) {
                 assets.append(asset)
                 prog.processed += 1
                 prog.latestAsset = asset
+                prog.latestFailure = nil
             } else {
                 prog.failed += 1
                 prog.latestAsset = nil
+                prog.latestFailure = ImportFailure(url: url, reason: "无法读取图片元数据或像素尺寸")
             }
             progress?(prog)
         }

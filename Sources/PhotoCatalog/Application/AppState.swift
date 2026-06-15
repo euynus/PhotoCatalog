@@ -215,7 +215,8 @@ final class AppState: ObservableObject {
             }.value
             guard let self else { return }
             self.finishImport(folder: folder, imported: imported, existingIds: existingIds,
-                              store: store, bookmark: bookmark, mode: mode, runId: run.id)
+                              store: store, bookmark: bookmark, mode: mode, runId: run.id,
+                              persistSourceRoot: true)
         }
     }
 
@@ -232,12 +233,15 @@ final class AppState: ObservableObject {
                 run.recentAssets.removeLast(run.recentAssets.count - 28)
             }
         }
+        if let failure = progress.latestFailure, !run.failures.contains(where: { $0.id == failure.id }) {
+            run.failures.append(failure)
+        }
         importRun = run
         persistImportSessionProgress(run)
     }
 
     private func finishImport(folder: URL, imported: [Asset], existingIds: Set<String>, store: CatalogStore,
-                              bookmark: Data?, mode: ImportMode, runId: UUID) {
+                              bookmark: Data?, mode: ImportMode, runId: UUID, persistSourceRoot: Bool) {
         let fresh = imported.filter { !existingIds.contains($0.id) }
         let skipped = max(0, imported.count - fresh.count)
         assets.append(contentsOf: fresh)
@@ -245,8 +249,10 @@ final class AppState: ObservableObject {
         var rootId: String?
         if let fid = fresh.first?.folderId {
             rootId = fid
-            try? store.addSourceRoot(id: fid, displayName: folder.lastPathComponent,
-                                     path: folder.path, bookmark: bookmark)
+            if persistSourceRoot {
+                try? store.addSourceRoot(id: fid, displayName: folder.lastPathComponent,
+                                         path: folder.path, bookmark: bookmark)
+            }
             if !folders.contains(where: { $0.id == fid }) {
                 folders.append(Folder(id: fid, name: folder.lastPathComponent))
             }
@@ -265,29 +271,71 @@ final class AppState: ObservableObject {
             run.finishedAt = .now
             let previewAssets = fresh.isEmpty ? imported : fresh
             run.recentAssets = Array(previewAssets.prefix(28))
+            run.errorMessage = importFailureSummary(run.failures)
             importRun = run
             lastImportSessionPersistedCount = run.processed + run.failed
             try? store.updateImportSession(id: run.id.uuidString, rootId: rootId, state: "completed",
                                            totalCount: run.total, importedCount: run.imported,
                                            skippedCount: run.skipped, failedCount: run.failed,
-                                           finishedAt: run.finishedAt)
+                                           finishedAt: run.finishedAt, errorMessage: run.errorMessage)
         }
 
         importing = false
         recomputeDuplicates()
+        let failedCount = importRun?.failed ?? 0
         let message: String
         let icon: String
         if fresh.isEmpty, skipped > 0 {
-            message = "已跳过 \(skipped) 张重复照片"
+            message = "已跳过 \(skipped) 张重复照片" + (failedCount > 0 ? " · \(failedCount) 失败" : "")
             icon = "warning"
         } else if fresh.isEmpty {
-            message = "未发现可导入的照片"
+            message = failedCount > 0 ? "导入失败 \(failedCount) 个文件" : "未发现可导入的照片"
             icon = "warning"
         } else {
-            message = "已导入 \(fresh.count) 张照片"
-            icon = "check"
+            message = "已导入 \(fresh.count) 张照片" + (failedCount > 0 ? " · \(failedCount) 失败" : "")
+            icon = failedCount > 0 ? "warning" : "check"
         }
         push(message, icon)
+    }
+
+    func retryFailedImport() {
+        guard let run = importRun, run.phase.isFinished, !run.failures.isEmpty else { return }
+        guard let coordinator, let store else {
+            push("无可用目录库", "warning")
+            return
+        }
+        let folder = URL(fileURLWithPath: run.sourcePath)
+        guard FileManager.default.fileExists(atPath: folder.path) else {
+            push("源文件夹不可访问", "warning")
+            return
+        }
+        let files = run.failures.map { URL(fileURLWithPath: $0.path) }
+        let retry = ImportRun(source: folder, mode: run.mode)
+        let existingIds = Set(assets.map { $0.id })
+        importRun = retry
+        lastImportSessionPersistedCount = 0
+        importing = true
+        try? store.startImportSession(id: retry.id.uuidString, startedAt: retry.startedAt)
+        push("正在重试 \(files.count) 个失败文件…", "refresh")
+        let vision = visionEnabled
+        Task { [weak self, coordinator, store, folder, files, existingIds, retry, vision] in
+            let imported = await Task.detached(priority: .userInitiated) {
+                coordinator.importFiles(files, from: folder, mode: retry.mode, autoTag: vision) { progress in
+                    Task { @MainActor [weak self] in
+                        self?.recordImportProgress(progress, for: retry.id)
+                    }
+                }
+            }.value
+            guard let self else { return }
+            self.finishImport(folder: folder, imported: imported, existingIds: existingIds,
+                              store: store, bookmark: nil, mode: retry.mode, runId: retry.id,
+                              persistSourceRoot: false)
+        }
+    }
+
+    private func importFailureSummary(_ failures: [ImportFailure]) -> String? {
+        guard !failures.isEmpty else { return nil }
+        return failures.map { "\($0.filename): \($0.reason)" }.joined(separator: "\n")
     }
 
     private func persistImportSessionProgress(_ run: ImportRun) {
