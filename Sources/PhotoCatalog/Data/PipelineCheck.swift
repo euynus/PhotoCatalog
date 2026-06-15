@@ -156,6 +156,15 @@ enum PipelineCheck {
             check(!fm.fileExists(atPath: p), "simulated missing original (file removed)")
         }
 
+        // 18. offline external-volume classification (§6.4 ORG-007)
+        check(VolumeMonitor.volumeRoot(of: "/Volumes/Photos/2026/a.jpg") == "/Volumes/Photos",
+              "external volume root extracted")
+        check(VolumeMonitor.volumeRoot(of: "/Users/me/Pictures/a.jpg") == nil, "internal path has no volume root")
+        check(VolumeMonitor.status(forInaccessible: "/Volumes/NoSuchDrive_\(UUID().uuidString)/x.jpg") == .offline,
+              "unmounted volume → offline")
+        check(VolumeMonitor.status(forInaccessible: "/Users/me/gone_\(UUID().uuidString).jpg") == .missing,
+              "internal gone → missing")
+
         try? fm.removeItem(at: tmp)
         print(failures == 0 ? "--- pipeline OK ---" : "--- \(failures) FAILURE(S) ---")
         exit(failures == 0 ? 0 : 1)
