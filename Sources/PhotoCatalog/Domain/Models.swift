@@ -51,6 +51,7 @@ struct Asset: Identifiable, Equatable, Sendable {
 
     let location: String
     let gps: (Double, Double)
+    var gpsAltitude: Double? = nil
     var status: AssetStatus
     let importedAt: Date
     var deleted: Bool = false

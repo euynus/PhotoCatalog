@@ -64,7 +64,7 @@ enum CatalogStoreError: Error, Equatable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    private static let latestSchemaVersion = 9
+    private static let latestSchemaVersion = 10
     let packageURL: URL
     let db: Database
 
@@ -177,6 +177,13 @@ final class CatalogStore: @unchecked Sendable {
                            [.text(Self.iso(.now))])
             }
         }
+        if current < 10 {
+            try db.transaction {
+                try db.run("ALTER TABLE assets ADD COLUMN gps_altitude REAL;")
+                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(10, ?);",
+                           [.text(Self.iso(.now))])
+            }
+        }
     }
 
     /// FTS5 full-text search returning matching asset ids (§12.7).
@@ -270,13 +277,13 @@ final class CatalogStore: @unchecked Sendable {
     private static let columns = """
     id,pid,ori,thumb,preview,filename,type,is_raw,folder_id,folder_name,\
     capture_date,width,height,orientation,camera,lens,focal,aperture,shutter,iso,\
-    color_space,has_icc_profile,file_mb,rating,flag,color_label,keywords,title,caption,location,gps_lat,gps_lon,\
+    color_space,has_icc_profile,file_mb,rating,flag,color_label,keywords,title,caption,location,gps_lat,gps_lon,gps_altitude,\
     status,imported_at,deleted,is_demo,local_path,capture_date_source,content_hash,quick_hash,faces,\
     file_modified_at,file_created_at
     """
 
     func upsert(_ assets: [Asset]) throws {
-        let placeholders = Array(repeating: "?", count: 43).joined(separator: ",")
+        let placeholders = Array(repeating: "?", count: 44).joined(separator: ",")
         let sql = "INSERT OR REPLACE INTO assets(\(Self.columns)) VALUES(\(placeholders));"
         try db.transaction {
             for a in assets {
@@ -591,7 +598,9 @@ final class CatalogStore: @unchecked Sendable {
             .double(a.fileMB), .int(a.rating), .text(a.flag.rawValue),
             a.colorLabel.map { SQLValue.text($0.rawValue) } ?? .null,
             .text(keywordsJSON(a.keywords)), .text(a.title), .text(a.caption),
-            .text(a.location), .double(a.gps.0), .double(a.gps.1), .text(a.status.rawValue),
+            .text(a.location), .double(a.gps.0), .double(a.gps.1),
+            a.gpsAltitude.map { SQLValue.double($0) } ?? .null,
+            .text(a.status.rawValue),
             .double(a.importedAt.timeIntervalSince1970), .int(a.deleted ? 1 : 0), .int(a.isDemo ? 1 : 0),
             a.localPath.map { SQLValue.text($0) } ?? .null,
             .text(a.captureDateSource),
@@ -630,6 +639,7 @@ final class CatalogStore: @unchecked Sendable {
             keywords: kws, title: row.text("title") ?? "", caption: row.text("caption") ?? "",
             location: row.text("location") ?? "",
             gps: (row.double("gps_lat") ?? 0, row.double("gps_lon") ?? 0),
+            gpsAltitude: row.double("gps_altitude"),
             status: AssetStatus(rawValue: row.text("status") ?? "ready") ?? .ready,
             importedAt: Date(timeIntervalSince1970: row.double("imported_at") ?? 0),
             deleted: row.bool("deleted"),

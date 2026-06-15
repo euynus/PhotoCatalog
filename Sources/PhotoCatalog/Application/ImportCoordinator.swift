@@ -127,7 +127,7 @@ final class ImportCoordinator: @unchecked Sendable {
             fileMB: Double(meta.fileSize) / (1024 * 1024),
             fileModifiedAt: meta.fileModifiedAt, fileCreatedAt: meta.fileCreatedAt,
             rating: 0, flag: .none, colorLabel: nil, keywords: [], title: "", caption: "",
-            location: gpsLabel(meta.gps), gps: meta.gps,
+            location: gpsLabel(meta.gps), gps: meta.gps, gpsAltitude: meta.gpsAltitude,
             status: .ready, importedAt: Date(), deleted: false,
             localPath: finalURL.path, captureDateSource: meta.captureDateSource,
             contentHash: content, quickHash: quick, isDemo: false)

@@ -21,6 +21,7 @@ struct ScannedMetadata {
     var captureDate = Date()
     var captureDateSource = "文件修改时间"
     var gps: (Double, Double) = (0, 0)
+    var gpsAltitude: Double?
     var fileSize: Int64 = 0
     var fileModifiedAt: Date?
     var fileCreatedAt: Date?
@@ -71,6 +72,10 @@ enum MetadataReader {
             let latRef = (gps[kCGImagePropertyGPSLatitudeRef] as? String) ?? "N"
             let lonRef = (gps[kCGImagePropertyGPSLongitudeRef] as? String) ?? "E"
             m.gps = (latRef == "S" ? -lat : lat, lonRef == "W" ? -lon : lon)
+        }
+        if let altitude = (gps[kCGImagePropertyGPSAltitude] as? NSNumber)?.doubleValue {
+            let ref = (gps[kCGImagePropertyGPSAltitudeRef] as? NSNumber)?.intValue ?? 0
+            m.gpsAltitude = ref == 1 ? -altitude : altitude
         }
 
         // capture-date priority (§12.4)

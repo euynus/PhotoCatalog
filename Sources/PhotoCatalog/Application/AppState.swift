@@ -1971,6 +1971,7 @@ final class AppState: ObservableObject {
             $0.fileModifiedAt = attrs?[.modificationDate] as? Date
             $0.fileCreatedAt = attrs?[.creationDate] as? Date
             $0.hasICCProfile = meta.hasICCProfile
+            $0.gpsAltitude = meta.gpsAltitude
             $0.quickHash = HashService.quickHash(replacement, fileSize: size)
             $0.contentHash = HashService.contentHash(replacement)
             $0.status = .ready

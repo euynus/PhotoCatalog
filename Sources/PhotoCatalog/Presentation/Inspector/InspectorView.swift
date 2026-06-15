@@ -198,7 +198,7 @@ struct InspectorView: View {
             VStack {
                 Spacer()
                 HStack {
-                    Text(String(format: "%.4f, %.4f", a.gps.0, a.gps.1))
+                    Text(gpsLabel(a))
                         .font(Theme.mono).foregroundStyle(Theme.text2)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.black.opacity(0.4)).clipShape(RoundedRectangle(cornerRadius: 4))
@@ -227,10 +227,20 @@ struct InspectorView: View {
             .init("备份状态", "已包含于上次目录库备份", accent: true),
         ])
     }
+
+    private func gpsLabel(_ asset: Asset) -> String {
+        let coordinate = String(format: "%.4f, %.4f", asset.gps.0, asset.gps.1)
+        guard let altitude = asset.gpsAltitude else { return coordinate }
+        return coordinate + " · \(formatAltitude(altitude))"
+    }
 }
 
 func formatAperture(_ v: Double) -> String {
     v == v.rounded() ? String(format: "%.0f", v) : String(format: "%.1f", v)
+}
+
+func formatAltitude(_ value: Double) -> String {
+    value == value.rounded() ? "\(Int(value.rounded())) m" : String(format: "%.1f m", value)
 }
 
 private struct InsTabButton: View {

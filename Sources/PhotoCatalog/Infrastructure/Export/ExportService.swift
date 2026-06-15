@@ -94,6 +94,9 @@ enum ExportService {
                 "fileModifiedAt": jsonDate(a.fileModifiedAt, formatter: formatter),
                 "fileCreatedAt": jsonDate(a.fileCreatedAt, formatter: formatter),
                 "hasICCProfile": a.hasICCProfile,
+                "gpsLatitude": a.gps.0,
+                "gpsLongitude": a.gps.1,
+                "gpsAltitude": jsonNumber(a.gpsAltitude),
                 "camera": a.camera, "lens": a.lens,
                 "originalPath": a.localPath ?? a.thumb,
             ]
@@ -109,7 +112,8 @@ enum ExportService {
     static func exportMetadataCSV(_ assets: [Asset], to fileURL: URL) -> Bool {
         let header = [
             "assetId", "filename", "rating", "flag", "colorLabel", "keywords", "title", "caption",
-            "captureDate", "fileModifiedAt", "fileCreatedAt", "hasICCProfile", "camera", "lens", "originalPath",
+            "captureDate", "fileModifiedAt", "fileCreatedAt", "hasICCProfile",
+            "gpsLatitude", "gpsLongitude", "gpsAltitude", "camera", "lens", "originalPath",
         ]
         let formatter = ISO8601DateFormatter()
         let rows = assets.map { a in
@@ -126,6 +130,9 @@ enum ExportService {
                 a.fileModifiedAt.map { formatter.string(from: $0) } ?? "",
                 a.fileCreatedAt.map { formatter.string(from: $0) } ?? "",
                 a.hasICCProfile ? "true" : "false",
+                String(a.gps.0),
+                String(a.gps.1),
+                a.gpsAltitude.map { String($0) } ?? "",
                 a.camera,
                 a.lens,
                 a.localPath ?? a.thumb,
@@ -213,6 +220,11 @@ enum ExportService {
 
     private static func jsonDate(_ date: Date?, formatter: ISO8601DateFormatter) -> Any {
         date.map { formatter.string(from: $0) } ?? NSNull()
+    }
+
+    private static func jsonNumber(_ value: Double?) -> Any {
+        guard let value else { return NSNull() }
+        return value
     }
 
     private static func csvField(_ value: String) -> String {

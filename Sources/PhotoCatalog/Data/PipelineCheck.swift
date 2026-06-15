@@ -24,9 +24,19 @@ enum PipelineCheck {
         try? fm.createDirectory(at: src, withIntermediateDirectories: true)
 
         // 1. generate 6 distinct test JPEGs + 1 exact duplicate
+        let fixedGPS = (lat: 31.2345, lon: 121.4567, altitude: 88.5)
+        let gpsProperties: [CFString: Any] = [
+            kCGImagePropertyGPSLatitude: fixedGPS.lat,
+            kCGImagePropertyGPSLatitudeRef: "N",
+            kCGImagePropertyGPSLongitude: fixedGPS.lon,
+            kCGImagePropertyGPSLongitudeRef: "E",
+            kCGImagePropertyGPSAltitude: fixedGPS.altitude,
+            kCGImagePropertyGPSAltitudeRef: 0,
+        ]
         for i in 0..<6 {
             writeTestImage(to: src.appendingPathComponent(String(format: "IMG_%04d.jpg", i)),
-                           width: i % 2 == 0 ? 800 : 600, height: i % 2 == 0 ? 600 : 800, seed: i)
+                           width: i % 2 == 0 ? 800 : 600, height: i % 2 == 0 ? 600 : 800, seed: i,
+                           gps: i == 0 ? gpsProperties : nil)
         }
         try? fm.copyItem(at: src.appendingPathComponent("IMG_0000.jpg"),
                          to: src.appendingPathComponent("IMG_0000_copy.jpg"))
@@ -73,6 +83,9 @@ enum PipelineCheck {
         check(timestampedAsset?.fileModifiedAt.map { abs($0.timeIntervalSince(fixedModifiedAt)) < 1 } == true
               && timestampedAsset?.fileCreatedAt != nil,
               "file mtime/ctime read from filesystem")
+        check(timestampedAsset?.gpsAltitude.map { abs($0 - fixedGPS.altitude) < 0.1 } == true
+              && (timestampedAsset?.gps.0 ?? 0) > 31,
+              "GPS latitude/longitude/altitude read")
         check(progressSnapshots.first?.total == 7 && progressSnapshots.last?.processed == 7,
               "import progress reported total + processed counts")
         check(progressSnapshots.contains { $0.latestAsset != nil }, "import progress reported latest processed asset")
@@ -153,6 +166,8 @@ enum PipelineCheck {
               "file mtime/ctime persisted")
         check(reloadedTimestamped?.hasICCProfile == timestampedAsset?.hasICCProfile,
               "ICC profile flag persisted")
+        check(reloadedTimestamped?.gpsAltitude.map { abs($0 - fixedGPS.altitude) < 0.1 } == true,
+              "GPS altitude persisted")
         let album = Album(id: "album-test", name: "Pipeline Picks",
                           assetIds: Array(assets.prefix(3).map(\.id)))
         try? store.saveAlbum(album)
@@ -483,7 +498,8 @@ enum PipelineCheck {
         exit(failures == 0 ? 0 : 1)
     }
 
-    private static func writeTestImage(to url: URL, width: Int, height: Int, seed: Int) {
+    private static func writeTestImage(to url: URL, width: Int, height: Int, seed: Int,
+                                       gps: [CFString: Any]? = nil) {
         let cs = CGColorSpaceCreateDeviceRGB()
         guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
                                   bytesPerRow: 0, space: cs,
@@ -497,7 +513,8 @@ enum PipelineCheck {
         guard let cg = ctx.makeImage(),
               let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)
         else { return }
-        CGImageDestinationAddImage(dest, cg, nil)
+        let properties = gps.map { [kCGImagePropertyGPSDictionary: $0] as CFDictionary }
+        CGImageDestinationAddImage(dest, cg, properties)
         CGImageDestinationFinalize(dest)
     }
 
