@@ -44,13 +44,13 @@ struct Sidebar: View {
                 "\(ready.filter { $0.status == .missing || $0.status == .offline }.count)",
                 .lib, "missing", "缺失 / 离线")
             row("copy", Theme.purple, "重复文件",
-                "\(DemoData.duplicateGroups.count) 组", .lib, "duplicates", "重复文件")
+                "\(app.duplicateGroups.count) 组", .lib, "duplicates", "重复文件")
         }
     }
 
     private var folderSection: some View {
         SidebarSection(title: "文件夹") {
-            ForEach(DemoData.folders) { f in
+            ForEach(app.folders) { f in
                 row("folder", Theme.folderGray, f.name,
                     "\(ready.filter { $0.folderId == f.id }.count)", .folder, f.id, f.name)
             }

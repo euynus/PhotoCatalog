@@ -18,10 +18,19 @@ struct StatusBar: View {
             sep
             Text("引用式管理 · 原件只读").foregroundStyle(Theme.text3)
             Spacer()
-            HStack(spacing: 5) {
-                Icon("clock", size: 12)
-                Text("上次备份 今天 03:00")
-            }.foregroundStyle(Theme.text3)
+            if app.importing {
+                HStack(spacing: 5) {
+                    ProgressView().controlSize(.mini)
+                    Text("正在导入…")
+                }.foregroundStyle(Theme.accent)
+            }
+            Button { app.runBackup() } label: {
+                HStack(spacing: 5) {
+                    Icon("clock", size: 12)
+                    Text("上次备份 今天 03:00")
+                }.foregroundStyle(Theme.text3)
+            }
+            .buttonStyle(.plain).help("立即备份目录库")
             Text("缓存 2.4 GB").foregroundStyle(Theme.text3)
         }
         .font(.system(size: 11))

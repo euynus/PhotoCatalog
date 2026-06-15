@@ -159,7 +159,7 @@ struct InspectorView: View {
             }
             InsGroup([
                 .init("拍摄时间", DateFmt.long(a.date)),
-                .init("时间来源", "EXIF · DateTimeOriginal"),
+                .init("时间来源", a.captureDateSource),
             ])
             mapView(a)
         }
@@ -205,8 +205,12 @@ struct InspectorView: View {
         InsGroup([
             .init("导入时间", DateFmt.long(a.importedAt)),
             .init("管理方式", "引用式 (Referenced)"),
-            .init("内容哈希", "sha256:\(String(a.id.dropFirst()))e7b…", mono: true),
-            .init("Quick Hash", "\(Int(a.fileMB))M·\(a.pid)af", mono: true),
+            .init("内容哈希",
+                  a.contentHash.map { "sha256:\($0.prefix(12))…" } ?? "sha256:\(String(a.id.dropFirst()))e7b…",
+                  mono: true),
+            .init("Quick Hash",
+                  a.quickHash.map { "\($0.prefix(10))…" } ?? "\(Int(a.fileMB))M·\(a.pid)af",
+                  mono: true),
             .init("原件修改", DateFmt.short(a.date)),
             .init("备份状态", "已包含于上次目录库备份", accent: true),
         ])

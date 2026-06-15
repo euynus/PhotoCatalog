@@ -6,7 +6,7 @@ import SwiftUI
 struct DuplicatesView: View {
     @EnvironmentObject var app: AppState
 
-    private let groups = DemoData.duplicateGroups
+    private var groups: [DuplicateGroup] { app.duplicateGroups }
     @State private var keep: [String: String] = [:]
     @State private var resolved: [String: String] = [:]
 

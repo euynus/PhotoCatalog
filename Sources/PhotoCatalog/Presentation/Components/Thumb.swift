@@ -40,36 +40,46 @@ final class ThumbLoader: ObservableObject {
     private var task: URLSessionDataTask?
     private var loadedURL: String?
 
-    func load(_ urlString: String) {
+    func load(_ source: String) {
         // already showing / fetching this exact source
-        if urlString == loadedURL { return }
-        loadedURL = urlString
+        if source == loadedURL { return }
+        loadedURL = source
         task?.cancel()
         task = nil
         failed = false
 
-        if let cached = Self.cache.object(forKey: urlString as NSString) {
+        if source.isEmpty { image = nil; failed = true; return }
+        if let cached = Self.cache.object(forKey: source as NSString) {
             image = cached
             return
         }
         image = nil
-        guard let url = URL(string: urlString) else { return }
-        task = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
-            guard let self else { return }
-            if let data, let img = NSImage(data: data) {
-                Self.cache.setObject(img, forKey: urlString as NSString)
-                DispatchQueue.main.async {
-                    guard self.loadedURL == urlString else { return }   // source changed mid-flight
-                    withAnimation(.easeOut(duration: 0.35)) { self.image = img }
-                }
-            } else {
-                DispatchQueue.main.async {
-                    guard self.loadedURL == urlString else { return }
-                    self.failed = true
-                }
+
+        if source.hasPrefix("http") {
+            guard let url = URL(string: source) else { failed = true; return }
+            task = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+                self?.finish(source, data.flatMap { NSImage(data: $0) })
+            }
+            task?.resume()
+        } else {
+            // local cached thumbnail / original file path
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let img = NSImage(contentsOfFile: source)
+                self?.finish(source, img)
             }
         }
-        task?.resume()
+    }
+
+    private func finish(_ source: String, _ img: NSImage?) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.loadedURL == source else { return }
+            if let img {
+                Self.cache.setObject(img, forKey: source as NSString)
+                withAnimation(.easeOut(duration: 0.3)) { self.image = img }
+            } else {
+                self.failed = true
+            }
+        }
     }
 }
 

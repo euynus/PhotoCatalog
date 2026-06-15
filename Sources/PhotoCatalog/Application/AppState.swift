@@ -3,6 +3,7 @@
 // ============================================================
 import SwiftUI
 import Combine
+import AppKit
 
 @MainActor
 final class AppState: ObservableObject {
@@ -14,6 +15,12 @@ final class AppState: ObservableObject {
     @Published var assets: [Asset]
     @Published var albums: [Album]
     @Published var smartAlbums: [SmartAlbum]
+    @Published var folders: [Folder] = DemoData.folders
+    @Published var importing = false
+
+    // ----- catalog (real persistence / scanning) -----
+    private var store: CatalogStore?
+    private var coordinator: ImportCoordinator?
 
     // ----- selection / view -----
     @Published var selection = Selection(type: .lib, id: "all", name: "全部照片")
@@ -49,10 +56,124 @@ final class AppState: ObservableObject {
         assets = a
         albums = DemoData.initialAlbums(a)
         smartAlbums = DemoData.initialSmartAlbums(a)
+        loadExistingCatalog()
         // seed the initial primary/selection from the first visible photo
         let first = list.first
         primaryId = first?.id
         if let id = first?.id { selectedIds = [id]; anchorId = id }
+    }
+
+    // ---------- catalog open / load ----------
+    private func loadExistingCatalog() {
+        let url = CatalogStore.defaultURL
+        guard FileManager.default.fileExists(atPath: url.path),
+              let s = try? CatalogStore(packageURL: url) else { return }
+        store = s
+        coordinator = ImportCoordinator(store: s)
+        let real = ((try? s.loadAssets()) ?? []).filter { !$0.isDemo && !$0.deleted }
+        guard !real.isEmpty else { return }
+        // missing-file detection (§6.4 ORG-003)
+        let checked = real.map { a -> Asset in
+            guard let p = a.localPath, !FileManager.default.fileExists(atPath: p) else { return a }
+            var m = a; m.status = .missing; return m
+        }
+        assets.append(contentsOf: checked)
+        for (fid, items) in Dictionary(grouping: checked, by: { $0.folderId }) where
+            !folders.contains(where: { $0.id == fid }) {
+            folders.append(Folder(id: fid, name: items.first?.folderName ?? fid))
+        }
+    }
+
+    private func openOrCreateCatalog() {
+        guard store == nil else { return }
+        guard let s = try? CatalogStore(packageURL: CatalogStore.defaultURL) else {
+            push("无法创建目录库", "warning"); return
+        }
+        store = s
+        coordinator = ImportCoordinator(store: s)
+    }
+
+    // ---------- real folder import (§6.3) ----------
+    func addFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "导入"
+        panel.message = "选择包含照片的文件夹（引用式导入，原件保持不动）"
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        openOrCreateCatalog()
+        guard let coordinator, let store else { return }
+        importing = true
+        push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
+        let bookmark = FileAccessService.createBookmark(for: folder)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let imported = coordinator.importFolder(folder)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let existing = Set(self.assets.map { $0.id })
+                let fresh = imported.filter { !existing.contains($0.id) }
+                self.assets.append(contentsOf: fresh)
+                try? store.upsert(fresh)
+                if let fid = fresh.first?.folderId {
+                    try? store.addSourceRoot(id: fid, displayName: folder.lastPathComponent,
+                                             path: folder.path, bookmark: bookmark)
+                    if !self.folders.contains(where: { $0.id == fid }) {
+                        self.folders.append(Folder(id: fid, name: folder.lastPathComponent))
+                    }
+                    self.select(Selection(type: .folder, id: fid, name: folder.lastPathComponent))
+                }
+                self.importing = false
+                self.push(fresh.isEmpty ? "未发现可导入的照片" : "已导入 \(fresh.count) 张照片",
+                          fresh.isEmpty ? "warning" : "check")
+            }
+        }
+    }
+
+    // ---------- export originals (§6.11) ----------
+    func exportSelection() {
+        let ids = targetIds
+        let selected = assets.filter { ids.contains($0.id) && !$0.deleted }
+        let real = selected.filter { !$0.isDemo && $0.localPath != nil }
+        guard !real.isEmpty else {
+            push("正在导出 \(max(selected.count, 1)) 张原件…（演示照片无本地原件）", "export")
+            return
+        }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = "导出到此处"
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let report = ExportService.copyOriginals(real, to: dest)
+            DispatchQueue.main.async {
+                self?.push("已导出 \(report.copied) 张原件" + (report.failed > 0 ? " · \(report.failed) 失败" : ""), "export")
+            }
+        }
+    }
+
+    // ---------- backup (§6.12) ----------
+    func runBackup() {
+        openOrCreateCatalog()
+        guard let store else { push("无目录库可备份", "warning"); return }
+        try? store.upsert(assets.filter { !$0.isDemo })
+        if let url = try? BackupService.backup(store) {
+            push("已备份目录库 · \(url.lastPathComponent)", "check")
+        } else {
+            push("备份失败", "warning")
+        }
+    }
+
+    // ---------- real exact-duplicate groups (§6.10) ----------
+    var duplicateGroups: [DuplicateGroup] {
+        let real = HashService.exactDuplicateGroups(assets.filter { !$0.isDemo && !$0.deleted })
+        return real.isEmpty ? DemoData.duplicateGroups : real + DemoData.duplicateGroups
+    }
+
+    private func persist(_ ids: Set<String>) {
+        guard let store else { return }
+        let changed = assets.filter { ids.contains($0.id) && !$0.isDemo }
+        if !changed.isEmpty { try? store.upsert(changed) }
     }
 
     // ---------- toasts ----------
@@ -228,11 +349,13 @@ final class AppState: ObservableObject {
         for i in assets.indices where target.contains(assets[i].id) {
             transform(&assets[i])
         }
+        persist(target)
     }
 
     func mutateAsset(_ id: String, _ transform: (inout Asset) -> Void) {
         guard let i = assets.firstIndex(where: { $0.id == id }) else { return }
         transform(&assets[i])
+        persist([id])
     }
 
     func setRating(_ n: Int) { mutate { $0.rating = n } }

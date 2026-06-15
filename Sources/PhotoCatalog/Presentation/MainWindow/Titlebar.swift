@@ -15,7 +15,7 @@ struct Titlebar: View {
                 Color.clear.frame(width: 62, height: 1)
 
                 ToolButton(icon: "importIcon", label: "导入 / 添加文件夹",
-                           action: { app.sheet = "import" }) {
+                           action: { app.addFolder() }) {
                     Text("导入").font(.system(size: 12.5, weight: .medium))
                 }
 
@@ -72,8 +72,7 @@ struct Titlebar: View {
 
             separator
 
-            ToolButton(icon: "export", label: "导出选中原件",
-                       action: { app.push("正在导出 \(max(app.selectedIds.count, 1)) 张原件…", "export") })
+            ToolButton(icon: "export", label: "导出选中原件", action: { app.exportSelection() })
             ToolButton(icon: "inspector", label: "显示简介 (⌘I)", active: app.showInspector,
                        action: { app.showInspector.toggle() })
         }
