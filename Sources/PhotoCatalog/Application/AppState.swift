@@ -81,6 +81,7 @@ final class AppState: ObservableObject {
     private var watcher: FileWatcher?
     private var watchedRoots: [URL] = []
     private var securityScopedRoots: [URL] = []
+    private var sourceRootPathsById: [String: String] = [:]
     private var volumeMonitor: VolumeMonitor?
     private var lastImportSessionPersistedCount = 0
     private var importControl: ImportControl?
@@ -236,7 +237,10 @@ final class AppState: ObservableObject {
                 try? store.updateSourceRootStatus(id: root.id, status: resolved.status)
             }
 
-            if !folders.contains(where: { $0.id == root.id }) {
+            sourceRootPathsById[root.id] = resolved.url?.path ?? root.pathHint
+            if let index = folders.firstIndex(where: { $0.id == root.id }) {
+                folders[index].status = resolved.status
+            } else {
                 folders.append(Folder(id: root.id, name: root.displayName, status: resolved.status))
             }
             if root.managementMode == "referenced",
@@ -558,6 +562,7 @@ final class AppState: ObservableObject {
                                          path: folder.path, bookmark: bookmark,
                                          volumeIdentifier: VolumeMonitor.volumeIdentifier(for: folder))
             }
+            sourceRootPathsById[fid] = folder.path
             if !folders.contains(where: { $0.id == fid }) {
                 folders.append(Folder(id: fid, name: folder.lastPathComponent, status: "online"))
             }
@@ -1363,6 +1368,7 @@ final class AppState: ObservableObject {
         }
         securityScopedRoots = []
         watchedRoots = []
+        sourceRootPathsById = [:]
         importControl = nil
         activeImportJobId = nil
         importing = false
@@ -1376,6 +1382,7 @@ final class AppState: ObservableObject {
         albums = DemoData.initialAlbums(a)
         smartAlbums = DemoData.initialSmartAlbums(a)
         folders = DemoData.folders
+        sourceRootPathsById = [:]
         duplicateGroupsCache = DemoData.duplicateGroups
         selection = Selection(type: .lib, id: "all", name: "全部照片")
         primaryId = list.first?.id
@@ -1491,6 +1498,15 @@ final class AppState: ObservableObject {
             if leftPriority != rightPriority { return leftPriority < rightPriority }
             return (originalOrder[lhs.id] ?? 0) < (originalOrder[rhs.id] ?? 0)
         }
+    }
+
+    var folderTree: [FolderTreeItem] {
+        FolderTreeService.build(sourceFolders: orderedFolders, assets: assets,
+                                sourceRootPaths: sourceRootPathsById)
+    }
+
+    func countForFolderTreeItem(_ item: FolderTreeItem) -> Int {
+        assets.filter { !$0.deleted && FolderTreeService.matches($0, item: item) }.count
     }
 
     var canPromoteSelectedSource: Bool {
@@ -1618,6 +1634,9 @@ final class AppState: ObservableObject {
         let live = assets.filter { !$0.deleted }
         switch selection.type {
         case .folder:
+            if let item = folderTree.first(where: { $0.id == selection.id }) {
+                return live.filter { FolderTreeService.matches($0, item: item) }
+            }
             return live.filter { $0.folderId == selection.id }
         case .album:
             guard let al = albums.first(where: { $0.id == selection.id }) else { return [] }
@@ -1855,6 +1874,7 @@ final class AppState: ObservableObject {
         }
         try? store?.removeSourceRoot(id: folderId)
         folders.removeAll { $0.id == folderId }
+        sourceRootPathsById.removeValue(forKey: folderId)
         sourcePriorities.removeValue(forKey: folderId)
         saveSourcePriorities()
         watchedRoots.removeAll { root in
@@ -1899,6 +1919,7 @@ final class AppState: ObservableObject {
         for i in folders.indices where folders[i].id == folderId {
             folders[i] = Folder(id: folderId, name: folder.lastPathComponent, status: "online")
         }
+        sourceRootPathsById[folderId] = folder.path
         if !watchedRoots.contains(folder) {
             watchedRoots.append(folder)
             refreshWatcher()

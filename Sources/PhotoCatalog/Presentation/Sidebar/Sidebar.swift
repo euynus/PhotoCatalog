@@ -70,10 +70,11 @@ struct Sidebar: View {
 
     private var folderSection: some View {
         SidebarSection(title: "文件夹") {
-            ForEach(app.orderedFolders) { f in
-                let count = ready.filter { $0.folderId == f.id }.count
+            ForEach(app.folderTree) { f in
+                let count = app.countForFolderTreeItem(f)
                 row("folder", folderColor(f.status), f.name,
-                    folderStatusText(f.status) ?? "\(count)", .folder, f.id, f.name)
+                    folderStatusText(f.status) ?? "\(count)", .folder, f.id, f.name,
+                    indent: CGFloat(f.depth) * 14)
             }
         }
     }
@@ -108,9 +109,11 @@ struct Sidebar: View {
 
     // ---- row builder ----
     private func row(_ icon: String, _ color: Color?, _ label: String, _ count: String,
-                     _ type: Selection.Kind, _ id: String, _ name: String) -> some View {
+                     _ type: Selection.Kind, _ id: String, _ name: String,
+                     indent: CGFloat = 0) -> some View {
         let active = app.selection.type == type && app.selection.id == id
-        return SidebarRow(icon: icon, color: color, label: label, count: count, active: active) {
+        return SidebarRow(icon: icon, color: color, label: label, count: count,
+                          active: active, indent: indent) {
             app.select(Selection(type: type, id: id, name: name))
         }
     }
@@ -212,6 +215,7 @@ struct SidebarRow: View {
     let label: String
     var count: String?
     let active: Bool
+    var indent: CGFloat = 0
     let action: () -> Void
     @State private var hover = false
 
@@ -232,6 +236,7 @@ struct SidebarRow: View {
                 }
             }
             .padding(.horizontal, 8)
+            .padding(.leading, indent)
             .frame(height: 28)
             .background(active ? Theme.accent : (hover ? Color.white(0.05) : .clear))
             .clipShape(RoundedRectangle(cornerRadius: 6))

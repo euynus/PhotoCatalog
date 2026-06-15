@@ -144,6 +144,34 @@ enum PipelineCheck {
         } else {
             check(false, "configurable previews use 1600px cache")
         }
+        let treeSrc = tmp.appendingPathComponent("tree-source")
+        let tripsDir = treeSrc.appendingPathComponent("Trips")
+        let tokyoDir = tripsDir.appendingPathComponent("Tokyo")
+        try? fm.createDirectory(at: tokyoDir, withIntermediateDirectories: true)
+        writeTestImage(to: tripsDir.appendingPathComponent("TRIP.jpg"), width: 600, height: 400, seed: 43)
+        writeTestImage(to: tokyoDir.appendingPathComponent("TOKYO.jpg"), width: 600, height: 400, seed: 44)
+        let treeAssets = coordinator.importFolder(treeSrc)
+        if let sourceId = treeAssets.first?.folderId {
+            let tree = FolderTreeService.build(
+                sourceFolders: [Folder(id: sourceId, name: "tree-source")],
+                assets: treeAssets,
+                sourceRootPaths: [sourceId: treeSrc.path])
+            let trips = tree.first { $0.name == "Trips" && $0.depth == 1 }
+            let tokyo = tree.first { $0.name == "Tokyo" && $0.depth == 2 }
+            check(tree.count == 3 && trips != nil && tokyo != nil,
+                  "folder tree derives nested source folders")
+            if let trips, let tokyo {
+                let tripsCount = treeAssets.filter { FolderTreeService.matches($0, item: trips) }.count
+                let tokyoCount = treeAssets.filter { FolderTreeService.matches($0, item: tokyo) }.count
+                check(tripsCount == 2 && tokyoCount == 1,
+                      "folder tree filters nested source folders")
+            } else {
+                check(false, "folder tree filters nested source folders")
+            }
+        } else {
+            check(false, "folder tree derives nested source folders")
+            check(false, "folder tree filters nested source folders")
+        }
         check(assets.allSatisfy { $0.contentHash != nil && $0.quickHash != nil }, "content + quick hashes computed")
         let groupedDedup = ImportDeduplicationService.apply(imported: assets, existingAssets: [],
                                                             existingIds: [], strategy: .groupExact)

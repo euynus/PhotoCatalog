@@ -76,6 +76,17 @@ struct Folder: Identifiable, Hashable {
     var status: String = "online"
 }
 
+struct FolderTreeItem: Identifiable, Hashable, Sendable {
+    let id: String
+    let sourceId: String
+    let name: String
+    let status: String
+    let depth: Int
+    let directoryPath: String?
+
+    var isSourceRoot: Bool { directoryPath == nil }
+}
+
 struct RecentCatalog: Identifiable, Equatable, Sendable {
     let path: String
     var id: String { path }
