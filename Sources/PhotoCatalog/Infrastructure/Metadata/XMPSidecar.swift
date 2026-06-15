@@ -10,6 +10,8 @@ struct SidecarMetadata: Equatable {
     var keywords: [String] = []
     var title: String = ""
     var caption: String = ""
+    var author: String = ""
+    var copyright: String = ""
 }
 
 enum XMPSidecar {
@@ -37,6 +39,8 @@ enum XMPSidecar {
            </dc:subject>
            <dc:title><rdf:Alt><rdf:li xml:lang="x-default">\(escape(a.title))</rdf:li></rdf:Alt></dc:title>
            <dc:description><rdf:Alt><rdf:li xml:lang="x-default">\(escape(a.caption))</rdf:li></rdf:Alt></dc:description>
+           <dc:creator><rdf:Seq><rdf:li>\(escape(a.author))</rdf:li></rdf:Seq></dc:creator>
+           <dc:rights><rdf:Alt><rdf:li xml:lang="x-default">\(escape(a.copyright))</rdf:li></rdf:Alt></dc:rights>
           </rdf:Description>
          </rdf:RDF>
         </x:xmpmeta>
@@ -93,6 +97,8 @@ private final class SidecarParser: NSObject, XMLParserDelegate {
             if inside("subject") { result.keywords.append(trimmed) }
             else if inside("title") { result.title = trimmed }
             else if inside("description") { result.caption = trimmed }
+            else if inside("creator") { result.author = trimmed }
+            else if inside("rights") { result.copyright = trimmed }
         }
         path.removeLast()
         text = ""

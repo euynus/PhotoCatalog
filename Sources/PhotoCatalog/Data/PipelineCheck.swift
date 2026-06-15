@@ -334,10 +334,19 @@ enum PipelineCheck {
 
         // 5. edit persistence
         if let id = assets.first?.id {
-            try? store.updateAsset({ var a = assets[0]; a.rating = 5; a.keywords = ["测试"]; return a }())
+            try? store.updateAsset({
+                var a = assets[0]
+                a.rating = 5
+                a.keywords = ["测试"]
+                a.author = "作者A"
+                a.copyright = "Copyright A"
+                return a
+            }())
             let again = (try? store.loadAssets()) ?? []
             let edited = again.first { $0.id == id }
-            check(edited?.rating == 5 && edited?.keywords == ["测试"], "rating + keyword edit persisted across reload")
+            check(edited?.rating == 5 && edited?.keywords == ["测试"]
+                  && edited?.author == "作者A" && edited?.copyright == "Copyright A",
+                  "rating + keyword + rights edit persisted across reload")
         }
 
         // 6. exact-duplicate detection (the identical pair)
@@ -418,11 +427,18 @@ enum PipelineCheck {
         }
         let metadataJSON = exportDir.appendingPathComponent("metadata.json")
         let metadataCSV = exportDir.appendingPathComponent("metadata.csv")
-        check(ExportService.exportMetadataJSON(assets, to: metadataJSON)
-              && fm.fileExists(atPath: metadataJSON.path),
+        var metadataAssets = assets
+        metadataAssets[0].author = "Export Author"
+        metadataAssets[0].copyright = "Export Copyright"
+        let exportedJSON = ExportService.exportMetadataJSON(metadataAssets, to: metadataJSON)
+        let jsonText = (try? String(contentsOf: metadataJSON, encoding: .utf8)) ?? ""
+        check(exportedJSON && jsonText.contains("\"author\"") && jsonText.contains("Export Author")
+              && jsonText.contains("\"copyright\"") && jsonText.contains("Export Copyright"),
               "exported JSON metadata")
-        check(ExportService.exportMetadataCSV(assets, to: metadataCSV)
-              && fm.fileExists(atPath: metadataCSV.path),
+        let exportedCSV = ExportService.exportMetadataCSV(metadataAssets, to: metadataCSV)
+        let csvText = (try? String(contentsOf: metadataCSV, encoding: .utf8)) ?? ""
+        check(exportedCSV && csvText.contains("author,copyright") && csvText.contains("Export Author")
+              && csvText.contains("Export Copyright"),
               "exported CSV metadata")
         let previewExportDir = tmp.appendingPathComponent("export-previews")
         let previewReport = ExportService.exportPreviews(assets, to: previewExportDir)
@@ -533,11 +549,14 @@ enum PipelineCheck {
         var sample = assets[1]
         sample.rating = 4; sample.keywords = ["旅行", "测试"]; sample.title = "标题A"
         sample.caption = "说明B"; sample.colorLabel = .red
+        sample.author = "作者B"; sample.copyright = "Copyright B"
         let xmpURL = tmp.appendingPathComponent("sample.xmp")
         XMPSidecar.write(sample, to: xmpURL)
         if let sc = XMPSidecar.read(xmpURL) {
             check(sc.rating == 4 && sc.keywords == ["旅行", "测试"] && sc.title == "标题A"
-                  && sc.caption == "说明B" && sc.colorLabel == .red, "XMP sidecar write/read roundtrip")
+                  && sc.caption == "说明B" && sc.colorLabel == .red
+                  && sc.author == "作者B" && sc.copyright == "Copyright B",
+                  "XMP sidecar write/read roundtrip")
         } else { check(false, "XMP sidecar read") }
 
         // 13. import applies an existing XMP sidecar (§6.5 META-006)
@@ -547,9 +566,11 @@ enum PipelineCheck {
         writeTestImage(to: ximg, width: 700, height: 500, seed: 5)
         var seed = assets[0]; seed.rating = 3; seed.keywords = ["导入测试"]; seed.colorLabel = .blue
         seed.title = "T"; seed.caption = ""
+        seed.author = "Sidecar Author"; seed.copyright = "Sidecar Copyright"
         XMPSidecar.write(seed, to: XMPSidecar.sidecarURL(for: ximg))
         let xa = coordinator.importFolder(xsrc).first
-        check(xa?.rating == 3 && xa?.keywords == ["导入测试"] && xa?.colorLabel == .blue,
+        check(xa?.rating == 3 && xa?.keywords == ["导入测试"] && xa?.colorLabel == .blue
+              && xa?.author == "Sidecar Author" && xa?.copyright == "Sidecar Copyright",
               "import applied XMP sidecar metadata")
 
         // 14. managed import copies originals into Originals/

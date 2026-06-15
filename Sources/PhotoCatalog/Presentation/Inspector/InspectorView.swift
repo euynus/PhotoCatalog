@@ -172,6 +172,11 @@ struct InspectorView: View {
                 .init("拍摄时间", DateFmt.long(a.date)),
                 .init("时间来源", a.captureDateSource),
             ])
+            let rightsRows = [
+                a.author.isEmpty ? nil : InfoRowData("作者", a.author),
+                a.copyright.isEmpty ? nil : InfoRowData("版权", a.copyright),
+            ].compactMap { $0 }
+            if !rightsRows.isEmpty { InsGroup(rightsRows) }
             mapView(a)
         }
     }

@@ -48,6 +48,8 @@ struct Asset: Identifiable, Equatable, Sendable {
     var keywords: [String]
     var title: String
     var caption: String
+    var author: String = ""
+    var copyright: String = ""
 
     let location: String
     let gps: (Double, Double)

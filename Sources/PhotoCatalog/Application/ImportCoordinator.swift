@@ -144,6 +144,7 @@ final class ImportCoordinator: @unchecked Sendable {
             fileMB: Double(meta.fileSize) / (1024 * 1024),
             fileModifiedAt: meta.fileModifiedAt, fileCreatedAt: meta.fileCreatedAt,
             rating: 0, flag: .none, colorLabel: nil, keywords: [], title: "", caption: "",
+            author: meta.author, copyright: meta.copyright,
             location: gpsLabel(meta.gps), gps: meta.gps, gpsAltitude: meta.gpsAltitude,
             status: .ready, importedAt: Date(), deleted: false,
             localPath: finalURL.path, captureDateSource: meta.captureDateSource,
@@ -163,6 +164,8 @@ final class ImportCoordinator: @unchecked Sendable {
             if !sc.keywords.isEmpty { asset.keywords = KeywordService.normalize(sc.keywords) }
             if !sc.title.isEmpty { asset.title = sc.title }
             if !sc.caption.isEmpty { asset.caption = sc.caption }
+            if !sc.author.isEmpty { asset.author = sc.author }
+            if !sc.copyright.isEmpty { asset.copyright = sc.copyright }
         }
         return asset
     }

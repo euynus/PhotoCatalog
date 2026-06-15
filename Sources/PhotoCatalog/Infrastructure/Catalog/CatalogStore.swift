@@ -64,7 +64,7 @@ enum CatalogStoreError: Error, Equatable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    private static let latestSchemaVersion = 10
+    private static let latestSchemaVersion = 11
     let packageURL: URL
     let db: Database
 
@@ -164,6 +164,11 @@ final class CatalogStore: @unchecked Sendable {
             try db.run("ALTER TABLE assets ADD COLUMN gps_altitude REAL;")
             try recordMigration(10)
         }
+        if current < 11 {
+            try db.run("ALTER TABLE assets ADD COLUMN author TEXT DEFAULT '';")
+            try db.run("ALTER TABLE assets ADD COLUMN copyright TEXT DEFAULT '';")
+            try recordMigration(11)
+        }
     }
 
     private func recordMigration(_ version: Int) throws {
@@ -187,7 +192,8 @@ final class CatalogStore: @unchecked Sendable {
       capture_date REAL, width INTEGER, height INTEGER, orientation INTEGER,
       camera TEXT, lens TEXT, focal INTEGER, aperture REAL, shutter TEXT, iso INTEGER,
       color_space TEXT, file_mb REAL, rating INTEGER, flag TEXT, color_label TEXT,
-      keywords TEXT, title TEXT, caption TEXT, location TEXT, gps_lat REAL, gps_lon REAL,
+      keywords TEXT, title TEXT, caption TEXT,
+      location TEXT, gps_lat REAL, gps_lon REAL,
       status TEXT, imported_at REAL, deleted INTEGER, is_demo INTEGER, local_path TEXT,
       capture_date_source TEXT, content_hash TEXT, quick_hash TEXT
     );
@@ -262,13 +268,13 @@ final class CatalogStore: @unchecked Sendable {
     private static let columns = """
     id,pid,ori,thumb,preview,filename,type,is_raw,folder_id,folder_name,\
     capture_date,width,height,orientation,camera,lens,focal,aperture,shutter,iso,\
-    color_space,has_icc_profile,file_mb,rating,flag,color_label,keywords,title,caption,location,gps_lat,gps_lon,gps_altitude,\
+    color_space,has_icc_profile,file_mb,rating,flag,color_label,keywords,title,caption,author,copyright,location,gps_lat,gps_lon,gps_altitude,\
     status,imported_at,deleted,is_demo,local_path,capture_date_source,content_hash,quick_hash,faces,\
     file_modified_at,file_created_at
     """
 
     func upsert(_ assets: [Asset]) throws {
-        let placeholders = Array(repeating: "?", count: 44).joined(separator: ",")
+        let placeholders = Array(repeating: "?", count: 46).joined(separator: ",")
         let sql = "INSERT OR REPLACE INTO assets(\(Self.columns)) VALUES(\(placeholders));"
         try db.transaction {
             for a in assets {
@@ -582,7 +588,7 @@ final class CatalogStore: @unchecked Sendable {
             .text(a.colorSpace), .int(a.hasICCProfile ? 1 : 0),
             .double(a.fileMB), .int(a.rating), .text(a.flag.rawValue),
             a.colorLabel.map { SQLValue.text($0.rawValue) } ?? .null,
-            .text(keywordsJSON(a.keywords)), .text(a.title), .text(a.caption),
+            .text(keywordsJSON(a.keywords)), .text(a.title), .text(a.caption), .text(a.author), .text(a.copyright),
             .text(a.location), .double(a.gps.0), .double(a.gps.1),
             a.gpsAltitude.map { SQLValue.double($0) } ?? .null,
             .text(a.status.rawValue),
@@ -622,6 +628,7 @@ final class CatalogStore: @unchecked Sendable {
             flag: Flag(rawValue: row.text("flag") ?? "none") ?? .none,
             colorLabel: row.text("color_label").flatMap { ColorLabel(rawValue: $0) },
             keywords: kws, title: row.text("title") ?? "", caption: row.text("caption") ?? "",
+            author: row.text("author") ?? "", copyright: row.text("copyright") ?? "",
             location: row.text("location") ?? "",
             gps: (row.double("gps_lat") ?? 0, row.double("gps_lon") ?? 0),
             gpsAltitude: row.double("gps_altitude"),

@@ -22,6 +22,8 @@ struct ScannedMetadata {
     var captureDateSource = "文件修改时间"
     var gps: (Double, Double) = (0, 0)
     var gpsAltitude: Double?
+    var author = ""
+    var copyright = ""
     var fileSize: Int64 = 0
     var fileModifiedAt: Date?
     var fileCreatedAt: Date?
@@ -57,6 +59,7 @@ enum MetadataReader {
         let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
         let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]
         let gps = props[kCGImagePropertyGPSDictionary] as? [CFString: Any] ?? [:]
+        let iptc = props[kCGImagePropertyIPTCDictionary] as? [CFString: Any] ?? [:]
 
         m.camera = [tiff[kCGImagePropertyTIFFMake] as? String, tiff[kCGImagePropertyTIFFModel] as? String]
             .compactMap { $0 }.joined(separator: " ")
@@ -65,6 +68,8 @@ enum MetadataReader {
         m.aperture = (exif[kCGImagePropertyExifFNumber] as? NSNumber)?.doubleValue ?? 0
         if let exp = (exif[kCGImagePropertyExifExposureTime] as? NSNumber)?.doubleValue { m.shutter = shutterString(exp) }
         if let isos = exif[kCGImagePropertyExifISOSpeedRatings] as? [Int], let first = isos.first { m.iso = first }
+        m.author = stringValue(iptc[kCGImagePropertyIPTCByline])
+        m.copyright = stringValue(iptc[kCGImagePropertyIPTCCopyrightNotice])
 
         // GPS
         if let lat = (gps[kCGImagePropertyGPSLatitude] as? NSNumber)?.doubleValue,
@@ -95,6 +100,12 @@ enum MetadataReader {
         guard exp > 0 else { return "" }
         if exp >= 1 { return String(format: "%.1f", exp) }
         return "1/\(Int((1 / exp).rounded()))"
+    }
+
+    private static func stringValue(_ value: Any?) -> String {
+        if let string = value as? String { return string }
+        if let strings = value as? [String] { return strings.joined(separator: ", ") }
+        return ""
     }
 
     // A fresh formatter per call: read() runs on concurrent background queues and
