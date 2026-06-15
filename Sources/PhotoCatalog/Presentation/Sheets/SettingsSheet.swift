@@ -160,6 +160,7 @@ struct SettingsSheet: View {
                 HStack(spacing: 9) {
                     ghostButton("copy", "复制选中原件", small: true) { app.copySelectedOriginals() }
                     ghostButton("folder", "移动选中原件", danger: true, small: true) { app.moveSelectedOriginals() }
+                    ghostButton("trash", "移到废纸篓", danger: true, small: true) { app.trashSelectedOriginals() }
                     Spacer()
                 }
             }

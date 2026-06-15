@@ -1702,6 +1702,50 @@ final class AppState: ObservableObject {
         ensurePrimaryValid()
     }
 
+    func trashSelectedOriginals() {
+        let real = selectedRealAssetsWithOriginals()
+        guard !real.isEmpty else {
+            push("仅可将已导入照片的原件移到废纸篓", "warning")
+            return
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "移到废纸篓"
+        alert.informativeText = "将 \(real.count) 个磁盘原件移到废纸篓，并从目录库移除对应记录。"
+        alert.addButton(withTitle: "移到废纸篓")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        Task { [weak self, real] in
+            let result = await Task.detached(priority: .userInitiated) { () -> (trashed: Set<String>, failed: Int) in
+                var trashed = Set<String>()
+                var failed = 0
+                let fm = FileManager.default
+                for asset in real {
+                    guard let path = asset.localPath else { failed += 1; continue }
+                    do {
+                        try fm.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil)
+                        trashed.insert(asset.id)
+                    } catch {
+                        failed += 1
+                    }
+                }
+                return (trashed, failed)
+            }.value
+
+            if !result.trashed.isEmpty {
+                self?.mutate(result.trashed) { $0.deleted = true }
+                self?.selectedIds.subtract(result.trashed)
+                self?.ensurePrimaryValid()
+                self?.recomputeDuplicates()
+            }
+            self?.push("已移到废纸篓 \(result.trashed.count) 张"
+                       + (result.failed > 0 ? " · \(result.failed) 失败" : ""),
+                       result.failed > 0 ? "warning" : "check")
+        }
+    }
+
     // ---------- compare ----------
     func enterCompare() {
         // order by display position so the chosen subset is deterministic
