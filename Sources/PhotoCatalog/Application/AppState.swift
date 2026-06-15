@@ -40,6 +40,7 @@ final class AppState: ObservableObject {
     private var watchedRoots: [URL] = []
     private var securityScopedRoots: [URL] = []
     private var volumeMonitor: VolumeMonitor?
+    private var lastImportSessionPersistedCount = 0
 
     // ----- selection / view -----
     @Published var selection = Selection(type: .lib, id: "all", name: "全部照片")
@@ -197,8 +198,10 @@ final class AppState: ObservableObject {
         let existingIds = Set(assets.map { $0.id })
         let run = ImportRun(source: folder, mode: mode)
         importRun = run
+        lastImportSessionPersistedCount = 0
         importing = true
         sheet = "import"
+        try? store.startImportSession(id: run.id.uuidString, startedAt: run.startedAt)
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: folder)
         let vision = visionEnabled
@@ -230,6 +233,7 @@ final class AppState: ObservableObject {
             }
         }
         importRun = run
+        persistImportSessionProgress(run)
     }
 
     private func finishImport(folder: URL, imported: [Asset], existingIds: Set<String>, store: CatalogStore,
@@ -238,7 +242,9 @@ final class AppState: ObservableObject {
         let skipped = max(0, imported.count - fresh.count)
         assets.append(contentsOf: fresh)
         try? store.upsert(fresh)
+        var rootId: String?
         if let fid = fresh.first?.folderId {
+            rootId = fid
             try? store.addSourceRoot(id: fid, displayName: folder.lastPathComponent,
                                      path: folder.path, bookmark: bookmark)
             if !folders.contains(where: { $0.id == fid }) {
@@ -260,6 +266,11 @@ final class AppState: ObservableObject {
             let previewAssets = fresh.isEmpty ? imported : fresh
             run.recentAssets = Array(previewAssets.prefix(28))
             importRun = run
+            lastImportSessionPersistedCount = run.processed + run.failed
+            try? store.updateImportSession(id: run.id.uuidString, rootId: rootId, state: "completed",
+                                           totalCount: run.total, importedCount: run.imported,
+                                           skippedCount: run.skipped, failedCount: run.failed,
+                                           finishedAt: run.finishedAt)
         }
 
         importing = false
@@ -277,6 +288,18 @@ final class AppState: ObservableObject {
             icon = "check"
         }
         push(message, icon)
+    }
+
+    private func persistImportSessionProgress(_ run: ImportRun) {
+        guard let store else { return }
+        let completedCount = run.processed + run.failed
+        let stride = max(1, run.total / 100)
+        guard completedCount == 0 || completedCount == run.total ||
+                completedCount - lastImportSessionPersistedCount >= stride else { return }
+        lastImportSessionPersistedCount = completedCount
+        try? store.updateImportSession(id: run.id.uuidString, state: "running",
+                                       totalCount: run.total, importedCount: run.imported,
+                                       skippedCount: run.skipped, failedCount: run.failed)
     }
 
     // ---------- FSEvents incremental watch (§12.8) ----------

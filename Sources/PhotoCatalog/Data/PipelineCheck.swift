@@ -67,6 +67,14 @@ enum PipelineCheck {
         try? store.updateSourceRootStatus(id: "src-test-root", status: "offline")
         let updatedRoot = (try? store.loadSourceRoots())?.first { $0.id == "src-test-root" }
         check(updatedRoot?.status == "offline", "source root status update persisted")
+        try? store.startImportSession(id: "session-test")
+        try? store.updateImportSession(id: "session-test", rootId: "src-test-root", state: "completed",
+                                       totalCount: 7, importedCount: 6, skippedCount: 1,
+                                       failedCount: 0, finishedAt: .now)
+        let session = (try? store.loadImportSessions())?.first { $0.id == "session-test" }
+        check(session?.state == "completed" && session?.rootId == "src-test-root"
+              && session?.totalCount == 7 && session?.importedCount == 6 && session?.skippedCount == 1,
+              "import session persisted final counts")
 
         // 5. edit persistence
         if let id = assets.first?.id {

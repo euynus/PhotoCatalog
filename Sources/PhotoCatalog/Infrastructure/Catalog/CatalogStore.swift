@@ -13,6 +13,19 @@ struct SourceRootRecord: Identifiable {
     let status: String
 }
 
+struct ImportSessionRecord: Identifiable, Equatable, Sendable {
+    let id: String
+    let rootId: String?
+    let state: String
+    let totalCount: Int
+    let importedCount: Int
+    let skippedCount: Int
+    let failedCount: Int
+    let startedAt: Date
+    let finishedAt: Date?
+    let errorMessage: String?
+}
+
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
     let packageURL: URL
@@ -78,6 +91,13 @@ final class CatalogStore: @unchecked Sendable {
                            [.text(ISO8601DateFormatter().string(from: Date()))])
             }
         }
+        if current < 4 {
+            try db.transaction {
+                db.exec(Self.importSessionsDDL)
+                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(4, ?);",
+                           [.text(Self.iso(.now))])
+            }
+        }
     }
 
     /// FTS5 full-text search returning matching asset ids (§12.7).
@@ -107,6 +127,22 @@ final class CatalogStore: @unchecked Sendable {
       id TEXT PRIMARY KEY, display_name TEXT, path_hint TEXT, bookmark_data BLOB,
       management_mode TEXT, status TEXT, created_at TEXT
     );
+    """
+
+    private static let importSessionsDDL = """
+    CREATE TABLE IF NOT EXISTS import_sessions (
+      id TEXT PRIMARY KEY,
+      root_id TEXT,
+      state TEXT NOT NULL,
+      total_count INTEGER NOT NULL DEFAULT 0,
+      imported_count INTEGER NOT NULL DEFAULT 0,
+      skipped_count INTEGER NOT NULL DEFAULT 0,
+      failed_count INTEGER NOT NULL DEFAULT 0,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      error_message TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_import_sessions_state ON import_sessions(state);
     """
 
     // ---------- assets ----------
@@ -177,6 +213,43 @@ final class CatalogStore: @unchecked Sendable {
         try db.run("UPDATE source_roots SET status=? WHERE id=?;", [.text(status), .text(id)])
     }
 
+    // ---------- import sessions (§10.2 / §12.2) ----------
+    func startImportSession(id: String, startedAt: Date = .now) throws {
+        try db.run("""
+        INSERT OR REPLACE INTO import_sessions(
+          id, root_id, state, total_count, imported_count, skipped_count, failed_count,
+          started_at, finished_at, error_message
+        ) VALUES(?,?,?,?,?,?,?,?,?,?);
+        """, [.text(id), .null, .text("running"), .int(0), .int(0), .int(0), .int(0),
+              .text(Self.iso(startedAt)), .null, .null])
+    }
+
+    func updateImportSession(id: String, rootId: String? = nil, state: String, totalCount: Int,
+                             importedCount: Int, skippedCount: Int, failedCount: Int,
+                             finishedAt: Date? = nil, errorMessage: String? = nil) throws {
+        try db.run("""
+        UPDATE import_sessions
+        SET root_id=?, state=?, total_count=?, imported_count=?, skipped_count=?, failed_count=?,
+            finished_at=?, error_message=?
+        WHERE id=?;
+        """, [
+            rootId.map { SQLValue.text($0) } ?? .null,
+            .text(state), .int(totalCount), .int(importedCount), .int(skippedCount), .int(failedCount),
+            finishedAt.map { SQLValue.text(Self.iso($0)) } ?? .null,
+            errorMessage.map { SQLValue.text($0) } ?? .null,
+            .text(id),
+        ])
+    }
+
+    func loadImportSessions() throws -> [ImportSessionRecord] {
+        try db.query("""
+        SELECT id, root_id, state, total_count, imported_count, skipped_count, failed_count,
+               started_at, finished_at, error_message
+        FROM import_sessions
+        ORDER BY started_at DESC;
+        """).compactMap(Self.importSession(from:))
+    }
+
     // ---------- backup (§6.12) ----------
     @discardableResult
     func backup(stamp: String) throws -> URL {
@@ -206,6 +279,15 @@ final class CatalogStore: @unchecked Sendable {
     // ---------- row <-> Asset ----------
     private static func keywordsJSON(_ kws: [String]) -> String {
         (try? String(data: JSONSerialization.data(withJSONObject: kws), encoding: .utf8)) ?? "[]"
+    }
+
+    private static func iso(_ date: Date) -> String {
+        ISO8601DateFormatter().string(from: date)
+    }
+
+    private static func date(_ string: String?) -> Date? {
+        guard let string else { return nil }
+        return ISO8601DateFormatter().date(from: string)
     }
 
     private static func params(_ a: Asset) -> [SQLValue] {
@@ -257,5 +339,22 @@ final class CatalogStore: @unchecked Sendable {
             captureDateSource: row.text("capture_date_source") ?? "EXIF · DateTimeOriginal",
             contentHash: row.text("content_hash"), quickHash: row.text("quick_hash"),
             isDemo: row.bool("is_demo"), faces: row.int("faces") ?? 0)
+    }
+
+    private static func importSession(from row: Row) -> ImportSessionRecord? {
+        guard let id = row.text("id"),
+              let state = row.text("state"),
+              let startedAt = date(row.text("started_at")) else { return nil }
+        return ImportSessionRecord(
+            id: id,
+            rootId: row.text("root_id"),
+            state: state,
+            totalCount: row.int("total_count") ?? 0,
+            importedCount: row.int("imported_count") ?? 0,
+            skippedCount: row.int("skipped_count") ?? 0,
+            failedCount: row.int("failed_count") ?? 0,
+            startedAt: startedAt,
+            finishedAt: date(row.text("finished_at")),
+            errorMessage: row.text("error_message"))
     }
 }
