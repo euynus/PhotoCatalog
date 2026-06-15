@@ -9,7 +9,9 @@ import ImageIO
 import UniformTypeIdentifiers
 import CryptoKit
 
-final class ThumbnailService {
+// @unchecked Sendable: stateless aside from the (Sendable) store; writes go to
+// per-asset cache files, so background generation is safe.
+final class ThumbnailService: @unchecked Sendable {
     let store: CatalogStore
     init(store: CatalogStore) { self.store = store }
 

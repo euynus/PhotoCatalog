@@ -4,7 +4,8 @@
 // ============================================================
 import Foundation
 
-final class CatalogStore {
+// @unchecked Sendable: immutable URLs + a serialized Database (see Database).
+final class CatalogStore: @unchecked Sendable {
     let packageURL: URL
     let db: Database
 
@@ -139,7 +140,8 @@ final class CatalogStore {
         try db.run("""
         INSERT OR REPLACE INTO source_roots(id, display_name, path_hint, bookmark_data, management_mode, status, created_at)
         VALUES(?,?,?,?,?,?,?);
-        """, [.text(id), .text(displayName), .text(path), .null, .text("referenced"),
+        """, [.text(id), .text(displayName), .text(path),
+              bookmark.map { SQLValue.blob($0) } ?? .null, .text("referenced"),
               .text("online"), .text(ISO8601DateFormatter().string(from: Date()))])
     }
 

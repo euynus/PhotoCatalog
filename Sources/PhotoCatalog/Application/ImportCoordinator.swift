@@ -15,7 +15,9 @@ struct ImportProgress {
     var failed = 0
 }
 
-final class ImportCoordinator {
+// @unchecked Sendable: holds only Sendable services; runs the scan/metadata/
+// thumbnail pipeline on a background queue without touching shared mutable state.
+final class ImportCoordinator: @unchecked Sendable {
     let store: CatalogStore
     let thumbnails: ThumbnailService
 

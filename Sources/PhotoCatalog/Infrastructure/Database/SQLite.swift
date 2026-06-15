@@ -12,6 +12,7 @@ enum SQLValue {
     case int(Int)
     case double(Double)
     case text(String)
+    case blob(Data)
     case null
 }
 
@@ -25,6 +26,7 @@ extension Row {
         return nil
     }
     func text(_ k: String) -> String? { if case .text(let v)? = self[k] { return v }; return nil }
+    func blob(_ k: String) -> Data? { if case .blob(let v)? = self[k] { return v }; return nil }
     func bool(_ k: String) -> Bool { (int(k) ?? 0) != 0 }
 }
 
@@ -39,7 +41,9 @@ enum DBError: Error, CustomStringConvertible {
     }
 }
 
-final class Database {
+// @unchecked Sendable: the system SQLite library is built in serialized threading
+// mode, and in this app all db access is funnelled through the main thread anyway.
+final class Database: @unchecked Sendable {
     private var db: OpaquePointer?
     let path: String
 
@@ -85,6 +89,10 @@ final class Database {
                 case SQLITE_INTEGER: row[name] = .int(Int(sqlite3_column_int64(stmt, i)))
                 case SQLITE_FLOAT: row[name] = .double(sqlite3_column_double(stmt, i))
                 case SQLITE_TEXT: row[name] = .text(String(cString: sqlite3_column_text(stmt, i)))
+                case SQLITE_BLOB:
+                    if let bytes = sqlite3_column_blob(stmt, i) {
+                        row[name] = .blob(Data(bytes: bytes, count: Int(sqlite3_column_bytes(stmt, i))))
+                    } else { row[name] = .null }
                 default: row[name] = .null
                 }
             }
@@ -94,7 +102,7 @@ final class Database {
     }
 
     func transaction(_ body: () throws -> Void) throws {
-        exec("BEGIN;")
+        guard exec("BEGIN;") else { throw DBError.step(String(cString: sqlite3_errmsg(db))) }
         do {
             try body()
             exec("COMMIT;")
@@ -127,6 +135,8 @@ final class Database {
             case .int(let v): sqlite3_bind_int64(stmt, idx, Int64(v))
             case .double(let v): sqlite3_bind_double(stmt, idx, v)
             case .text(let v): sqlite3_bind_text(stmt, idx, v, -1, SQLITE_TRANSIENT)
+            case .blob(let d):
+                _ = d.withUnsafeBytes { sqlite3_bind_blob(stmt, idx, $0.baseAddress, Int32(d.count), SQLITE_TRANSIENT) }
             case .null: sqlite3_bind_null(stmt, idx)
             }
         }
