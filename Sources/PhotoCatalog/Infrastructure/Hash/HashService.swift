@@ -52,6 +52,52 @@ enum HashService {
         return groups
     }
 
+    /// Group likely duplicates before expensive similarity checks (PRD DUP-002).
+    static func suspectedDuplicateGroups(_ assets: [Asset]) -> [DuplicateGroup] {
+        var buckets: [String: [Asset]] = [:]
+        for asset in assets {
+            buckets[suspectedKey(asset), default: []].append(asset)
+        }
+
+        var groups: [DuplicateGroup] = []
+        var index = 0
+        for (_, bucket) in buckets where bucket.count > 1 {
+            let contentHashes = Set(bucket.compactMap(\.contentHash))
+            if contentHashes.count == 1 && bucket.allSatisfy({ $0.contentHash != nil }) {
+                continue
+            }
+            groups.append(DuplicateGroup(id: "dg-sus-\(index)",
+                                         method: "suspected",
+                                         score: 0.82,
+                                         items: bucket))
+            index += 1
+        }
+        return groups
+    }
+
+    private static func suspectedKey(_ asset: Asset) -> String {
+        let timeBucket = Int(asset.date.timeIntervalSince1970 / 300)
+        let identity = asset.quickHash ?? normalizedFilename(asset.filename)
+        return [
+            identity,
+            "\(asset.width)x\(asset.height)",
+            "\(timeBucket)",
+        ].joined(separator: "|")
+    }
+
+    private static func normalizedFilename(_ filename: String) -> String {
+        var base = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent.lowercased()
+        for suffix in [" copy", "_copy", "-copy", " edit", "_edit", "-edit", " edited", "_edited", "-edited"] {
+            if base.hasSuffix(suffix) {
+                base.removeLast(suffix.count)
+            }
+        }
+        if let range = base.range(of: #" \([0-9]+\)$"#, options: .regularExpression) {
+            base.removeSubrange(range)
+        }
+        return base
+    }
+
     private static func hex(_ digest: SHA256.Digest) -> String {
         digest.compactMap { String(format: "%02x", $0) }.joined()
     }

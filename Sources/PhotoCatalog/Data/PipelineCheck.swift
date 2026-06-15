@@ -179,6 +179,22 @@ enum PipelineCheck {
         // 6. exact-duplicate detection (the identical pair)
         let dupes = HashService.exactDuplicateGroups(assets)
         check(dupes.contains { $0.items.count == 2 }, "exact-duplicate group found for the identical pair")
+        let suspectPair = assets.enumerated().compactMap { index, lhs -> (Asset, Asset)? in
+            assets.dropFirst(index + 1).first { rhs in
+                lhs.width == rhs.width && lhs.height == rhs.height && lhs.contentHash != rhs.contentHash
+            }.map { (lhs, $0) }
+        }.first
+        if let (suspectA, pairB) = suspectPair {
+            var suspectB = pairB
+            suspectB.date = suspectA.date
+            suspectB.filename = "IMG_0000-edit.jpg"
+            suspectB.quickHash = suspectA.quickHash
+            let suspected = HashService.suspectedDuplicateGroups([suspectA, suspectB])
+            check(suspected.contains { $0.method == "suspected" && $0.items.count == 2 },
+                  "suspected duplicate group found from quick hash, dimensions, and capture time")
+        } else {
+            check(false, "suspected duplicate group sample")
+        }
         if let group = dupes.first(where: { $0.items.count == 2 }) {
             var resolvedAssets = assets
             let keepId = group.items[0].id

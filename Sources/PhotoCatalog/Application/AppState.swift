@@ -1241,7 +1241,9 @@ final class AppState: ObservableObject {
         guard !live.isEmpty else { duplicateGroupsCache = DemoData.duplicateGroups; return }
         Task { [weak self, live] in
             let groups = await Task.detached(priority: .utility) {
-                HashService.exactDuplicateGroups(live) + PerceptualHash.similarGroups(live)
+                HashService.exactDuplicateGroups(live)
+                    + HashService.suspectedDuplicateGroups(live)
+                    + PerceptualHash.similarGroups(live)
             }.value
             self?.duplicateGroupsCache = groups
         }
