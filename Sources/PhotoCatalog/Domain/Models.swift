@@ -36,6 +36,7 @@ struct Asset: Identifiable, Equatable, Sendable {
     let shutter: String
     let iso: Int
     let colorSpace: String
+    var hasICCProfile: Bool = false
     var fileMB: Double
     var fileModifiedAt: Date? = nil
     var fileCreatedAt: Date? = nil

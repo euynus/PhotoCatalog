@@ -1963,12 +1963,14 @@ final class AppState: ObservableObject {
 
         let attrs = try? FileManager.default.attributesOfItem(atPath: replacement.path)
         let size = (attrs?[.size] as? Int64) ?? 0
+        let meta = MetadataReader.read(replacement)
         mutateAsset(id) {
             $0.localPath = replacement.path
             $0.filename = replacement.lastPathComponent
             $0.fileMB = Double(size) / (1024 * 1024)
             $0.fileModifiedAt = attrs?[.modificationDate] as? Date
             $0.fileCreatedAt = attrs?[.creationDate] as? Date
+            $0.hasICCProfile = meta.hasICCProfile
             $0.quickHash = HashService.quickHash(replacement, fileSize: size)
             $0.contentHash = HashService.contentHash(replacement)
             $0.status = .ready

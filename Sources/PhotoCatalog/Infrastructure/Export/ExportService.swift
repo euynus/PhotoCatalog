@@ -93,6 +93,7 @@ enum ExportService {
                 "captureDate": formatter.string(from: a.date),
                 "fileModifiedAt": jsonDate(a.fileModifiedAt, formatter: formatter),
                 "fileCreatedAt": jsonDate(a.fileCreatedAt, formatter: formatter),
+                "hasICCProfile": a.hasICCProfile,
                 "camera": a.camera, "lens": a.lens,
                 "originalPath": a.localPath ?? a.thumb,
             ]
@@ -108,7 +109,7 @@ enum ExportService {
     static func exportMetadataCSV(_ assets: [Asset], to fileURL: URL) -> Bool {
         let header = [
             "assetId", "filename", "rating", "flag", "colorLabel", "keywords", "title", "caption",
-            "captureDate", "fileModifiedAt", "fileCreatedAt", "camera", "lens", "originalPath",
+            "captureDate", "fileModifiedAt", "fileCreatedAt", "hasICCProfile", "camera", "lens", "originalPath",
         ]
         let formatter = ISO8601DateFormatter()
         let rows = assets.map { a in
@@ -124,6 +125,7 @@ enum ExportService {
                 formatter.string(from: a.date),
                 a.fileModifiedAt.map { formatter.string(from: $0) } ?? "",
                 a.fileCreatedAt.map { formatter.string(from: $0) } ?? "",
+                a.hasICCProfile ? "true" : "false",
                 a.camera,
                 a.lens,
                 a.localPath ?? a.thumb,

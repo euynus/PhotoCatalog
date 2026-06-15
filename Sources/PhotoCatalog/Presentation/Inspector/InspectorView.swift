@@ -109,6 +109,7 @@ struct InspectorView: View {
                 .init("大小", String(format: "%.1f MB", a.fileMB)),
                 .init("尺寸", "\(a.width) × \(a.height)", mono: true),
                 .init("色彩空间", a.colorSpace),
+                .init("ICC", a.hasICCProfile ? "有" : "无"),
             ])
             InsGroup({
                 var rows: [InfoRowData] = [

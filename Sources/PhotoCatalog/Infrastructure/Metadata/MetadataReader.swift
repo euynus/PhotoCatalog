@@ -11,6 +11,7 @@ struct ScannedMetadata {
     var height = 0
     var orientation = 1
     var colorSpace = "sRGB"
+    var hasICCProfile = false
     var camera = ""
     var lens = ""
     var focal = 0
@@ -50,6 +51,7 @@ enum MetadataReader {
         if let model = props[kCGImagePropertyColorModel] as? String {
             m.colorSpace = (props[kCGImagePropertyProfileName] as? String) ?? model
         }
+        m.hasICCProfile = props[kCGImagePropertyProfileName] != nil
 
         let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
         let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]

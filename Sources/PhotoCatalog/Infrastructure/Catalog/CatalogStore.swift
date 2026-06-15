@@ -64,7 +64,7 @@ enum CatalogStoreError: Error, Equatable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    private static let latestSchemaVersion = 8
+    private static let latestSchemaVersion = 9
     let packageURL: URL
     let db: Database
 
@@ -170,6 +170,13 @@ final class CatalogStore: @unchecked Sendable {
                            [.text(Self.iso(.now))])
             }
         }
+        if current < 9 {
+            try db.transaction {
+                try db.run("ALTER TABLE assets ADD COLUMN has_icc_profile INTEGER DEFAULT 0;")
+                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(9, ?);",
+                           [.text(Self.iso(.now))])
+            }
+        }
     }
 
     /// FTS5 full-text search returning matching asset ids (§12.7).
@@ -263,13 +270,13 @@ final class CatalogStore: @unchecked Sendable {
     private static let columns = """
     id,pid,ori,thumb,preview,filename,type,is_raw,folder_id,folder_name,\
     capture_date,width,height,orientation,camera,lens,focal,aperture,shutter,iso,\
-    color_space,file_mb,rating,flag,color_label,keywords,title,caption,location,gps_lat,gps_lon,\
+    color_space,has_icc_profile,file_mb,rating,flag,color_label,keywords,title,caption,location,gps_lat,gps_lon,\
     status,imported_at,deleted,is_demo,local_path,capture_date_source,content_hash,quick_hash,faces,\
     file_modified_at,file_created_at
     """
 
     func upsert(_ assets: [Asset]) throws {
-        let placeholders = Array(repeating: "?", count: 42).joined(separator: ",")
+        let placeholders = Array(repeating: "?", count: 43).joined(separator: ",")
         let sql = "INSERT OR REPLACE INTO assets(\(Self.columns)) VALUES(\(placeholders));"
         try db.transaction {
             for a in assets {
@@ -580,7 +587,8 @@ final class CatalogStore: @unchecked Sendable {
             .text(a.filename), .text(a.type), .int(a.isRaw ? 1 : 0), .text(a.folderId), .text(a.folderName),
             .double(a.date.timeIntervalSince1970), .int(a.width), .int(a.height), .int(a.orientation),
             .text(a.camera), .text(a.lens), .int(a.focal), .double(a.aperture), .text(a.shutter), .int(a.iso),
-            .text(a.colorSpace), .double(a.fileMB), .int(a.rating), .text(a.flag.rawValue),
+            .text(a.colorSpace), .int(a.hasICCProfile ? 1 : 0),
+            .double(a.fileMB), .int(a.rating), .text(a.flag.rawValue),
             a.colorLabel.map { SQLValue.text($0.rawValue) } ?? .null,
             .text(keywordsJSON(a.keywords)), .text(a.title), .text(a.caption),
             .text(a.location), .double(a.gps.0), .double(a.gps.1), .text(a.status.rawValue),
@@ -611,7 +619,9 @@ final class CatalogStore: @unchecked Sendable {
             camera: row.text("camera") ?? "", lens: row.text("lens") ?? "",
             focal: row.int("focal") ?? 0, aperture: row.double("aperture") ?? 0,
             shutter: row.text("shutter") ?? "", iso: row.int("iso") ?? 0,
-            colorSpace: row.text("color_space") ?? "", fileMB: row.double("file_mb") ?? 0,
+            colorSpace: row.text("color_space") ?? "",
+            hasICCProfile: row.bool("has_icc_profile"),
+            fileMB: row.double("file_mb") ?? 0,
             fileModifiedAt: row.double("file_modified_at").map(Date.init(timeIntervalSince1970:)),
             fileCreatedAt: row.double("file_created_at").map(Date.init(timeIntervalSince1970:)),
             rating: row.int("rating") ?? 0,

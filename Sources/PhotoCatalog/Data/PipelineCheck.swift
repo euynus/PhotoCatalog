@@ -151,6 +151,8 @@ enum PipelineCheck {
         check(reloadedTimestamped?.fileModifiedAt.map { abs($0.timeIntervalSince(fixedModifiedAt)) < 1 } == true
               && reloadedTimestamped?.fileCreatedAt != nil,
               "file mtime/ctime persisted")
+        check(reloadedTimestamped?.hasICCProfile == timestampedAsset?.hasICCProfile,
+              "ICC profile flag persisted")
         let album = Album(id: "album-test", name: "Pipeline Picks",
                           assetIds: Array(assets.prefix(3).map(\.id)))
         try? store.saveAlbum(album)

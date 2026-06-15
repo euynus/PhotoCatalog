@@ -123,6 +123,7 @@ final class ImportCoordinator: @unchecked Sendable {
             date: meta.captureDate, width: meta.width, height: meta.height, orientation: meta.orientation,
             camera: meta.camera, lens: meta.lens, focal: meta.focal, aperture: meta.aperture,
             shutter: meta.shutter, iso: meta.iso, colorSpace: meta.colorSpace,
+            hasICCProfile: meta.hasICCProfile,
             fileMB: Double(meta.fileSize) / (1024 * 1024),
             fileModifiedAt: meta.fileModifiedAt, fileCreatedAt: meta.fileCreatedAt,
             rating: 0, flag: .none, colorLabel: nil, keywords: [], title: "", caption: "",
