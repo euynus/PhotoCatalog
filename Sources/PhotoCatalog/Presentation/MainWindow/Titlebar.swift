@@ -72,6 +72,11 @@ struct Titlebar: View {
 
             separator
 
+            if app.canRemoveSelectedSource {
+                ToolButton(icon: "trash", label: "移除源索引",
+                           danger: true,
+                           action: { app.removeSelectedSource() })
+            }
             ToolButton(icon: "album", label: "加入相册",
                        disabled: !app.canApplySelectionToAlbum,
                        action: { app.addSelectionToAlbum() })

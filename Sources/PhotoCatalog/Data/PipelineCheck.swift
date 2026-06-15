@@ -125,6 +125,10 @@ enum PipelineCheck {
         try? store.updateSourceRootStatus(id: "src-test-root", status: "offline")
         let updatedRoot = (try? store.loadSourceRoots())?.first { $0.id == "src-test-root" }
         check(updatedRoot?.status == "offline", "source root status update persisted")
+        try? store.removeSourceRoot(id: "src-test-root")
+        let removedRoot = (try? store.loadSourceRoots())?.first { $0.id == "src-test-root" }
+        check(removedRoot == nil, "source root removal persisted")
+        try? store.addSourceRoot(id: "src-test-root", displayName: "source", path: src.path, bookmark: nil)
         try? store.startImportSession(id: "session-test")
         try? store.updateImportSession(id: "session-test", rootId: "src-test-root", state: "completed",
                                        totalCount: 7, importedCount: 6, skippedCount: 1,

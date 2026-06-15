@@ -304,6 +304,10 @@ final class CatalogStore: @unchecked Sendable {
         try db.run("UPDATE source_roots SET status=? WHERE id=?;", [.text(status), .text(id)])
     }
 
+    func removeSourceRoot(id: String) throws {
+        try db.run("DELETE FROM source_roots WHERE id=?;", [.text(id)])
+    }
+
     // ---------- albums (§6.8 / §10.2) ----------
     func loadAlbums() throws -> [Album] {
         let rows = try db.query("""

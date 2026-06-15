@@ -1188,6 +1188,7 @@ final class AppState: ObservableObject {
 
     var canApplySelectionToAlbum: Bool { !targetIds.isEmpty }
     var canRemoveSelectionFromCurrentAlbum: Bool { selection.type == .album && !targetIds.isEmpty }
+    var canRemoveSelectedSource: Bool { selection.type == .folder }
 
     /// Apply an in-place edit to the current selection (or an explicit set).
     func mutate(_ ids: Set<String>? = nil, _ transform: (inout Asset) -> Void) {
@@ -1209,6 +1210,44 @@ final class AppState: ObservableObject {
     func setColor(_ c: ColorLabel?) { mutate { $0.colorLabel = c } }
     func setTitle(_ t: String) { mutate { $0.title = t } }
     func setCaption(_ c: String) { mutate { $0.caption = c } }
+
+    func removeSelectedSource() {
+        guard selection.type == .folder else { return }
+        let folderId = selection.id
+        let folderName = selection.name
+        let indexed = assets.filter { !$0.deleted && !$0.isDemo && $0.folderId == folderId }
+        guard !indexed.isEmpty || folders.contains(where: { $0.id == folderId }) else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "移除源文件夹？"
+        alert.informativeText = "将从目录库移除「\(folderName)」的索引记录，磁盘上的原件不会被删除。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "移除索引")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let ids = Set(indexed.map(\.id))
+        if !ids.isEmpty {
+            mutate(ids) { $0.deleted = true }
+        }
+        try? store?.removeSourceRoot(id: folderId)
+        folders.removeAll { $0.id == folderId }
+        watchedRoots.removeAll { root in
+            indexed.contains { $0.localPath?.hasPrefix(root.path + "/") == true }
+        }
+        refreshWatcher()
+        selection = Selection(type: .lib, id: "all", name: "全部照片")
+        selectedIds = []
+        primaryId = list.first?.id
+        if let primaryId {
+            selectedIds = [primaryId]
+            anchorId = primaryId
+        } else {
+            anchorId = nil
+        }
+        recomputeDuplicates()
+        push("已移除源「\(folderName)」的索引", "trash")
+    }
 
     func createAlbumFromSelection() {
         guard let name = promptAlbumName(defaultName: "新建相册") else { return }
