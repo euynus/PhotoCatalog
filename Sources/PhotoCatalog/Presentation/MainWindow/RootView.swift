@@ -89,13 +89,16 @@ struct KeyCatcher: NSViewRepresentable {
         }
 
         private func isEditingText() -> Bool {
-            if let responder = NSApp.keyWindow?.firstResponder, responder is NSTextView { return true }
-            return false
+            MainActor.assumeIsolated {
+                if let responder = NSApp.keyWindow?.firstResponder, responder is NSTextView { return true }
+                return false
+            }
         }
 
         private func handle(_ event: NSEvent) -> NSEvent? {
             let cmd = event.modifierFlags.contains(.command)
             let key = Self.keyString(event)
+            let app = app
 
             if cmd && key == "f" { MainActor.assumeIsolated { app.focusSearch() }; return nil }
             if cmd && key == "i" { MainActor.assumeIsolated { app.showInspector.toggle() }; return nil }
