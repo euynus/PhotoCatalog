@@ -72,6 +72,13 @@ struct Folder: Identifiable, Hashable {
     var status: String = "online"
 }
 
+struct RecentCatalog: Identifiable, Equatable, Sendable {
+    let path: String
+    var id: String { path }
+    var name: String { URL(fileURLWithPath: path).lastPathComponent }
+    var parentPath: String { URL(fileURLWithPath: path).deletingLastPathComponent().path }
+}
+
 /// Manual album (`albums` table, type = album).
 struct Album: Identifiable, Hashable {
     let id: String

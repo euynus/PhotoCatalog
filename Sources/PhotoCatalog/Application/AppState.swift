@@ -37,6 +37,8 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(automaticBackupFrequency, forKey: "pc_autoBackupFrequency") }
     }
     @Published var healthReport: HealthReport?
+    @Published private var recentCatalogPaths =
+        UserDefaults.standard.stringArray(forKey: "pc_recentCatalogs") ?? []
 
     // ----- catalog (real persistence / scanning) -----
     private var store: CatalogStore?
@@ -49,6 +51,7 @@ final class AppState: ObservableObject {
     private var importControl: ImportControl?
     private var activeImportJobId: String?
     private static let catalogURLKey = "pc_catalogURL"
+    private static let recentCatalogsKey = "pc_recentCatalogs"
     private static let lastAutoBackupKey = "pc_lastAutoBackupAt"
 
     // ----- selection / view -----
@@ -105,6 +108,12 @@ final class AppState: ObservableObject {
         (store?.packageURL ?? configuredCatalogURL).path
     }
 
+    var recentCatalogs: [RecentCatalog] {
+        recentCatalogPaths
+            .filter { FileManager.default.fileExists(atPath: $0) }
+            .map { RecentCatalog(path: $0) }
+    }
+
     private var configuredCatalogURL: URL {
         UserDefaults.standard.url(forKey: Self.catalogURLKey) ?? CatalogStore.defaultURL
     }
@@ -115,6 +124,7 @@ final class AppState: ObservableObject {
               let s = try? CatalogStore(packageURL: url) else { return }
         store = s
         coordinator = ImportCoordinator(store: s)
+        rememberCatalog(url)
         let real = ((try? s.loadAssets()) ?? []).filter { !$0.isDemo && !$0.deleted }
         let hasInterruptedImport = (try? s.loadJobs(type: "scan", states: ["running", "paused"]).isEmpty) == false
         guard !real.isEmpty else {
@@ -237,7 +247,9 @@ final class AppState: ObservableObject {
             let nextStore = try CatalogStore(packageURL: url)
             store = nextStore
             coordinator = ImportCoordinator(store: nextStore)
-            UserDefaults.standard.set(url, forKey: Self.catalogURLKey)
+            setActiveCatalog(url)
+            UserDefaults.standard.set("1", forKey: "pc_onboarded")
+            onboarded = true
             push("已创建目录库 · \(url.lastPathComponent)", "check")
         } catch {
             resetToDemoCatalog()
@@ -267,20 +279,79 @@ final class AppState: ObservableObject {
         let previousURL = configuredCatalogURL
         closeCurrentCatalog()
         resetToDemoCatalog()
-        UserDefaults.standard.set(url, forKey: Self.catalogURLKey)
+        setActiveCatalog(url)
         loadExistingCatalog()
         if store == nil {
-            UserDefaults.standard.set(previousURL, forKey: Self.catalogURLKey)
+            forgetCatalog(url)
+            setActiveCatalog(previousURL)
             resetToDemoCatalog()
             loadExistingCatalog()
             push("打开目录库失败", "warning")
         } else {
+            UserDefaults.standard.set("1", forKey: "pc_onboarded")
+            onboarded = true
             push("已打开目录库 · \(url.lastPathComponent)", "check")
         }
     }
 
+    func openRecentCatalog(_ recent: RecentCatalog) {
+        guard !importing else {
+            push("导入中无法切换目录库", "warning")
+            return
+        }
+        let url = URL(fileURLWithPath: recent.path)
+        guard FileManager.default.fileExists(atPath: url.appendingPathComponent("catalog.sqlite").path) else {
+            forgetCatalog(url)
+            push("最近目录库不可访问", "warning")
+            return
+        }
+
+        let previousURL = configuredCatalogURL
+        closeCurrentCatalog()
+        resetToDemoCatalog()
+        setActiveCatalog(url)
+        loadExistingCatalog()
+        if store == nil {
+            forgetCatalog(url)
+            setActiveCatalog(previousURL)
+            resetToDemoCatalog()
+            loadExistingCatalog()
+            push("打开目录库失败", "warning")
+        } else {
+            UserDefaults.standard.set("1", forKey: "pc_onboarded")
+            onboarded = true
+            push("已打开目录库 · \(url.lastPathComponent)", "check")
+        }
+    }
+
+    func clearRecentCatalogs() {
+        recentCatalogPaths = []
+        UserDefaults.standard.set(recentCatalogPaths, forKey: Self.recentCatalogsKey)
+        push("已清除最近目录库", "trash")
+    }
+
     private func catalogPackageURL(from url: URL) -> URL {
         url.pathExtension == "photolibrary" ? url : url.appendingPathExtension("photolibrary")
+    }
+
+    private func setActiveCatalog(_ url: URL) {
+        UserDefaults.standard.set(url, forKey: Self.catalogURLKey)
+        rememberCatalog(url)
+    }
+
+    private func rememberCatalog(_ url: URL) {
+        let path = url.path
+        recentCatalogPaths.removeAll { $0 == path }
+        recentCatalogPaths.insert(path, at: 0)
+        if recentCatalogPaths.count > 8 {
+            recentCatalogPaths.removeLast(recentCatalogPaths.count - 8)
+        }
+        UserDefaults.standard.set(recentCatalogPaths, forKey: Self.recentCatalogsKey)
+    }
+
+    private func forgetCatalog(_ url: URL) {
+        recentCatalogPaths.removeAll { $0 == url.path }
+        UserDefaults.standard.set(recentCatalogPaths, forKey: Self.recentCatalogsKey)
     }
 
     // ---------- real folder import (§6.3) ----------

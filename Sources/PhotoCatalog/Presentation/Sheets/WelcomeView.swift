@@ -6,11 +6,6 @@ import SwiftUI
 struct WelcomeView: View {
     @EnvironmentObject var app: AppState
 
-    private let recents: [(name: String, path: String, count: String, last: String)] = [
-        ("PhotoCatalog Library", "~/Pictures", "44 张照片", "刚刚"),
-        ("2025 客片归档", "~/Work/Catalogs", "18,402 张照片", "3 天前"),
-    ]
-
     var body: some View {
         HStack(spacing: 0) {
             left
@@ -38,7 +33,8 @@ struct WelcomeView: View {
 
             VStack(spacing: 9) {
                 wbtn("folder", "添加照片文件夹…", primary: true) { app.enterApp("import") }
-                wbtn("plus", "新建目录库", primary: false) { app.enterApp("open") }
+                wbtn("plus", "新建目录库…", primary: false) { app.createCatalog() }
+                wbtn("photos", "打开目录库…", primary: false) { app.openCatalog() }
             }.padding(.top, 26)
 
             HStack(alignment: .top, spacing: 8) {
@@ -71,34 +67,47 @@ struct WelcomeView: View {
         VStack(alignment: .leading, spacing: 0) {
             Text("最近打开").font(.system(size: 11, weight: .bold)).tracking(0.4)
                 .foregroundStyle(Theme.text3).textCase(.uppercase).padding(.bottom, 14)
-            ForEach(recents, id: \.name) { r in
-                Button { app.enterApp("open") } label: {
-                    HStack(spacing: 12) {
-                        Icon("photos", size: 18).foregroundStyle(Theme.accent)
-                            .frame(width: 38, height: 38).background(Theme.surface)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(r.name).font(.system(size: 13.5, weight: .medium))
-                            Text("\(r.path) · \(r.count)").font(.system(size: 11.5))
-                                .foregroundStyle(Theme.text3).lineLimit(1)
-                        }
-                        Spacer()
-                        Text(r.last).font(.system(size: 11)).foregroundStyle(Theme.text4)
-                    }
-                    .padding(11)
-                    .contentShape(Rectangle())
-                }.buttonStyle(.plain)
+            if app.recentCatalogs.isEmpty {
+                Text("还没有最近目录库")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.text4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 18)
+            } else {
+                ForEach(app.recentCatalogs) { catalog in
+                    Button { app.openRecentCatalog(catalog) } label: {
+                        recentRow(catalog)
+                    }.buttonStyle(.plain)
+                }
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                Text("默认位置").font(.system(size: 11)).foregroundStyle(Theme.text3)
-                Text("~/Pictures/PhotoCatalog Library.photolibrary")
+                Text("当前目录库").font(.system(size: 11)).foregroundStyle(Theme.text3)
+                Text(app.catalogPath)
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.text2)
+                    .lineLimit(2)
             }
             .padding(.top, 22)
             .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1).offset(y: -11) }
         }
         .padding(.horizontal, 28).padding(.vertical, 34)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func recentRow(_ catalog: RecentCatalog) -> some View {
+        HStack(spacing: 12) {
+            Icon("photos", size: 18).foregroundStyle(Theme.accent)
+                .frame(width: 38, height: 38).background(Theme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(catalog.name).font(.system(size: 13.5, weight: .medium))
+                Text(catalog.parentPath).font(.system(size: 11.5))
+                    .foregroundStyle(Theme.text3).lineLimit(1)
+            }
+            Spacer()
+            Icon("chevronR", size: 12).foregroundStyle(Theme.text4)
+        }
+        .padding(11)
+        .contentShape(Rectangle())
     }
 }
