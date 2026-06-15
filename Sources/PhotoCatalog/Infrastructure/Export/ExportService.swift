@@ -13,8 +13,9 @@ struct ExportReport {
 
 enum ExportService {
     /// Copy each asset's original into `destination`, preserving mtime.
+    /// When `xmp` is true, an `.xmp` sidecar is written next to each copied original.
     static func copyOriginals(_ assets: [Asset], to destination: URL,
-                              conflict: ExportConflict = .rename) -> ExportReport {
+                              conflict: ExportConflict = .rename, xmp: Bool = false) -> ExportReport {
         var report = ExportReport()
         let fm = FileManager.default
         try? fm.createDirectory(at: destination, withIntermediateDirectories: true)
@@ -28,11 +29,11 @@ enum ExportService {
             do {
                 if conflict == .overwrite { try? fm.removeItem(at: target) }
                 try fm.copyItem(at: src, to: target)
-                // preserve original modification time
                 if let attrs = try? fm.attributesOfItem(atPath: src.path),
                    let mtime = attrs[.modificationDate] as? Date {
                     try? fm.setAttributes([.modificationDate: mtime], ofItemAtPath: target.path)
                 }
+                if xmp { XMPSidecar.write(a, to: XMPSidecar.sidecarURL(for: target)) }
                 report.copied += 1
             } catch {
                 report.failed += 1
