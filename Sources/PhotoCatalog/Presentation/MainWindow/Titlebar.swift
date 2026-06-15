@@ -73,6 +73,7 @@ struct Titlebar: View {
             separator
 
             ToolButton(icon: "export", label: "导出选中原件", action: { app.exportSelection() })
+            ToolButton(icon: "gear", label: "设置", action: { app.sheet = "settings" })
             ToolButton(icon: "inspector", label: "显示简介 (⌘I)", active: app.showInspector,
                        action: { app.showInspector.toggle() })
         }

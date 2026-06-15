@@ -17,10 +17,23 @@ final class AppState: ObservableObject {
     @Published var smartAlbums: [SmartAlbum]
     @Published var folders: [Folder] = DemoData.folders
     @Published var importing = false
+    @Published var duplicateGroupsCache: [DuplicateGroup] = DemoData.duplicateGroups
+
+    // ----- settings (PRD §17) -----
+    @Published var importMode: ImportMode =
+        ImportMode(rawValue: UserDefaults.standard.string(forKey: "pc_importMode") ?? "") ?? .referenced {
+        didSet { UserDefaults.standard.set(importMode.rawValue, forKey: "pc_importMode") }
+    }
+    @Published var exportWritesXMP = UserDefaults.standard.bool(forKey: "pc_exportXMP") {
+        didSet { UserDefaults.standard.set(exportWritesXMP, forKey: "pc_exportXMP") }
+    }
+    @Published var healthReport: HealthReport?
 
     // ----- catalog (real persistence / scanning) -----
     private var store: CatalogStore?
     private var coordinator: ImportCoordinator?
+    private var watcher: FileWatcher?
+    private var watchedRoots: [URL] = []
 
     // ----- selection / view -----
     @Published var selection = Selection(type: .lib, id: "all", name: "全部照片")
@@ -82,6 +95,7 @@ final class AppState: ObservableObject {
             !folders.contains(where: { $0.id == fid }) {
             folders.append(Folder(id: fid, name: items.first?.folderName ?? fid))
         }
+        recomputeDuplicates()
     }
 
     private func openOrCreateCatalog() {
@@ -100,7 +114,9 @@ final class AppState: ObservableObject {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = "导入"
-        panel.message = "选择包含照片的文件夹（引用式导入，原件保持不动）"
+        let mode = importMode
+        panel.message = mode == .managed ? "选择文件夹（托管式：复制原件到目录库）"
+                                         : "选择文件夹（引用式：原件保持不动）"
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         openOrCreateCatalog()
         guard let coordinator, let store else { return }
@@ -108,7 +124,7 @@ final class AppState: ObservableObject {
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: folder)
         DispatchQueue.global(qos: .userInitiated).async {
-            let imported = coordinator.importFolder(folder)
+            let imported = coordinator.importFolder(folder, mode: mode)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 let existing = Set(self.assets.map { $0.id })
@@ -123,11 +139,117 @@ final class AppState: ObservableObject {
                     }
                     self.select(Selection(type: .folder, id: fid, name: folder.lastPathComponent))
                 }
+                if mode == .referenced, !self.watchedRoots.contains(folder) {
+                    self.watchedRoots.append(folder)
+                    self.refreshWatcher()
+                }
                 self.importing = false
+                self.recomputeDuplicates()
                 self.push(fresh.isEmpty ? "未发现可导入的照片" : "已导入 \(fresh.count) 张照片",
                           fresh.isEmpty ? "warning" : "check")
             }
         }
+    }
+
+    // ---------- FSEvents incremental watch (§12.8) ----------
+    private func refreshWatcher() {
+        watcher?.stop()
+        let paths = watchedRoots.map { $0.path }
+        guard !paths.isEmpty else { watcher = nil; return }
+        let w = FileWatcher(paths: paths) { [weak self] _ in self?.incrementalRescan() }
+        w.start()
+        watcher = w
+    }
+
+    private func incrementalRescan() {
+        guard let coordinator, let store else { return }
+        let roots = watchedRoots
+        let knownPaths = Set(assets.compactMap { $0.localPath })
+        DispatchQueue.global(qos: .utility).async {
+            var fresh: [Asset] = []
+            for root in roots {
+                fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths, mode: .referenced))
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let trulyNew = fresh.filter { a in !self.assets.contains { $0.id == a.id } }
+                if !trulyNew.isEmpty {
+                    self.assets.append(contentsOf: trulyNew)
+                    try? store.upsert(trulyNew)
+                    self.recomputeDuplicates()
+                    self.push("检测到 \(trulyNew.count) 张新照片", "importIcon")
+                }
+                self.detectMissingRealAssets()
+            }
+        }
+    }
+
+    func detectMissingRealAssets() {
+        var changed = false
+        for i in assets.indices where !assets[i].isDemo {
+            guard let p = assets[i].localPath else { continue }
+            let exists = FileManager.default.fileExists(atPath: p)
+            if !exists, assets[i].status != .missing { assets[i].status = .missing; changed = true }
+            else if exists, assets[i].status == .missing { assets[i].status = .ready; changed = true }
+        }
+        if changed, let store { try? store.upsert(assets.filter { !$0.isDemo }) }
+    }
+
+    // ---------- XMP sidecar write (§6.5 META-007) ----------
+    func writeXMPForSelection() {
+        let real = assets.filter { targetIds.contains($0.id) && !$0.isDemo && $0.localPath != nil }
+        guard !real.isEmpty else { push("仅可为已导入照片写入 XMP", "warning"); return }
+        var count = 0
+        for a in real {
+            let url = XMPSidecar.sidecarURL(for: URL(fileURLWithPath: a.localPath!))
+            if XMPSidecar.write(a, to: url) { count += 1 }
+        }
+        push("已写入 \(count) 个 XMP sidecar", "check")
+    }
+
+    // ---------- batch rename (§4.2) ----------
+    func batchRename(prefix: String) {
+        let trimmed = prefix.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        let real = list.filter { selectedIds.contains($0.id) && !$0.isDemo && $0.localPath != nil }
+        guard !real.isEmpty else { push("仅可重命名已导入照片", "warning"); return }
+        let map = RenameService.rename(real, prefix: trimmed)
+        for (id, url) in map {
+            mutateAsset(id) { $0.filename = url.lastPathComponent; $0.localPath = url.path }
+        }
+        push("已重命名 \(map.count) 张照片", "check")
+    }
+
+    // ---------- catalog health / cache (§6.1, §17.3) ----------
+    func runHealthCheck() {
+        openOrCreateCatalog()
+        guard let store else { push("无目录库", "warning"); return }
+        let report = CatalogHealth.check(store, assets: assets)
+        healthReport = report
+        push(report.summary, report.dbIntegrityOK ? "check" : "warning")
+    }
+
+    func rebuildThumbnails() {
+        guard let store, let coordinator else { push("无已导入照片", "warning"); return }
+        let real = assets.filter { !$0.isDemo && $0.localPath != nil }
+        guard !real.isEmpty else { push("无已导入照片", "warning"); return }
+        push("正在重建缩略图…", "refresh")
+        DispatchQueue.global(qos: .utility).async {
+            for a in real {
+                _ = coordinator.thumbnails.generateAll(from: URL(fileURLWithPath: a.localPath!), assetId: a.id)
+            }
+            DispatchQueue.main.async { [weak self] in self?.push("缩略图已重建", "check") }
+            _ = store
+        }
+    }
+
+    func clearCache() {
+        guard let store else { push("无目录库", "warning"); return }
+        let fm = FileManager.default
+        try? fm.removeItem(at: store.cacheURL)
+        try? fm.createDirectory(at: store.thumb512URL, withIntermediateDirectories: true)
+        try? fm.createDirectory(at: store.preview2048URL, withIntermediateDirectories: true)
+        push("已清理缩略图缓存", "trash")
     }
 
     // ---------- export originals (§6.11) ----------
@@ -144,10 +266,12 @@ final class AppState: ObservableObject {
         panel.canChooseFiles = false
         panel.prompt = "导出到此处"
         guard panel.runModal() == .OK, let dest = panel.url else { return }
+        let xmp = exportWritesXMP
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let report = ExportService.copyOriginals(real, to: dest)
+            let report = ExportService.copyOriginals(real, to: dest, xmp: xmp)
             DispatchQueue.main.async {
-                self?.push("已导出 \(report.copied) 张原件" + (report.failed > 0 ? " · \(report.failed) 失败" : ""), "export")
+                self?.push("已导出 \(report.copied) 张原件" + (report.failed > 0 ? " · \(report.failed) 失败" : "")
+                           + (xmp ? " · 含 XMP" : ""), "export")
             }
         }
     }
@@ -164,10 +288,17 @@ final class AppState: ObservableObject {
         }
     }
 
-    // ---------- real exact-duplicate groups (§6.10) ----------
-    var duplicateGroups: [DuplicateGroup] {
-        let real = HashService.exactDuplicateGroups(assets.filter { !$0.isDemo && !$0.deleted })
-        return real.isEmpty ? DemoData.duplicateGroups : real + DemoData.duplicateGroups
+    // ---------- duplicate groups (§6.10): exact (content) + similar (perceptual) ----------
+    var duplicateGroups: [DuplicateGroup] { duplicateGroupsCache }
+
+    /// Recompute duplicates off the main thread (dHash reads thumbnails from disk).
+    func recomputeDuplicates() {
+        let live = assets.filter { !$0.isDemo && !$0.deleted }
+        guard !live.isEmpty else { duplicateGroupsCache = DemoData.duplicateGroups; return }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let groups = HashService.exactDuplicateGroups(live) + PerceptualHash.similarGroups(live)
+            DispatchQueue.main.async { self?.duplicateGroupsCache = groups }
+        }
     }
 
     private func persist(_ ids: Set<String>) {
@@ -230,6 +361,8 @@ final class AppState: ObservableObject {
                 return live.filter { $0.flag == .reject }
             case "missing":
                 return live.filter { $0.status == .missing || $0.status == .offline }
+            case "places":
+                return live.filter { !($0.gps.0 == 0 && $0.gps.1 == 0) }
             default:
                 return live
             }
@@ -280,6 +413,7 @@ final class AppState: ObservableObject {
 
     var primary: Asset? { assets.first { $0.id == primaryId } }
     var isDuplicates: Bool { selection.type == .lib && selection.id == "duplicates" }
+    var isPlaces: Bool { selection.type == .lib && selection.id == "places" }
 
     // ---------- navigation ----------
     func select(_ s: Selection) {

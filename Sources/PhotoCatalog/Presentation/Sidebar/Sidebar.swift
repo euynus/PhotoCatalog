@@ -45,6 +45,8 @@ struct Sidebar: View {
                 .lib, "missing", "缺失 / 离线")
             row("copy", Theme.purple, "重复文件",
                 "\(app.duplicateGroups.count) 组", .lib, "duplicates", "重复文件")
+            row("map", Theme.green, "地点",
+                "\(ready.filter { !($0.gps.0 == 0 && $0.gps.1 == 0) }.count)", .lib, "places", "地点")
         }
     }
 

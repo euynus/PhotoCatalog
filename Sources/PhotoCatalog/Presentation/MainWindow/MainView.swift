@@ -29,6 +29,8 @@ struct MainView: View {
             SheetBackdrop { ImportSheet() }
         } else if app.sheet == "smart" {
             SheetBackdrop { SmartAlbumBuilder() }
+        } else if app.sheet == "settings" {
+            SheetBackdrop { SettingsSheet() }
         }
     }
 }
@@ -49,6 +51,8 @@ struct ContentColumn: View {
     @ViewBuilder private var contentMain: some View {
         if app.isDuplicates {
             DuplicatesView()
+        } else if app.isPlaces && app.view == .grid {
+            PlacesMapView()
         } else {
             switch app.view {
             case .grid: GridView()
