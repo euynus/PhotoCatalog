@@ -62,6 +62,11 @@ enum PipelineCheck {
               && fm.fileExists(atPath: store.logsURL.path)
               && fm.fileExists(atPath: store.tempURL.path),
               "catalog package created cache/config/logs/temp directories")
+        let launchPath = store.packageURL.path
+        let launchFileURL = store.packageURL.absoluteString
+        check(AppState.launchCatalogURL(from: ["PhotoCatalog", "--ignored", launchPath])?.path == launchPath
+              && AppState.launchCatalogURL(from: ["PhotoCatalog", launchFileURL])?.path == launchPath,
+              "launch arguments recognize .photolibrary paths")
         let futureLibrary = tmp.appendingPathComponent("Future.photolibrary")
         try? fm.createDirectory(at: futureLibrary, withIntermediateDirectories: true)
         do {

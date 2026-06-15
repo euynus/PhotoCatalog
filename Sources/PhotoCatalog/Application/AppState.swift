@@ -86,6 +86,7 @@ final class AppState: ObservableObject {
     private var lastImportSessionPersistedCount = 0
     private var importControl: ImportControl?
     private var activeImportJobId: String?
+    private var launchCatalogHandled = false
     private static let catalogURLKey = "pc_catalogURL"
     private static let recentCatalogsKey = "pc_recentCatalogs"
     private static let lastAutoBackupKey = "pc_lastAutoBackupAt"
@@ -375,10 +376,6 @@ final class AppState: ObservableObject {
     }
 
     func openCatalog() {
-        guard !importing else {
-            push("导入中无法切换目录库", "warning")
-            return
-        }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -386,10 +383,21 @@ final class AppState: ObservableObject {
         panel.prompt = "打开"
         panel.message = "选择 .photolibrary 目录库"
         guard panel.runModal() == .OK, let selected = panel.url else { return }
+        openCatalog(at: selected)
+    }
+
+    @discardableResult
+    func openCatalog(at selected: URL) -> Bool {
+        guard !importing else {
+            push("导入中无法切换目录库", "warning")
+            return false
+        }
+
         let url = catalogPackageURL(from: selected)
         guard FileManager.default.fileExists(atPath: url.appendingPathComponent("catalog.sqlite").path) else {
             push("所选目录库无效", "warning")
-            return
+            forgetCatalog(url)
+            return false
         }
 
         let previousURL = configuredCatalogURL
@@ -403,41 +411,30 @@ final class AppState: ObservableObject {
             resetToDemoCatalog()
             loadExistingCatalog()
             push(catalogOpenFailureMessage(error), "warning")
+            return false
         } else {
             UserDefaults.standard.set("1", forKey: "pc_onboarded")
             onboarded = true
             push("已打开目录库 · \(url.lastPathComponent)", "check")
+            return true
         }
     }
 
     func openRecentCatalog(_ recent: RecentCatalog) {
-        guard !importing else {
-            push("导入中无法切换目录库", "warning")
-            return
-        }
         let url = URL(fileURLWithPath: recent.path)
         guard FileManager.default.fileExists(atPath: url.appendingPathComponent("catalog.sqlite").path) else {
             forgetCatalog(url)
             push("最近目录库不可访问", "warning")
             return
         }
+        openCatalog(at: url)
+    }
 
-        let previousURL = configuredCatalogURL
-        closeCurrentCatalog()
-        resetToDemoCatalog()
-        setActiveCatalog(url)
-        let error = loadExistingCatalog()
-        if store == nil {
-            forgetCatalog(url)
-            setActiveCatalog(previousURL)
-            resetToDemoCatalog()
-            loadExistingCatalog()
-            push(catalogOpenFailureMessage(error), "warning")
-        } else {
-            UserDefaults.standard.set("1", forKey: "pc_onboarded")
-            onboarded = true
-            push("已打开目录库 · \(url.lastPathComponent)", "check")
-        }
+    func openLaunchCatalogIfNeeded(arguments: [String] = CommandLine.arguments) {
+        guard !launchCatalogHandled else { return }
+        launchCatalogHandled = true
+        guard let url = Self.launchCatalogURL(from: arguments) else { return }
+        openCatalog(at: url)
     }
 
     func clearRecentCatalogs() {
@@ -456,6 +453,14 @@ final class AppState: ObservableObject {
 
     private func catalogPackageURL(from url: URL) -> URL {
         url.pathExtension == "photolibrary" ? url : url.appendingPathExtension("photolibrary")
+    }
+
+    nonisolated static func launchCatalogURL(from arguments: [String]) -> URL? {
+        for arg in arguments.dropFirst() where !arg.hasPrefix("--") {
+            let url = URL(string: arg).flatMap { $0.isFileURL ? $0 : nil } ?? URL(fileURLWithPath: arg)
+            if url.pathExtension == "photolibrary" { return url }
+        }
+        return nil
     }
 
     private func setActiveCatalog(_ url: URL) {
