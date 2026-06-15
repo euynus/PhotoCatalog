@@ -47,6 +47,29 @@ final class CatalogStore {
                            [.text(ISO8601DateFormatter().string(from: Date()))])
             }
         }
+        if current < 2 {
+            try db.transaction {
+                db.exec("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS asset_search USING fts5(
+                  asset_id UNINDEXED, filename, title, caption, keywords, camera, lens, tokenize='unicode61');
+                """)
+                db.exec("""
+                INSERT INTO asset_search(asset_id, filename, title, caption, keywords, camera, lens)
+                SELECT id, filename, title, caption, keywords, camera, lens FROM assets;
+                """)
+                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(2, ?);",
+                           [.text(ISO8601DateFormatter().string(from: Date()))])
+            }
+        }
+    }
+
+    /// FTS5 full-text search returning matching asset ids (§12.7).
+    func search(_ query: String) -> [String] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return [] }
+        let match = q.split(separator: " ").map { "\"\($0)\"*" }.joined(separator: " ")
+        let rows = (try? db.query("SELECT asset_id FROM asset_search WHERE asset_search MATCH ?;", [.text(match)])) ?? []
+        return rows.compactMap { $0.text("asset_id") }
     }
 
     private static let ddlV1 = """
@@ -81,7 +104,16 @@ final class CatalogStore {
         let placeholders = Array(repeating: "?", count: 39).joined(separator: ",")
         let sql = "INSERT OR REPLACE INTO assets(\(Self.columns)) VALUES(\(placeholders));"
         try db.transaction {
-            for a in assets { try db.run(sql, Self.params(a)) }
+            for a in assets {
+                try db.run(sql, Self.params(a))
+                // keep the FTS index in sync
+                try db.run("DELETE FROM asset_search WHERE asset_id=?;", [.text(a.id)])
+                try db.run("""
+                INSERT INTO asset_search(asset_id, filename, title, caption, keywords, camera, lens)
+                VALUES(?,?,?,?,?,?,?);
+                """, [.text(a.id), .text(a.filename), .text(a.title), .text(a.caption),
+                      .text(Self.keywordsJSON(a.keywords)), .text(a.camera), .text(a.lens)])
+            }
         }
     }
 

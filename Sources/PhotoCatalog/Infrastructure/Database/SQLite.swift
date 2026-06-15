@@ -110,6 +110,12 @@ final class Database {
         }) ?? nil ?? 0
     }
 
+    func scalarText(_ sql: String, _ params: [SQLValue] = []) -> String? {
+        (try? query(sql, params).first?.values.first.flatMap {
+            if case .text(let v) = $0 { return v }; return nil
+        }) ?? nil
+    }
+
     private func prepare(_ sql: String, _ params: [SQLValue]) throws -> OpaquePointer? {
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
