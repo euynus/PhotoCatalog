@@ -25,7 +25,7 @@ struct Asset: Identifiable, Equatable {
     let isRaw: Bool
     let folderId: String
     let folderName: String
-    let date: Date           // capture date
+    var date: Date           // capture date (mutable for batch time shift, §4.2)
     let width: Int
     let height: Int
     let orientation: Int

@@ -7,6 +7,7 @@ import SwiftUI
 struct SettingsSheet: View {
     @EnvironmentObject var app: AppState
     @State private var renamePrefix = "IMG"
+    @State private var shiftHours = 1
 
     var body: some View {
         VStack(spacing: 0) {
@@ -94,6 +95,19 @@ struct SettingsSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .frame(width: 160)
                     ghostButton(nil, "重命名选中", small: true) { app.batchRename(prefix: renamePrefix) }
+                    Spacer()
+                }
+            }
+
+            section("批量调整拍摄时间") {
+                Text("对选中照片整体平移拍摄时间，用于时区或相机时钟校正。")
+                    .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
+                HStack(spacing: 12) {
+                    Stepper(value: $shiftHours, in: -48...48) {
+                        Text("偏移 \(shiftHours > 0 ? "+" : "")\(shiftHours) 小时")
+                            .font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                    }
+                    ghostButton(nil, "应用到选中", small: true) { app.shiftCaptureTime(hours: shiftHours) }
                     Spacer()
                 }
             }

@@ -37,6 +37,7 @@ final class AppState: ObservableObject {
     private var coordinator: ImportCoordinator?
     private var watcher: FileWatcher?
     private var watchedRoots: [URL] = []
+    private var volumeMonitor: VolumeMonitor?
 
     // ----- selection / view -----
     @Published var selection = Selection(type: .lib, id: "all", name: "全部照片")
@@ -73,6 +74,7 @@ final class AppState: ObservableObject {
         albums = DemoData.initialAlbums(a)
         smartAlbums = DemoData.initialSmartAlbums(a)
         loadExistingCatalog()
+        startVolumeMonitor()
         // seed the initial primary/selection from the first visible photo
         let first = list.first
         primaryId = first?.id
@@ -194,11 +196,29 @@ final class AppState: ObservableObject {
         var changed = false
         for i in assets.indices where !assets[i].isDemo {
             guard let p = assets[i].localPath else { continue }
-            let exists = FileManager.default.fileExists(atPath: p)
-            if !exists, assets[i].status != .missing { assets[i].status = .missing; changed = true }
-            else if exists, assets[i].status == .missing { assets[i].status = .ready; changed = true }
+            let target: AssetStatus = FileManager.default.fileExists(atPath: p)
+                ? .ready : VolumeMonitor.status(forInaccessible: p)   // offline vs missing (§6.4)
+            if assets[i].status != target { assets[i].status = target; changed = true }
         }
         if changed, let store { try? store.upsert(assets.filter { !$0.isDemo }) }
+    }
+
+    private func startVolumeMonitor() {
+        let m = VolumeMonitor { [weak self] in self?.detectMissingRealAssets() }
+        m.start()
+        volumeMonitor = m
+    }
+
+    // ---------- batch capture-time shift (§4.2 / META-008) ----------
+    func shiftCaptureTime(hours: Int) {
+        guard hours != 0 else { return }
+        let ids = targetIds
+        guard !ids.isEmpty else { return }
+        mutate(ids) {
+            $0.date = $0.date.addingTimeInterval(Double(hours) * 3600)
+            $0.captureDateSource = "手动调整"
+        }
+        push("已调整 \(ids.count) 张拍摄时间 \(hours > 0 ? "+" : "")\(hours) 小时", "clock")
     }
 
     // ---------- XMP sidecar write (§6.5 META-007) ----------
