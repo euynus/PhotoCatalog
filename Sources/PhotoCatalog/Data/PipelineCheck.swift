@@ -152,6 +152,7 @@ enum PipelineCheck {
         check(job?.state == "paused" && job?.payloadJSON.contains("\"sourcePath\":\"\(src.path)\"") == true
               && job?.payloadJSON.contains("\"autoTag\":true") == true,
               "import job persisted payload and state")
+        try? store.updateJob(id: "job-test", state: "succeeded", lockedAt: nil)
 
         // 5. edit persistence
         if let id = assets.first?.id {
@@ -248,6 +249,23 @@ enum PipelineCheck {
         let health = CatalogHealth.check(store, assets: assets)
         check(health.dbIntegrityOK && health.assetCount >= 7,
               "health check: db \(health.dbIntegrityOK ? "ok" : "BAD"), \(health.assetCount) assets")
+        check(health.isHealthy && health.missingOriginals == 0 && health.missingThumbnails == 0
+              && health.missingPreviews == 0 && health.unavailableSourceRoots == 0
+              && health.activeJobs == 0 && health.failedJobs == 0,
+              "health check: refs, sources, and jobs ok")
+        try? store.updateJob(id: "job-test", state: "failed", lockedAt: nil, lastError: "test failure")
+        let failedJobHealth = CatalogHealth.check(store, assets: assets)
+        check(failedJobHealth.failedJobs == 1 && !failedJobHealth.isHealthy,
+              "health check reports failed jobs")
+        try? store.updateJob(id: "job-test", state: "succeeded", lockedAt: nil)
+        if let preview = assets.first?.preview {
+            try? fm.removeItem(at: URL(fileURLWithPath: preview))
+            let missingPreviewHealth = CatalogHealth.check(store, assets: assets)
+            check(missingPreviewHealth.missingPreviews == 1 && !missingPreviewHealth.isHealthy,
+                  "health check reports missing previews")
+        } else {
+            check(false, "health check reports missing previews")
+        }
         let cacheBaseline = CatalogHealth.directorySize(store.cacheURL)
         let pruneDir = store.cacheURL.appendingPathComponent("PruneTest")
         try? fm.createDirectory(at: pruneDir, withIntermediateDirectories: true)

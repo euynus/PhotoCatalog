@@ -860,7 +860,7 @@ final class AppState: ObservableObject {
         guard let store else { push("无目录库", "warning"); return }
         let report = CatalogHealth.check(store, assets: assets)
         healthReport = report
-        push(report.summary, report.dbIntegrityOK ? "check" : "warning")
+        push(report.summary, report.isHealthy ? "check" : "warning")
     }
 
     func rebuildThumbnails() {

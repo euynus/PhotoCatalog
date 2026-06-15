@@ -8,13 +8,27 @@ struct HealthReport {
     var assetCount = 0
     var missingOriginals = 0
     var missingThumbnails = 0
+    var missingPreviews = 0
+    var unavailableSourceRoots = 0
+    var activeJobs = 0
+    var failedJobs = 0
     var cacheBytes: Int64 = 0
     var backupCount = 0
 
     var cacheMB: Double { Double(cacheBytes) / (1024 * 1024) }
+    var isHealthy: Bool {
+        dbIntegrityOK
+            && missingOriginals == 0
+            && missingThumbnails == 0
+            && missingPreviews == 0
+            && unavailableSourceRoots == 0
+            && failedJobs == 0
+    }
+
     var summary: String {
         "数据库\(dbIntegrityOK ? "完好" : "异常") · \(assetCount) 张资产 · "
-            + "缺失原件 \(missingOriginals) · 缺失缩略图 \(missingThumbnails) · "
+            + "缺失原件 \(missingOriginals) · 缩略图 \(missingThumbnails) · 预览 \(missingPreviews) · "
+            + "源异常 \(unavailableSourceRoots) · 任务 \(activeJobs)/\(failedJobs) · "
             + String(format: "缓存 %.0f MB", cacheMB) + " · 备份 \(backupCount)"
     }
 }
@@ -33,6 +47,14 @@ enum CatalogHealth {
         r.missingThumbnails = real.filter {
             !$0.thumb.isEmpty && !$0.thumb.hasPrefix("http") && !fm.fileExists(atPath: $0.thumb)
         }.count
+        r.missingPreviews = real.filter {
+            !$0.preview.isEmpty && !$0.preview.hasPrefix("http") && !fm.fileExists(atPath: $0.preview)
+        }.count
+        r.unavailableSourceRoots = ((try? store.loadSourceRoots()) ?? []).filter {
+            $0.status != "online" || !fm.fileExists(atPath: $0.pathHint)
+        }.count
+        r.activeJobs = ((try? store.loadJobs(states: ["running", "paused"])) ?? []).count
+        r.failedJobs = ((try? store.loadJobs(states: ["failed"])) ?? []).count
         r.cacheBytes = directorySize(store.cacheURL)
         r.backupCount = BackupService.listBackups(store).count
         return r

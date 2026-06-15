@@ -103,7 +103,7 @@ struct SettingsSheet: View {
                 }
                 if let r = app.healthReport {
                     Text(r.summary).font(.system(size: 11.5, design: .monospaced))
-                        .foregroundStyle(r.dbIntegrityOK ? Theme.text2 : Theme.redSoft)
+                        .foregroundStyle(r.isHealthy ? Theme.text2 : Theme.redSoft)
                         .padding(9)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.black.opacity(0.24))
