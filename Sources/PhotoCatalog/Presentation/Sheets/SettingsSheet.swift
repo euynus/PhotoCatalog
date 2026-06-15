@@ -122,7 +122,11 @@ struct SettingsSheet: View {
             }
 
             section("目录库") {
-                Text(CatalogStore.defaultURL.path)
+                HStack(spacing: 9) {
+                    ghostButton("plus", "新建目录库", small: true) { app.createCatalog() }
+                    ghostButton("folder", "打开目录库", small: true) { app.openCatalog() }
+                }
+                Text(app.catalogPath)
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.text2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

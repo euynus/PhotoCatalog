@@ -48,6 +48,7 @@ final class AppState: ObservableObject {
     private var lastImportSessionPersistedCount = 0
     private var importControl: ImportControl?
     private var activeImportJobId: String?
+    private static let catalogURLKey = "pc_catalogURL"
     private static let lastAutoBackupKey = "pc_lastAutoBackupAt"
 
     // ----- selection / view -----
@@ -100,8 +101,16 @@ final class AppState: ObservableObject {
     }
 
     // ---------- catalog open / load ----------
+    var catalogPath: String {
+        (store?.packageURL ?? configuredCatalogURL).path
+    }
+
+    private var configuredCatalogURL: URL {
+        UserDefaults.standard.url(forKey: Self.catalogURLKey) ?? CatalogStore.defaultURL
+    }
+
     private func loadExistingCatalog() {
-        let url = CatalogStore.defaultURL
+        let url = configuredCatalogURL
         guard FileManager.default.fileExists(atPath: url.path),
               let s = try? CatalogStore(packageURL: url) else { return }
         store = s
@@ -190,11 +199,78 @@ final class AppState: ObservableObject {
 
     private func openOrCreateCatalog() {
         guard store == nil else { return }
-        guard let s = try? CatalogStore(packageURL: CatalogStore.defaultURL) else {
+        guard let s = try? CatalogStore(packageURL: configuredCatalogURL) else {
             push("无法创建目录库", "warning"); return
         }
         store = s
         coordinator = ImportCoordinator(store: s)
+    }
+
+    func createCatalog() {
+        guard !importing else {
+            push("导入中无法切换目录库", "warning")
+            return
+        }
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "PhotoCatalog Library.photolibrary"
+        panel.prompt = "创建"
+        if let libraryType = UTType(filenameExtension: "photolibrary") {
+            panel.allowedContentTypes = [libraryType]
+        }
+        guard panel.runModal() == .OK, let selected = panel.url else { return }
+        let url = catalogPackageURL(from: selected)
+
+        do {
+            closeCurrentCatalog()
+            resetToDemoCatalog()
+            let nextStore = try CatalogStore(packageURL: url)
+            store = nextStore
+            coordinator = ImportCoordinator(store: nextStore)
+            UserDefaults.standard.set(url, forKey: Self.catalogURLKey)
+            push("已创建目录库 · \(url.lastPathComponent)", "check")
+        } catch {
+            resetToDemoCatalog()
+            loadExistingCatalog()
+            push("创建目录库失败", "warning")
+        }
+    }
+
+    func openCatalog() {
+        guard !importing else {
+            push("导入中无法切换目录库", "warning")
+            return
+        }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "打开"
+        panel.message = "选择 .photolibrary 目录库"
+        guard panel.runModal() == .OK, let selected = panel.url else { return }
+        let url = catalogPackageURL(from: selected)
+        guard FileManager.default.fileExists(atPath: url.appendingPathComponent("catalog.sqlite").path) else {
+            push("所选目录库无效", "warning")
+            return
+        }
+
+        let previousURL = configuredCatalogURL
+        closeCurrentCatalog()
+        resetToDemoCatalog()
+        UserDefaults.standard.set(url, forKey: Self.catalogURLKey)
+        loadExistingCatalog()
+        if store == nil {
+            UserDefaults.standard.set(previousURL, forKey: Self.catalogURLKey)
+            resetToDemoCatalog()
+            loadExistingCatalog()
+            push("打开目录库失败", "warning")
+        } else {
+            push("已打开目录库 · \(url.lastPathComponent)", "check")
+        }
+    }
+
+    private func catalogPackageURL(from url: URL) -> URL {
+        url.pathExtension == "photolibrary" ? url : url.appendingPathExtension("photolibrary")
     }
 
     // ---------- real folder import (§6.3) ----------
@@ -791,7 +867,7 @@ final class AppState: ObservableObject {
                 try store.upsert(assets.filter { !$0.isDemo })
                 _ = try BackupService.backup(store)
             }
-            closeCatalogForRestore()
+            closeCurrentCatalog()
             resetToDemoCatalog()
             try BackupService.restore(backup, intoPackageAt: packageURL)
             loadExistingCatalog()
@@ -803,7 +879,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func closeCatalogForRestore() {
+    private func closeCurrentCatalog() {
         watcher?.stop()
         watcher = nil
         for url in securityScopedRoots {
