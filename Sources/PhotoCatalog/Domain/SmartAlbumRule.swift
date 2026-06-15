@@ -4,14 +4,21 @@
 // ============================================================
 import Foundation
 
-struct SmartCondition: Identifiable, Equatable {
-    let id = UUID()
+struct SmartCondition: Identifiable, Equatable, Codable, Sendable {
+    let id: UUID
     var field: String
     var op: String
     var value: String
+
+    init(id: UUID = UUID(), field: String, op: String, value: String) {
+        self.id = id
+        self.field = field
+        self.op = op
+        self.value = value
+    }
 }
 
-struct SmartRule: Equatable {
+struct SmartRule: Equatable, Codable, Sendable {
     var match: String = "all"   // all (AND) / any (OR)
     var conditions: [SmartCondition]
 }

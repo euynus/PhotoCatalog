@@ -59,7 +59,7 @@ struct ImportJobPayload: Codable, Equatable, Sendable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    private static let latestSchemaVersion = 5
+    private static let latestSchemaVersion = 6
     let packageURL: URL
     let db: Database
 
@@ -140,6 +140,13 @@ final class CatalogStore: @unchecked Sendable {
                            [.text(Self.iso(.now))])
             }
         }
+        if current < 6 {
+            try db.transaction {
+                db.exec(Self.albumsDDL)
+                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(6, ?);",
+                           [.text(Self.iso(.now))])
+            }
+        }
     }
 
     /// FTS5 full-text search returning matching asset ids (§12.7).
@@ -202,6 +209,31 @@ final class CatalogStore: @unchecked Sendable {
       updated_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_jobs_state_type ON jobs(state, type);
+    """
+
+    private static let albumsDDL = """
+    CREATE TABLE IF NOT EXISTS albums (
+      id TEXT PRIMARY KEY,
+      parent_id TEXT REFERENCES albums(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS album_assets (
+      album_id TEXT NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+      asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL DEFAULT 0,
+      added_at TEXT NOT NULL,
+      PRIMARY KEY(album_id, asset_id)
+    );
+    CREATE TABLE IF NOT EXISTS smart_album_rules (
+      album_id TEXT PRIMARY KEY REFERENCES albums(id) ON DELETE CASCADE,
+      rule_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_album_assets_album ON album_assets(album_id, position);
     """
 
     // ---------- assets ----------
@@ -270,6 +302,91 @@ final class CatalogStore: @unchecked Sendable {
 
     func updateSourceRootStatus(id: String, status: String) throws {
         try db.run("UPDATE source_roots SET status=? WHERE id=?;", [.text(status), .text(id)])
+    }
+
+    // ---------- albums (§6.8 / §10.2) ----------
+    func loadAlbums() throws -> [Album] {
+        let rows = try db.query("""
+        SELECT id, name
+        FROM albums
+        WHERE type='album'
+        ORDER BY sort_order ASC, created_at ASC;
+        """)
+        return try rows.compactMap { row in
+            guard let id = row.text("id"), let name = row.text("name") else { return nil }
+            let assetIds = try db.query("""
+            SELECT asset_id FROM album_assets
+            WHERE album_id=?
+            ORDER BY position ASC, added_at ASC;
+            """, [.text(id)]).compactMap { $0.text("asset_id") }
+            return Album(id: id, name: name, assetIds: assetIds)
+        }
+    }
+
+    func saveAlbum(_ album: Album, sortOrder: Int = 0, updatedAt: Date = .now) throws {
+        let now = Self.iso(updatedAt)
+        try db.transaction {
+            try db.run("""
+            INSERT INTO albums(id, parent_id, type, name, sort_order, created_at, updated_at)
+            VALUES(?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET
+              name=excluded.name,
+              sort_order=excluded.sort_order,
+              updated_at=excluded.updated_at;
+            """, [.text(album.id), .null, .text("album"), .text(album.name),
+                  .int(sortOrder), .text(now), .text(now)])
+            try db.run("DELETE FROM album_assets WHERE album_id=?;", [.text(album.id)])
+            for (index, assetId) in album.assetIds.enumerated() {
+                try db.run("""
+                INSERT INTO album_assets(album_id, asset_id, position, added_at)
+                VALUES(?,?,?,?);
+                """, [.text(album.id), .text(assetId), .int(index), .text(now)])
+            }
+        }
+    }
+
+    func loadSmartAlbums() throws -> [SmartAlbum] {
+        let decoder = JSONDecoder()
+        return try db.query("""
+        SELECT albums.id, albums.name, smart_album_rules.rule_json
+        FROM albums
+        JOIN smart_album_rules ON smart_album_rules.album_id = albums.id
+        WHERE albums.type='smart'
+        ORDER BY albums.sort_order ASC, albums.created_at ASC;
+        """).compactMap { row in
+            guard let id = row.text("id"),
+                  let name = row.text("name"),
+                  let json = row.text("rule_json"),
+                  let data = json.data(using: .utf8),
+                  let rule = try? decoder.decode(SmartRule.self, from: data) else { return nil }
+            return SmartAlbum(id: id, name: name, rule: rule, count: 0)
+        }
+    }
+
+    func saveSmartAlbum(_ album: SmartAlbum, sortOrder: Int = 0, updatedAt: Date = .now) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let data = try encoder.encode(album.rule)
+        let json = String(data: data, encoding: .utf8) ?? "{}"
+        let now = Self.iso(updatedAt)
+        try db.transaction {
+            try db.run("""
+            INSERT INTO albums(id, parent_id, type, name, sort_order, created_at, updated_at)
+            VALUES(?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET
+              name=excluded.name,
+              sort_order=excluded.sort_order,
+              updated_at=excluded.updated_at;
+            """, [.text(album.id), .null, .text("smart"), .text(album.name),
+                  .int(sortOrder), .text(now), .text(now)])
+            try db.run("""
+            INSERT INTO smart_album_rules(album_id, rule_json, updated_at)
+            VALUES(?,?,?)
+            ON CONFLICT(album_id) DO UPDATE SET
+              rule_json=excluded.rule_json,
+              updated_at=excluded.updated_at;
+            """, [.text(album.id), .text(json), .text(now)])
+        }
     }
 
     // ---------- import sessions (§10.2 / §12.2) ----------

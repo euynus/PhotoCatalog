@@ -88,6 +88,19 @@ enum PipelineCheck {
         try? store.upsert(assets)
         let reloaded = (try? store.loadAssets()) ?? []
         check(reloaded.count == 7, "reloaded 7 assets from SQLite — got \(reloaded.count)")
+        let album = Album(id: "album-test", name: "Pipeline Picks",
+                          assetIds: Array(assets.prefix(3).map(\.id)))
+        try? store.saveAlbum(album)
+        let loadedAlbum = (try? store.loadAlbums())?.first { $0.id == album.id }
+        check(loadedAlbum?.assetIds == album.assetIds, "manual album persisted membership")
+        let smartRule = SmartRule(match: "all", conditions: [
+            SmartCondition(field: "type", op: "=", value: assets[0].type),
+        ])
+        let smartAlbum = SmartAlbum(id: "smart-test", name: "Pipeline Smart",
+                                    rule: smartRule, count: 0)
+        try? store.saveSmartAlbum(smartAlbum)
+        let loadedSmart = (try? store.loadSmartAlbums())?.first { $0.id == smartAlbum.id }
+        check(loadedSmart?.rule == smartRule, "smart album persisted rule")
         try? store.addSourceRoot(id: "src-test-root", displayName: "source", path: src.path, bookmark: nil)
         let roots = (try? store.loadSourceRoots()) ?? []
         check(roots.contains { $0.id == "src-test-root" && $0.pathHint == src.path },

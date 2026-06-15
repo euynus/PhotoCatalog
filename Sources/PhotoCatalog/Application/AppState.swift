@@ -149,7 +149,17 @@ final class AppState: ObservableObject {
                                   status: folderStatus(for: fid, in: checked)))
         }
         recomputeDuplicates()
+        restoreAlbums(from: s, assets: checked)
         recoverInterruptedImportJobs(existingAssets: checked)
+    }
+
+    private func restoreAlbums(from store: CatalogStore, assets: [Asset]) {
+        albums = (try? store.loadAlbums()) ?? []
+        let loadedSmartAlbums = (try? store.loadSmartAlbums()) ?? []
+        smartAlbums = loadedSmartAlbums.map { album in
+            SmartAlbum(id: album.id, name: album.name, rule: album.rule,
+                       count: SmartMatcher.match(assets, album.rule).count)
+        }
     }
 
     private func restoreSourceRoots(from store: CatalogStore) {
@@ -1245,7 +1255,16 @@ final class AppState: ObservableObject {
 
     func saveSmart(name: String, rule: SmartRule, count: Int) {
         let id = "sm-" + UUID().uuidString.prefix(5)
-        smartAlbums.append(SmartAlbum(id: id, name: name, rule: rule, count: count))
+        let album = SmartAlbum(id: id, name: name, rule: rule, count: count)
+        if let store {
+            do {
+                try store.saveSmartAlbum(album, sortOrder: smartAlbums.count)
+            } catch {
+                push("智能相册保存失败", "warning")
+                return
+            }
+        }
+        smartAlbums.append(album)
         sheet = nil
         selection = Selection(type: .smart, id: id, name: name)
         push("已创建智能相册「\(name)」", "sparkles")
