@@ -66,6 +66,10 @@ final class Database: @unchecked Sendable {
         sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK
     }
 
+    func execChecked(_ sql: String) throws {
+        guard exec(sql) else { throw DBError.step(String(cString: sqlite3_errmsg(db))) }
+    }
+
     func run(_ sql: String, _ params: [SQLValue] = []) throws {
         let stmt = try prepare(sql, params)
         defer { sqlite3_finalize(stmt) }

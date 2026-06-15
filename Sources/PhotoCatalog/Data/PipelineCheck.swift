@@ -80,6 +80,33 @@ enum PipelineCheck {
         } catch {
             check(false, "future catalog schema rejected")
         }
+        let rollbackLibrary = tmp.appendingPathComponent("Rollback.photolibrary")
+        try? fm.createDirectory(at: rollbackLibrary, withIntermediateDirectories: true)
+        do {
+            let rollbackDB = try Database(path: rollbackLibrary.appendingPathComponent("catalog.sqlite").path)
+            try rollbackDB.execChecked("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT);")
+            try rollbackDB.execChecked("CREATE TABLE assets (id TEXT PRIMARY KEY, gps_altitude REAL);")
+            try rollbackDB.run("INSERT INTO schema_migrations(version, applied_at) VALUES(8, ?);",
+                               [.text("2026-01-01T00:00:00Z")])
+        } catch {
+            check(false, "rollback fixture created")
+        }
+        do {
+            _ = try CatalogStore(packageURL: rollbackLibrary)
+            check(false, "failed migration rolls back partial schema")
+            check(false, "failed migration keeps pre-migration backup")
+        } catch {
+            let rollbackDB = try? Database(path: rollbackLibrary.appendingPathComponent("catalog.sqlite").path)
+            let version = rollbackDB?.scalarInt("SELECT COALESCE(MAX(version),0) FROM schema_migrations;") ?? -1
+            let columns = Set(((try? rollbackDB?.query("PRAGMA table_info(assets);")) ?? [])
+                .compactMap { $0.text("name") })
+            let backups = (try? fm.contentsOfDirectory(at: rollbackLibrary.appendingPathComponent("Backups"),
+                                                       includingPropertiesForKeys: nil)) ?? []
+            check(version == 8 && columns.contains("gps_altitude") && !columns.contains("has_icc_profile"),
+                  "failed migration rolls back partial schema")
+            check(backups.contains { $0.lastPathComponent.hasPrefix("catalog-pre-migration-v8-") },
+                  "failed migration keeps pre-migration backup")
+        }
         let coordinator = ImportCoordinator(store: store)
         var progressSnapshots: [ImportProgress] = []
         let assets = coordinator.importFolder(src) { progressSnapshots.append($0) }

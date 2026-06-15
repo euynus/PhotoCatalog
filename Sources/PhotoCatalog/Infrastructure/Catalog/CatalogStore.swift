@@ -101,7 +101,7 @@ final class CatalogStore: @unchecked Sendable {
 
     // ---------- schema ----------
     private func migrate() throws {
-        db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT);")
+        try db.execChecked("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT);")
         let current = db.scalarInt("SELECT COALESCE(MAX(version),0) FROM schema_migrations;")
         if current > Self.latestSchemaVersion {
             throw CatalogStoreError.incompatibleSchema(current: current, supported: Self.latestSchemaVersion)
@@ -109,84 +109,66 @@ final class CatalogStore: @unchecked Sendable {
         if current > 0 && current < Self.latestSchemaVersion {
             try backup(stamp: "pre-migration-v\(current)-\(Self.filenameStamp(.now))")
         }
+        guard current < Self.latestSchemaVersion else { return }
+        try db.transaction {
+            try applyMigrations(from: current)
+        }
+    }
+
+    private func applyMigrations(from current: Int) throws {
         if current < 1 {
-            try db.transaction {
-                db.exec(Self.ddlV1)
-                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(1, ?);",
-                           [.text(ISO8601DateFormatter().string(from: Date()))])
-            }
+            try db.execChecked(Self.ddlV1)
+            try recordMigration(1)
         }
         if current < 2 {
-            try db.transaction {
-                db.exec("""
-                CREATE VIRTUAL TABLE IF NOT EXISTS asset_search USING fts5(
-                  asset_id UNINDEXED, filename, title, caption, keywords, camera, lens, tokenize='unicode61');
-                """)
-                db.exec("""
-                INSERT INTO asset_search(asset_id, filename, title, caption, keywords, camera, lens)
-                SELECT id, filename, title, caption, keywords, camera, lens FROM assets;
-                """)
-                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(2, ?);",
-                           [.text(ISO8601DateFormatter().string(from: Date()))])
-            }
+            try db.execChecked("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS asset_search USING fts5(
+              asset_id UNINDEXED, filename, title, caption, keywords, camera, lens, tokenize='unicode61');
+            """)
+            try db.execChecked("""
+            INSERT INTO asset_search(asset_id, filename, title, caption, keywords, camera, lens)
+            SELECT id, filename, title, caption, keywords, camera, lens FROM assets;
+            """)
+            try recordMigration(2)
         }
         if current < 3 {
-            try db.transaction {
-                db.exec("ALTER TABLE assets ADD COLUMN faces INTEGER DEFAULT 0;")
-                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(3, ?);",
-                           [.text(ISO8601DateFormatter().string(from: Date()))])
-            }
+            try db.execChecked("ALTER TABLE assets ADD COLUMN faces INTEGER DEFAULT 0;")
+            try recordMigration(3)
         }
         if current < 4 {
-            try db.transaction {
-                db.exec(Self.importSessionsDDL)
-                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(4, ?);",
-                           [.text(Self.iso(.now))])
-            }
+            try db.execChecked(Self.importSessionsDDL)
+            try recordMigration(4)
         }
         if current < 5 {
-            try db.transaction {
-                db.exec(Self.jobsDDL)
-                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(5, ?);",
-                           [.text(Self.iso(.now))])
-            }
+            try db.execChecked(Self.jobsDDL)
+            try recordMigration(5)
         }
         if current < 6 {
-            try db.transaction {
-                db.exec(Self.albumsDDL)
-                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(6, ?);",
-                           [.text(Self.iso(.now))])
-            }
+            try db.execChecked(Self.albumsDDL)
+            try recordMigration(6)
         }
         if current < 7 {
-            try db.transaction {
-                try db.run("ALTER TABLE source_roots ADD COLUMN volume_identifier TEXT;")
-                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(7, ?);",
-                           [.text(Self.iso(.now))])
-            }
+            try db.run("ALTER TABLE source_roots ADD COLUMN volume_identifier TEXT;")
+            try recordMigration(7)
         }
         if current < 8 {
-            try db.transaction {
-                try db.run("ALTER TABLE assets ADD COLUMN file_modified_at REAL;")
-                try db.run("ALTER TABLE assets ADD COLUMN file_created_at REAL;")
-                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(8, ?);",
-                           [.text(Self.iso(.now))])
-            }
+            try db.run("ALTER TABLE assets ADD COLUMN file_modified_at REAL;")
+            try db.run("ALTER TABLE assets ADD COLUMN file_created_at REAL;")
+            try recordMigration(8)
         }
         if current < 9 {
-            try db.transaction {
-                try db.run("ALTER TABLE assets ADD COLUMN has_icc_profile INTEGER DEFAULT 0;")
-                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(9, ?);",
-                           [.text(Self.iso(.now))])
-            }
+            try db.run("ALTER TABLE assets ADD COLUMN has_icc_profile INTEGER DEFAULT 0;")
+            try recordMigration(9)
         }
         if current < 10 {
-            try db.transaction {
-                try db.run("ALTER TABLE assets ADD COLUMN gps_altitude REAL;")
-                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(10, ?);",
-                           [.text(Self.iso(.now))])
-            }
+            try db.run("ALTER TABLE assets ADD COLUMN gps_altitude REAL;")
+            try recordMigration(10)
         }
+    }
+
+    private func recordMigration(_ version: Int) throws {
+        try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?);",
+                   [.int(version), .text(Self.iso(.now))])
     }
 
     /// FTS5 full-text search returning matching asset ids (§12.7).
