@@ -143,7 +143,7 @@ final class ImportCoordinator: @unchecked Sendable {
         if let sc = XMPSidecar.read(XMPSidecar.sidecarURL(for: url)) {
             asset.rating = sc.rating
             asset.colorLabel = sc.colorLabel
-            if !sc.keywords.isEmpty { asset.keywords = sc.keywords }
+            if !sc.keywords.isEmpty { asset.keywords = KeywordService.normalize(sc.keywords) }
             if !sc.title.isEmpty { asset.title = sc.title }
             if !sc.caption.isEmpty { asset.caption = sc.caption }
         }

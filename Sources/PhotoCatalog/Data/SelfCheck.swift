@@ -77,6 +77,12 @@ enum SelfCheck {
                 && $0.lens.localizedStandardContains(lensNeedle)
         }.map(\.id))
         assert(metadataIds == expectedMetadataIds, "camera and lens filters match assets")
+        let hierarchicalKeywords = KeywordService.normalize("旅行/日本/东京, 旅行 > 日本 > 东京;客户精选")
+        assert(hierarchicalKeywords == ["旅行", "旅行/日本", "旅行/日本/东京", "客户精选"],
+               "hierarchical keywords expand and dedupe")
+        let suggestedKeywords = KeywordService.suggestions(for: "日本", pool: hierarchicalKeywords,
+                                                           excluding: ["旅行/日本"])
+        assert(suggestedKeywords == ["旅行/日本/东京"], "keyword autocomplete uses current keyword pool")
         let pinned = PinnedSidebarItem(type: .folder, selectionId: "fld-tokyo", name: "2026 东京之旅")
         let pinnedData = try? JSONEncoder().encode([pinned])
         let restoredPins = pinnedData.flatMap { try? JSONDecoder().decode([PinnedSidebarItem].self, from: $0) }

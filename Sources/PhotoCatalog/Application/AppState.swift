@@ -1413,6 +1413,20 @@ final class AppState: ObservableObject {
             .map { $0 }
     }
 
+    var keywordSuggestionPool: [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for asset in assets where !asset.deleted {
+            for keyword in KeywordService.normalize(asset.keywords) where seen.insert(keyword).inserted {
+                result.append(keyword)
+            }
+        }
+        for keyword in DemoData.keywordPool where seen.insert(keyword).inserted {
+            result.append(keyword)
+        }
+        return result
+    }
+
     var pinnedSidebarFavorites: [PinnedSidebarItem] {
         pinnedSidebarItems.compactMap(resolvePinnedSidebarItem)
     }
@@ -1985,7 +1999,13 @@ final class AppState: ObservableObject {
     }
 
     func addKeyword(_ kw: String) {
-        mutate { if !$0.keywords.contains(kw) { $0.keywords.append(kw) } }
+        let keywords = KeywordService.normalize(kw)
+        guard !keywords.isEmpty else { return }
+        mutate {
+            for keyword in keywords where !$0.keywords.contains(keyword) {
+                $0.keywords.append(keyword)
+            }
+        }
     }
     func removeKeyword(_ kw: String) {
         mutate { $0.keywords.removeAll { $0 == kw } }

@@ -138,6 +138,9 @@ enum PipelineCheck {
             actions: ImportPostActions(keywords: postKeywords, colorLabel: .green))
         check(postAssets.first?.keywords == ["客户精选", "旅行"] && postAssets.first?.colorLabel == .green,
               "import post actions apply keywords and color label")
+        let postHierarchy = ImportPostActionService.normalizeKeywords("旅行/日本/东京")
+        check(postHierarchy == ["旅行", "旅行/日本", "旅行/日本/东京"],
+              "import post actions expand hierarchical keywords")
         var knownByPath: [String: Asset] = [:]
         for asset in assets {
             if let path = asset.localPath {

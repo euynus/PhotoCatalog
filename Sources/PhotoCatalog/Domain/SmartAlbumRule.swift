@@ -64,7 +64,7 @@ enum SmartMatcher {
         case "colorLabel":
             return (a.colorLabel?.rawValue ?? "") == c.value || (c.value.isEmpty && a.colorLabel == nil)
         case "keywords":
-            let has = a.keywords.contains { $0.contains(c.value) }
+            let has = a.keywords.contains { $0.localizedStandardContains(c.value) }
             return c.op == "包含" ? has : !has
         case "camera":
             if c.op == "=" { return a.camera == c.value }

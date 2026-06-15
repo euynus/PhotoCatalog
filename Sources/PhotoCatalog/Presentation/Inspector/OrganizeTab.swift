@@ -42,6 +42,7 @@ struct OrganizeTab: View {
             // keywords
             block("关键词") {
                 KeywordEditor(keywords: asset.keywords,
+                              suggestions: app.keywordSuggestionPool,
                               onAdd: { app.addKeyword($0) }, onRemove: { app.removeKeyword($0) })
             }
             // title
@@ -144,15 +145,14 @@ struct ColorLabelPicker: View {
 // ---------- Keyword editor ----------
 struct KeywordEditor: View {
     let keywords: [String]
+    let suggestions: [String]
     let onAdd: (String) -> Void
     let onRemove: (String) -> Void
     @State private var input = ""
     @FocusState private var focused: Bool
 
-    private var suggestions: [String] {
-        let q = input.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return [] }
-        return DemoData.keywordPool.filter { $0.contains(q) && !keywords.contains($0) }.prefix(5).map { $0 }
+    private var filteredSuggestions: [String] {
+        KeywordService.suggestions(for: input, pool: suggestions, excluding: keywords)
     }
 
     private func commit(_ k: String? = nil) {
@@ -196,9 +196,9 @@ struct KeywordEditor: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .focusRing(focused, radius: 6)
             .overlay(alignment: .topLeading) {
-                if focused && !suggestions.isEmpty {
+                if focused && !filteredSuggestions.isEmpty {
                     VStack(spacing: 0) {
-                        ForEach(suggestions, id: \.self) { s in
+                        ForEach(filteredSuggestions, id: \.self) { s in
                             KWSuggestion(text: s) { commit(s) }
                         }
                     }

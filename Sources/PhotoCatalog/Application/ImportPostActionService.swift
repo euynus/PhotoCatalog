@@ -11,11 +11,7 @@ struct ImportPostActions: Sendable {
 
 enum ImportPostActionService {
     static func normalizeKeywords(_ raw: String) -> [String] {
-        var seen = Set<String>()
-        return raw.split { $0 == "," || $0 == "，" || $0 == ";" || $0 == "\n" }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .filter { seen.insert($0).inserted }
+        KeywordService.normalize(raw)
     }
 
     static func apply(to assets: [Asset], actions: ImportPostActions) -> [Asset] {
