@@ -341,13 +341,16 @@ enum PipelineCheck {
                 a.author = "作者A"
                 a.copyright = "Copyright A"
                 a.makerNotes = "LensID=NIKKOR Z"
+                a.project = "Project A"
+                a.client = "Client A"
                 return a
             }())
             let again = (try? store.loadAssets()) ?? []
             let edited = again.first { $0.id == id }
             check(edited?.rating == 5 && edited?.keywords == ["测试"]
-                  && edited?.author == "作者A" && edited?.copyright == "Copyright A",
-                  "rating + keyword + rights edit persisted across reload")
+                  && edited?.author == "作者A" && edited?.copyright == "Copyright A"
+                  && edited?.project == "Project A" && edited?.client == "Client A",
+                  "rating + keyword + rights + project edit persisted across reload")
             check(edited?.makerNotes == "LensID=NIKKOR Z", "maker notes persisted across reload")
         }
 
@@ -433,17 +436,22 @@ enum PipelineCheck {
         metadataAssets[0].author = "Export Author"
         metadataAssets[0].copyright = "Export Copyright"
         metadataAssets[0].makerNotes = "Export MakerNotes"
+        metadataAssets[0].project = "Export Project"
+        metadataAssets[0].client = "Export Client"
         let exportedJSON = ExportService.exportMetadataJSON(metadataAssets, to: metadataJSON)
         let jsonText = (try? String(contentsOf: metadataJSON, encoding: .utf8)) ?? ""
         check(exportedJSON && jsonText.contains("\"author\"") && jsonText.contains("Export Author")
               && jsonText.contains("\"copyright\"") && jsonText.contains("Export Copyright")
-              && jsonText.contains("\"makerNotes\"") && jsonText.contains("Export MakerNotes"),
+              && jsonText.contains("\"makerNotes\"") && jsonText.contains("Export MakerNotes")
+              && jsonText.contains("\"project\"") && jsonText.contains("Export Project")
+              && jsonText.contains("\"client\"") && jsonText.contains("Export Client"),
               "exported JSON metadata")
         let exportedCSV = ExportService.exportMetadataCSV(metadataAssets, to: metadataCSV)
         let csvText = (try? String(contentsOf: metadataCSV, encoding: .utf8)) ?? ""
-        check(exportedCSV && csvText.contains("author,copyright,makerNotes")
+        check(exportedCSV && csvText.contains("author,copyright,makerNotes,project,client")
               && csvText.contains("Export Author") && csvText.contains("Export Copyright")
-              && csvText.contains("Export MakerNotes"),
+              && csvText.contains("Export MakerNotes") && csvText.contains("Export Project")
+              && csvText.contains("Export Client"),
               "exported CSV metadata")
         let previewExportDir = tmp.appendingPathComponent("export-previews")
         let previewReport = ExportService.exportPreviews(assets, to: previewExportDir)

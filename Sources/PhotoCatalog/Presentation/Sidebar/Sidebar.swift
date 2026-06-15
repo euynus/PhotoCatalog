@@ -16,6 +16,8 @@ struct Sidebar: View {
                 folderSection
                 albumSection
                 smartSection
+                projectSection
+                clientSection
                 keywordSection
             }
             .padding(.horizontal, 8)
@@ -99,6 +101,28 @@ struct Sidebar: View {
         }
     }
 
+    @ViewBuilder
+    private var projectSection: some View {
+        if !app.projectList.isEmpty {
+            SidebarSection(title: "项目") {
+                ForEach(app.projectList) { item in
+                    row("project", Theme.purple, item.name, "\(item.count)", .project, item.name, item.name)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var clientSection: some View {
+        if !app.clientList.isEmpty {
+            SidebarSection(title: "客户") {
+                ForEach(app.clientList) { item in
+                    row("client", Theme.albumBlue, item.name, "\(item.count)", .client, item.name, item.name)
+                }
+            }
+        }
+    }
+
     private var keywordSection: some View {
         SidebarSection(title: "关键词") {
             ForEach(app.keywordList) { k in
@@ -148,6 +172,8 @@ struct Sidebar: View {
         case .album: return "album"
         case .smart: return "sparkles"
         case .keyword: return "tag"
+        case .project: return "project"
+        case .client: return "client"
         case .lib: return "star"
         }
     }
@@ -158,6 +184,8 @@ struct Sidebar: View {
         case .album: return Theme.albumBlue
         case .smart: return Theme.accent
         case .keyword: return Theme.folderGray
+        case .project: return Theme.purple
+        case .client: return Theme.albumBlue
         case .lib: return nil
         }
     }

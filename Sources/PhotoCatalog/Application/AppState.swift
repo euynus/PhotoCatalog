@@ -1517,6 +1517,27 @@ final class AppState: ObservableObject {
         return result
     }
 
+    var projectList: [KeywordCount] {
+        countMetadataValues(\.project)
+    }
+
+    var clientList: [KeywordCount] {
+        countMetadataValues(\.client)
+    }
+
+    private func countMetadataValues(_ keyPath: KeyPath<Asset, String>) -> [KeywordCount] {
+        var order: [String] = []
+        var counts: [String: Int] = [:]
+        for asset in assets where !asset.deleted {
+            let value = asset[keyPath: keyPath].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty else { continue }
+            if counts[value] == nil { order.append(value) }
+            counts[value, default: 0] += 1
+        }
+        return order.map { KeywordCount(name: $0, count: counts[$0] ?? 0) }
+            .sorted { $0.count > $1.count }
+    }
+
     var pinnedSidebarFavorites: [PinnedSidebarItem] {
         pinnedSidebarItems.compactMap(resolvePinnedSidebarItem)
     }
@@ -1617,6 +1638,10 @@ final class AppState: ObservableObject {
             return "\(SmartMatcher.match(live, smart.rule).count)"
         case .keyword:
             return "\(live.filter { $0.keywords.contains(item.selectionId) }.count)"
+        case .project:
+            return "\(live.filter { $0.project == item.selectionId }.count)"
+        case .client:
+            return "\(live.filter { $0.client == item.selectionId }.count)"
         case .lib:
             return ""
         }
@@ -1683,6 +1708,12 @@ final class AppState: ObservableObject {
             let exists = assets.contains { !$0.deleted && $0.keywords.contains(item.selectionId) }
             guard exists else { return nil }
             return PinnedSidebarItem(type: .keyword, selectionId: item.selectionId, name: item.name)
+        case .project:
+            guard projectList.contains(where: { $0.name == item.selectionId }) else { return nil }
+            return PinnedSidebarItem(type: .project, selectionId: item.selectionId, name: item.name)
+        case .client:
+            guard clientList.contains(where: { $0.name == item.selectionId }) else { return nil }
+            return PinnedSidebarItem(type: .client, selectionId: item.selectionId, name: item.name)
         case .lib:
             return nil
         }
@@ -1705,6 +1736,10 @@ final class AppState: ObservableObject {
             return SmartMatcher.match(live, sa.rule)
         case .keyword:
             return live.filter { $0.keywords.contains(selection.id) }
+        case .project:
+            return live.filter { $0.project == selection.id }
+        case .client:
+            return live.filter { $0.client == selection.id }
         case .lib:
             switch selection.id {
             case "recent":
@@ -1759,7 +1794,8 @@ final class AppState: ObservableObject {
             if filters.gps == "no" && hasGPS { return false }
             if filters.status != "any" && a.status.rawValue != filters.status { return false }
             if !q.isEmpty {
-                let haystack = ([a.filename, a.camera, a.lens, a.title, a.caption, a.location]
+                let haystack = ([a.filename, a.camera, a.lens, a.title, a.caption, a.location,
+                                 a.project, a.client]
                     + a.keywords).joined(separator: " ")
                 if !haystack.localizedStandardContains(q) { return false }
             }
@@ -1955,6 +1991,8 @@ final class AppState: ObservableObject {
     func setColor(_ c: ColorLabel?) { mutate { $0.colorLabel = c } }
     func setTitle(_ t: String) { mutate { $0.title = t } }
     func setCaption(_ c: String) { mutate { $0.caption = c } }
+    func setProject(_ p: String) { mutate { $0.project = p.trimmingCharacters(in: .whitespacesAndNewlines) } }
+    func setClient(_ c: String) { mutate { $0.client = c.trimmingCharacters(in: .whitespacesAndNewlines) } }
 
     func removeSelectedSource() {
         guard selectedFolderIsCatalogSource else { return }

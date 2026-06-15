@@ -157,6 +157,10 @@ enum DemoData {
             let shutter = shutters[r.int(shutters.count)]
             let isoVal = isos[r.int(isos.count)]
 
+            let project = folder.id == "fld-tokyo" ? "Tokyo Editorial 2026"
+                : (folder.id == "fld-iceland" ? "Iceland Landscape Pack" : "Street Portrait Series")
+            let client = folder.id == "fld-street" ? "City Magazine" : "Northstar Studio"
+
             result.append(Asset(
                 id: "a\(i)",
                 pid: seed,
@@ -180,6 +184,7 @@ enum DemoData {
                 rating: rating, flag: flag, colorLabel: colorLabel,
                 keywords: kws,
                 title: "", caption: "",
+                project: project, client: client,
                 location: locName, gps: gps,
                 status: status,
                 importedAt: Date(timeIntervalSince1970: baseImport + Double(i * 60))
@@ -209,7 +214,8 @@ enum DemoData {
                 camera: a.camera, lens: a.lens, focal: a.focal, aperture: a.aperture,
                 shutter: a.shutter, iso: a.iso, colorSpace: a.colorSpace, fileMB: a.fileMB,
                 rating: a.rating, flag: a.flag, colorLabel: a.colorLabel, keywords: a.keywords,
-                title: a.title, caption: a.caption, location: a.location, gps: a.gps,
+                title: a.title, caption: a.caption, project: a.project, client: a.client,
+                location: a.location, gps: a.gps,
                 status: a.status, importedAt: a.importedAt)
             groups.append(DuplicateGroup(
                 id: "dg\(g)",

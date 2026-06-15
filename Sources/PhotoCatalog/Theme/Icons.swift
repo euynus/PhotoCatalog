@@ -16,6 +16,8 @@ enum IconName {
         "trash": "trash",
         "folder": "folder",
         "album": "rectangle.stack",
+        "project": "briefcase",
+        "client": "person.crop.square",
         "sparkles": "sparkles",
         "tag": "tag",
         "copy": "doc.on.doc",

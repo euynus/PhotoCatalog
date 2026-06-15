@@ -51,6 +51,8 @@ struct Asset: Identifiable, Equatable, Sendable {
     var author: String = ""
     var copyright: String = ""
     var makerNotes: String = ""
+    var project: String = ""
+    var client: String = ""
 
     let location: String
     let gps: (Double, Double)
@@ -155,7 +157,7 @@ enum DuplicateResolutionAction {
 
 /// Sidebar / navigation selection.
 struct Selection: Equatable {
-    enum Kind: String, Codable { case lib, folder, album, smart, keyword }
+    enum Kind: String, Codable { case lib, folder, album, smart, keyword, project, client }
     var type: Kind
     var id: String
     var name: String

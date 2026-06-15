@@ -84,6 +84,10 @@ enum SelfCheck {
         let suggestedKeywords = KeywordService.suggestions(for: "日本", pool: hierarchicalKeywords,
                                                            excluding: ["旅行/日本"])
         assert(suggestedKeywords == ["旅行/日本/东京"], "keyword autocomplete uses current keyword pool")
+        let projectNames = Set(ready.map(\.project).filter { !$0.isEmpty })
+        let clientNames = Set(ready.map(\.client).filter { !$0.isEmpty })
+        assert(projectNames.count == 3 && clientNames == ["Northstar Studio", "City Magazine"],
+               "project and client dimensions are present")
         let stackGroup = DuplicateGroup(id: "stack-test", method: "perceptualHash",
                                         score: 0.9, items: Array(ready.prefix(3)))
         let stacks = PhotoStackService.stacks(from: [stackGroup])

@@ -7,7 +7,7 @@ struct OrganizeTab: View {
     @EnvironmentObject var app: AppState
     let asset: Asset
 
-    private enum Field { case title, caption }
+    private enum Field { case title, caption, project, client }
     @FocusState private var focusedField: Field?
 
     var body: some View {
@@ -72,6 +72,26 @@ struct OrganizeTab: View {
                 .background(Color.black.opacity(0.28))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .focusRing(focusedField == .caption, radius: 6)
+            }
+            block("项目") {
+                TextField("项目名称",
+                          text: Binding(get: { asset.project }, set: { app.setProject($0) }))
+                    .textFieldStyle(.plain).font(.system(size: 12.5))
+                    .focused($focusedField, equals: .project)
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .background(Color.black.opacity(0.28))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .focusRing(focusedField == .project, radius: 6)
+            }
+            block("客户") {
+                TextField("客户名称",
+                          text: Binding(get: { asset.client }, set: { app.setClient($0) }))
+                    .textFieldStyle(.plain).font(.system(size: 12.5))
+                    .focused($focusedField, equals: .client)
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .background(Color.black.opacity(0.28))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .focusRing(focusedField == .client, radius: 6)
             }
         }
     }
