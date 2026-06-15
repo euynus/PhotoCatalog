@@ -86,15 +86,13 @@ enum MetadataReader {
         return "1/\(Int((1 / exp).rounded()))"
     }
 
-    private static let exifFormatter: DateFormatter = {
+    // A fresh formatter per call: read() runs on concurrent background queues and
+    // DateFormatter is not thread-safe to share.
+    private static func exifDate(_ s: String?) -> Date? {
+        guard let s else { return nil }
         let f = DateFormatter()
         f.dateFormat = "yyyy:MM:dd HH:mm:ss"
         f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
-
-    private static func exifDate(_ s: String?) -> Date? {
-        guard let s else { return nil }
-        return exifFormatter.date(from: s)
+        return f.date(from: s)
     }
 }

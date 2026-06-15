@@ -273,8 +273,9 @@ final class AppState: ObservableObject {
         guard let store else { push("无目录库", "warning"); return }
         let fm = FileManager.default
         try? fm.removeItem(at: store.cacheURL)
-        try? fm.createDirectory(at: store.thumb512URL, withIntermediateDirectories: true)
-        try? fm.createDirectory(at: store.preview2048URL, withIntermediateDirectories: true)
+        for dir in [store.thumb256URL, store.thumb512URL, store.preview2048URL] {
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
         push("已清理缩略图缓存", "trash")
     }
 
