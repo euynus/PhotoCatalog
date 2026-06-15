@@ -65,8 +65,9 @@ final class ThumbnailService: @unchecked Sendable {
         return CGImageDestinationFinalize(dest) ? out : nil
     }
 
-    /// Generate the grid thumbnail (512) + the loupe preview (2048).
+    /// Generate both thumbnail sizes + the loupe preview (2048).
     func generateAll(from original: URL, assetId: String) -> (thumb: URL?, preview: URL?) {
+        _ = generate(from: original, assetId: assetId, kind: .thumb256)
         let thumb = generate(from: original, assetId: assetId, kind: .thumb512)
         let preview = generate(from: original, assetId: assetId, kind: .preview2048)
         return (thumb, preview)

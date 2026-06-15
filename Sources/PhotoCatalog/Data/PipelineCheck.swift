@@ -123,6 +123,10 @@ enum PipelineCheck {
             fm.fileExists(atPath: $0.thumb) && fm.fileExists(atPath: $0.preview)
         }
         check(thumbsExist, "thumbnails + previews written to disk cache")
+        let thumb256Exist = assets.allSatisfy {
+            fm.fileExists(atPath: coordinator.thumbnails.cachePath(assetId: $0.id, kind: .thumb256).path)
+        }
+        check(thumb256Exist, "256px thumbnails written to disk cache")
         check(assets.allSatisfy { $0.contentHash != nil && $0.quickHash != nil }, "content + quick hashes computed")
         let groupedDedup = ImportDeduplicationService.apply(imported: assets, existingAssets: [],
                                                             existingIds: [], strategy: .groupExact)
