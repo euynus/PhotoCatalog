@@ -125,6 +125,14 @@ enum PipelineCheck {
         try? store.updateSourceRootStatus(id: "src-test-root", status: "offline")
         let updatedRoot = (try? store.loadSourceRoots())?.first { $0.id == "src-test-root" }
         check(updatedRoot?.status == "offline", "source root status update persisted")
+        let reauthPath = src.appendingPathComponent("reauthorized")
+        try? fm.createDirectory(at: reauthPath, withIntermediateDirectories: true)
+        try? store.updateSourceRootAccess(id: "src-test-root", displayName: "reauthorized",
+                                          path: reauthPath.path, bookmark: Data([1, 2, 3]))
+        let reauthorizedRoot = (try? store.loadSourceRoots())?.first { $0.id == "src-test-root" }
+        check(reauthorizedRoot?.pathHint == reauthPath.path && reauthorizedRoot?.status == "online"
+              && reauthorizedRoot?.bookmarkData == Data([1, 2, 3]),
+              "source root reauthorization persisted")
         try? store.removeSourceRoot(id: "src-test-root")
         let removedRoot = (try? store.loadSourceRoots())?.first { $0.id == "src-test-root" }
         check(removedRoot == nil, "source root removal persisted")

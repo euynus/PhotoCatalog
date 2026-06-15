@@ -1188,7 +1188,15 @@ final class AppState: ObservableObject {
 
     var canApplySelectionToAlbum: Bool { !targetIds.isEmpty }
     var canRemoveSelectionFromCurrentAlbum: Bool { selection.type == .album && !targetIds.isEmpty }
-    var canRemoveSelectedSource: Bool { selection.type == .folder }
+    var canRemoveSelectedSource: Bool { selectedFolderIsCatalogSource }
+    var canReauthorizeSelectedSource: Bool { selectedFolderIsCatalogSource }
+
+    private var selectedFolderIsCatalogSource: Bool {
+        selection.type == .folder
+            && store != nil
+            && !DemoData.folders.contains { $0.id == selection.id }
+            && folders.contains { $0.id == selection.id }
+    }
 
     /// Apply an in-place edit to the current selection (or an explicit set).
     func mutate(_ ids: Set<String>? = nil, _ transform: (inout Asset) -> Void) {
@@ -1212,7 +1220,7 @@ final class AppState: ObservableObject {
     func setCaption(_ c: String) { mutate { $0.caption = c } }
 
     func removeSelectedSource() {
-        guard selection.type == .folder else { return }
+        guard selectedFolderIsCatalogSource else { return }
         let folderId = selection.id
         let folderName = selection.name
         let indexed = assets.filter { !$0.deleted && !$0.isDemo && $0.folderId == folderId }
@@ -1247,6 +1255,38 @@ final class AppState: ObservableObject {
         }
         recomputeDuplicates()
         push("已移除源「\(folderName)」的索引", "trash")
+    }
+
+    func reauthorizeSelectedSource() {
+        guard selectedFolderIsCatalogSource else { return }
+        let folderId = selection.id
+
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "重新授权"
+        panel.message = "选择源文件夹以恢复访问权限"
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+
+        let bookmark = FileAccessService.createBookmark(for: folder)
+        do {
+            try store?.updateSourceRootAccess(id: folderId, displayName: folder.lastPathComponent,
+                                              path: folder.path, bookmark: bookmark)
+        } catch {
+            push("重新授权失败", "warning")
+            return
+        }
+
+        for i in folders.indices where folders[i].id == folderId {
+            folders[i] = Folder(id: folderId, name: folder.lastPathComponent, status: "online")
+        }
+        if !watchedRoots.contains(folder) {
+            watchedRoots.append(folder)
+            refreshWatcher()
+        }
+        detectMissingRealAssets()
+        push("已恢复源文件夹访问", "check")
     }
 
     func createAlbumFromSelection() {

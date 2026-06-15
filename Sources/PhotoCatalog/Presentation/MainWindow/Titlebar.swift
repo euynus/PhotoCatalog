@@ -72,6 +72,10 @@ struct Titlebar: View {
 
             separator
 
+            if app.canReauthorizeSelectedSource {
+                ToolButton(icon: "link", label: "重新授权源",
+                           action: { app.reauthorizeSelectedSource() })
+            }
             if app.canRemoveSelectedSource {
                 ToolButton(icon: "trash", label: "移除源索引",
                            danger: true,

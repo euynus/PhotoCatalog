@@ -304,6 +304,16 @@ final class CatalogStore: @unchecked Sendable {
         try db.run("UPDATE source_roots SET status=? WHERE id=?;", [.text(status), .text(id)])
     }
 
+    func updateSourceRootAccess(id: String, displayName: String, path: String,
+                                bookmark: Data?, status: String = "online") throws {
+        try db.run("""
+        UPDATE source_roots
+        SET display_name=?, path_hint=?, bookmark_data=?, status=?
+        WHERE id=?;
+        """, [.text(displayName), .text(path), bookmark.map { SQLValue.blob($0) } ?? .null,
+              .text(status), .text(id)])
+    }
+
     func removeSourceRoot(id: String) throws {
         try db.run("DELETE FROM source_roots WHERE id=?;", [.text(id)])
     }
