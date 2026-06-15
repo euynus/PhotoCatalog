@@ -50,14 +50,28 @@ struct SettingsSheet: View {
                      ? "托管式：导入时复制原件到目录库 Originals/YYYY/MM/DD。"
                      : "引用式：只索引，原件保留在原位置（推荐）。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
-                Toggle(isOn: $app.exportWritesXMP) {
-                    Text("导出时写入 XMP sidecar").font(.system(size: 12.5)).foregroundStyle(Theme.text)
-                }.toggleStyle(.switch).tint(Theme.accent)
                 Toggle(isOn: $app.visionEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("导入时 Vision 分析（场景标签 + 人脸）").font(.system(size: 12.5)).foregroundStyle(Theme.text)
                         Text("完全在本机进行，照片不会离开设备。").font(.system(size: 11)).foregroundStyle(Theme.text3)
                     }
+                }.toggleStyle(.switch).tint(Theme.accent)
+            }
+
+            section("导出") {
+                row("目录结构") {
+                    Segmented(options: [
+                        SegOption(value: "flat", label: "平铺"),
+                        SegOption(value: "date", label: "日期"),
+                        SegOption(value: "sourceFolder", label: "源文件夹"),
+                        SegOption(value: "album", label: "相册"),
+                    ], value: app.exportDirectoryStructure.rawValue,
+                       onChange: {
+                        app.exportDirectoryStructure = ExportDirectoryStructure(rawValue: $0) ?? .flat
+                    }, size: "sm")
+                }
+                Toggle(isOn: $app.exportWritesXMP) {
+                    Text("导出时写入 XMP sidecar").font(.system(size: 12.5)).foregroundStyle(Theme.text)
                 }.toggleStyle(.switch).tint(Theme.accent)
             }
 

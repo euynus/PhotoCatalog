@@ -29,6 +29,13 @@ final class AppState: ObservableObject {
     @Published var exportWritesXMP = UserDefaults.standard.bool(forKey: "pc_exportXMP") {
         didSet { UserDefaults.standard.set(exportWritesXMP, forKey: "pc_exportXMP") }
     }
+    @Published var exportDirectoryStructure: ExportDirectoryStructure =
+        ExportDirectoryStructure(rawValue: UserDefaults.standard.string(forKey: "pc_exportDirectoryStructure") ?? "")
+            ?? .flat {
+        didSet {
+            UserDefaults.standard.set(exportDirectoryStructure.rawValue, forKey: "pc_exportDirectoryStructure")
+        }
+    }
     @Published var visionEnabled = UserDefaults.standard.bool(forKey: "pc_vision") {
         didSet { UserDefaults.standard.set(visionEnabled, forKey: "pc_vision") }
     }
@@ -891,9 +898,15 @@ final class AppState: ObservableObject {
         panel.prompt = "导出到此处"
         guard panel.runModal() == .OK, let dest = panel.url else { return }
         let xmp = exportWritesXMP
-        Task { [weak self, real, dest, xmp] in
+        let directoryStructure = exportDirectoryStructure
+        let albumNamesByAssetId = exportAlbumNamesByAssetId()
+        let sourceRootPathsByFolderId = exportSourceRootPathsByFolderId()
+        Task { [weak self, real, dest, xmp, directoryStructure, albumNamesByAssetId, sourceRootPathsByFolderId] in
             let result = await Task.detached(priority: .userInitiated) {
-                let report = ExportService.copyOriginals(real, to: dest, xmp: xmp)
+                let report = ExportService.copyOriginals(real, to: dest, xmp: xmp,
+                                                         directoryStructure: directoryStructure,
+                                                         albumNamesByAssetId: albumNamesByAssetId,
+                                                         sourceRootPathsByFolderId: sourceRootPathsByFolderId)
                 let jsonOK = ExportService.exportMetadataJSON(real, to: dest.appendingPathComponent("metadata.json"))
                 let csvOK = ExportService.exportMetadataCSV(real, to: dest.appendingPathComponent("metadata.csv"))
                 return (report: report, metadataOK: jsonOK && csvOK)
@@ -903,6 +916,21 @@ final class AppState: ObservableObject {
                        + (xmp ? " · 含 XMP" : "")
                        + (result.metadataOK ? " · 含元数据" : " · 元数据失败"), "export")
         }
+    }
+
+    private func exportAlbumNamesByAssetId() -> [String: String] {
+        var names: [String: String] = [:]
+        for album in albums {
+            for id in album.assetIds where names[id] == nil {
+                names[id] = album.name
+            }
+        }
+        return names
+    }
+
+    private func exportSourceRootPathsByFolderId() -> [String: String] {
+        guard let store, let roots = try? store.loadSourceRoots() else { return [:] }
+        return Dictionary(uniqueKeysWithValues: roots.map { ($0.id, $0.pathHint) })
     }
 
     // ---------- backup (§6.12) ----------

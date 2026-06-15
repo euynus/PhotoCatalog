@@ -79,6 +79,13 @@ struct RecentCatalog: Identifiable, Equatable, Sendable {
     var parentPath: String { URL(fileURLWithPath: path).deletingLastPathComponent().path }
 }
 
+enum ExportDirectoryStructure: String, CaseIterable, Sendable {
+    case flat
+    case date
+    case sourceFolder
+    case album
+}
+
 /// Manual album (`albums` table, type = album).
 struct Album: Identifiable, Hashable {
     let id: String

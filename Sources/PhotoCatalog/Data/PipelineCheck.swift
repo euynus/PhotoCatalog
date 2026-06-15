@@ -178,6 +178,47 @@ enum PipelineCheck {
         // 7. export originals
         let report = ExportService.copyOriginals(assets, to: exportDir)
         check(report.copied == 7, "exported 7 originals — copied \(report.copied), failed \(report.failed)")
+        if let first = assets.first, let firstPath = first.localPath {
+            let sourceURL = URL(fileURLWithPath: firstPath)
+            let dateParts = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day],
+                                                                            from: first.date)
+            let dateExportDir = tmp.appendingPathComponent("export-date")
+            let dateReport = ExportService.copyOriginals(assets, to: dateExportDir,
+                                                         directoryStructure: .date)
+            let dateTarget = dateExportDir
+                .appendingPathComponent(String(format: "%04d", dateParts.year ?? 0))
+                .appendingPathComponent(String(format: "%02d", dateParts.month ?? 1))
+                .appendingPathComponent(String(format: "%02d", dateParts.day ?? 1))
+                .appendingPathComponent(sourceURL.lastPathComponent)
+            check(dateReport.copied == 7 && fm.fileExists(atPath: dateTarget.path),
+                  "exported originals into date folders")
+
+            let sourceExportDir = tmp.appendingPathComponent("export-source")
+            let sourceReport = ExportService.copyOriginals(
+                assets,
+                to: sourceExportDir,
+                directoryStructure: .sourceFolder,
+                sourceRootPathsByFolderId: [first.folderId: src.path])
+            let sourceTarget = sourceExportDir
+                .appendingPathComponent(src.lastPathComponent)
+                .appendingPathComponent(sourceURL.lastPathComponent)
+            check(sourceReport.copied == 7 && fm.fileExists(atPath: sourceTarget.path),
+                  "exported originals into source folders")
+
+            let albumExportDir = tmp.appendingPathComponent("export-album")
+            let albumAssets = Array(assets.prefix(3))
+            let albumNames = Dictionary(uniqueKeysWithValues: album.assetIds.map { ($0, album.name) })
+            let albumReport = ExportService.copyOriginals(albumAssets, to: albumExportDir,
+                                                          directoryStructure: .album,
+                                                          albumNamesByAssetId: albumNames)
+            let albumTarget = albumExportDir
+                .appendingPathComponent(album.name)
+                .appendingPathComponent(sourceURL.lastPathComponent)
+            check(albumReport.copied == 3 && fm.fileExists(atPath: albumTarget.path),
+                  "exported originals into album folders")
+        } else {
+            check(false, "exported originals into structured folders")
+        }
         let metadataJSON = exportDir.appendingPathComponent("metadata.json")
         let metadataCSV = exportDir.appendingPathComponent("metadata.csv")
         check(ExportService.exportMetadataJSON(assets, to: metadataJSON)
