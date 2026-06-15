@@ -27,6 +27,9 @@ final class AppState: ObservableObject {
     @Published var exportWritesXMP = UserDefaults.standard.bool(forKey: "pc_exportXMP") {
         didSet { UserDefaults.standard.set(exportWritesXMP, forKey: "pc_exportXMP") }
     }
+    @Published var visionEnabled = UserDefaults.standard.bool(forKey: "pc_vision") {
+        didSet { UserDefaults.standard.set(visionEnabled, forKey: "pc_vision") }
+    }
     @Published var healthReport: HealthReport?
 
     // ----- catalog (real persistence / scanning) -----
@@ -123,8 +126,9 @@ final class AppState: ObservableObject {
         importing = true
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: folder)
+        let vision = visionEnabled
         DispatchQueue.global(qos: .userInitiated).async {
-            let imported = coordinator.importFolder(folder, mode: mode)
+            let imported = coordinator.importFolder(folder, mode: mode, autoTag: vision)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 let existing = Set(self.assets.map { $0.id })
@@ -165,10 +169,12 @@ final class AppState: ObservableObject {
         guard let coordinator, let store else { return }
         let roots = watchedRoots
         let knownPaths = Set(assets.compactMap { $0.localPath })
+        let vision = visionEnabled
         DispatchQueue.global(qos: .utility).async {
             var fresh: [Asset] = []
             for root in roots {
-                fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths, mode: .referenced))
+                fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
+                                                             mode: .referenced, autoTag: vision))
             }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
@@ -363,6 +369,8 @@ final class AppState: ObservableObject {
                 return live.filter { $0.status == .missing || $0.status == .offline }
             case "places":
                 return live.filter { !($0.gps.0 == 0 && $0.gps.1 == 0) }
+            case "people":
+                return live.filter { $0.faces > 0 }
             default:
                 return live
             }
@@ -414,6 +422,7 @@ final class AppState: ObservableObject {
     var primary: Asset? { assets.first { $0.id == primaryId } }
     var isDuplicates: Bool { selection.type == .lib && selection.id == "duplicates" }
     var isPlaces: Bool { selection.type == .lib && selection.id == "places" }
+    var isPeople: Bool { selection.type == .lib && selection.id == "people" }
 
     // ---------- navigation ----------
     func select(_ s: Selection) {

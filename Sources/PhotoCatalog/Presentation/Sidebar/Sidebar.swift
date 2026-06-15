@@ -47,6 +47,10 @@ struct Sidebar: View {
                 "\(app.duplicateGroups.count) 组", .lib, "duplicates", "重复文件")
             row("map", Theme.green, "地点",
                 "\(ready.filter { !($0.gps.0 == 0 && $0.gps.1 == 0) }.count)", .lib, "places", "地点")
+            let peopleCount = ready.filter { $0.faces > 0 }.count
+            if peopleCount > 0 {
+                row("camera", Theme.albumBlue, "人物", "\(peopleCount)", .lib, "people", "人物")
+            }
         }
     }
 

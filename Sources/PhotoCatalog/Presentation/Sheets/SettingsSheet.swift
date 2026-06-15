@@ -52,6 +52,12 @@ struct SettingsSheet: View {
                 Toggle(isOn: $app.exportWritesXMP) {
                     Text("导出时写入 XMP sidecar").font(.system(size: 12.5)).foregroundStyle(Theme.text)
                 }.toggleStyle(.switch).tint(Theme.accent)
+                Toggle(isOn: $app.visionEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("导入时 Vision 分析（场景标签 + 人脸）").font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                        Text("完全在本机进行，照片不会离开设备。").font(.system(size: 11)).foregroundStyle(Theme.text3)
+                    }
+                }.toggleStyle(.switch).tint(Theme.accent)
             }
 
             section("缩略图与缓存") {

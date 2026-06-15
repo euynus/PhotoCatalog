@@ -110,13 +110,17 @@ struct InspectorView: View {
                 .init("尺寸", "\(a.width) × \(a.height)", mono: true),
                 .init("色彩空间", a.colorSpace),
             ])
-            InsGroup([
-                .init("文件夹", a.folderName),
-                .init("位置", a.location),
-                .init("状态",
-                      a.status == .ready ? "可访问" : (a.status == .offline ? "离线（外置盘）" : "缺失"),
-                      accent: a.status != .ready),
-            ])
+            InsGroup({
+                var rows: [InfoRowData] = [
+                    .init("文件夹", a.folderName),
+                    .init("位置", a.location),
+                    .init("状态",
+                          a.status == .ready ? "可访问" : (a.status == .offline ? "离线（外置盘）" : "缺失"),
+                          accent: a.status != .ready),
+                ]
+                if a.faces > 0 { rows.append(.init("人脸", "检测到 \(a.faces) 张")) }
+                return rows
+            }())
             VStack(alignment: .leading, spacing: 5) {
                 Text("原件路径").font(.system(size: 11)).foregroundStyle(Theme.text3)
                 Text("/Volumes/Photos/\(a.folderName)/\(a.filename)")
