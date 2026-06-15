@@ -166,6 +166,14 @@ enum PipelineCheck {
         // 7. export originals
         let report = ExportService.copyOriginals(assets, to: exportDir)
         check(report.copied == 7, "exported 7 originals — copied \(report.copied), failed \(report.failed)")
+        let metadataJSON = exportDir.appendingPathComponent("metadata.json")
+        let metadataCSV = exportDir.appendingPathComponent("metadata.csv")
+        check(ExportService.exportMetadataJSON(assets, to: metadataJSON)
+              && fm.fileExists(atPath: metadataJSON.path),
+              "exported JSON metadata")
+        check(ExportService.exportMetadataCSV(assets, to: metadataCSV)
+              && fm.fileExists(atPath: metadataCSV.path),
+              "exported CSV metadata")
 
         // 8. backup
         let backup = try? BackupService.backup(store)

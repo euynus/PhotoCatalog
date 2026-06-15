@@ -61,6 +61,34 @@ enum ExportService {
         return (try? data.write(to: fileURL)) != nil
     }
 
+    /// Export per-asset metadata as CSV for spreadsheet workflows (PRD §6.11 EXP-003).
+    @discardableResult
+    static func exportMetadataCSV(_ assets: [Asset], to fileURL: URL) -> Bool {
+        let header = [
+            "assetId", "filename", "rating", "flag", "colorLabel", "keywords", "title", "caption",
+            "captureDate", "camera", "lens", "originalPath",
+        ]
+        let formatter = ISO8601DateFormatter()
+        let rows = assets.map { a in
+            [
+                a.id,
+                a.filename,
+                String(a.rating),
+                a.flag.rawValue,
+                a.colorLabel?.rawValue ?? "",
+                a.keywords.joined(separator: ";"),
+                a.title,
+                a.caption,
+                formatter.string(from: a.date),
+                a.camera,
+                a.lens,
+                a.localPath ?? a.thumb,
+            ].map(csvField).joined(separator: ",")
+        }
+        let csv = ([header.joined(separator: ",")] + rows).joined(separator: "\n") + "\n"
+        return (try? csv.write(to: fileURL, atomically: true, encoding: .utf8)) != nil
+    }
+
     private static func resolve(_ url: URL, conflict: ExportConflict, fm: FileManager) -> URL? {
         guard fm.fileExists(atPath: url.path) else { return url }
         switch conflict {
@@ -77,5 +105,12 @@ enum ExportService {
                 i += 1
             }
         }
+    }
+
+    private static func csvField(_ value: String) -> String {
+        guard value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r") else {
+            return value
+        }
+        return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 }

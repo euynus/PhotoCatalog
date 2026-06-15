@@ -821,11 +821,16 @@ final class AppState: ObservableObject {
         guard panel.runModal() == .OK, let dest = panel.url else { return }
         let xmp = exportWritesXMP
         Task { [weak self, real, dest, xmp] in
-            let report = await Task.detached(priority: .userInitiated) {
-                ExportService.copyOriginals(real, to: dest, xmp: xmp)
+            let result = await Task.detached(priority: .userInitiated) {
+                let report = ExportService.copyOriginals(real, to: dest, xmp: xmp)
+                let jsonOK = ExportService.exportMetadataJSON(real, to: dest.appendingPathComponent("metadata.json"))
+                let csvOK = ExportService.exportMetadataCSV(real, to: dest.appendingPathComponent("metadata.csv"))
+                return (report: report, metadataOK: jsonOK && csvOK)
             }.value
-            self?.push("已导出 \(report.copied) 张原件" + (report.failed > 0 ? " · \(report.failed) 失败" : "")
-                       + (xmp ? " · 含 XMP" : ""), "export")
+            self?.push("已导出 \(result.report.copied) 张原件"
+                       + (result.report.failed > 0 ? " · \(result.report.failed) 失败" : "")
+                       + (xmp ? " · 含 XMP" : "")
+                       + (result.metadataOK ? " · 含元数据" : " · 元数据失败"), "export")
         }
     }
 
