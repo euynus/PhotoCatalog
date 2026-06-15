@@ -317,23 +317,24 @@ final class AppState: ObservableObject {
         let roots = watchedRoots
         let knownPaths = Set(assets.compactMap { $0.localPath })
         let vision = visionEnabled
-        DispatchQueue.global(qos: .utility).async {
-            var fresh: [Asset] = []
-            for root in roots {
-                fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
-                                                             mode: .referenced, autoTag: vision))
-            }
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                let trulyNew = fresh.filter { a in !self.assets.contains { $0.id == a.id } }
-                if !trulyNew.isEmpty {
-                    self.assets.append(contentsOf: trulyNew)
-                    try? store.upsert(trulyNew)
-                    self.recomputeDuplicates()
-                    self.push("检测到 \(trulyNew.count) 张新照片", "importIcon")
+        Task { [weak self, coordinator, store, roots, knownPaths, vision] in
+            let fresh = await Task.detached(priority: .utility) {
+                var fresh: [Asset] = []
+                for root in roots {
+                    fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
+                                                                 mode: .referenced, autoTag: vision))
                 }
-                self.detectMissingRealAssets()
+                return fresh
+            }.value
+            guard let self else { return }
+            let trulyNew = fresh.filter { a in !self.assets.contains { $0.id == a.id } }
+            if !trulyNew.isEmpty {
+                self.assets.append(contentsOf: trulyNew)
+                try? store.upsert(trulyNew)
+                self.recomputeDuplicates()
+                self.push("检测到 \(trulyNew.count) 张新照片", "importIcon")
             }
+            self.detectMissingRealAssets()
         }
     }
 
@@ -401,16 +402,19 @@ final class AppState: ObservableObject {
     }
 
     func rebuildThumbnails() {
-        guard let store, let coordinator else { push("无已导入照片", "warning"); return }
+        guard let coordinator else { push("无已导入照片", "warning"); return }
         let real = assets.filter { !$0.isDemo && $0.localPath != nil }
         guard !real.isEmpty else { push("无已导入照片", "warning"); return }
         push("正在重建缩略图…", "refresh")
-        DispatchQueue.global(qos: .utility).async {
-            for a in real {
-                _ = coordinator.thumbnails.generateAll(from: URL(fileURLWithPath: a.localPath!), assetId: a.id)
-            }
-            DispatchQueue.main.async { [weak self] in self?.push("缩略图已重建", "check") }
-            _ = store
+        Task { [weak self, coordinator, real] in
+            await Task.detached(priority: .utility) {
+                for a in real {
+                    if let path = a.localPath {
+                        _ = coordinator.thumbnails.generateAll(from: URL(fileURLWithPath: path), assetId: a.id)
+                    }
+                }
+            }.value
+            self?.push("缩略图已重建", "check")
         }
     }
 
@@ -439,12 +443,12 @@ final class AppState: ObservableObject {
         panel.prompt = "导出到此处"
         guard panel.runModal() == .OK, let dest = panel.url else { return }
         let xmp = exportWritesXMP
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let report = ExportService.copyOriginals(real, to: dest, xmp: xmp)
-            DispatchQueue.main.async {
-                self?.push("已导出 \(report.copied) 张原件" + (report.failed > 0 ? " · \(report.failed) 失败" : "")
-                           + (xmp ? " · 含 XMP" : ""), "export")
-            }
+        Task { [weak self, real, dest, xmp] in
+            let report = await Task.detached(priority: .userInitiated) {
+                ExportService.copyOriginals(real, to: dest, xmp: xmp)
+            }.value
+            self?.push("已导出 \(report.copied) 张原件" + (report.failed > 0 ? " · \(report.failed) 失败" : "")
+                       + (xmp ? " · 含 XMP" : ""), "export")
         }
     }
 
@@ -467,9 +471,11 @@ final class AppState: ObservableObject {
     func recomputeDuplicates() {
         let live = assets.filter { !$0.isDemo && !$0.deleted }
         guard !live.isEmpty else { duplicateGroupsCache = DemoData.duplicateGroups; return }
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let groups = HashService.exactDuplicateGroups(live) + PerceptualHash.similarGroups(live)
-            DispatchQueue.main.async { self?.duplicateGroupsCache = groups }
+        Task { [weak self, live] in
+            let groups = await Task.detached(priority: .utility) {
+                HashService.exactDuplicateGroups(live) + PerceptualHash.similarGroups(live)
+            }.value
+            self?.duplicateGroupsCache = groups
         }
     }
 
@@ -510,7 +516,8 @@ final class AppState: ObservableObject {
     func push(_ message: String, _ icon: String = "check") {
         let toast = Toast(message: message, icon: icon)
         toasts.append(toast)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self] in
+        Task { [weak self, toast] in
+            try? await Task.sleep(for: .seconds(2.2))
             self?.toasts.removeAll { $0.id == toast.id }
         }
     }
@@ -780,7 +787,8 @@ final class AppState: ObservableObject {
     // ---------- onboarding ----------
     func enterApp(_ action: String) {
         welcomeAnim = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) { [weak self] in
+        Task { [weak self, action] in
+            try? await Task.sleep(for: .seconds(0.42))
             guard let self else { return }
             UserDefaults.standard.set("1", forKey: "pc_onboarded")
             self.onboarded = true
