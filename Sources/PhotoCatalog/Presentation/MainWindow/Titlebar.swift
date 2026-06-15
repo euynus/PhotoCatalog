@@ -72,6 +72,14 @@ struct Titlebar: View {
 
             separator
 
+            ToolButton(icon: "album", label: "加入相册",
+                       disabled: !app.canApplySelectionToAlbum,
+                       action: { app.addSelectionToAlbum() })
+            if app.canRemoveSelectionFromCurrentAlbum {
+                ToolButton(icon: "minus", label: "从相册移除",
+                           danger: true,
+                           action: { app.removeSelectionFromCurrentAlbum() })
+            }
             ToolButton(icon: "export", label: "导出选中原件", action: { app.exportSelection() })
             ToolButton(icon: "gear", label: "设置", action: { app.sheet = "settings" })
             ToolButton(icon: "inspector", label: "显示简介 (⌘I)", active: app.showInspector,

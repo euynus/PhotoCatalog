@@ -65,7 +65,9 @@ struct Sidebar: View {
     }
 
     private var albumSection: some View {
-        SidebarSection(title: "相册") {
+        SidebarSection(title: "相册", action: {
+            SBAddButton { app.createAlbumFromSelection() }
+        }) {
             ForEach(app.albums) { al in
                 row("album", Theme.albumBlue, al.name, "\(al.assetIds.count)", .album, al.id, al.name)
             }

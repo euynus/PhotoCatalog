@@ -1143,6 +1143,9 @@ final class AppState: ObservableObject {
         return []
     }
 
+    var canApplySelectionToAlbum: Bool { !targetIds.isEmpty }
+    var canRemoveSelectionFromCurrentAlbum: Bool { selection.type == .album && !targetIds.isEmpty }
+
     /// Apply an in-place edit to the current selection (or an explicit set).
     func mutate(_ ids: Set<String>? = nil, _ transform: (inout Asset) -> Void) {
         let target = ids ?? targetIds
@@ -1163,6 +1166,97 @@ final class AppState: ObservableObject {
     func setColor(_ c: ColorLabel?) { mutate { $0.colorLabel = c } }
     func setTitle(_ t: String) { mutate { $0.title = t } }
     func setCaption(_ c: String) { mutate { $0.caption = c } }
+
+    func createAlbumFromSelection() {
+        guard let name = promptAlbumName(defaultName: "新建相册") else { return }
+        let album = Album(id: "al-" + UUID().uuidString.prefix(8), name: name,
+                          assetIds: orderedTargetAssetIds())
+        guard saveManualAlbum(album, sortOrder: albums.count) else { return }
+        albums.append(album)
+        selection = Selection(type: .album, id: album.id, name: album.name)
+        push("已创建相册「\(album.name)」", "album")
+    }
+
+    func addSelectionToAlbum() {
+        let ids = orderedTargetAssetIds()
+        guard !ids.isEmpty else {
+            push("请先选择照片", "warning")
+            return
+        }
+        guard !albums.isEmpty else {
+            createAlbumFromSelection()
+            return
+        }
+
+        let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 240, height: 28))
+        popup.addItems(withTitles: albums.map(\.name))
+        let alert = NSAlert()
+        alert.messageText = "加入相册"
+        alert.accessoryView = popup
+        alert.addButton(withTitle: "加入")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let index = popup.indexOfSelectedItem
+        guard albums.indices.contains(index) else { return }
+
+        var album = albums[index]
+        let existing = Set(album.assetIds)
+        let additions = ids.filter { !existing.contains($0) }
+        guard !additions.isEmpty else {
+            push("所选照片已在相册中", "info")
+            return
+        }
+        album.assetIds.append(contentsOf: additions)
+        guard saveManualAlbum(album, sortOrder: index) else { return }
+        albums[index] = album
+        push("已加入 \(additions.count) 张照片到「\(album.name)」", "album")
+    }
+
+    func removeSelectionFromCurrentAlbum() {
+        guard selection.type == .album,
+              let index = albums.firstIndex(where: { $0.id == selection.id }) else { return }
+        let ids = targetIds
+        guard !ids.isEmpty else { return }
+        var album = albums[index]
+        let before = album.assetIds.count
+        album.assetIds.removeAll { ids.contains($0) }
+        let removed = before - album.assetIds.count
+        guard removed > 0 else { return }
+        guard saveManualAlbum(album, sortOrder: index) else { return }
+        albums[index] = album
+        selectedIds.subtract(ids)
+        ensurePrimaryValid()
+        push("已从「\(album.name)」移除 \(removed) 张照片", "album")
+    }
+
+    private func orderedTargetAssetIds() -> [String] {
+        let ids = targetIds
+        return list.map(\.id).filter { ids.contains($0) }
+    }
+
+    private func saveManualAlbum(_ album: Album, sortOrder: Int) -> Bool {
+        guard let store else { return true }
+        do {
+            try store.saveAlbum(album, sortOrder: sortOrder)
+            return true
+        } catch {
+            push("相册保存失败", "warning")
+            return false
+        }
+    }
+
+    private func promptAlbumName(defaultName: String) -> String? {
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = defaultName
+        let alert = NSAlert()
+        alert.messageText = "新建相册"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "创建")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
+    }
 
     func revealInFinder(_ id: String) {
         guard let asset = assets.first(where: { $0.id == id }), let path = asset.localPath else {
