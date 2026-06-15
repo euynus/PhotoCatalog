@@ -91,6 +91,7 @@ enum ExportService {
                 "flag": a.flag.rawValue, "colorLabel": a.colorLabel?.rawValue ?? NSNull(),
                 "keywords": a.keywords, "title": a.title, "caption": a.caption,
                 "author": a.author, "copyright": a.copyright,
+                "makerNotes": a.makerNotes,
                 "captureDate": formatter.string(from: a.date),
                 "fileModifiedAt": jsonDate(a.fileModifiedAt, formatter: formatter),
                 "fileCreatedAt": jsonDate(a.fileCreatedAt, formatter: formatter),
@@ -113,7 +114,7 @@ enum ExportService {
     static func exportMetadataCSV(_ assets: [Asset], to fileURL: URL) -> Bool {
         let header = [
             "assetId", "filename", "rating", "flag", "colorLabel", "keywords", "title", "caption",
-            "author", "copyright", "captureDate", "fileModifiedAt", "fileCreatedAt", "hasICCProfile",
+            "author", "copyright", "makerNotes", "captureDate", "fileModifiedAt", "fileCreatedAt", "hasICCProfile",
             "gpsLatitude", "gpsLongitude", "gpsAltitude", "camera", "lens", "originalPath",
         ]
         let formatter = ISO8601DateFormatter()
@@ -129,6 +130,7 @@ enum ExportService {
                 a.caption,
                 a.author,
                 a.copyright,
+                a.makerNotes,
                 formatter.string(from: a.date),
                 a.fileModifiedAt.map { formatter.string(from: $0) } ?? "",
                 a.fileCreatedAt.map { formatter.string(from: $0) } ?? "",

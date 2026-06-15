@@ -24,6 +24,7 @@ struct ScannedMetadata {
     var gpsAltitude: Double?
     var author = ""
     var copyright = ""
+    var makerNotes = ""
     var fileSize: Int64 = 0
     var fileModifiedAt: Date?
     var fileCreatedAt: Date?
@@ -70,6 +71,7 @@ enum MetadataReader {
         if let isos = exif[kCGImagePropertyExifISOSpeedRatings] as? [Int], let first = isos.first { m.iso = first }
         m.author = stringValue(iptc[kCGImagePropertyIPTCByline])
         m.copyright = stringValue(iptc[kCGImagePropertyIPTCCopyrightNotice])
+        m.makerNotes = makerNotesSummary(from: props)
 
         // GPS
         if let lat = (gps[kCGImagePropertyGPSLatitude] as? NSNumber)?.doubleValue,
@@ -106,6 +108,65 @@ enum MetadataReader {
         if let string = value as? String { return string }
         if let strings = value as? [String] { return strings.joined(separator: ", ") }
         return ""
+    }
+
+    static func makerNotesSummary(from props: [CFString: Any]) -> String {
+        var entries: [String] = []
+
+        func collect(_ dict: [CFString: Any], includeNestedDictionaries: Bool) {
+            for (key, value) in dict where isMakerKey(key) {
+                appendEntry(name: cleanKey(key), value: value, into: &entries)
+            }
+            guard includeNestedDictionaries else { return }
+            for (key, value) in dict where isMakerKey(key) {
+                guard let nested = value as? [CFString: Any] else { continue }
+                collect(nested, includeNestedDictionaries: false)
+            }
+        }
+
+        collect(props, includeNestedDictionaries: true)
+        if let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] {
+            collect(exif, includeNestedDictionaries: false)
+        }
+        return entries.prefix(8).joined(separator: " · ")
+    }
+
+    private static func appendEntry(name: String, value: Any, into entries: inout [String]) {
+        if let dict = value as? [CFString: Any] {
+            let parts = dict
+                .sorted { cleanKey($0.key) < cleanKey($1.key) }
+                .prefix(6)
+                .map { "\(cleanKey($0.key))=\(shortValue($0.value))" }
+            if !parts.isEmpty {
+                entries.append("\(name): " + parts.joined(separator: ", "))
+            }
+        } else {
+            entries.append("\(name): \(shortValue(value))")
+        }
+    }
+
+    private static func isMakerKey(_ key: CFString) -> Bool {
+        let normalized = cleanKey(key).lowercased()
+        return ["maker", "makernote", "canon", "nikon", "sony", "fuji", "olympus", "panasonic", "pentax", "leica"]
+            .contains { normalized.contains($0) }
+    }
+
+    private static func cleanKey(_ key: CFString) -> String {
+        (key as String)
+            .replacingOccurrences(of: "{", with: "")
+            .replacingOccurrences(of: "}", with: "")
+            .replacingOccurrences(of: "Dictionary", with: "")
+            .replacingOccurrences(of: "kCGImageProperty", with: "")
+    }
+
+    private static func shortValue(_ value: Any) -> String {
+        if let data = value as? Data { return "\(data.count) bytes" }
+        if let string = value as? String { return String(string.prefix(48)) }
+        if let number = value as? NSNumber { return number.stringValue }
+        if let array = value as? [Any] {
+            return array.prefix(4).map { shortValue($0) }.joined(separator: "/")
+        }
+        return String(String(describing: value).prefix(48))
     }
 
     // A fresh formatter per call: read() runs on concurrent background queues and

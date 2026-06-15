@@ -177,6 +177,9 @@ struct InspectorView: View {
                 a.copyright.isEmpty ? nil : InfoRowData("版权", a.copyright),
             ].compactMap { $0 }
             if !rightsRows.isEmpty { InsGroup(rightsRows) }
+            if !a.makerNotes.isEmpty {
+                InsGroup([.init("MakerNotes", a.makerNotes)])
+            }
             mapView(a)
         }
     }

@@ -3,6 +3,7 @@
 //  reproduces the counts shown in the design mock.
 // ============================================================
 import Foundation
+import ImageIO
 
 enum SelfCheck {
     static func run() {
@@ -93,6 +94,18 @@ enum SelfCheck {
         assert(stacks.first?.count == 3
                && collapsedAssets.filter { stackedIds.contains($0.id) }.count == 1,
                "photo stacks collapse to one visible representative")
+        let makerProps: [CFString: Any] = [
+            "MakerNikonDictionary" as CFString: [
+                "LensID" as CFString: "NIKKOR Z",
+                "Firmware" as CFString: "1.2",
+            ],
+            kCGImagePropertyExifDictionary: [
+                "MakerNote" as CFString: Data([1, 2, 3, 4]),
+            ],
+        ]
+        let makerSummary = MetadataReader.makerNotesSummary(from: makerProps)
+        assert(makerSummary.contains("LensID=NIKKOR Z") && makerSummary.contains("MakerNote: 4 bytes"),
+               "maker notes summary reads vendor dictionaries")
         let pinned = PinnedSidebarItem(type: .folder, selectionId: "fld-tokyo", name: "2026 东京之旅")
         let pinnedData = try? JSONEncoder().encode([pinned])
         let restoredPins = pinnedData.flatMap { try? JSONDecoder().decode([PinnedSidebarItem].self, from: $0) }

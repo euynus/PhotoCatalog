@@ -50,6 +50,7 @@ struct Asset: Identifiable, Equatable, Sendable {
     var caption: String
     var author: String = ""
     var copyright: String = ""
+    var makerNotes: String = ""
 
     let location: String
     let gps: (Double, Double)

@@ -340,6 +340,7 @@ enum PipelineCheck {
                 a.keywords = ["测试"]
                 a.author = "作者A"
                 a.copyright = "Copyright A"
+                a.makerNotes = "LensID=NIKKOR Z"
                 return a
             }())
             let again = (try? store.loadAssets()) ?? []
@@ -347,6 +348,7 @@ enum PipelineCheck {
             check(edited?.rating == 5 && edited?.keywords == ["测试"]
                   && edited?.author == "作者A" && edited?.copyright == "Copyright A",
                   "rating + keyword + rights edit persisted across reload")
+            check(edited?.makerNotes == "LensID=NIKKOR Z", "maker notes persisted across reload")
         }
 
         // 6. exact-duplicate detection (the identical pair)
@@ -430,15 +432,18 @@ enum PipelineCheck {
         var metadataAssets = assets
         metadataAssets[0].author = "Export Author"
         metadataAssets[0].copyright = "Export Copyright"
+        metadataAssets[0].makerNotes = "Export MakerNotes"
         let exportedJSON = ExportService.exportMetadataJSON(metadataAssets, to: metadataJSON)
         let jsonText = (try? String(contentsOf: metadataJSON, encoding: .utf8)) ?? ""
         check(exportedJSON && jsonText.contains("\"author\"") && jsonText.contains("Export Author")
-              && jsonText.contains("\"copyright\"") && jsonText.contains("Export Copyright"),
+              && jsonText.contains("\"copyright\"") && jsonText.contains("Export Copyright")
+              && jsonText.contains("\"makerNotes\"") && jsonText.contains("Export MakerNotes"),
               "exported JSON metadata")
         let exportedCSV = ExportService.exportMetadataCSV(metadataAssets, to: metadataCSV)
         let csvText = (try? String(contentsOf: metadataCSV, encoding: .utf8)) ?? ""
-        check(exportedCSV && csvText.contains("author,copyright") && csvText.contains("Export Author")
-              && csvText.contains("Export Copyright"),
+        check(exportedCSV && csvText.contains("author,copyright,makerNotes")
+              && csvText.contains("Export Author") && csvText.contains("Export Copyright")
+              && csvText.contains("Export MakerNotes"),
               "exported CSV metadata")
         let previewExportDir = tmp.appendingPathComponent("export-previews")
         let previewReport = ExportService.exportPreviews(assets, to: previewExportDir)
