@@ -243,6 +243,10 @@ struct ImportSheet: View {
                 }
                 .font(.system(size: 11.5))
                 .frame(maxWidth: .infinity, alignment: .leading)
+                ghostButton(run.phase == .paused ? "play" : "pause",
+                            run.phase == .paused ? "继续" : "暂停") {
+                    app.toggleImportPaused()
+                }
                 ghostButton(nil, "后台运行") { app.sheet = nil }
             } else if run.phase == .complete {
                 HStack(spacing: 6) {
@@ -282,6 +286,7 @@ struct ImportSheet: View {
         switch phase {
         case .scanning: return "正在扫描文件夹…"
         case .importing: return "正在导入照片…"
+        case .paused: return "导入已暂停"
         case .complete: return "导入完成"
         case .failed: return "导入失败"
         }
@@ -292,6 +297,9 @@ struct ImportSheet: View {
     }
 
     private func activeDetail(_ run: ImportRun) -> String {
+        if run.phase == .paused {
+            return "已暂停在 \((run.processed + run.failed).formatted()) / \(run.total.formatted()) 个文件"
+        }
         guard run.total > 0 else { return "正在扫描源文件夹…" }
         return "正在处理 \((run.processed + run.failed).formatted()) / \(run.total.formatted()) 个文件"
     }

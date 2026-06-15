@@ -62,6 +62,20 @@ enum PipelineCheck {
         _ = coordinator.importFiles([missingURL], from: badSrc) { retrySnapshots.append($0) }
         check(retrySnapshots.last?.failed == 1 && retrySnapshots.last?.latestFailure?.path == missingURL.path,
               "import retry reports missing file failure")
+        let pauseControl = ImportControl()
+        let pauseStarted = DispatchSemaphore(value: 0)
+        let pauseReleased = DispatchSemaphore(value: 0)
+        pauseControl.pause()
+        DispatchQueue.global(qos: .utility).async {
+            pauseStarted.signal()
+            pauseControl.waitIfPaused()
+            pauseReleased.signal()
+        }
+        _ = pauseStarted.wait(timeout: .now() + 1)
+        let blockedWhilePaused = pauseReleased.wait(timeout: .now() + 0.05) == .timedOut
+        pauseControl.resume()
+        let resumedAfterContinue = pauseReleased.wait(timeout: .now() + 1) == .success
+        check(blockedWhilePaused && resumedAfterContinue, "import pause control blocks and resumes")
         let withDims = assets.allSatisfy { $0.width > 0 && $0.height > 0 }
         check(withDims, "every asset has real pixel dimensions from Image I/O")
         let thumbsExist = assets.allSatisfy {

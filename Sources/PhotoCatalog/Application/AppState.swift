@@ -41,6 +41,7 @@ final class AppState: ObservableObject {
     private var securityScopedRoots: [URL] = []
     private var volumeMonitor: VolumeMonitor?
     private var lastImportSessionPersistedCount = 0
+    private var importControl: ImportControl?
 
     // ----- selection / view -----
     @Published var selection = Selection(type: .lib, id: "all", name: "全部照片")
@@ -197,7 +198,9 @@ final class AppState: ObservableObject {
         guard let coordinator, let store else { return }
         let existingIds = Set(assets.map { $0.id })
         let run = ImportRun(source: folder, mode: mode)
+        let control = ImportControl()
         importRun = run
+        importControl = control
         lastImportSessionPersistedCount = 0
         importing = true
         sheet = "import"
@@ -205,9 +208,9 @@ final class AppState: ObservableObject {
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: folder)
         let vision = visionEnabled
-        Task { [weak self, coordinator, store, folder, mode, vision, bookmark, existingIds, run] in
-            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, vision] in
-                coordinator.importFolder(folder, mode: mode, autoTag: vision) { progress in
+        Task { [weak self, coordinator, store, folder, mode, vision, bookmark, existingIds, run, control] in
+            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, vision, control] in
+                coordinator.importFolder(folder, mode: mode, autoTag: vision, control: control) { progress in
                     Task { @MainActor [weak self] in
                         self?.recordImportProgress(progress, for: run.id)
                     }
@@ -222,7 +225,9 @@ final class AppState: ObservableObject {
 
     private func recordImportProgress(_ progress: ImportProgress, for runId: UUID) {
         guard var run = importRun, run.id == runId, run.phase.isActive else { return }
-        run.phase = .importing
+        if run.phase != .paused {
+            run.phase = .importing
+        }
         run.total = progress.total
         run.processed = progress.processed
         run.failed = progress.failed
@@ -281,6 +286,7 @@ final class AppState: ObservableObject {
         }
 
         importing = false
+        importControl = nil
         recomputeDuplicates()
         let failedCount = importRun?.failed ?? 0
         let message: String
@@ -298,6 +304,23 @@ final class AppState: ObservableObject {
         push(message, icon)
     }
 
+    func toggleImportPaused() {
+        guard var run = importRun, run.phase.isActive, let importControl else { return }
+        if run.phase == .paused {
+            importControl.resume()
+            run.phase = .importing
+            importRun = run
+            persistImportSessionState(run, state: "running")
+            push("导入已继续", "play")
+        } else {
+            importControl.pause()
+            run.phase = .paused
+            importRun = run
+            persistImportSessionState(run, state: "paused")
+            push("导入已暂停", "pause")
+        }
+    }
+
     func retryFailedImport() {
         guard let run = importRun, run.phase.isFinished, !run.failures.isEmpty else { return }
         guard let coordinator, let store else {
@@ -311,16 +334,19 @@ final class AppState: ObservableObject {
         }
         let files = run.failures.map { URL(fileURLWithPath: $0.path) }
         let retry = ImportRun(source: folder, mode: run.mode)
+        let control = ImportControl()
         let existingIds = Set(assets.map { $0.id })
         importRun = retry
+        importControl = control
         lastImportSessionPersistedCount = 0
         importing = true
         try? store.startImportSession(id: retry.id.uuidString, startedAt: retry.startedAt)
         push("正在重试 \(files.count) 个失败文件…", "refresh")
         let vision = visionEnabled
-        Task { [weak self, coordinator, store, folder, files, existingIds, retry, vision] in
-            let imported = await Task.detached(priority: .userInitiated) {
-                coordinator.importFiles(files, from: folder, mode: retry.mode, autoTag: vision) { progress in
+        Task { [weak self, coordinator, store, folder, files, existingIds, retry, vision, control] in
+            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, files, retry, vision, control] in
+                coordinator.importFiles(files, from: folder, mode: retry.mode, autoTag: vision,
+                                        control: control) { progress in
                     Task { @MainActor [weak self] in
                         self?.recordImportProgress(progress, for: retry.id)
                     }
@@ -345,7 +371,15 @@ final class AppState: ObservableObject {
         guard completedCount == 0 || completedCount == run.total ||
                 completedCount - lastImportSessionPersistedCount >= stride else { return }
         lastImportSessionPersistedCount = completedCount
-        try? store.updateImportSession(id: run.id.uuidString, state: "running",
+        try? store.updateImportSession(id: run.id.uuidString,
+                                       state: run.phase == .paused ? "paused" : "running",
+                                       totalCount: run.total, importedCount: run.imported,
+                                       skippedCount: run.skipped, failedCount: run.failed)
+    }
+
+    private func persistImportSessionState(_ run: ImportRun, state: String) {
+        guard let store else { return }
+        try? store.updateImportSession(id: run.id.uuidString, state: state,
                                        totalCount: run.total, importedCount: run.imported,
                                        skippedCount: run.skipped, failedCount: run.failed)
     }

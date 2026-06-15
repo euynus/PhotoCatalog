@@ -4,10 +4,10 @@
 import Foundation
 
 enum ImportPhase: String, Sendable {
-    case scanning, importing, complete, failed
+    case scanning, importing, paused, complete, failed
 
     var isActive: Bool {
-        self == .scanning || self == .importing
+        self == .scanning || self == .importing || self == .paused
     }
 
     var isFinished: Bool {

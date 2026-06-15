@@ -27,7 +27,7 @@ struct StatusBar: View {
                         } else {
                             ProgressView().controlSize(.mini)
                         }
-                        Text(run.total > 0 ? "导入 \(run.percent)%" : "正在扫描…")
+                        Text(statusText(run))
                     }
                     .foregroundStyle(Theme.accent)
                 }
@@ -51,4 +51,11 @@ struct StatusBar: View {
     }
 
     private var sep: some View { Rectangle().fill(Theme.line2).frame(width: 1, height: 12) }
+
+    private func statusText(_ run: ImportRun) -> String {
+        if run.phase == .paused {
+            return run.total > 0 ? "已暂停 \(run.percent)%" : "已暂停"
+        }
+        return run.total > 0 ? "导入 \(run.percent)%" : "正在扫描…"
+    }
 }

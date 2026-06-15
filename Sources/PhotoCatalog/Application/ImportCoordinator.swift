@@ -33,33 +33,36 @@ final class ImportCoordinator: @unchecked Sendable {
     /// Full import of a folder (managed mode copies originals into Originals/YYYY/MM/DD;
     /// autoTag runs on-device Vision scene tagging + face detection).
     func importFolder(_ folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
+                      control: ImportControl? = nil,
                       progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
         let files = FileScanner.scan(folder)
         progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
-        return process(files, folder: folder, mode: mode, autoTag: autoTag, progress: progress)
+        return process(files, folder: folder, mode: mode, autoTag: autoTag, control: control, progress: progress)
     }
 
     /// Retry/import a known file list while preserving the original source folder identity.
     func importFiles(_ files: [URL], from folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
+                     control: ImportControl? = nil,
                      progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
         progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
-        return process(files, folder: folder, mode: mode, autoTag: autoTag, progress: progress)
+        return process(files, folder: folder, mode: mode, autoTag: autoTag, control: control, progress: progress)
     }
 
     /// Incremental: only files not already imported by path (for FSEvents rescans, §12.8).
     func scanNew(in folder: URL, knownPaths: Set<String>, mode: ImportMode = .referenced,
                  autoTag: Bool = false) -> [Asset] {
         let files = FileScanner.scan(folder).filter { !knownPaths.contains($0.path) }
-        return process(files, folder: folder, mode: mode, autoTag: autoTag, progress: nil)
+        return process(files, folder: folder, mode: mode, autoTag: autoTag, control: nil, progress: nil)
     }
 
     private func process(_ files: [URL], folder: URL, mode: ImportMode, autoTag: Bool,
-                         progress: ((ImportProgress) -> Void)?) -> [Asset] {
+                         control: ImportControl?, progress: ((ImportProgress) -> Void)?) -> [Asset] {
         let folderId = "src-" + shortHash(folder.path)
         let folderName = folder.lastPathComponent
         var assets: [Asset] = []
         var prog = ImportProgress(total: files.count, processed: 0, failed: 0)
         for url in files {
+            control?.waitIfPaused()
             guard FileManager.default.fileExists(atPath: url.path) else {
                 prog.failed += 1
                 prog.latestAsset = nil
