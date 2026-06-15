@@ -26,6 +26,13 @@ final class AppState: ObservableObject {
         ImportMode(rawValue: UserDefaults.standard.string(forKey: "pc_importMode") ?? "") ?? .referenced {
         didSet { UserDefaults.standard.set(importMode.rawValue, forKey: "pc_importMode") }
     }
+    @Published var importDuplicateStrategy: ImportDuplicateStrategy =
+        ImportDuplicateStrategy(rawValue: UserDefaults.standard.string(forKey: "pc_importDuplicateStrategy") ?? "")
+            ?? .groupExact {
+        didSet {
+            UserDefaults.standard.set(importDuplicateStrategy.rawValue, forKey: "pc_importDuplicateStrategy")
+        }
+    }
     @Published var exportWritesXMP = UserDefaults.standard.bool(forKey: "pc_exportXMP") {
         didSet { UserDefaults.standard.set(exportWritesXMP, forKey: "pc_exportXMP") }
     }
@@ -441,8 +448,13 @@ final class AppState: ObservableObject {
 
     private func finishImport(folder: URL, imported: [Asset], existingIds: Set<String>, store: CatalogStore,
                               bookmark: Data?, mode: ImportMode, runId: UUID, persistSourceRoot: Bool) {
-        let fresh = imported.filter { !existingIds.contains($0.id) }
-        let skipped = max(0, imported.count - fresh.count)
+        let dedup = ImportDeduplicationService.apply(
+            imported: imported,
+            existingAssets: assets.filter { !$0.deleted && !$0.isDemo },
+            existingIds: existingIds,
+            strategy: importDuplicateStrategy)
+        let fresh = dedup.fresh
+        let skipped = dedup.skipped
         assets.append(contentsOf: fresh)
         try? store.upsert(fresh)
         var rootId: String?

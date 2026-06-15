@@ -50,6 +50,16 @@ struct SettingsSheet: View {
                      ? "托管式：导入时复制原件到目录库 Originals/YYYY/MM/DD。"
                      : "引用式：只索引，原件保留在原位置（推荐）。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
+                row("重复处理") {
+                    Segmented(options: [
+                        SegOption(value: "groupExact", label: "分组"),
+                        SegOption(value: "skipExact", label: "跳过"),
+                        SegOption(value: "keep", label: "保留"),
+                    ], value: app.importDuplicateStrategy.rawValue,
+                       onChange: {
+                        app.importDuplicateStrategy = ImportDuplicateStrategy(rawValue: $0) ?? .groupExact
+                    }, size: "sm")
+                }
                 Toggle(isOn: $app.visionEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("导入时 Vision 分析（场景标签 + 人脸）").font(.system(size: 12.5)).foregroundStyle(Theme.text)

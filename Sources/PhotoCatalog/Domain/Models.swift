@@ -86,6 +86,12 @@ enum ExportDirectoryStructure: String, CaseIterable, Sendable {
     case album
 }
 
+enum ImportDuplicateStrategy: String, CaseIterable, Sendable {
+    case keep
+    case skipExact
+    case groupExact
+}
+
 /// Manual album (`albums` table, type = album).
 struct Album: Identifiable, Hashable {
     let id: String

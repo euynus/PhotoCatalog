@@ -83,6 +83,14 @@ enum PipelineCheck {
         }
         check(thumbsExist, "thumbnails + previews written to disk cache")
         check(assets.allSatisfy { $0.contentHash != nil && $0.quickHash != nil }, "content + quick hashes computed")
+        let groupedDedup = ImportDeduplicationService.apply(imported: assets, existingAssets: [],
+                                                            existingIds: [], strategy: .groupExact)
+        check(groupedDedup.fresh.count == 7 && groupedDedup.skipped == 0,
+              "import duplicate strategy keeps exact duplicates for grouping")
+        let skippedDedup = ImportDeduplicationService.apply(imported: assets, existingAssets: [],
+                                                            existingIds: [], strategy: .skipExact)
+        check(skippedDedup.fresh.count == 6 && skippedDedup.skipped == 1,
+              "import duplicate strategy skips exact duplicates")
         var knownByPath: [String: Asset] = [:]
         for asset in assets {
             if let path = asset.localPath {
