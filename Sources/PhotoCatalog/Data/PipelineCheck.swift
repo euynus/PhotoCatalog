@@ -42,7 +42,7 @@ enum PipelineCheck {
             print("  ✗ FAIL could not create catalog"); exit(1)
         }
         let coordinator = ImportCoordinator(store: store)
-        var assets = coordinator.importFolder(src)
+        let assets = coordinator.importFolder(src)
         check(assets.count == 7, "imported 7 assets — got \(assets.count)")
         let withDims = assets.allSatisfy { $0.width > 0 && $0.height > 0 }
         check(withDims, "every asset has real pixel dimensions from Image I/O")
@@ -77,11 +77,74 @@ enum PipelineCheck {
         let backup = try? BackupService.backup(store)
         check(backup != nil && fm.fileExists(atPath: backup!.path), "catalog backup written")
 
-        // 9. missing detection after deleting an original
-        if let first = assets.first, let p = first.localPath {
+        // 9. FTS5 full-text search
+        check(!store.search("IMG").isEmpty, "FTS5 search returns matches for 'IMG'")
+
+        // 10. catalog health check
+        let health = CatalogHealth.check(store, assets: assets)
+        check(health.dbIntegrityOK && health.assetCount >= 7,
+              "health check: db \(health.dbIntegrityOK ? "ok" : "BAD"), \(health.assetCount) assets")
+
+        // 11. perceptual dHash (near pair similar, far pair dissimilar)
+        let pa = src.appendingPathComponent("near_a.jpg")
+        let pb = src.appendingPathComponent("near_b.jpg")
+        let pf = src.appendingPathComponent("far.jpg")
+        writeStructured(to: pa, variant: 0)
+        writeStructured(to: pb, variant: 1)
+        writeStructured(to: pf, variant: 2)
+        if let ha = PerceptualHash.dHash(path: pa.path),
+           let hb = PerceptualHash.dHash(path: pb.path),
+           let hc = PerceptualHash.dHash(path: pf.path) {
+            check(PerceptualHash.hamming(ha, hb) <= 10,
+                  "dHash near pair similar (hamming \(PerceptualHash.hamming(ha, hb)) ≤ 10)")
+            check(PerceptualHash.hamming(ha, hc) > 10,
+                  "dHash far pair dissimilar (hamming \(PerceptualHash.hamming(ha, hc)) > 10)")
+        } else { check(false, "dHash computed") }
+
+        // 12. XMP sidecar write/read roundtrip
+        var sample = assets[1]
+        sample.rating = 4; sample.keywords = ["旅行", "测试"]; sample.title = "标题A"
+        sample.caption = "说明B"; sample.colorLabel = .red
+        let xmpURL = tmp.appendingPathComponent("sample.xmp")
+        XMPSidecar.write(sample, to: xmpURL)
+        if let sc = XMPSidecar.read(xmpURL) {
+            check(sc.rating == 4 && sc.keywords == ["旅行", "测试"] && sc.title == "标题A"
+                  && sc.caption == "说明B" && sc.colorLabel == .red, "XMP sidecar write/read roundtrip")
+        } else { check(false, "XMP sidecar read") }
+
+        // 13. import applies an existing XMP sidecar (§6.5 META-006)
+        let xsrc = tmp.appendingPathComponent("xmpsource")
+        try? fm.createDirectory(at: xsrc, withIntermediateDirectories: true)
+        let ximg = xsrc.appendingPathComponent("PHOTO.jpg")
+        writeTestImage(to: ximg, width: 700, height: 500, seed: 5)
+        var seed = assets[0]; seed.rating = 3; seed.keywords = ["导入测试"]; seed.colorLabel = .blue
+        seed.title = "T"; seed.caption = ""
+        XMPSidecar.write(seed, to: XMPSidecar.sidecarURL(for: ximg))
+        let xa = coordinator.importFolder(xsrc).first
+        check(xa?.rating == 3 && xa?.keywords == ["导入测试"] && xa?.colorLabel == .blue,
+              "import applied XMP sidecar metadata")
+
+        // 14. managed import copies originals into Originals/
+        if let mstore = try? CatalogStore(packageURL: tmp.appendingPathComponent("Managed.photolibrary")) {
+            let massets = ImportCoordinator(store: mstore).importFolder(src, mode: .managed)
+            let managed = !massets.isEmpty && massets.allSatisfy {
+                ($0.localPath?.contains("/Originals/") ?? false) && fm.fileExists(atPath: $0.localPath ?? "")
+            }
+            check(managed, "managed import copied \(massets.count) originals into Originals/")
+        } else { check(false, "managed catalog") }
+
+        // 15. batch rename moves the original on disk
+        var ren = assets[2]
+        if let renURL = RenameService.rename([ren], prefix: "RENAMED")[ren.id] {
+            check(fm.fileExists(atPath: renURL.path) && renURL.lastPathComponent.hasPrefix("RENAMED_"),
+                  "batch rename moved original to \(renURL.lastPathComponent)")
+        } else { check(false, "batch rename") }
+        _ = ren
+
+        // 16. missing detection after deleting an original
+        if let p = assets.first(where: { fm.fileExists(atPath: $0.localPath ?? "") })?.localPath {
             try? fm.removeItem(at: URL(fileURLWithPath: p))
-            let stillThere = fm.fileExists(atPath: p)
-            check(!stillThere, "simulated missing original (file removed)")
+            check(!fm.fileExists(atPath: p), "simulated missing original (file removed)")
         }
 
         try? fm.removeItem(at: tmp)
@@ -100,6 +163,40 @@ enum PipelineCheck {
         ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
         ctx.setFillColor(bottom)
         ctx.fill(CGRect(x: 0, y: 0, width: width, height: height / 2))
+        guard let cg = ctx.makeImage(),
+              let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)
+        else { return }
+        CGImageDestinationAddImage(dest, cg, nil)
+        CGImageDestinationFinalize(dest)
+    }
+
+    /// variant 0: vertical bands · 1: bands + small corner mark (near-dup) · 2: horizontal bands (far).
+    private static func writeStructured(to url: URL, variant: Int) {
+        let w = 120, h = 90
+        let cs = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: cs,
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return }
+        let mid = CGColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1)
+        let bright = CGColor(red: 0.95, green: 0.95, blue: 0.95, alpha: 1)
+        let dark = CGColor(red: 0.08, green: 0.08, blue: 0.08, alpha: 1)
+        ctx.setFillColor(mid)
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        if variant == 2 {
+            for y in stride(from: 0, to: h, by: 15) {
+                ctx.setFillColor((y / 15) % 2 == 0 ? bright : dark)
+                ctx.fill(CGRect(x: 0, y: y, width: w, height: 15))
+            }
+        } else {
+            for x in stride(from: 0, to: w, by: 15) {
+                ctx.setFillColor((x / 15) % 2 == 0 ? bright : dark)
+                ctx.fill(CGRect(x: x, y: 0, width: 15, height: h))
+            }
+            if variant == 1 {
+                ctx.setFillColor(mid)
+                ctx.fill(CGRect(x: 0, y: 0, width: 24, height: 24))
+            }
+        }
         guard let cg = ctx.makeImage(),
               let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)
         else { return }
