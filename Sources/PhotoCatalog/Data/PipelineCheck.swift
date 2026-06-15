@@ -141,7 +141,16 @@ enum PipelineCheck {
         } else { check(false, "batch rename") }
         _ = ren
 
-        // 16. missing detection after deleting an original
+        // 16. on-device Vision analysis + faces column roundtrip
+        let vres = VisionService.analyze(src.appendingPathComponent("IMG_0001.jpg"))
+        check(vres.faces == 0, "Vision ran on-device (0 faces on synthetic image, \(vres.sceneLabels.count) tags)")
+        if let va = coordinator.importFolder(xsrc, autoTag: true).first {
+            try? store.upsert([va])
+            let back = (try? store.loadAssets())?.first { $0.id == va.id }
+            check(back != nil && back?.faces == va.faces, "auto-tagged asset persisted (faces column)")
+        } else { check(false, "auto-tag import") }
+
+        // 17. missing detection after deleting an original
         if let p = assets.first(where: { fm.fileExists(atPath: $0.localPath ?? "") })?.localPath {
             try? fm.removeItem(at: URL(fileURLWithPath: p))
             check(!fm.fileExists(atPath: p), "simulated missing original (file removed)")
