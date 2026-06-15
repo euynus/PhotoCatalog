@@ -134,7 +134,7 @@ enum PipelineCheck {
         } else { check(false, "managed catalog") }
 
         // 15. batch rename moves the original on disk
-        var ren = assets[2]
+        let ren = assets[2]
         if let renURL = RenameService.rename([ren], prefix: "RENAMED")[ren.id] {
             check(fm.fileExists(atPath: renURL.path) && renURL.lastPathComponent.hasPrefix("RENAMED_"),
                   "batch rename moved original to \(renURL.lastPathComponent)")
