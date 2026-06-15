@@ -59,6 +59,7 @@ struct ImportJobPayload: Codable, Equatable, Sendable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
+    private static let latestSchemaVersion = 5
     let packageURL: URL
     let db: Database
 
@@ -94,6 +95,9 @@ final class CatalogStore: @unchecked Sendable {
     private func migrate() throws {
         db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT);")
         let current = db.scalarInt("SELECT COALESCE(MAX(version),0) FROM schema_migrations;")
+        if current > 0 && current < Self.latestSchemaVersion {
+            try backup(stamp: "pre-migration-v\(current)-\(Self.filenameStamp(.now))")
+        }
         if current < 1 {
             try db.transaction {
                 db.exec(Self.ddlV1)
@@ -387,6 +391,12 @@ final class CatalogStore: @unchecked Sendable {
 
     private static func iso(_ date: Date) -> String {
         ISO8601DateFormatter().string(from: date)
+    }
+
+    private static func filenameStamp(_ date: Date) -> String {
+        iso(date)
+            .replacingOccurrences(of: ":", with: "")
+            .replacingOccurrences(of: "-", with: "")
     }
 
     private static func date(_ string: String?) -> Date? {
