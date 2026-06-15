@@ -15,7 +15,7 @@ final class ThumbnailService: @unchecked Sendable {
     let store: CatalogStore
     init(store: CatalogStore) { self.store = store }
 
-    enum Kind {
+    enum Kind: Sendable {
         case thumb256, thumb512, preview2048
         var maxPixel: Int { self == .thumb256 ? 256 : (self == .thumb512 ? 512 : 2048) }
         var baseURL: (CatalogStore) -> URL {
@@ -35,6 +35,14 @@ final class ThumbnailService: @unchecked Sendable {
         return kind.baseURL(store)
             .appendingPathComponent(a).appendingPathComponent(b)
             .appendingPathComponent("\(assetId).jpg")
+    }
+
+    /// Return an existing cached representation or regenerate it from the original.
+    @discardableResult
+    func ensureCached(from original: URL, assetId: String, kind: Kind) -> URL? {
+        let out = cachePath(assetId: assetId, kind: kind)
+        if FileManager.default.fileExists(atPath: out.path) { return out }
+        return generate(from: original, assetId: assetId, kind: kind)
     }
 
     /// Generate one cached representation; returns its file URL (or nil on failure).

@@ -90,7 +90,7 @@ struct ComparePanel: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                Thumb(asset: asset, urlString: asset.preview, radius: 4)
+                Thumb(asset: asset, urlString: asset.preview, kind: .preview2048, radius: 4)
                     .aspectRatio(CGFloat(asset.width) / CGFloat(asset.height), contentMode: .fit)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .shadow(color: .black.opacity(0.5), radius: 13, y: 8)

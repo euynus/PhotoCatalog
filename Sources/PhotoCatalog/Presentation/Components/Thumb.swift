@@ -95,14 +95,21 @@ final class ThumbLoader: ObservableObject {
 
 /// A photo tile that fills the frame it is given (caller controls sizing).
 struct Thumb: View {
+    @EnvironmentObject private var app: AppState
+
     let asset: Asset
     var urlString: String?
+    var kind: ThumbnailService.Kind?
     var radius: CGFloat = 4
     var dim: Bool = false
 
     @StateObject private var loader = ThumbLoader()
 
     private var source: String { urlString ?? asset.thumb }
+    private var cacheKind: ThumbnailService.Kind {
+        kind ?? (urlString == nil || urlString == asset.thumb ? .thumb512 : .preview2048)
+    }
+    private var loadKey: String { "\(asset.id)|\(source)|\(cacheKind.maxPixel)" }
 
     var body: some View {
         ZStack {
@@ -118,7 +125,10 @@ struct Thumb: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .opacity(dim ? 0.4 : 1)
-        .onAppear { loader.load(source) }
-        .onChange(of: source) { _, newSource in loader.load(newSource) }
+        .task(id: loadKey) {
+            let resolved = await app.visibleImageSource(for: asset, requestedSource: source, kind: cacheKind)
+            guard !Task.isCancelled else { return }
+            loader.load(resolved)
+        }
     }
 }

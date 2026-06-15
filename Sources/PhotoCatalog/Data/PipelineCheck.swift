@@ -376,11 +376,19 @@ enum PipelineCheck {
         check(failedJobHealth.failedJobs == 1 && !failedJobHealth.isHealthy,
               "health check reports failed jobs")
         try? store.updateJob(id: "job-test", state: "succeeded", lockedAt: nil)
-        if let preview = assets.first?.preview {
-            try? fm.removeItem(at: URL(fileURLWithPath: preview))
+        if let first = assets.first, let originalPath = first.localPath, !first.preview.isEmpty {
+            try? fm.removeItem(at: URL(fileURLWithPath: first.preview))
             let missingPreviewHealth = CatalogHealth.check(store, assets: assets)
             check(missingPreviewHealth.missingPreviews == 1 && !missingPreviewHealth.isHealthy,
                   "health check reports missing previews")
+            let restoredPreview = coordinator.thumbnails.ensureCached(from: URL(fileURLWithPath: originalPath),
+                                                                       assetId: first.id,
+                                                                       kind: .preview2048)
+            let restoredHealth = CatalogHealth.check(store, assets: assets)
+            check(restoredPreview?.path == first.preview && fm.fileExists(atPath: first.preview),
+                  "missing preview cache regenerates on demand")
+            check(restoredHealth.missingPreviews == 0 && restoredHealth.isHealthy,
+                  "health check recovers after preview regeneration")
         } else {
             check(false, "health check reports missing previews")
         }

@@ -1119,6 +1119,32 @@ final class AppState: ObservableObject {
         push("已清理缩略图缓存", "trash")
     }
 
+    func visibleImageSource(for asset: Asset, requestedSource: String,
+                            kind: ThumbnailService.Kind) async -> String {
+        if requestedSource.hasPrefix("http") || asset.isDemo {
+            return requestedSource
+        }
+
+        let fm = FileManager.default
+        if !requestedSource.isEmpty && fm.fileExists(atPath: requestedSource) {
+            return requestedSource
+        }
+
+        guard let coordinator,
+              let localPath = asset.localPath,
+              fm.fileExists(atPath: localPath) else {
+            return requestedSource
+        }
+
+        let original = URL(fileURLWithPath: localPath)
+        let assetId = asset.id
+        let thumbnails = coordinator.thumbnails
+        let restored = await Task.detached(priority: .userInitiated) {
+            thumbnails.ensureCached(from: original, assetId: assetId, kind: kind)
+        }.value
+        return restored?.path ?? requestedSource
+    }
+
     func pruneCacheToLimit() {
         guard let store else { push("无目录库", "warning"); return }
         let report = CacheService.prune(store.cacheURL, maxBytes: cacheLimitBytes)
