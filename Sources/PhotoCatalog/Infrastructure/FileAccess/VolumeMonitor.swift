@@ -5,17 +5,19 @@
 import Foundation
 import AppKit
 
-final class VolumeMonitor {
-    private let onChange: () -> Void
+// @unchecked Sendable: observer callbacks are delivered onto the main queue and
+// hop to MainActor before touching app state.
+final class VolumeMonitor: @unchecked Sendable {
+    private let onChange: @MainActor @Sendable () -> Void
     private var observers: [NSObjectProtocol] = []
 
-    init(onChange: @escaping () -> Void) { self.onChange = onChange }
+    init(onChange: @escaping @MainActor @Sendable () -> Void) { self.onChange = onChange }
 
     func start() {
         let nc = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
             observers.append(nc.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                self?.onChange()
+                Task { @MainActor in self?.onChange() }
             })
         }
     }
