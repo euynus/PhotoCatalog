@@ -902,6 +902,83 @@ final class AppState: ObservableObject {
         push("已重命名 \(map.count) 张照片", "check")
     }
 
+    var canOperateOnSelectedOriginals: Bool {
+        !selectedRealAssetsWithOriginals().isEmpty
+    }
+
+    func copySelectedOriginals() {
+        runOriginalFileOperation(.copy)
+    }
+
+    func moveSelectedOriginals() {
+        runOriginalFileOperation(.move)
+    }
+
+    private func runOriginalFileOperation(_ operation: OriginalFileOperation) {
+        let real = selectedRealAssetsWithOriginals()
+        guard !real.isEmpty else {
+            push("仅可处理已导入照片的原件", "warning")
+            return
+        }
+        guard confirmOriginalFileOperation(operation, count: real.count) else { return }
+
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = operation == .move ? "移动到此处" : "复制到此处"
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+
+        Task { [weak self, operation, real, destination] in
+            let report = await Task.detached(priority: .userInitiated) {
+                OriginalFileOperationService.perform(operation, assets: real, destination: destination)
+            }.value
+            if operation == .move {
+                self?.applyMovedOriginalLocations(report.updatedLocations)
+            }
+            self?.pushOriginalFileOperationReport(report, operation: operation)
+        }
+    }
+
+    private func selectedRealAssetsWithOriginals() -> [Asset] {
+        let ids = targetIds
+        return assets.filter { ids.contains($0.id) && !$0.deleted && !$0.isDemo && $0.localPath != nil }
+    }
+
+    private func confirmOriginalFileOperation(_ operation: OriginalFileOperation, count: Int) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = operation == .move ? .warning : .informational
+        alert.messageText = operation == .move ? "移动原件" : "复制原件"
+        alert.informativeText = operation == .move
+            ? "将移动 \(count) 个磁盘原件，并更新目录库中的文件路径。"
+            : "将复制 \(count) 个磁盘原件，目录库中的文件路径保持不变。"
+        alert.addButton(withTitle: operation == .move ? "移动" : "复制")
+        alert.addButton(withTitle: "取消")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func applyMovedOriginalLocations(_ locations: [String: URL]) {
+        guard !locations.isEmpty else { return }
+        let ids = Set(locations.keys)
+        for index in assets.indices {
+            guard let url = locations[assets[index].id] else { continue }
+            assets[index].filename = url.lastPathComponent
+            assets[index].localPath = url.path
+            assets[index].status = .ready
+        }
+        persist(ids)
+    }
+
+    private func pushOriginalFileOperationReport(_ report: OriginalFileOperationReport,
+                                                 operation: OriginalFileOperation) {
+        let completed = operation == .move ? report.moved : report.copied
+        let verb = operation == .move ? "移动" : "复制"
+        push("已\(verb) \(completed) 个原件"
+             + (report.failed > 0 ? " · \(report.failed) 失败" : "")
+             + (report.skipped > 0 ? " · \(report.skipped) 跳过" : ""),
+             report.failed > 0 ? "warning" : "check")
+    }
+
     // ---------- catalog health / cache (§6.1, §17.3) ----------
     func runHealthCheck() {
         openOrCreateCatalog()

@@ -154,6 +154,16 @@ struct SettingsSheet: View {
                 }
             }
 
+            section("原件文件") {
+                Text("复制不会改变目录库路径；移动成功后会更新目录库中的原件位置。")
+                    .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
+                HStack(spacing: 9) {
+                    ghostButton("copy", "复制选中原件", small: true) { app.copySelectedOriginals() }
+                    ghostButton("folder", "移动选中原件", danger: true, small: true) { app.moveSelectedOriginals() }
+                    Spacer()
+                }
+            }
+
             section("批量调整拍摄时间") {
                 Text("对选中照片整体平移拍摄时间，用于时区或相机时钟校正。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)

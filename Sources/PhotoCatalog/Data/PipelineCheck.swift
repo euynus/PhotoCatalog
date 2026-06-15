@@ -242,6 +242,29 @@ enum PipelineCheck {
         check(ExportService.exportMetadataCSV(assets, to: metadataCSV)
               && fm.fileExists(atPath: metadataCSV.path),
               "exported CSV metadata")
+        if var fileOpAsset = assets.first, let sourcePath = fileOpAsset.localPath {
+            let sourceCopy = tmp.appendingPathComponent("file-op-source.jpg")
+            try? fm.copyItem(at: URL(fileURLWithPath: sourcePath), to: sourceCopy)
+            fileOpAsset.filename = sourceCopy.lastPathComponent
+            fileOpAsset.localPath = sourceCopy.path
+            let copyDir = tmp.appendingPathComponent("file-op-copy")
+            let copyReport = OriginalFileOperationService.perform(.copy, assets: [fileOpAsset],
+                                                                   destination: copyDir)
+            check(copyReport.copied == 1
+                  && fm.fileExists(atPath: copyDir.appendingPathComponent(sourceCopy.lastPathComponent).path)
+                  && fm.fileExists(atPath: sourceCopy.path),
+                  "original file operation copies originals")
+            let moveDir = tmp.appendingPathComponent("file-op-move")
+            let moveReport = OriginalFileOperationService.perform(.move, assets: [fileOpAsset],
+                                                                   destination: moveDir)
+            let movedURL = moveReport.updatedLocations[fileOpAsset.id]
+            check(moveReport.moved == 1 && movedURL != nil
+                  && fm.fileExists(atPath: movedURL!.path)
+                  && !fm.fileExists(atPath: sourceCopy.path),
+                  "original file operation moves originals")
+        } else {
+            check(false, "original file operation copies and moves originals")
+        }
 
         // 8. backup
         let backup = try? BackupService.backup(store)
