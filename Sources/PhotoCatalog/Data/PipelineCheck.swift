@@ -242,6 +242,13 @@ enum PipelineCheck {
         check(ExportService.exportMetadataCSV(assets, to: metadataCSV)
               && fm.fileExists(atPath: metadataCSV.path),
               "exported CSV metadata")
+        let previewExportDir = tmp.appendingPathComponent("export-previews")
+        let previewReport = ExportService.exportPreviews(assets, to: previewExportDir)
+        let previewTargetName = URL(fileURLWithPath: assets[0].filename)
+            .deletingPathExtension().lastPathComponent + "-preview.jpg"
+        check(previewReport.copied == 7
+              && fm.fileExists(atPath: previewExportDir.appendingPathComponent(previewTargetName).path),
+              "exported cached previews")
         if var fileOpAsset = assets.first, let sourcePath = fileOpAsset.localPath {
             let sourceCopy = tmp.appendingPathComponent("file-op-source.jpg")
             try? fm.copyItem(at: URL(fileURLWithPath: sourcePath), to: sourceCopy)

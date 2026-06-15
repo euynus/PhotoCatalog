@@ -51,6 +51,36 @@ enum ExportService {
         return report
     }
 
+    /// Export cached previews for lightweight sharing (PRD §6.11 EXP-004).
+    static func exportPreviews(_ assets: [Asset], to destination: URL,
+                               conflict: ExportConflict = .rename) -> ExportReport {
+        var report = ExportReport()
+        let fm = FileManager.default
+        try? fm.createDirectory(at: destination, withIntermediateDirectories: true)
+
+        for asset in assets where !asset.deleted {
+            guard let source = previewSource(for: asset, fm: fm) else {
+                report.skipped += 1
+                continue
+            }
+            let base = URL(fileURLWithPath: asset.filename).deletingPathExtension().lastPathComponent
+            let targetName = base.isEmpty ? "\(asset.id)-preview.jpg" : "\(base)-preview.jpg"
+            guard let target = resolve(destination.appendingPathComponent(targetName),
+                                       conflict: conflict, fm: fm) else {
+                report.skipped += 1
+                continue
+            }
+            do {
+                if conflict == .overwrite { try? fm.removeItem(at: target) }
+                try fm.copyItem(at: source, to: target)
+                report.copied += 1
+            } catch {
+                report.failed += 1
+            }
+        }
+        return report
+    }
+
     /// Export per-asset metadata as a JSON sidecar bundle (PRD §6.11 EXP-003).
     @discardableResult
     static func exportMetadataJSON(_ assets: [Asset], to fileURL: URL) -> Bool {
@@ -165,6 +195,13 @@ enum ExportService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard cleaned != "." && cleaned != ".." else { return fallback }
         return cleaned.isEmpty ? fallback : cleaned
+    }
+
+    private static func previewSource(for asset: Asset, fm: FileManager) -> URL? {
+        for path in [asset.preview, asset.thumb] where !path.isEmpty && !path.hasPrefix("http") {
+            if fm.fileExists(atPath: path) { return URL(fileURLWithPath: path) }
+        }
+        return nil
     }
 
     private static func csvField(_ value: String) -> String {

@@ -100,6 +100,10 @@ struct SettingsSheet: View {
                 Toggle(isOn: $app.exportWritesXMP) {
                     Text("导出时写入 XMP sidecar").font(.system(size: 12.5)).foregroundStyle(Theme.text)
                 }.toggleStyle(.switch).tint(Theme.accent)
+                HStack(spacing: 9) {
+                    ghostButton("eye", "导出选中预览图", small: true) { app.exportSelectionPreviews() }
+                    Spacer()
+                }
             }
 
             section("缩略图与缓存") {

@@ -1078,6 +1078,30 @@ final class AppState: ObservableObject {
         }
     }
 
+    func exportSelectionPreviews() {
+        let ids = targetIds
+        let selected = assets.filter { ids.contains($0.id) && !$0.deleted }
+        guard !selected.isEmpty else {
+            push("请先选择照片", "warning")
+            return
+        }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = "导出预览到此处"
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+
+        Task { [weak self, selected, dest] in
+            let report = await Task.detached(priority: .userInitiated) {
+                ExportService.exportPreviews(selected, to: dest)
+            }.value
+            self?.push("已导出 \(report.copied) 张预览图"
+                       + (report.failed > 0 ? " · \(report.failed) 失败" : "")
+                       + (report.skipped > 0 ? " · \(report.skipped) 跳过" : ""),
+                       report.failed > 0 ? "warning" : "export")
+        }
+    }
+
     private func exportAlbumNamesByAssetId() -> [String: String] {
         var names: [String: String] = [:]
         for album in albums {
