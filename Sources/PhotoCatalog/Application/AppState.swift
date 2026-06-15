@@ -1590,6 +1590,8 @@ final class AppState: ObservableObject {
         let now = Date.now
         let currentDate = calendar.dateComponents([.year, .month], from: now)
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cameraQuery = filters.camera.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lensQuery = filters.lens.trimmingCharacters(in: .whitespacesAndNewlines)
         var l = baseList.filter { a in
             if filters.minRating > 0 && a.rating < filters.minRating { return false }
             if filters.flag != "any" && a.flag.rawValue != filters.flag { return false }
@@ -1598,6 +1600,8 @@ final class AppState: ObservableObject {
                 if filters.type == "RAW" && !a.isRaw { return false }
                 if filters.type != "RAW" && a.type != filters.type { return false }
             }
+            if !cameraQuery.isEmpty && !a.camera.localizedStandardContains(cameraQuery) { return false }
+            if !lensQuery.isEmpty && !a.lens.localizedStandardContains(lensQuery) { return false }
             if filters.date != "any" {
                 let assetDate = calendar.dateComponents([.year, .month], from: a.date)
                 if filters.date == "thisYear" && assetDate.year != currentDate.year { return false }

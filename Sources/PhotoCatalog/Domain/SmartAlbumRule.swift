@@ -40,6 +40,7 @@ enum SmartFields {
         SmartField(key: "colorLabel", label: "颜色标签", ops: ["="], input: .color),
         SmartField(key: "keywords", label: "关键词", ops: ["包含", "不包含"], input: .text),
         SmartField(key: "camera", label: "相机", ops: ["包含", "="], input: .text),
+        SmartField(key: "lens", label: "镜头", ops: ["包含", "="], input: .text),
         SmartField(key: "type", label: "文件类型", ops: ["="], input: .type),
         SmartField(key: "captureYear", label: "拍摄年份", ops: ["=", ">=", "<="], input: .year),
         SmartField(key: "datePreset", label: "日期范围", ops: ["="], input: .datePreset),
@@ -67,7 +68,10 @@ enum SmartMatcher {
             return c.op == "包含" ? has : !has
         case "camera":
             if c.op == "=" { return a.camera == c.value }
-            return a.camera.lowercased().contains(c.value.lowercased())
+            return a.camera.localizedStandardContains(c.value)
+        case "lens":
+            if c.op == "=" { return a.lens == c.value }
+            return a.lens.localizedStandardContains(c.value)
         case "type":
             return c.value == "RAW" ? a.isRaw : a.type == c.value
         case "captureYear":

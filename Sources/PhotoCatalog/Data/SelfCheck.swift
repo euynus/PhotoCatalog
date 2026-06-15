@@ -62,6 +62,21 @@ enum SelfCheck {
                     .localizedStandardContains("IMG")
         }.map(\.id))
         assert(savedIds == expectedIds, "saved filter rule matches converted conditions")
+        let sample = ready[0]
+        let cameraNeedle = String(sample.camera.prefix(4))
+        let lensNeedle = String(sample.lens.prefix(5))
+        let metadataFilters = Filters(camera: cameraNeedle, lens: lensNeedle)
+        let metadataConditions = metadataFilters.smartConditions(search: "")
+        assert(metadataFilters.activeCount == 2
+               && metadataConditions.map(\.field) == ["camera", "lens"],
+               "camera and lens filters convert to smart conditions")
+        let metadataRule = SmartRule(match: "all", conditions: metadataConditions)
+        let metadataIds = Set(SmartMatcher.match(ready, metadataRule).map(\.id))
+        let expectedMetadataIds = Set(ready.filter {
+            $0.camera.localizedStandardContains(cameraNeedle)
+                && $0.lens.localizedStandardContains(lensNeedle)
+        }.map(\.id))
+        assert(metadataIds == expectedMetadataIds, "camera and lens filters match assets")
         let pinned = PinnedSidebarItem(type: .folder, selectionId: "fld-tokyo", name: "2026 东京之旅")
         let pinnedData = try? JSONEncoder().encode([pinned])
         let restoredPins = pinnedData.flatMap { try? JSONDecoder().decode([PinnedSidebarItem].self, from: $0) }

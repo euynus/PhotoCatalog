@@ -17,6 +17,8 @@ struct FilterBar: View {
                 sep
                 typeGroup
                 sep
+                metadataGroup
+                sep
                 dateGroup
                 sep
                 gpsGroup
@@ -154,6 +156,38 @@ struct FilterBar: View {
                 onChange: { v in var f = app.filters; f.date = v; app.setFilters(f) },
                 size: "sm")
         }
+    }
+
+    private var metadataGroup: some View {
+        HStack(spacing: 8) {
+            label("元数据")
+            filterTextField("相机", value: app.filters.camera) { value in
+                var f = app.filters
+                f.camera = value
+                app.setFilters(f)
+            }
+            filterTextField("镜头", value: app.filters.lens) { value in
+                var f = app.filters
+                f.lens = value
+                app.setFilters(f)
+            }
+        }
+    }
+
+    private func filterTextField(_ placeholder: String, value: String,
+                                 onChange: @escaping (String) -> Void) -> some View {
+        TextField(placeholder, text: Binding(
+            get: { value },
+            set: { newValue, _ in onChange(newValue) }
+        ))
+            .textFieldStyle(.plain)
+            .font(.system(size: 11.5))
+            .foregroundStyle(Theme.text)
+            .frame(width: 104, height: 22)
+            .padding(.horizontal, 7)
+            .background(Theme.surface)
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.line2, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 
     private var gpsGroup: some View {

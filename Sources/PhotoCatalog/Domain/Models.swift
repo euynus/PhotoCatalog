@@ -155,6 +155,8 @@ struct Filters: Equatable {
     var flag: String = "any"     // any / pick / reject
     var color: String = "any"    // any / red / orange / ...
     var type: String = "any"     // any / RAW / HEIC
+    var camera: String = ""
+    var lens: String = ""
     var date: String = "any"     // any / thisMonth / thisYear
     var gps: String = "any"      // any / yes / no
     var status: String = "any"   // any / ready / missing / offline
@@ -162,6 +164,8 @@ struct Filters: Equatable {
     var activeCount: Int {
         (minRating > 0 ? 1 : 0) + (flag != "any" ? 1 : 0)
             + (color != "any" ? 1 : 0) + (type != "any" ? 1 : 0)
+            + (!camera.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 1 : 0)
+            + (!lens.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 1 : 0)
             + (date != "any" ? 1 : 0) + (gps != "any" ? 1 : 0)
             + (status != "any" ? 1 : 0)
     }
@@ -180,6 +184,14 @@ struct Filters: Equatable {
         }
         if type != "any" {
             conditions.append(SmartCondition(field: "type", op: "=", value: type))
+        }
+        let cameraQuery = camera.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cameraQuery.isEmpty {
+            conditions.append(SmartCondition(field: "camera", op: "包含", value: cameraQuery))
+        }
+        let lensQuery = lens.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !lensQuery.isEmpty {
+            conditions.append(SmartCondition(field: "lens", op: "包含", value: lensQuery))
         }
         if date != "any" {
             conditions.append(SmartCondition(field: "datePreset", op: "=", value: date))
