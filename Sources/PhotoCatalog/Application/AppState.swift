@@ -42,6 +42,7 @@ final class AppState: ObservableObject {
     private var volumeMonitor: VolumeMonitor?
     private var lastImportSessionPersistedCount = 0
     private var importControl: ImportControl?
+    private var activeImportJobId: String?
 
     // ----- selection / view -----
     @Published var selection = Selection(type: .lib, id: "all", name: "全部照片")
@@ -199,15 +200,19 @@ final class AppState: ObservableObject {
         let existingIds = Set(assets.map { $0.id })
         let run = ImportRun(source: folder, mode: mode)
         let control = ImportControl()
+        let jobId = "job-" + run.id.uuidString
         importRun = run
         importControl = control
+        activeImportJobId = jobId
         lastImportSessionPersistedCount = 0
+        let vision = visionEnabled
         importing = true
         sheet = "import"
         try? store.startImportSession(id: run.id.uuidString, startedAt: run.startedAt)
+        try? store.startImportJob(id: jobId, sessionId: run.id.uuidString, sourcePath: folder.path,
+                                  mode: mode, autoTag: vision)
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: folder)
-        let vision = visionEnabled
         Task { [weak self, coordinator, store, folder, mode, vision, bookmark, existingIds, run, control] in
             let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, vision, control] in
                 coordinator.importFolder(folder, mode: mode, autoTag: vision, control: control) { progress in
@@ -287,6 +292,11 @@ final class AppState: ObservableObject {
 
         importing = false
         importControl = nil
+        if let activeImportJobId {
+            try? store.updateJob(id: activeImportJobId, state: "succeeded", lockedAt: nil,
+                                 lastError: importRun?.errorMessage)
+            self.activeImportJobId = nil
+        }
         recomputeDuplicates()
         let failedCount = importRun?.failed ?? 0
         let message: String
@@ -311,12 +321,14 @@ final class AppState: ObservableObject {
             run.phase = .importing
             importRun = run
             persistImportSessionState(run, state: "running")
+            persistImportJobState("running")
             push("导入已继续", "play")
         } else {
             importControl.pause()
             run.phase = .paused
             importRun = run
             persistImportSessionState(run, state: "paused")
+            persistImportJobState("paused")
             push("导入已暂停", "pause")
         }
     }
@@ -335,14 +347,18 @@ final class AppState: ObservableObject {
         let files = run.failures.map { URL(fileURLWithPath: $0.path) }
         let retry = ImportRun(source: folder, mode: run.mode)
         let control = ImportControl()
+        let jobId = "job-" + retry.id.uuidString
         let existingIds = Set(assets.map { $0.id })
         importRun = retry
         importControl = control
+        activeImportJobId = jobId
         lastImportSessionPersistedCount = 0
+        let vision = visionEnabled
         importing = true
         try? store.startImportSession(id: retry.id.uuidString, startedAt: retry.startedAt)
+        try? store.startImportJob(id: jobId, sessionId: retry.id.uuidString, sourcePath: folder.path,
+                                  mode: retry.mode, autoTag: vision)
         push("正在重试 \(files.count) 个失败文件…", "refresh")
-        let vision = visionEnabled
         Task { [weak self, coordinator, store, folder, files, existingIds, retry, vision, control] in
             let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, files, retry, vision, control] in
                 coordinator.importFiles(files, from: folder, mode: retry.mode, autoTag: vision,
@@ -382,6 +398,11 @@ final class AppState: ObservableObject {
         try? store.updateImportSession(id: run.id.uuidString, state: state,
                                        totalCount: run.total, importedCount: run.imported,
                                        skippedCount: run.skipped, failedCount: run.failed)
+    }
+
+    private func persistImportJobState(_ state: String) {
+        guard let store, let activeImportJobId else { return }
+        try? store.updateJob(id: activeImportJobId, state: state)
     }
 
     // ---------- FSEvents incremental watch (§12.8) ----------

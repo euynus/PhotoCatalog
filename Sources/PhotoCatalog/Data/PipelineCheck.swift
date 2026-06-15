@@ -103,6 +103,13 @@ enum PipelineCheck {
         check(session?.state == "completed" && session?.rootId == "src-test-root"
               && session?.totalCount == 7 && session?.importedCount == 6 && session?.skippedCount == 1,
               "import session persisted final counts")
+        try? store.startImportJob(id: "job-test", sessionId: "session-test", sourcePath: src.path,
+                                  mode: .referenced, autoTag: true)
+        try? store.updateJob(id: "job-test", state: "paused")
+        let job = (try? store.loadJobs(type: "scan", states: ["paused"]))?.first { $0.id == "job-test" }
+        check(job?.state == "paused" && job?.payloadJSON.contains("\"sourcePath\":\"\(src.path)\"") == true
+              && job?.payloadJSON.contains("\"autoTag\":true") == true,
+              "import job persisted payload and state")
 
         // 5. edit persistence
         if let id = assets.first?.id {

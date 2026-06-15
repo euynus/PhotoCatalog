@@ -26,6 +26,28 @@ struct ImportSessionRecord: Identifiable, Equatable, Sendable {
     let errorMessage: String?
 }
 
+struct JobRecord: Identifiable, Equatable, Sendable {
+    let id: String
+    let type: String
+    let priority: Int
+    let state: String
+    let payloadJSON: String
+    let attempts: Int
+    let maxAttempts: Int
+    let lockedAt: Date?
+    let lastError: String?
+    let createdAt: Date
+    let updatedAt: Date
+}
+
+private struct ImportJobPayload: Encodable {
+    let kind = "importFolder"
+    let sessionId: String
+    let sourcePath: String
+    let mode: String
+    let autoTag: Bool
+}
+
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
     let packageURL: URL
@@ -98,6 +120,13 @@ final class CatalogStore: @unchecked Sendable {
                            [.text(Self.iso(.now))])
             }
         }
+        if current < 5 {
+            try db.transaction {
+                db.exec(Self.jobsDDL)
+                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(5, ?);",
+                           [.text(Self.iso(.now))])
+            }
+        }
     }
 
     /// FTS5 full-text search returning matching asset ids (§12.7).
@@ -143,6 +172,23 @@ final class CatalogStore: @unchecked Sendable {
       error_message TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_import_sessions_state ON import_sessions(state);
+    """
+
+    private static let jobsDDL = """
+    CREATE TABLE IF NOT EXISTS jobs (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      priority INTEGER NOT NULL DEFAULT 0,
+      state TEXT NOT NULL DEFAULT 'pending',
+      payload_json TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 3,
+      locked_at TEXT,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_jobs_state_type ON jobs(state, type);
     """
 
     // ---------- assets ----------
@@ -250,6 +296,55 @@ final class CatalogStore: @unchecked Sendable {
         """).compactMap(Self.importSession(from:))
     }
 
+    // ---------- jobs (§10.2 / §13) ----------
+    func startImportJob(id: String, sessionId: String, sourcePath: String, mode: ImportMode,
+                        autoTag: Bool, priority: Int = 10, createdAt: Date = .now) throws {
+        let payload = Self.importJobPayload(sessionId: sessionId, sourcePath: sourcePath,
+                                            mode: mode, autoTag: autoTag)
+        let now = Self.iso(createdAt)
+        try db.run("""
+        INSERT OR REPLACE INTO jobs(
+          id, type, priority, state, payload_json, attempts, max_attempts,
+          locked_at, last_error, created_at, updated_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?);
+        """, [.text(id), .text("scan"), .int(priority), .text("running"), .text(payload),
+              .int(0), .int(3), .text(now), .null, .text(now), .text(now)])
+    }
+
+    func updateJob(id: String, state: String, lockedAt: Date? = .now, lastError: String? = nil) throws {
+        try db.run("""
+        UPDATE jobs
+        SET state=?, locked_at=?, last_error=?, updated_at=?
+        WHERE id=?;
+        """, [
+            .text(state),
+            lockedAt.map { SQLValue.text(Self.iso($0)) } ?? .null,
+            lastError.map { SQLValue.text($0) } ?? .null,
+            .text(Self.iso(.now)),
+            .text(id),
+        ])
+    }
+
+    func loadJobs(type: String? = nil, states: [String]? = nil) throws -> [JobRecord] {
+        var clauses: [String] = []
+        var params: [SQLValue] = []
+        if let type {
+            clauses.append("type=?")
+            params.append(.text(type))
+        }
+        if let states, !states.isEmpty {
+            clauses.append("state IN (\(Array(repeating: "?", count: states.count).joined(separator: ",")))")
+            params.append(contentsOf: states.map { .text($0) })
+        }
+        let whereSQL = clauses.isEmpty ? "" : " WHERE " + clauses.joined(separator: " AND ")
+        return try db.query("""
+        SELECT id, type, priority, state, payload_json, attempts, max_attempts,
+               locked_at, last_error, created_at, updated_at
+        FROM jobs\(whereSQL)
+        ORDER BY priority DESC, created_at ASC;
+        """, params).compactMap(Self.job(from:))
+    }
+
     // ---------- backup (§6.12) ----------
     @discardableResult
     func backup(stamp: String) throws -> URL {
@@ -288,6 +383,16 @@ final class CatalogStore: @unchecked Sendable {
     private static func date(_ string: String?) -> Date? {
         guard let string else { return nil }
         return ISO8601DateFormatter().date(from: string)
+    }
+
+    private static func importJobPayload(sessionId: String, sourcePath: String,
+                                         mode: ImportMode, autoTag: Bool) -> String {
+        let payload = ImportJobPayload(sessionId: sessionId, sourcePath: sourcePath,
+                                       mode: mode.rawValue, autoTag: autoTag)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let data = (try? encoder.encode(payload)) ?? Data()
+        return String(data: data, encoding: .utf8) ?? "{}"
     }
 
     private static func params(_ a: Asset) -> [SQLValue] {
@@ -356,5 +461,26 @@ final class CatalogStore: @unchecked Sendable {
             startedAt: startedAt,
             finishedAt: date(row.text("finished_at")),
             errorMessage: row.text("error_message"))
+    }
+
+    private static func job(from row: Row) -> JobRecord? {
+        guard let id = row.text("id"),
+              let type = row.text("type"),
+              let state = row.text("state"),
+              let payloadJSON = row.text("payload_json"),
+              let createdAt = date(row.text("created_at")),
+              let updatedAt = date(row.text("updated_at")) else { return nil }
+        return JobRecord(
+            id: id,
+            type: type,
+            priority: row.int("priority") ?? 0,
+            state: state,
+            payloadJSON: payloadJSON,
+            attempts: row.int("attempts") ?? 0,
+            maxAttempts: row.int("max_attempts") ?? 3,
+            lockedAt: date(row.text("locked_at")),
+            lastError: row.text("last_error"),
+            createdAt: createdAt,
+            updatedAt: updatedAt)
     }
 }
