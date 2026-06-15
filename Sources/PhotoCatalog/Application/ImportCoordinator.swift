@@ -68,7 +68,14 @@ final class ImportCoordinator: @unchecked Sendable {
             guard let known else { return false }
             guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
                   let size = attrs[.size] as? Int64 else { return true }
-            return HashService.quickHash(url, fileSize: size) != known.quickHash
+            let knownSize = Int64((known.fileMB * 1024 * 1024).rounded())
+            let sizeChanged = knownSize != size
+            let modifiedAt = attrs[.modificationDate] as? Date
+            let modifiedChanged = known.fileModifiedAt.map { knownDate in
+                modifiedAt.map { abs($0.timeIntervalSince(knownDate)) >= 1 } ?? true
+            } ?? (modifiedAt != nil)
+            let quickHashChanged = HashService.quickHash(url, fileSize: size) != known.quickHash
+            return sizeChanged || modifiedChanged || quickHashChanged
         }
         return process(files, folder: folder, mode: mode, autoTag: autoTag,
                        previewMaxPixel: previewMaxPixel, control: nil, progress: nil)

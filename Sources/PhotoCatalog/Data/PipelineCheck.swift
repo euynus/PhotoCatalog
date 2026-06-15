@@ -239,6 +239,16 @@ enum PipelineCheck {
         check(changedAsset?.width == 320 && changedAsset?.height == 240
               && originalQuickHash != nil && changedAsset?.quickHash != originalQuickHash,
               "incremental scan refreshes modified originals")
+        let touchedURL = src.appendingPathComponent("IMG_0002.jpg")
+        let touchedKnown = knownByPath[touchedURL.path]
+            ?? knownByPath[touchedURL.resolvingSymlinksInPath().path]
+        let touchedModifiedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        try? fm.setAttributes([.modificationDate: touchedModifiedAt], ofItemAtPath: touchedURL.path)
+        let touchedAssets = coordinator.scanChanged(in: src, knownAssetsByPath: knownByPath)
+        let touchedAsset = touchedAssets.first { $0.filename == touchedURL.lastPathComponent }
+        check(touchedAsset?.quickHash == touchedKnown?.quickHash
+              && touchedAsset?.fileModifiedAt.map { abs($0.timeIntervalSince(touchedModifiedAt)) < 1 } == true,
+              "incremental scan refreshes timestamp-only modifications")
 
         // 4. persist + reload roundtrip
         try? store.upsert(assets)
