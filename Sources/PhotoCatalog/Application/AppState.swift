@@ -33,6 +33,15 @@ final class AppState: ObservableObject {
             UserDefaults.standard.set(importDuplicateStrategy.rawValue, forKey: "pc_importDuplicateStrategy")
         }
     }
+    @Published var importPostKeywords = UserDefaults.standard.string(forKey: "pc_importPostKeywords") ?? "" {
+        didSet { UserDefaults.standard.set(importPostKeywords, forKey: "pc_importPostKeywords") }
+    }
+    @Published var importPostColorLabel = UserDefaults.standard.string(forKey: "pc_importPostColorLabel") ?? "" {
+        didSet { UserDefaults.standard.set(importPostColorLabel, forKey: "pc_importPostColorLabel") }
+    }
+    @Published var importPostAlbumName = UserDefaults.standard.string(forKey: "pc_importPostAlbumName") ?? "" {
+        didSet { UserDefaults.standard.set(importPostAlbumName, forKey: "pc_importPostAlbumName") }
+    }
     @Published var exportWritesXMP = UserDefaults.standard.bool(forKey: "pc_exportXMP") {
         didSet { UserDefaults.standard.set(exportWritesXMP, forKey: "pc_exportXMP") }
     }
@@ -453,7 +462,7 @@ final class AppState: ObservableObject {
             existingAssets: assets.filter { !$0.deleted && !$0.isDemo },
             existingIds: existingIds,
             strategy: importDuplicateStrategy)
-        let fresh = dedup.fresh
+        let fresh = applyPostImportMetadata(to: dedup.fresh)
         let skipped = dedup.skipped
         assets.append(contentsOf: fresh)
         try? store.upsert(fresh)
@@ -498,6 +507,7 @@ final class AppState: ObservableObject {
                                  lastError: importRun?.errorMessage)
             self.activeImportJobId = nil
         }
+        applyPostImportAlbum(assetIds: fresh.map(\.id))
         recomputeDuplicates()
         enforceCacheLimitIfNeeded()
         let failedCount = importRun?.failed ?? 0
@@ -514,6 +524,32 @@ final class AppState: ObservableObject {
             icon = failedCount > 0 ? "warning" : "check"
         }
         push(message, icon)
+    }
+
+    private func applyPostImportMetadata(to fresh: [Asset]) -> [Asset] {
+        let actions = ImportPostActions(
+            keywords: ImportPostActionService.normalizeKeywords(importPostKeywords),
+            colorLabel: ColorLabel(rawValue: importPostColorLabel))
+        return ImportPostActionService.apply(to: fresh, actions: actions)
+    }
+
+    private func applyPostImportAlbum(assetIds: [String]) {
+        let name = importPostAlbumName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !assetIds.isEmpty else { return }
+
+        if let index = albums.firstIndex(where: { $0.name == name }) {
+            var album = albums[index]
+            let existing = Set(album.assetIds)
+            let additions = assetIds.filter { !existing.contains($0) }
+            guard !additions.isEmpty else { return }
+            album.assetIds.append(contentsOf: additions)
+            guard saveManualAlbum(album, sortOrder: index) else { return }
+            albums[index] = album
+        } else {
+            let album = Album(id: "al-" + UUID().uuidString.prefix(8), name: name, assetIds: assetIds)
+            guard saveManualAlbum(album, sortOrder: albums.count) else { return }
+            albums.append(album)
+        }
     }
 
     func toggleImportPaused() {

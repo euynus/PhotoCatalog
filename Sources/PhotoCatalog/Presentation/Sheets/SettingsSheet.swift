@@ -60,6 +60,23 @@ struct SettingsSheet: View {
                         app.importDuplicateStrategy = ImportDuplicateStrategy(rawValue: $0) ?? .groupExact
                     }, size: "sm")
                 }
+                row("导入后关键词") {
+                    settingsTextField("逗号分隔", text: $app.importPostKeywords)
+                }
+                row("导入后颜色") {
+                    Picker("", selection: $app.importPostColorLabel) {
+                        Text("无").tag("")
+                        ForEach(ColorLabel.allCases) { label in
+                            Text(label.name).tag(label.rawValue)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 92)
+                }
+                row("导入后相册") {
+                    settingsTextField("相册名", text: $app.importPostAlbumName)
+                }
                 Toggle(isOn: $app.visionEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("导入时 Vision 分析（场景标签 + 人脸）").font(.system(size: 12.5)).foregroundStyle(Theme.text)
@@ -178,6 +195,16 @@ struct SettingsSheet: View {
             Spacer()
             content()
         }
+    }
+
+    private func settingsTextField(_ placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .textFieldStyle(.plain).font(.system(size: 12.5))
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(Color.black.opacity(0.28))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .frame(width: 220)
     }
 
     private var foot: some View {

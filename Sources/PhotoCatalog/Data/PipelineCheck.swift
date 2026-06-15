@@ -91,6 +91,12 @@ enum PipelineCheck {
                                                             existingIds: [], strategy: .skipExact)
         check(skippedDedup.fresh.count == 6 && skippedDedup.skipped == 1,
               "import duplicate strategy skips exact duplicates")
+        let postKeywords = ImportPostActionService.normalizeKeywords("客户精选，旅行,客户精选")
+        let postAssets = ImportPostActionService.apply(
+            to: [assets[0]],
+            actions: ImportPostActions(keywords: postKeywords, colorLabel: .green))
+        check(postAssets.first?.keywords == ["客户精选", "旅行"] && postAssets.first?.colorLabel == .green,
+              "import post actions apply keywords and color label")
         var knownByPath: [String: Asset] = [:]
         for asset in assets {
             if let path = asset.localPath {
