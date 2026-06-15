@@ -69,6 +69,7 @@ struct Asset: Identifiable, Equatable, Sendable {
 struct Folder: Identifiable, Hashable {
     let id: String
     let name: String
+    var status: String = "online"
 }
 
 /// Manual album (`albums` table, type = album).

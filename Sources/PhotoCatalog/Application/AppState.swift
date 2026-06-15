@@ -136,7 +136,8 @@ final class AppState: ObservableObject {
         assets = checked
         for (fid, items) in Dictionary(grouping: checked, by: { $0.folderId }) where
             !folders.contains(where: { $0.id == fid }) {
-            folders.append(Folder(id: fid, name: items.first?.folderName ?? fid))
+            folders.append(Folder(id: fid, name: items.first?.folderName ?? fid,
+                                  status: folderStatus(for: fid, in: checked)))
         }
         recomputeDuplicates()
         recoverInterruptedImportJobs(existingAssets: checked)
@@ -149,7 +150,7 @@ final class AppState: ObservableObject {
             try? store.updateSourceRootStatus(id: root.id, status: resolved.status)
 
             if !folders.contains(where: { $0.id == root.id }) {
-                folders.append(Folder(id: root.id, name: root.displayName))
+                folders.append(Folder(id: root.id, name: root.displayName, status: resolved.status))
             }
             if root.managementMode == "referenced",
                resolved.status == "online",
@@ -282,7 +283,7 @@ final class AppState: ObservableObject {
                                          path: folder.path, bookmark: bookmark)
             }
             if !folders.contains(where: { $0.id == fid }) {
-                folders.append(Folder(id: fid, name: folder.lastPathComponent))
+                folders.append(Folder(id: fid, name: folder.lastPathComponent, status: "online"))
             }
             select(Selection(type: .folder, id: fid, name: folder.lastPathComponent))
         }
@@ -593,7 +594,27 @@ final class AppState: ObservableObject {
                 ? .ready : VolumeMonitor.status(forInaccessible: p)   // offline vs missing (§6.4)
             if assets[i].status != target { assets[i].status = target; changed = true }
         }
+        updateFolderStatusesFromAssets()
         if changed, let store { try? store.upsert(assets.filter { !$0.isDemo }) }
+    }
+
+    private func updateFolderStatusesFromAssets() {
+        for i in folders.indices {
+            let status = folderStatus(for: folders[i].id, in: assets)
+            if folders[i].status != status {
+                folders[i].status = status
+            }
+        }
+    }
+
+    private func folderStatus(for folderId: String, in sourceAssets: [Asset]) -> String {
+        let statuses = sourceAssets
+            .filter { !$0.deleted && !$0.isDemo && $0.folderId == folderId }
+            .map(\.status)
+        if statuses.contains(.offline) { return "offline" }
+        if statuses.contains(.missing) { return "missing" }
+        if !statuses.isEmpty { return "online" }
+        return folders.first(where: { $0.id == folderId })?.status ?? "online"
     }
 
     private func startVolumeMonitor() {

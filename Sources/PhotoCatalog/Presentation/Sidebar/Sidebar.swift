@@ -57,8 +57,9 @@ struct Sidebar: View {
     private var folderSection: some View {
         SidebarSection(title: "文件夹") {
             ForEach(app.folders) { f in
-                row("folder", Theme.folderGray, f.name,
-                    "\(ready.filter { $0.folderId == f.id }.count)", .folder, f.id, f.name)
+                let count = ready.filter { $0.folderId == f.id }.count
+                row("folder", folderColor(f.status), f.name,
+                    folderStatusText(f.status) ?? "\(count)", .folder, f.id, f.name)
             }
         }
     }
@@ -95,6 +96,30 @@ struct Sidebar: View {
         let active = app.selection.type == type && app.selection.id == id
         return SidebarRow(icon: icon, color: color, label: label, count: count, active: active) {
             app.select(Selection(type: type, id: id, name: name))
+        }
+    }
+
+    private func folderColor(_ status: String) -> Color {
+        switch status {
+        case "offline":
+            return Theme.yellow
+        case "missing", "permissionLost", "error":
+            return Theme.redSoft
+        case "scanning":
+            return Theme.accent
+        default:
+            return Theme.folderGray
+        }
+    }
+
+    private func folderStatusText(_ status: String) -> String? {
+        switch status {
+        case "offline": return "离线"
+        case "missing": return "缺失"
+        case "permissionLost": return "需授权"
+        case "scanning": return "扫描中"
+        case "error": return "错误"
+        default: return nil
         }
     }
 }
