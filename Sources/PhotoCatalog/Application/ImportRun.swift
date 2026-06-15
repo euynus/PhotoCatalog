@@ -31,12 +31,12 @@ struct ImportRun: Identifiable, Equatable, Sendable {
     var finishedAt: Date?
     var errorMessage: String?
 
-    init(source: URL, mode: ImportMode) {
-        id = UUID()
+    init(id: UUID = UUID(), source: URL, mode: ImportMode, startedAt: Date = .now) {
+        self.id = id
         sourcePath = source.path
         sourceName = source.lastPathComponent
         self.mode = mode
-        startedAt = .now
+        self.startedAt = startedAt
         phase = .scanning
         total = 0
         processed = 0

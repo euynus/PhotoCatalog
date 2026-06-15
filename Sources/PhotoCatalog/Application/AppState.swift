@@ -100,8 +100,18 @@ final class AppState: ObservableObject {
         store = s
         coordinator = ImportCoordinator(store: s)
         let real = ((try? s.loadAssets()) ?? []).filter { !$0.isDemo && !$0.deleted }
+        let hasInterruptedImport = (try? s.loadJobs(type: "scan", states: ["running", "paused"]).isEmpty) == false
         guard !real.isEmpty else {
+            if hasInterruptedImport {
+                assets = []
+                albums = []
+                smartAlbums = []
+                folders = []
+            }
             restoreSourceRoots(from: s)
+            if hasInterruptedImport {
+                recoverInterruptedImportJobs(existingAssets: [])
+            }
             return
         }
 
@@ -122,6 +132,7 @@ final class AppState: ObservableObject {
             folders.append(Folder(id: fid, name: items.first?.folderName ?? fid))
         }
         recomputeDuplicates()
+        recoverInterruptedImportJobs(existingAssets: checked)
     }
 
     private func restoreSourceRoots(from store: CatalogStore) {
@@ -315,7 +326,13 @@ final class AppState: ObservableObject {
     }
 
     func toggleImportPaused() {
-        guard var run = importRun, run.phase.isActive, let importControl else { return }
+        guard var run = importRun, run.phase.isActive else { return }
+        guard let importControl else {
+            if run.phase == .paused {
+                resumeRecoveredImport(run)
+            }
+            return
+        }
         if run.phase == .paused {
             importControl.resume()
             run.phase = .importing
@@ -331,6 +348,126 @@ final class AppState: ObservableObject {
             persistImportJobState("paused")
             push("导入已暂停", "pause")
         }
+    }
+
+    private func recoverInterruptedImportJobs(existingAssets: [Asset]) {
+        guard !importing, let store else { return }
+        guard let job = (try? store.loadJobs(type: "scan", states: ["running", "paused"]))?.first else { return }
+        guard let payload = importJobPayload(from: job),
+              payload.kind == "importFolder",
+              let mode = ImportMode(rawValue: payload.mode) else {
+            try? store.updateJob(id: job.id, state: "failed", lockedAt: nil,
+                                 lastError: "无法解析导入任务")
+            return
+        }
+
+        let folder = URL(fileURLWithPath: payload.sourcePath)
+        guard FileManager.default.fileExists(atPath: folder.path) else {
+            try? store.updateJob(id: job.id, state: "failed", lockedAt: nil,
+                                 lastError: "源文件夹不可访问")
+            push("未能恢复导入：源文件夹不可访问", "warning")
+            return
+        }
+
+        let phase: ImportPhase = job.state == "paused" ? .paused : .importing
+        let run = restoredImportRun(job: job, payload: payload, folder: folder, mode: mode, phase: phase)
+        if phase == .paused {
+            importRun = run
+            activeImportJobId = job.id
+            lastImportSessionPersistedCount = run.processed + run.failed
+            importing = true
+            sheet = "import"
+            push("发现暂停的导入任务", "pause")
+            return
+        }
+
+        restartRecoveredImport(jobId: job.id, run: run, folder: folder, mode: mode,
+                               autoTag: payload.autoTag,
+                               existingIds: Set(existingAssets.map { $0.id }))
+    }
+
+    private func resumeRecoveredImport(_ run: ImportRun) {
+        guard let store, let activeImportJobId,
+              let job = (try? store.loadJobs(type: "scan", states: ["running", "paused"]))?
+                .first(where: { $0.id == activeImportJobId }),
+              let payload = importJobPayload(from: job),
+              let mode = ImportMode(rawValue: payload.mode) else { return }
+        let folder = URL(fileURLWithPath: payload.sourcePath)
+        guard FileManager.default.fileExists(atPath: folder.path) else {
+            try? store.updateJob(id: job.id, state: "failed", lockedAt: nil,
+                                 lastError: "源文件夹不可访问")
+            var failedRun = run
+            failedRun.phase = .failed
+            failedRun.errorMessage = "源文件夹不可访问"
+            importRun = failedRun
+            importControl = nil
+            self.activeImportJobId = nil
+            importing = false
+            push("源文件夹不可访问", "warning")
+            return
+        }
+
+        restartRecoveredImport(jobId: job.id, run: run, folder: folder, mode: mode,
+                               autoTag: payload.autoTag,
+                               existingIds: Set(assets.map { $0.id }))
+    }
+
+    private func restartRecoveredImport(jobId: String, run: ImportRun, folder: URL, mode: ImportMode,
+                                        autoTag: Bool, existingIds: Set<String>) {
+        guard let coordinator, let store else { return }
+        let control = ImportControl()
+        var runningRun = run
+        runningRun.phase = .importing
+        importRun = runningRun
+        importControl = control
+        activeImportJobId = jobId
+        lastImportSessionPersistedCount = runningRun.processed + runningRun.failed
+        importing = true
+        sheet = "import"
+        try? store.updateJob(id: jobId, state: "running")
+        try? store.updateImportSession(id: runningRun.id.uuidString, state: "running",
+                                       totalCount: runningRun.total, importedCount: runningRun.imported,
+                                       skippedCount: runningRun.skipped, failedCount: runningRun.failed)
+        push("正在恢复导入「\(folder.lastPathComponent)」…", "refresh")
+
+        Task { [weak self, coordinator, store, folder, mode, autoTag, existingIds, runningRun, control] in
+            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, autoTag, control] in
+                coordinator.importFolder(folder, mode: mode, autoTag: autoTag, control: control) { progress in
+                    Task { @MainActor [weak self] in
+                        self?.recordImportProgress(progress, for: runningRun.id)
+                    }
+                }
+            }.value
+            guard let self else { return }
+            self.finishImport(folder: folder, imported: imported, existingIds: existingIds,
+                              store: store, bookmark: nil, mode: mode, runId: runningRun.id,
+                              persistSourceRoot: true)
+        }
+    }
+
+    private func restoredImportRun(job: JobRecord, payload: ImportJobPayload, folder: URL,
+                                   mode: ImportMode, phase: ImportPhase) -> ImportRun {
+        let session = store.flatMap { store in
+            (try? store.loadImportSessions())?.first { $0.id == payload.sessionId }
+        }
+        let runId = UUID(uuidString: payload.sessionId) ?? UUID()
+        var run = ImportRun(id: runId, source: folder, mode: mode,
+                            startedAt: session?.startedAt ?? job.createdAt)
+        run.phase = phase
+        if let session {
+            run.total = session.totalCount
+            run.skipped = session.skippedCount
+            run.failed = session.failedCount
+            run.processed = session.importedCount + session.skippedCount
+            run.finishedAt = session.finishedAt
+            run.errorMessage = session.errorMessage
+        }
+        return run
+    }
+
+    private func importJobPayload(from job: JobRecord) -> ImportJobPayload? {
+        guard let data = job.payloadJSON.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(ImportJobPayload.self, from: data)
     }
 
     func retryFailedImport() {

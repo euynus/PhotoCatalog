@@ -40,12 +40,21 @@ struct JobRecord: Identifiable, Equatable, Sendable {
     let updatedAt: Date
 }
 
-private struct ImportJobPayload: Encodable {
-    let kind = "importFolder"
+struct ImportJobPayload: Codable, Equatable, Sendable {
+    let kind: String
     let sessionId: String
     let sourcePath: String
     let mode: String
     let autoTag: Bool
+
+    init(kind: String = "importFolder", sessionId: String, sourcePath: String,
+         mode: String, autoTag: Bool) {
+        self.kind = kind
+        self.sessionId = sessionId
+        self.sourcePath = sourcePath
+        self.mode = mode
+        self.autoTag = autoTag
+    }
 }
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
