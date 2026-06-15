@@ -1,10 +1,13 @@
 // ============================================================
-//  ImportCoordinator — referenced-mode import pipeline
-//  scan → metadata → thumbnails → hash → Asset (PRD §6.3, §11)
+//  ImportCoordinator — referenced / managed import pipeline
+//  scan → metadata → thumbnails → hash → (XMP sidecar) → Asset
+//  (PRD §6.3, §6.5 META-006, §11)
 // ============================================================
 import Foundation
 import CryptoKit
 import UniformTypeIdentifiers
+
+enum ImportMode: String { case referenced, managed }
 
 struct ImportProgress {
     var total = 0
@@ -21,15 +24,28 @@ final class ImportCoordinator {
         thumbnails = ThumbnailService(store: store)
     }
 
-    /// Scan a folder and build real Asset records (metadata + thumbnails + hashes).
-    func importFolder(_ folder: URL, progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
-        let files = FileScanner.scan(folder)
+    func assetId(forPath path: String) -> String { "r" + shortHash(path) }
+
+    /// Full import of a folder (managed mode copies originals into Originals/YYYY/MM/DD).
+    func importFolder(_ folder: URL, mode: ImportMode = .referenced,
+                      progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
+        process(FileScanner.scan(folder), folder: folder, mode: mode, progress: progress)
+    }
+
+    /// Incremental: only files not already imported by path (for FSEvents rescans, §12.8).
+    func scanNew(in folder: URL, knownPaths: Set<String>, mode: ImportMode = .referenced) -> [Asset] {
+        let files = FileScanner.scan(folder).filter { !knownPaths.contains($0.path) }
+        return process(files, folder: folder, mode: mode, progress: nil)
+    }
+
+    private func process(_ files: [URL], folder: URL, mode: ImportMode,
+                         progress: ((ImportProgress) -> Void)?) -> [Asset] {
         let folderId = "src-" + shortHash(folder.path)
         let folderName = folder.lastPathComponent
         var assets: [Asset] = []
         var prog = ImportProgress(total: files.count, processed: 0, failed: 0)
         for url in files {
-            if let asset = buildAsset(url, folderId: folderId, folderName: folderName) {
+            if let asset = makeAsset(source: url, folderId: folderId, folderName: folderName, mode: mode) {
                 assets.append(asset)
                 prog.processed += 1
             } else {
@@ -40,35 +56,62 @@ final class ImportCoordinator {
         return assets
     }
 
-    private func buildAsset(_ url: URL, folderId: String, folderName: String) -> Asset? {
-        let m = MetadataReader.read(url)
-        guard m.width > 0, m.height > 0 else { return nil }   // not a decodable image
-        let assetId = "r" + shortHash(url.path)
-        let pid = Int(UInt32(truncatingIfNeeded: shortHash(url.path).hashValue) % 100000)
+    private func makeAsset(source url: URL, folderId: String, folderName: String, mode: ImportMode) -> Asset? {
+        let meta = MetadataReader.read(url)
+        guard meta.width > 0, meta.height > 0 else { return nil }
+        let finalURL = mode == .managed ? (copyToOriginals(url, date: meta.captureDate) ?? url) : url
 
-        let quick = HashService.quickHash(url, fileSize: m.fileSize)
-        let content = HashService.contentHash(url)
-        let (thumb, preview) = thumbnails.generateAll(from: url, assetId: assetId)
+        let hash = shortHash(finalURL.path)
+        let assetId = "r" + hash
+        let pid = (Int(hash.prefix(6), radix: 16) ?? 0) % 100000
+        let quick = HashService.quickHash(finalURL, fileSize: meta.fileSize)
+        let content = HashService.contentHash(finalURL)
+        let (thumb, preview) = thumbnails.generateAll(from: finalURL, assetId: assetId)
+        let ext = finalURL.pathExtension.uppercased()
+        let isRaw = UTType(filenameExtension: finalURL.pathExtension.lowercased())?.conforms(to: .rawImage) ?? false
+            || ["CR2", "CR3", "NEF", "ARW", "RAF", "ORF", "RW2", "DNG"].contains(ext)
 
-        let ext = url.pathExtension.uppercased()
-        let isRaw = FileScanner.isSupported(url)
-            && (UTType(filenameExtension: url.pathExtension.lowercased())?.conforms(to: .rawImage) ?? false
-                || ["CR2", "CR3", "NEF", "ARW", "RAF", "ORF", "RW2", "DNG"].contains(ext))
-
-        return Asset(
-            id: assetId, pid: pid, ori: m.width >= m.height ? "l" : "p",
+        var asset = Asset(
+            id: assetId, pid: pid, ori: meta.width >= meta.height ? "l" : "p",
             thumb: thumb?.path ?? "", preview: preview?.path ?? thumb?.path ?? "",
-            filename: url.lastPathComponent, type: ext.isEmpty ? "IMG" : ext, isRaw: isRaw,
+            filename: finalURL.lastPathComponent, type: ext.isEmpty ? "IMG" : ext, isRaw: isRaw,
             folderId: folderId, folderName: folderName,
-            date: m.captureDate, width: m.width, height: m.height, orientation: m.orientation,
-            camera: m.camera, lens: m.lens, focal: m.focal, aperture: m.aperture,
-            shutter: m.shutter, iso: m.iso, colorSpace: m.colorSpace,
-            fileMB: Double(m.fileSize) / (1024 * 1024),
+            date: meta.captureDate, width: meta.width, height: meta.height, orientation: meta.orientation,
+            camera: meta.camera, lens: meta.lens, focal: meta.focal, aperture: meta.aperture,
+            shutter: meta.shutter, iso: meta.iso, colorSpace: meta.colorSpace,
+            fileMB: Double(meta.fileSize) / (1024 * 1024),
             rating: 0, flag: .none, colorLabel: nil, keywords: [], title: "", caption: "",
-            location: gpsLabel(m.gps), gps: m.gps,
+            location: gpsLabel(meta.gps), gps: meta.gps,
             status: .ready, importedAt: Date(), deleted: false,
-            localPath: url.path, captureDateSource: m.captureDateSource,
+            localPath: finalURL.path, captureDateSource: meta.captureDateSource,
             contentHash: content, quickHash: quick, isDemo: false)
+
+        // apply XMP sidecar metadata next to the original, if present (§6.5 META-006)
+        if let sc = XMPSidecar.read(XMPSidecar.sidecarURL(for: url)) {
+            asset.rating = sc.rating
+            asset.colorLabel = sc.colorLabel
+            if !sc.keywords.isEmpty { asset.keywords = sc.keywords }
+            if !sc.title.isEmpty { asset.title = sc.title }
+            if !sc.caption.isEmpty { asset.caption = sc.caption }
+        }
+        return asset
+    }
+
+    private func copyToOriginals(_ url: URL, date: Date) -> URL? {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        let dir = store.originalsURL
+            .appendingPathComponent(String(format: "%04d", c.year ?? 1970))
+            .appendingPathComponent(String(format: "%02d", c.month ?? 1))
+            .appendingPathComponent(String(format: "%02d", c.day ?? 1))
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var dest = dir.appendingPathComponent(url.lastPathComponent)
+        var i = 1
+        while FileManager.default.fileExists(atPath: dest.path) {
+            let base = url.deletingPathExtension().lastPathComponent
+            dest = dir.appendingPathComponent("\(base) (\(i)).\(url.pathExtension)")
+            i += 1
+        }
+        do { try FileManager.default.copyItem(at: url, to: dest); return dest } catch { return nil }
     }
 
     private func gpsLabel(_ gps: (Double, Double)) -> String {
