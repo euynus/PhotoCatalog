@@ -132,9 +132,12 @@ enum PipelineCheck {
         try? store.saveSmartAlbum(smartAlbum)
         let loadedSmart = (try? store.loadSmartAlbums())?.first { $0.id == smartAlbum.id }
         check(loadedSmart?.rule == smartRule, "smart album persisted rule")
-        try? store.addSourceRoot(id: "src-test-root", displayName: "source", path: src.path, bookmark: nil)
+        try? store.addSourceRoot(id: "src-test-root", displayName: "source", path: src.path,
+                                 bookmark: nil, volumeIdentifier: "volume-a")
         let roots = (try? store.loadSourceRoots()) ?? []
-        check(roots.contains { $0.id == "src-test-root" && $0.pathHint == src.path },
+        check(roots.contains { $0.id == "src-test-root" && $0.pathHint == src.path
+            && $0.volumeIdentifier == "volume-a"
+        },
               "source root persisted and reloaded")
         try? store.updateSourceRootStatus(id: "src-test-root", status: "offline")
         let updatedRoot = (try? store.loadSourceRoots())?.first { $0.id == "src-test-root" }
@@ -142,15 +145,18 @@ enum PipelineCheck {
         let reauthPath = src.appendingPathComponent("reauthorized")
         try? fm.createDirectory(at: reauthPath, withIntermediateDirectories: true)
         try? store.updateSourceRootAccess(id: "src-test-root", displayName: "reauthorized",
-                                          path: reauthPath.path, bookmark: Data([1, 2, 3]))
+                                          path: reauthPath.path, bookmark: Data([1, 2, 3]),
+                                          volumeIdentifier: "volume-b")
         let reauthorizedRoot = (try? store.loadSourceRoots())?.first { $0.id == "src-test-root" }
         check(reauthorizedRoot?.pathHint == reauthPath.path && reauthorizedRoot?.status == "online"
-              && reauthorizedRoot?.bookmarkData == Data([1, 2, 3]),
+              && reauthorizedRoot?.bookmarkData == Data([1, 2, 3])
+              && reauthorizedRoot?.volumeIdentifier == "volume-b",
               "source root reauthorization persisted")
         try? store.removeSourceRoot(id: "src-test-root")
         let removedRoot = (try? store.loadSourceRoots())?.first { $0.id == "src-test-root" }
         check(removedRoot == nil, "source root removal persisted")
-        try? store.addSourceRoot(id: "src-test-root", displayName: "source", path: src.path, bookmark: nil)
+        try? store.addSourceRoot(id: "src-test-root", displayName: "source", path: src.path,
+                                 bookmark: nil, volumeIdentifier: "volume-a")
         try? store.startImportSession(id: "session-test")
         try? store.updateImportSession(id: "session-test", rootId: "src-test-root", state: "completed",
                                        totalCount: 7, importedCount: 6, skippedCount: 1,
@@ -427,6 +433,12 @@ enum PipelineCheck {
         check(VolumeMonitor.volumeRoot(of: "/Volumes/Photos/2026/a.jpg") == "/Volumes/Photos",
               "external volume root extracted")
         check(VolumeMonitor.volumeRoot(of: "/Users/me/Pictures/a.jpg") == nil, "internal path has no volume root")
+        check(VolumeMonitor.pathByReplacingVolumeRoot(
+            in: "/Volumes/OldName/Photos/2026/a.jpg",
+            oldRoot: "/Volumes/OldName",
+            newRoot: "/Volumes/NewName"
+        ) == "/Volumes/NewName/Photos/2026/a.jpg", "external volume root replacement")
+        check(VolumeMonitor.volumeIdentifier(for: tmp)?.isEmpty == false, "filesystem volume identifier read")
         check(VolumeMonitor.status(forInaccessible: "/Volumes/NoSuchDrive_\(UUID().uuidString)/x.jpg") == .offline,
               "unmounted volume → offline")
         check(VolumeMonitor.status(forInaccessible: "/Users/me/gone_\(UUID().uuidString).jpg") == .missing,

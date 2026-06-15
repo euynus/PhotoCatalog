@@ -180,11 +180,9 @@ final class AppState: ObservableObject {
         folders = []
         restoreSourceRoots(from: s)
 
-        // missing-file detection (§6.4 ORG-003)
-        let checked = real.map { a -> Asset in
-            guard let p = a.localPath, !FileManager.default.fileExists(atPath: p) else { return a }
-            var m = a; m.status = .missing; return m
-        }
+        // missing/offline detection (§6.4 ORG-003/007)
+        let sourceRootsById = sourceRootRecordsById(from: s)
+        let checked = real.map { resolveAssetAccess($0, sourceRootsById: sourceRootsById) }
         assets = checked
         for (fid, items) in Dictionary(grouping: checked, by: { $0.folderId }) where
             !folders.contains(where: { $0.id == fid }) {
@@ -209,7 +207,18 @@ final class AppState: ObservableObject {
         guard let roots = try? store.loadSourceRoots() else { return }
         for root in roots {
             let resolved = resolveSourceRoot(root)
-            try? store.updateSourceRootStatus(id: root.id, status: resolved.status)
+            if resolved.status == "online", let url = resolved.url, url.path != root.pathHint {
+                try? store.updateSourceRootAccess(
+                    id: root.id,
+                    displayName: root.displayName,
+                    path: url.path,
+                    bookmark: root.bookmarkData,
+                    status: resolved.status,
+                    volumeIdentifier: VolumeMonitor.volumeIdentifier(for: url) ?? root.volumeIdentifier
+                )
+            } else {
+                try? store.updateSourceRootStatus(id: root.id, status: resolved.status)
+            }
 
             if !folders.contains(where: { $0.id == root.id }) {
                 folders.append(Folder(id: root.id, name: root.displayName, status: resolved.status))
@@ -235,7 +244,14 @@ final class AppState: ObservableObject {
             let ok = resolved.url.startAccessingSecurityScopedResource()
             if ok { securityScopedRoots.append(resolved.url) }
             guard FileManager.default.fileExists(atPath: resolved.url.path) else {
-                return (resolved.url, VolumeMonitor.status(forInaccessible: resolved.url.path).rawValue)
+                if let relocated = VolumeMonitor.relocatedURL(for: resolved.url.path,
+                                                              volumeIdentifier: root.volumeIdentifier) {
+                    return (relocated, "online")
+                }
+                return (resolved.url, VolumeMonitor.status(
+                    forInaccessible: resolved.url.path,
+                    volumeIdentifier: root.volumeIdentifier
+                ).rawValue)
             }
             return (resolved.url, "online")
         }
@@ -247,7 +263,43 @@ final class AppState: ObservableObject {
         if FileManager.default.fileExists(atPath: url.path) {
             return (url, preferredStatus ?? "online")
         }
-        return (nil, preferredStatus ?? VolumeMonitor.status(forInaccessible: root.pathHint).rawValue)
+        if let relocated = VolumeMonitor.relocatedURL(for: root.pathHint,
+                                                      volumeIdentifier: root.volumeIdentifier) {
+            return (relocated, preferredStatus ?? "online")
+        }
+        return (nil, preferredStatus ?? VolumeMonitor.status(
+            forInaccessible: root.pathHint,
+            volumeIdentifier: root.volumeIdentifier
+        ).rawValue)
+    }
+
+    private func sourceRootRecordsById(from store: CatalogStore) -> [String: SourceRootRecord] {
+        let roots = (try? store.loadSourceRoots()) ?? []
+        return Dictionary(uniqueKeysWithValues: roots.map { ($0.id, $0) })
+    }
+
+    private func resolveAssetAccess(_ asset: Asset,
+                                    sourceRootsById: [String: SourceRootRecord]) -> Asset {
+        guard let path = asset.localPath else { return asset }
+        var resolved = asset
+        if FileManager.default.fileExists(atPath: path) {
+            resolved.status = .ready
+            return resolved
+        }
+
+        let sourceRoot = sourceRootsById[asset.folderId]
+        if let relocated = VolumeMonitor.relocatedURL(for: path,
+                                                      volumeIdentifier: sourceRoot?.volumeIdentifier) {
+            resolved.localPath = relocated.path
+            resolved.status = .ready
+            return resolved
+        }
+
+        resolved.status = VolumeMonitor.status(
+            forInaccessible: path,
+            volumeIdentifier: sourceRoot?.volumeIdentifier
+        )
+        return resolved
     }
 
     private func openOrCreateCatalog() {
@@ -475,7 +527,8 @@ final class AppState: ObservableObject {
             rootId = fid
             if persistSourceRoot {
                 try? store.addSourceRoot(id: fid, displayName: folder.lastPathComponent,
-                                         path: folder.path, bookmark: bookmark)
+                                         path: folder.path, bookmark: bookmark,
+                                         volumeIdentifier: VolumeMonitor.volumeIdentifier(for: folder))
             }
             if !folders.contains(where: { $0.id == fid }) {
                 folders.append(Folder(id: fid, name: folder.lastPathComponent, status: "online"))
@@ -856,11 +909,13 @@ final class AppState: ObservableObject {
 
     func detectMissingRealAssets() {
         var changed = false
+        let sourceRootsById = store.map { sourceRootRecordsById(from: $0) } ?? [:]
         for i in assets.indices where !assets[i].isDemo {
-            guard let p = assets[i].localPath else { continue }
-            let target: AssetStatus = FileManager.default.fileExists(atPath: p)
-                ? .ready : VolumeMonitor.status(forInaccessible: p)   // offline vs missing (§6.4)
-            if assets[i].status != target { assets[i].status = target; changed = true }
+            let resolved = resolveAssetAccess(assets[i], sourceRootsById: sourceRootsById)
+            if assets[i].status != resolved.status || assets[i].localPath != resolved.localPath {
+                assets[i] = resolved
+                changed = true
+            }
         }
         updateFolderStatusesFromAssets()
         if changed, let store { try? store.upsert(assets.filter { !$0.isDemo }) }
@@ -1742,7 +1797,8 @@ final class AppState: ObservableObject {
         let bookmark = FileAccessService.createBookmark(for: folder)
         do {
             try store?.updateSourceRootAccess(id: folderId, displayName: folder.lastPathComponent,
-                                              path: folder.path, bookmark: bookmark)
+                                              path: folder.path, bookmark: bookmark,
+                                              volumeIdentifier: VolumeMonitor.volumeIdentifier(for: folder))
         } catch {
             push("重新授权失败", "warning")
             return

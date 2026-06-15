@@ -11,6 +11,7 @@ struct SourceRootRecord: Identifiable {
     let bookmarkData: Data?
     let managementMode: String
     let status: String
+    let volumeIdentifier: String?
 }
 
 struct ImportSessionRecord: Identifiable, Equatable, Sendable {
@@ -59,7 +60,7 @@ struct ImportJobPayload: Codable, Equatable, Sendable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    private static let latestSchemaVersion = 6
+    private static let latestSchemaVersion = 7
     let packageURL: URL
     let db: Database
 
@@ -144,6 +145,13 @@ final class CatalogStore: @unchecked Sendable {
             try db.transaction {
                 db.exec(Self.albumsDDL)
                 try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(6, ?);",
+                           [.text(Self.iso(.now))])
+            }
+        }
+        if current < 7 {
+            try db.transaction {
+                try db.run("ALTER TABLE source_roots ADD COLUMN volume_identifier TEXT;")
+                try db.run("INSERT INTO schema_migrations(version, applied_at) VALUES(7, ?);",
                            [.text(Self.iso(.now))])
             }
         }
@@ -272,18 +280,21 @@ final class CatalogStore: @unchecked Sendable {
     }
 
     // ---------- source roots ----------
-    func addSourceRoot(id: String, displayName: String, path: String, bookmark: Data?) throws {
+    func addSourceRoot(id: String, displayName: String, path: String, bookmark: Data?,
+                       volumeIdentifier: String? = nil) throws {
         try db.run("""
-        INSERT OR REPLACE INTO source_roots(id, display_name, path_hint, bookmark_data, management_mode, status, created_at)
-        VALUES(?,?,?,?,?,?,?);
+        INSERT OR REPLACE INTO source_roots(
+          id, display_name, path_hint, bookmark_data, management_mode, status, created_at, volume_identifier)
+        VALUES(?,?,?,?,?,?,?,?);
         """, [.text(id), .text(displayName), .text(path),
               bookmark.map { SQLValue.blob($0) } ?? .null, .text("referenced"),
-              .text("online"), .text(ISO8601DateFormatter().string(from: Date()))])
+              .text("online"), .text(ISO8601DateFormatter().string(from: Date())),
+              volumeIdentifier.map { SQLValue.text($0) } ?? .null])
     }
 
     func loadSourceRoots() throws -> [SourceRootRecord] {
         try db.query("""
-        SELECT id, display_name, path_hint, bookmark_data, management_mode, status
+        SELECT id, display_name, path_hint, bookmark_data, management_mode, status, volume_identifier
         FROM source_roots
         ORDER BY created_at ASC;
         """).compactMap { row in
@@ -296,7 +307,8 @@ final class CatalogStore: @unchecked Sendable {
                 pathHint: pathHint,
                 bookmarkData: row.blob("bookmark_data"),
                 managementMode: row.text("management_mode") ?? "referenced",
-                status: row.text("status") ?? "unknown")
+                status: row.text("status") ?? "unknown",
+                volumeIdentifier: row.text("volume_identifier"))
         }
     }
 
@@ -305,13 +317,14 @@ final class CatalogStore: @unchecked Sendable {
     }
 
     func updateSourceRootAccess(id: String, displayName: String, path: String,
-                                bookmark: Data?, status: String = "online") throws {
+                                bookmark: Data?, status: String = "online",
+                                volumeIdentifier: String? = nil) throws {
         try db.run("""
         UPDATE source_roots
-        SET display_name=?, path_hint=?, bookmark_data=?, status=?
+        SET display_name=?, path_hint=?, bookmark_data=?, status=?, volume_identifier=?
         WHERE id=?;
         """, [.text(displayName), .text(path), bookmark.map { SQLValue.blob($0) } ?? .null,
-              .text(status), .text(id)])
+              .text(status), volumeIdentifier.map { SQLValue.text($0) } ?? .null, .text(id)])
     }
 
     func removeSourceRoot(id: String) throws {
