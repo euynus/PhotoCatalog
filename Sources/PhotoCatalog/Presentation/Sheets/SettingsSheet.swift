@@ -69,6 +69,14 @@ struct SettingsSheet: View {
             }
 
             section("维护") {
+                row("自动备份") {
+                    Segmented(options: [
+                        SegOption(value: "off", label: "关闭"),
+                        SegOption(value: "daily", label: "每天"),
+                        SegOption(value: "weekly", label: "每周"),
+                    ], value: app.automaticBackupFrequency,
+                       onChange: { app.automaticBackupFrequency = $0 }, size: "sm")
+                }
                 HStack(spacing: 9) {
                     ghostButton("check", "立即备份", small: true) { app.runBackup() }
                     ghostButton("refresh", "恢复备份", small: true) { app.restoreBackup() }

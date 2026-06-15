@@ -32,6 +32,10 @@ final class AppState: ObservableObject {
     @Published var visionEnabled = UserDefaults.standard.bool(forKey: "pc_vision") {
         didSet { UserDefaults.standard.set(visionEnabled, forKey: "pc_vision") }
     }
+    @Published var automaticBackupFrequency =
+        UserDefaults.standard.string(forKey: "pc_autoBackupFrequency") ?? "weekly" {
+        didSet { UserDefaults.standard.set(automaticBackupFrequency, forKey: "pc_autoBackupFrequency") }
+    }
     @Published var healthReport: HealthReport?
 
     // ----- catalog (real persistence / scanning) -----
@@ -44,6 +48,7 @@ final class AppState: ObservableObject {
     private var lastImportSessionPersistedCount = 0
     private var importControl: ImportControl?
     private var activeImportJobId: String?
+    private static let lastAutoBackupKey = "pc_lastAutoBackupAt"
 
     // ----- selection / view -----
     @Published var selection = Selection(type: .lib, id: "all", name: "全部照片")
@@ -81,6 +86,7 @@ final class AppState: ObservableObject {
         smartAlbums = DemoData.initialSmartAlbums(a)
         loadExistingCatalog()
         startVolumeMonitor()
+        runAutomaticBackupIfNeeded()
         // seed the initial primary/selection from the first visible photo
         let first = list.first
         primaryId = first?.id
@@ -702,6 +708,33 @@ final class AppState: ObservableObject {
             push("已备份目录库 · \(url.lastPathComponent)", "check")
         } else {
             push("备份失败", "warning")
+        }
+    }
+
+    private func runAutomaticBackupIfNeeded(now: Date = .now) {
+        guard !importing, let store else { return }
+        let interval: TimeInterval
+        switch automaticBackupFrequency {
+        case "daily":
+            interval = 24 * 60 * 60
+        case "weekly":
+            interval = 7 * 24 * 60 * 60
+        default:
+            return
+        }
+
+        let last = UserDefaults.standard.object(forKey: Self.lastAutoBackupKey) as? Date
+        if let last, now.timeIntervalSince(last) < interval {
+            return
+        }
+
+        do {
+            try store.upsert(assets.filter { !$0.isDemo })
+            let url = try BackupService.backup(store, at: now)
+            UserDefaults.standard.set(now, forKey: Self.lastAutoBackupKey)
+            push("已自动备份目录库 · \(url.lastPathComponent)", "check")
+        } catch {
+            push("自动备份失败", "warning")
         }
     }
 
