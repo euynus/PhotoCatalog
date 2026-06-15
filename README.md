@@ -42,6 +42,9 @@ Beyond the UI, the app has a working file→catalog pipeline:
 - **FSEvents watching** — referenced folders are watched; new files import and removed files flag missing automatically.
 - **FTS5 search index** + **batch rename** + **catalog health check** + **cache rebuild/clear** (Settings).
 - **Places** — a MapKit view of GPS-tagged photos (sidebar 地点).
+- **Vision (on-device)** — optional scene tagging + face detection on import; a 人物 collection (sidebar).
+- **Offline volumes** — external-drive unmount flags assets `offline` (vs `missing`); remount restores them.
+- **Batch capture-time shift** —整体平移选中照片的拍摄时间 (Settings) for timezone / camera-clock fixes.
 - Security-scoped bookmarks are created for imported source roots (PRD §12.1).
 
 Imported real photos coexist with the built-in demo set (demo assets are clearly marked and not persisted).
@@ -77,7 +80,7 @@ The demo dataset is a **bit-faithful port** of the prototype's generator: the sa
 
 The built-in demo dataset is a **bit-faithful port** of the prototype's seeded RNG so the deterministic counts match the design mock; it provides an instant, populated UI on first launch. Real imported folders are scanned, persisted, and shown alongside it.
 
-> **Implemented vs. remaining (vs. PRD).** Done: catalog persistence (SQLite + FTS5), folder authorization + recursive scan, referenced **and** managed import, Image I/O metadata, XMP sidecar read/write, thumbnail/preview generation + cache (rebuild/clear), missing detection, exact **and** perceptual duplicate detection, FSEvents incremental watching, batch rename, export, backup + health check, a Places (map) view, search/filter/sort, ratings/flags/keywords/albums/smart-albums, and a Settings panel (§17). Remaining (v2+): face detection & people collections, Apple Photos bridge, scene/auto tagging, Sparkle auto-update, and the fully-normalized keyword table (keywords are currently stored per-asset + FTS-indexed).
+> **Implemented vs. remaining (vs. PRD).** Done: catalog persistence (SQLite + FTS5), folder authorization + recursive scan, referenced **and** managed import, Image I/O metadata, XMP sidecar read/write, thumbnail/preview generation + cache (rebuild/clear), missing **and** offline-volume detection, exact **and** perceptual duplicate detection, on-device Vision scene tagging + face detection (人物 collection), FSEvents incremental watching, batch rename, batch capture-time shift, export, backup + health check, Places (map) view, search/filter/sort, ratings/flags/keywords/albums/smart-albums, and a Settings panel (§17). Remaining (genuinely external/deferred): Apple Photos import bridge, plugin system, Sparkle auto-update, and a fully-normalized keyword table (keywords are stored per-asset + FTS-indexed today).
 
 ## Build & run
 
