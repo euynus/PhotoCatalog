@@ -2289,6 +2289,26 @@ final class AppState: ObservableObject {
         ensurePrimaryValid()
     }
 
+    /// Delete-key flow: confirm whether to remove from the catalog or trash the originals (§15).
+    func confirmDeleteSelected() {
+        let ids = targetIds
+        guard !ids.isEmpty else { return }
+        let real = selectedRealAssetsWithOriginals()
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "移除照片"
+        alert.informativeText = "将 \(ids.count) 张从目录库移除。原件默认保留。"
+        alert.addButton(withTitle: "从目录库移除")
+        if !real.isEmpty { alert.addButton(withTitle: "移到废纸篓") }
+        alert.addButton(withTitle: "取消")
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            removeSelected()
+        } else if !real.isEmpty, response == .alertSecondButtonReturn {
+            performTrashOriginals(real)
+        }
+    }
+
     func trashSelectedOriginals() {
         let real = selectedRealAssetsWithOriginals()
         guard !real.isEmpty else {
@@ -2303,7 +2323,11 @@ final class AppState: ObservableObject {
         alert.addButton(withTitle: "移到废纸篓")
         alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
+        performTrashOriginals(real)
+    }
 
+    /// Move the given originals to the Trash and remove their catalog records (no extra prompt).
+    private func performTrashOriginals(_ real: [Asset]) {
         Task { [weak self, real] in
             let result = await Task.detached(priority: .userInitiated) { () -> (trashed: Set<String>, failed: Int) in
                 var trashed = Set<String>()
@@ -2431,7 +2455,7 @@ final class AppState: ObservableObject {
         case "up", "down", "left", "right":
             moveSelection(key)
         case "delete", "backspace":
-            removeSelected()
+            confirmDeleteSelected()
         default:
             return false
         }
