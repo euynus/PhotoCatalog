@@ -168,6 +168,38 @@ enum PipelineCheck {
             $0.preview == coordinator.thumbnails.cachePath(assetId: $0.id, kind: .preview2048).path
         }
         check(defaultPreview2048Exist, "default previews use 2048px cache")
+        let rawSrc = tmp.appendingPathComponent("raw-source")
+        try? fm.createDirectory(at: rawSrc, withIntermediateDirectories: true)
+        let cr3URL = rawSrc.appendingPathComponent("CANON.CR3")
+        writeTestImage(to: cr3URL, width: 720, height: 480, seed: 45)
+        check(FileScanner.isSupported(cr3URL), "scanner accepts CR3 extension")
+        let rawAssets = coordinator.importFolder(rawSrc)
+        let cr3Asset = rawAssets.first
+        check(rawAssets.count == 1 && cr3Asset?.type == "CR3" && cr3Asset?.isRaw == true,
+              "CR3 import is classified as RAW")
+        check(cr3Asset.map { fm.fileExists(atPath: $0.thumb) && fm.fileExists(atPath: $0.preview) } == true,
+              "CR3 import writes thumbnail + preview cache")
+        if let cr3Asset, let localPath = cr3Asset.localPath {
+            let thumbURL = URL(fileURLWithPath: cr3Asset.thumb)
+            let originalURL = URL(fileURLWithPath: localPath)
+            let missingOriginalURL = rawSrc.appendingPathComponent("MISSING.CR3")
+            let previewURL = URL(fileURLWithPath: cr3Asset.preview)
+            writeBlackImage(to: thumbURL, width: 64, height: 64)
+            let detectedBlackCache = coordinator.thumbnails.cachedRepresentationNeedsRegeneration(
+                at: thumbURL,
+                original: originalURL,
+                kind: .thumb512
+            )
+            let repairedThumb = coordinator.thumbnails.ensureCached(from: missingOriginalURL,
+                                                                     fallbackPreview: previewURL,
+                                                                     assetId: cr3Asset.id,
+                                                                     kind: .thumb512)
+            check(detectedBlackCache && repairedThumb?.path == cr3Asset.thumb
+                  && !imageIsUniformBlack(at: thumbURL),
+                  "CR3 black thumbnail cache regenerates from preview fallback")
+        } else {
+            check(false, "CR3 black thumbnail cache regenerates from preview fallback")
+        }
         let preview1600Src = tmp.appendingPathComponent("preview-1600")
         try? fm.createDirectory(at: preview1600Src, withIntermediateDirectories: true)
         writeTestImage(to: preview1600Src.appendingPathComponent("SMALL_PREVIEW.jpg"),
@@ -669,6 +701,50 @@ enum PipelineCheck {
         let properties = gps.map { [kCGImagePropertyGPSDictionary: $0] as CFDictionary }
         CGImageDestinationAddImage(dest, cg, properties)
         CGImageDestinationFinalize(dest)
+    }
+
+    private static func writeBlackImage(to url: URL, width: Int, height: Int) {
+        let cs = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: cs,
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return }
+        ctx.setFillColor(CGColor.black)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        guard let cg = ctx.makeImage(),
+              let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)
+        else { return }
+        CGImageDestinationAddImage(dest, cg, nil)
+        CGImageDestinationFinalize(dest)
+    }
+
+    private static func imageIsUniformBlack(at url: URL) -> Bool {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceThumbnailMaxPixelSize: 32,
+              ] as CFDictionary)
+        else { return true }
+        let width = cg.width
+        let height = cg.height
+        let bytesPerPixel = 4
+        var data = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
+        guard let context = CGContext(data: &data,
+                                      width: width,
+                                      height: height,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: width * bytesPerPixel,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return true }
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+        var index = 0
+        while index < data.count {
+            if data[index] > 2 || data[index + 1] > 2 || data[index + 2] > 2 {
+                return false
+            }
+            index += bytesPerPixel
+        }
+        return true
     }
 
     /// variant 0: vertical bands · 1: bands + small corner mark (near-dup) · 2: horizontal bands (far).

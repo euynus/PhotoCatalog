@@ -25,10 +25,14 @@ final class FileWatcher {
         let callback: FSEventStreamCallback = { _, info, count, eventPaths, _, _ in
             guard let info else { return }
             let watcher = Unmanaged<FileWatcher>.fromOpaque(info).takeUnretainedValue()
-            let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] ?? []
+            let paths = (unsafeBitCast(eventPaths, to: NSArray.self) as? [String]) ?? []
             watcher.onChange(Array(paths.prefix(count)))
         }
-        let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
+        let flags = FSEventStreamCreateFlags(
+            kFSEventStreamCreateFlagFileEvents
+                | kFSEventStreamCreateFlagNoDefer
+                | kFSEventStreamCreateFlagUseCFTypes
+        )
         guard let s = FSEventStreamCreate(nil, callback, &context, paths as CFArray,
                                           FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
                                           latency, flags) else { return }

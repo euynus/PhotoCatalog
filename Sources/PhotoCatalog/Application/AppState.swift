@@ -1178,24 +1178,42 @@ final class AppState: ObservableObject {
         }
 
         let fm = FileManager.default
-        if !requestedSource.isEmpty && fm.fileExists(atPath: requestedSource) {
+        let requestedExists = !requestedSource.isEmpty && fm.fileExists(atPath: requestedSource)
+        if requestedExists && (!kind.isThumbnail || !asset.isRaw) {
             return requestedSource
         }
 
         guard let coordinator,
-              let localPath = asset.localPath,
-              fm.fileExists(atPath: localPath) else {
+              let localPath = asset.localPath else {
             return requestedSource
         }
 
         let original = URL(fileURLWithPath: localPath)
+        let fallbackPreview = asset.preview.isEmpty ? nil : URL(fileURLWithPath: asset.preview)
+        guard fm.fileExists(atPath: localPath)
+              || fallbackPreview.map({ fm.fileExists(atPath: $0.path) }) == true else {
+            return requestedSource
+        }
+
         let assetId = asset.id
         let thumbnails = coordinator.thumbnails
         let resolvedKind = kind.isPreview
             ? ThumbnailService.previewKind(forCachePath: requestedSource, fallbackMaxPixel: previewMaxPixel)
             : kind
+        if requestedExists {
+            let cached = URL(fileURLWithPath: requestedSource)
+            let needsRegeneration = await Task.detached(priority: .userInitiated) {
+                thumbnails.cachedRepresentationNeedsRegeneration(at: cached, original: original, kind: resolvedKind)
+            }.value
+            if !needsRegeneration {
+                return requestedSource
+            }
+        }
         let restored = await Task.detached(priority: .userInitiated) {
-            thumbnails.ensureCached(from: original, assetId: assetId, kind: resolvedKind)
+            thumbnails.ensureCached(from: original,
+                                    fallbackPreview: fallbackPreview,
+                                    assetId: assetId,
+                                    kind: resolvedKind)
         }.value
         return restored?.path ?? requestedSource
     }
