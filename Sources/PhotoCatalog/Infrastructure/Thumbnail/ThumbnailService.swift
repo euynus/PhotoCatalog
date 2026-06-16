@@ -99,6 +99,7 @@ final class ThumbnailService: @unchecked Sendable {
     func ensureCached(from original: URL, fallbackPreview: URL?, assetId: String, kind: Kind) -> URL? {
         let out = cachePath(assetId: assetId, kind: kind)
         if FileManager.default.fileExists(atPath: out.path),
+           !Self.cacheIsStale(cache: out, original: original),
            !cachedRepresentationNeedsRegeneration(at: out, original: original, kind: kind) {
             return out
         }
@@ -120,6 +121,17 @@ final class ThumbnailService: @unchecked Sendable {
     func cachedRepresentationNeedsRegeneration(at cached: URL, original: URL, kind: Kind) -> Bool {
         guard kind.isThumbnail, Self.prefersQuickLook(for: original) else { return false }
         return Self.imageIsUniformBlack(at: cached)
+    }
+
+    /// A cached thumbnail is stale once the original is modified after it was generated
+    /// (e.g. an in-place edit). Compares file modification times (THM-004).
+    static func cacheIsStale(cache: URL, original: URL) -> Bool {
+        let fm = FileManager.default
+        guard let cacheAttrs = try? fm.attributesOfItem(atPath: cache.path),
+              let originalAttrs = try? fm.attributesOfItem(atPath: original.path),
+              let cacheDate = cacheAttrs[.modificationDate] as? Date,
+              let originalDate = originalAttrs[.modificationDate] as? Date else { return false }
+        return originalDate > cacheDate
     }
 
     /// Generate one cached representation; returns its file URL (or nil on failure).
