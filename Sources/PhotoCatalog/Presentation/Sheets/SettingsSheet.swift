@@ -47,9 +47,19 @@ struct SettingsSheet: View {
                        onChange: { app.importMode = ImportMode(rawValue: $0) ?? .referenced }, size: "sm")
                 }
                 Text(app.importMode == .managed
-                     ? "托管式：导入时复制原件到目录库 Originals/YYYY/MM/DD。"
+                     ? "托管式：导入时复制原件到目录库 Originals/\(app.managedArchiveRule == .camera ? "<相机>/YYYY/MM" : "YYYY/MM/DD")。"
                      : "引用式：只索引，原件保留在原位置（推荐）。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
+                if app.importMode == .managed {
+                    row("归档规则") {
+                        Segmented(options: [
+                            SegOption(value: "date", label: "按日期"),
+                            SegOption(value: "camera", label: "按相机"),
+                        ], value: app.managedArchiveRule.rawValue,
+                           onChange: { app.managedArchiveRule = ManagedArchiveRule(rawValue: $0) ?? .date },
+                           size: "sm")
+                    }
+                }
                 row("重复处理") {
                     Segmented(options: [
                         SegOption(value: "groupExact", label: "分组"),

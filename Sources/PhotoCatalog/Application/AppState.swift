@@ -27,6 +27,10 @@ final class AppState: ObservableObject {
         ImportMode(rawValue: UserDefaults.standard.string(forKey: "pc_importMode") ?? "") ?? .referenced {
         didSet { UserDefaults.standard.set(importMode.rawValue, forKey: "pc_importMode") }
     }
+    @Published var managedArchiveRule: ManagedArchiveRule =
+        ManagedArchiveRule(rawValue: UserDefaults.standard.string(forKey: "pc_managedArchive") ?? "") ?? .date {
+        didSet { UserDefaults.standard.set(managedArchiveRule.rawValue, forKey: "pc_managedArchive") }
+    }
     @Published var importDuplicateStrategy: ImportDuplicateStrategy =
         ImportDuplicateStrategy(rawValue: UserDefaults.standard.string(forKey: "pc_importDuplicateStrategy") ?? "")
             ?? .groupExact {
@@ -516,6 +520,7 @@ final class AppState: ObservableObject {
         lastImportSessionPersistedCount = 0
         let vision = visionEnabled
         let previewSize = previewMaxPixel
+        let archiveRule = managedArchiveRule
         importing = true
         sheet = "import"
         try? store.startImportSession(id: run.id.uuidString, startedAt: run.startedAt)
@@ -523,9 +528,9 @@ final class AppState: ObservableObject {
                                   mode: mode, autoTag: vision)
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: folder)
-        Task { [weak self, coordinator, store, folder, mode, vision, previewSize, bookmark, existingIds, sourceId, run, control] in
-            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, vision, previewSize, control] in
-                coordinator.importFolder(folder, mode: mode, autoTag: vision,
+        Task { [weak self, coordinator, store, folder, mode, vision, previewSize, archiveRule, bookmark, existingIds, sourceId, run, control] in
+            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, vision, previewSize, archiveRule, control] in
+                coordinator.importFolder(folder, mode: mode, autoTag: vision, archiveRule: archiveRule,
                                          previewMaxPixel: previewSize, control: control) { progress in
                     Task { @MainActor [weak self] in
                         self?.recordImportProgress(progress, for: run.id)

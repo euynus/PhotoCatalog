@@ -9,6 +9,13 @@ import UniformTypeIdentifiers
 
 enum ImportMode: String, Sendable { case referenced, managed }
 
+/// Folder layout used when copying originals into the managed Originals/ tree (PRD §6.3 IMP-006, §17.2).
+enum ManagedArchiveRule: String, Sendable, CaseIterable {
+    case date    // Originals/YYYY/MM/DD
+    case camera  // Originals/<camera>/YYYY/MM
+    var label: String { self == .date ? "按日期" : "按相机" }
+}
+
 struct ImportProgress: Sendable {
     var total = 0
     var processed = 0
@@ -34,22 +41,22 @@ final class ImportCoordinator: @unchecked Sendable {
     /// Full import of a folder (managed mode copies originals into Originals/YYYY/MM/DD;
     /// autoTag runs on-device Vision scene tagging + face detection).
     func importFolder(_ folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
-                      previewMaxPixel: Int = 2048,
+                      archiveRule: ManagedArchiveRule = .date, previewMaxPixel: Int = 2048,
                       control: ImportControl? = nil,
                       progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
         let files = FileScanner.scan(folder)
         progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
-        return process(files, folder: folder, mode: mode, autoTag: autoTag,
+        return process(files, folder: folder, mode: mode, autoTag: autoTag, archiveRule: archiveRule,
                        previewMaxPixel: previewMaxPixel, control: control, progress: progress)
     }
 
     /// Retry/import a known file list while preserving the original source folder identity.
     func importFiles(_ files: [URL], from folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
-                     previewMaxPixel: Int = 2048,
+                     archiveRule: ManagedArchiveRule = .date, previewMaxPixel: Int = 2048,
                      control: ImportControl? = nil,
                      progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
         progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
-        return process(files, folder: folder, mode: mode, autoTag: autoTag,
+        return process(files, folder: folder, mode: mode, autoTag: autoTag, archiveRule: archiveRule,
                        previewMaxPixel: previewMaxPixel, control: control, progress: progress)
     }
 
@@ -83,6 +90,7 @@ final class ImportCoordinator: @unchecked Sendable {
     }
 
     private func process(_ files: [URL], folder: URL, mode: ImportMode, autoTag: Bool,
+                         archiveRule: ManagedArchiveRule = .date,
                          previewMaxPixel: Int, control: ImportControl?,
                          progress: ((ImportProgress) -> Void)?) -> [Asset] {
         let folderId = sourceId(forFolder: folder)
@@ -99,7 +107,7 @@ final class ImportCoordinator: @unchecked Sendable {
                 continue
             }
             if let asset = makeAsset(source: url, folderId: folderId, folderName: folderName,
-                                     mode: mode, autoTag: autoTag,
+                                     mode: mode, autoTag: autoTag, archiveRule: archiveRule,
                                      previewMaxPixel: previewMaxPixel) {
                 assets.append(asset)
                 prog.processed += 1
@@ -116,10 +124,13 @@ final class ImportCoordinator: @unchecked Sendable {
     }
 
     private func makeAsset(source url: URL, folderId: String, folderName: String,
-                           mode: ImportMode, autoTag: Bool, previewMaxPixel: Int) -> Asset? {
+                           mode: ImportMode, autoTag: Bool, archiveRule: ManagedArchiveRule = .date,
+                           previewMaxPixel: Int) -> Asset? {
         let meta = MetadataReader.read(url)
         guard meta.width > 0, meta.height > 0 else { return nil }
-        let finalURL = mode == .managed ? (copyToOriginals(url, date: meta.captureDate) ?? url) : url
+        let finalURL = mode == .managed
+            ? (copyToOriginals(url, date: meta.captureDate, camera: meta.camera, rule: archiveRule) ?? url)
+            : url
 
         let hash = shortHash(finalURL.path)
         let assetId = "r" + hash
@@ -170,12 +181,21 @@ final class ImportCoordinator: @unchecked Sendable {
         return asset
     }
 
-    private func copyToOriginals(_ url: URL, date: Date) -> URL? {
+    private func copyToOriginals(_ url: URL, date: Date, camera: String, rule: ManagedArchiveRule) -> URL? {
         let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
-        let dir = store.originalsURL
-            .appendingPathComponent(String(format: "%04d", c.year ?? 1970))
-            .appendingPathComponent(String(format: "%02d", c.month ?? 1))
-            .appendingPathComponent(String(format: "%02d", c.day ?? 1))
+        let year = String(format: "%04d", c.year ?? 1970)
+        let month = String(format: "%02d", c.month ?? 1)
+        let day = String(format: "%02d", c.day ?? 1)
+        let dir: URL
+        switch rule {
+        case .date:
+            dir = store.originalsURL.appendingPathComponent(year)
+                .appendingPathComponent(month).appendingPathComponent(day)
+        case .camera:
+            let folderName = sanitizeFolderName(camera)
+            dir = store.originalsURL.appendingPathComponent(folderName)
+                .appendingPathComponent(year).appendingPathComponent(month)
+        }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var dest = dir.appendingPathComponent(url.lastPathComponent)
         var i = 1
@@ -189,6 +209,13 @@ final class ImportCoordinator: @unchecked Sendable {
 
     private func gpsLabel(_ gps: (Double, Double)) -> String {
         (gps.0 == 0 && gps.1 == 0) ? "" : String(format: "%.3f, %.3f", gps.0, gps.1)
+    }
+
+    private func sanitizeFolderName(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "未知相机" }
+        let illegal = CharacterSet(charactersIn: "/\\:?%*|\"<>")
+        return trimmed.components(separatedBy: illegal).joined(separator: "-")
     }
 
     private func shortHash(_ s: String) -> String {
