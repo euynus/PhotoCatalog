@@ -50,9 +50,8 @@ struct InspectorView: View {
 
     private func preview(_ asset: Asset) -> some View {
         ZStack {
-            Thumb(asset: asset, urlString: asset.thumb, radius: 5)
+            Thumb(asset: asset, urlString: asset.thumb, radius: 5, contentMode: .fit)
                 .id(asset.id)
-                .aspectRatio(CGFloat(asset.width) / CGFloat(asset.height), contentMode: .fit)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .shadow(color: .black.opacity(0.5), radius: 11, y: 6)
                 .padding(14)

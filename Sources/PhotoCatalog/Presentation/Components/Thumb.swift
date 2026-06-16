@@ -23,7 +23,7 @@ private func hsl(_ h: Double, _ s: Double, _ l: Double) -> Color {
     return Color(.sRGB, red: r + m, green: g + m, blue: b + m)
 }
 
-/// Deterministic placeholder gradient behind every photo.
+/// Deterministic placeholder gradient while a photo is loading.
 func gradientFor(_ pid: Int) -> LinearGradient {
     let h0 = Double((pid * 47) % 360)
     let h1 = Double((pid * 47 + 40) % 360)
@@ -93,7 +93,7 @@ final class ThumbLoader: ObservableObject {
     }
 }
 
-/// A photo tile that fills the frame it is given (caller controls sizing).
+/// A photo tile that fills or fits the frame it is given (caller controls sizing).
 struct Thumb: View {
     @EnvironmentObject private var app: AppState
 
@@ -101,6 +101,7 @@ struct Thumb: View {
     var urlString: String?
     var kind: ThumbnailService.Kind?
     var radius: CGFloat = 4
+    var contentMode: ContentMode = .fill
     var dim: Bool = false
 
     @StateObject private var loader = ThumbLoader()
@@ -113,13 +114,15 @@ struct Thumb: View {
 
     var body: some View {
         ZStack {
-            gradientFor(asset.pid)
             if let img = loader.image {
                 Image(nsImage: img)
                     .resizable()
-                    .scaledToFill()
-            } else if loader.failed {
-                Icon("photos", size: 22).foregroundStyle(.white.opacity(0.35))
+                    .aspectRatio(contentMode: contentMode)
+            } else {
+                gradientFor(asset.pid)
+                if loader.failed {
+                    Icon("photos", size: 22).foregroundStyle(.white.opacity(0.35))
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

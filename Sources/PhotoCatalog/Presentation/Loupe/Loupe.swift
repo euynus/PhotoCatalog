@@ -34,9 +34,8 @@ struct Loupe: View {
 
     private func stage(_ asset: Asset, idx: Int, count: Int) -> some View {
         ZStack {
-            Thumb(asset: asset, urlString: asset.preview, kind: .preview2048, radius: 4)
+            Thumb(asset: asset, urlString: asset.preview, kind: .preview2048, radius: 4, contentMode: .fit)
                 .id(asset.id)
-                .aspectRatio(CGFloat(asset.width) / CGFloat(asset.height), contentMode: .fit)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .shadow(color: .black.opacity(0.6), radius: 30, y: 16)
                 .padding(.horizontal, 64).padding(.vertical, 28)
