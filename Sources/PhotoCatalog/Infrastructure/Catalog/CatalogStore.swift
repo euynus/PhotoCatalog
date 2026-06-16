@@ -322,6 +322,11 @@ final class CatalogStore: @unchecked Sendable {
               volumeIdentifier.map { SQLValue.text($0) } ?? .null])
     }
 
+    /// Drop all stored security-scoped bookmarks, forcing re-authorization (§17.6).
+    func clearSourceBookmarks() throws {
+        try db.run("UPDATE source_roots SET bookmark_data = NULL;")
+    }
+
     func loadSourceRoots() throws -> [SourceRootRecord] {
         try db.query("""
         SELECT id, display_name, path_hint, bookmark_data, management_mode, status, volume_identifier

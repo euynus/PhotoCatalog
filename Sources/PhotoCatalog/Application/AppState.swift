@@ -1198,6 +1198,22 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Privacy: delete catalog log files (§17.6).
+    func clearLogs() {
+        guard let store else { push("无目录库", "warning"); return }
+        let fm = FileManager.default
+        let logs = (try? fm.contentsOfDirectory(at: store.logsURL, includingPropertiesForKeys: nil)) ?? []
+        for url in logs { try? fm.removeItem(at: url) }
+        push("已清除日志", "trash")
+    }
+
+    /// Privacy: drop stored security-scoped bookmarks; sources need re-authorization (§17.6).
+    func clearSecurityBookmarks() {
+        guard let store else { push("无目录库", "warning"); return }
+        try? store.clearSourceBookmarks()
+        push("已清除安全书签，下次访问需重新授权", "trash")
+    }
+
     func clearCache() {
         guard let store else { push("无目录库", "warning"); return }
         let fm = FileManager.default

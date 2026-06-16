@@ -199,6 +199,15 @@ struct SettingsSheet: View {
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.text2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            section("隐私") {
+                Text("本地优先 · 仅访问授权的文件夹。可清除以下本地数据。")
+                    .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
+                HStack(spacing: 9) {
+                    ghostButton("trash", "清除日志", small: true) { app.clearLogs() }
+                    ghostButton("trash", "清除安全书签", small: true) { app.clearSecurityBookmarks() }
+                }
+            }
         }
         .padding(18)
     }
