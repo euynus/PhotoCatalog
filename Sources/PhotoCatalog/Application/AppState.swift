@@ -950,6 +950,14 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// User-invokable rescan of the watched source roots (Cmd+R, §15 / §6.3 IMP-002).
+    func rescanCurrentSource() {
+        guard coordinator != nil else { push("无已导入的源文件夹", "warning"); return }
+        guard !watchedRoots.isEmpty else { push("当前没有可重新扫描的源", "warning"); return }
+        push("正在重新扫描…", "refresh")
+        incrementalRescan()
+    }
+
     private func prioritizedWatchedRoots(_ roots: [URL]) -> [URL] {
         guard let store, let sourceRoots = try? store.loadSourceRoots() else { return roots }
         var idByPath: [String: String] = [:]
@@ -2378,6 +2386,10 @@ final class AppState: ObservableObject {
                 focusSearch()
             case "i":
                 showInspector.toggle()
+            case "e":
+                exportSelection()
+            case "r":
+                rescanCurrentSource()
             case "a":
                 if hasShift {
                     guard invertVisibleSelection() else { return false }
