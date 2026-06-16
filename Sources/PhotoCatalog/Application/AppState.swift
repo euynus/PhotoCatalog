@@ -210,6 +210,7 @@ final class AppState: ObservableObject {
         recomputeDuplicates()
         restoreAlbums(from: s, assets: checked)
         recoverInterruptedImportJobs(existingAssets: checked)
+        backfillThumbnails()
         return nil
     }
 
@@ -621,6 +622,7 @@ final class AppState: ObservableObject {
         applyPostImportAlbum(assetIds: fresh.map(\.id))
         recomputeDuplicates()
         enforceCacheLimitIfNeeded()
+        backfillThumbnails()
         let failedCount = importRun?.failed ?? 0
         let message: String
         let icon: String
@@ -1158,6 +1160,33 @@ final class AppState: ObservableObject {
             }.value
             self?.enforceCacheLimitIfNeeded()
             self?.push("缩略图已重建", "check")
+        }
+    }
+
+    private var isBackfilling = false
+
+    /// Low-priority background pass that fills in any missing/stale thumbnails for
+    /// imported photos (visible-first generation is handled per-cell). PRD §6.6 THM-003.
+    func backfillThumbnails() {
+        guard let coordinator, !isBackfilling else { return }
+        let real = assets.filter { !$0.isDemo && $0.localPath != nil }
+        guard !real.isEmpty else { return }
+        isBackfilling = true
+        let previewSize = previewMaxPixel
+        Task { [weak self, coordinator, real, previewSize] in
+            await Task.detached(priority: .background) {
+                for a in real {
+                    guard let path = a.localPath,
+                          FileManager.default.fileExists(atPath: path) else { continue }
+                    let original = URL(fileURLWithPath: path)
+                    _ = coordinator.thumbnails.ensureCached(from: original, assetId: a.id, kind: .thumb512)
+                    _ = coordinator.thumbnails.ensureCached(
+                        from: original, assetId: a.id,
+                        kind: ThumbnailService.previewKind(forCachePath: a.preview, fallbackMaxPixel: previewSize))
+                }
+            }.value
+            self?.isBackfilling = false
+            self?.enforceCacheLimitIfNeeded()
         }
     }
 
