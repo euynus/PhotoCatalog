@@ -8,6 +8,8 @@ struct SettingsSheet: View {
     @EnvironmentObject var app: AppState
     @State private var renamePrefix = "IMG"
     @State private var shiftHours = 1
+    @State private var shiftMinutes = 0
+    @State private var absoluteDate = Date()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -200,14 +202,26 @@ struct SettingsSheet: View {
             }
 
             section("批量调整拍摄时间") {
-                Text("对选中照片整体平移拍摄时间，用于时区或相机时钟校正。")
+                Text("对选中照片整体平移拍摄时间（时区/相机时钟校正），或统一设为指定时间。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 HStack(spacing: 12) {
-                    Stepper(value: $shiftHours, in: -48...48) {
-                        Text("偏移 \(shiftHours > 0 ? "+" : "")\(shiftHours) 小时")
+                    Stepper(value: $shiftHours, in: -72...72) {
+                        Text("\(shiftHours > 0 ? "+" : "")\(shiftHours) 时")
                             .font(.system(size: 12.5)).foregroundStyle(Theme.text)
                     }
-                    ghostButton(nil, "应用到选中", small: true) { app.shiftCaptureTime(hours: shiftHours) }
+                    Stepper(value: $shiftMinutes, in: -59...59) {
+                        Text("\(shiftMinutes > 0 ? "+" : "")\(shiftMinutes) 分")
+                            .font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                    }
+                    ghostButton(nil, "平移选中", small: true) {
+                        app.shiftCaptureTime(hours: shiftHours, minutes: shiftMinutes)
+                    }
+                    Spacer()
+                }
+                HStack(spacing: 12) {
+                    DatePicker("", selection: $absoluteDate)
+                        .labelsHidden().datePickerStyle(.compact)
+                    ghostButton(nil, "设为该时间", small: true) { app.setCaptureDate(absoluteDate) }
                     Spacer()
                 }
             }

@@ -1035,15 +1035,28 @@ final class AppState: ObservableObject {
     }
 
     // ---------- batch capture-time shift (§4.2 / META-008) ----------
-    func shiftCaptureTime(hours: Int) {
-        guard hours != 0 else { return }
+    func shiftCaptureTime(hours: Int, minutes: Int = 0) {
+        let totalMinutes = hours * 60 + minutes
+        guard totalMinutes != 0 else { return }
         let ids = targetIds
         guard !ids.isEmpty else { return }
         mutate(ids) {
-            $0.date = $0.date.addingTimeInterval(Double(hours) * 3600)
+            $0.date = $0.date.addingTimeInterval(Double(totalMinutes) * 60)
             $0.captureDateSource = "手动调整"
         }
-        push("已调整 \(ids.count) 张拍摄时间 \(hours > 0 ? "+" : "")\(hours) 小时", "clock")
+        let absT = abs(totalMinutes)
+        push("已调整 \(ids.count) 张拍摄时间 \(totalMinutes > 0 ? "+" : "-")\(absT / 60)时\(absT % 60)分", "clock")
+    }
+
+    /// Set an absolute capture time on the selection (§4.2 / META-008).
+    func setCaptureDate(_ date: Date) {
+        let ids = targetIds
+        guard !ids.isEmpty else { return }
+        mutate(ids) {
+            $0.date = date
+            $0.captureDateSource = "手动设置"
+        }
+        push("已将 \(ids.count) 张拍摄时间设为指定时间", "clock")
     }
 
     // ---------- XMP sidecar write (§6.5 META-007) ----------
