@@ -21,6 +21,7 @@ final class AppState: ObservableObject {
             projectListCache = nil
             clientListCache = nil
             folderTreeCache = nil
+            libraryCountsCache = nil
             listInputsVersion &+= 1
         }
     }
@@ -51,6 +52,10 @@ final class AppState: ObservableObject {
     private var projectListCache: [KeywordCount]?
     private var clientListCache: [KeywordCount]?
     private var folderTreeCache: [FolderTreeItem]?
+    private var libraryCountsCache: LibraryCounts?
+    struct LibraryCounts: Equatable {
+        var all = 0, recent = 0, unrated = 0, picks = 0, rejected = 0, missingOffline = 0, places = 0, people = 0
+    }
     /// Bumped whenever an array input to `list` changes (assets/albums/smartAlbums/folders/
     /// source roots/priorities/duplicate groups); the small value inputs are compared directly.
     private var listInputsVersion = 0
@@ -110,7 +115,7 @@ final class AppState: ObservableObject {
         didSet { AppState.saveExportPresets(exportPresets) }
     }
     @Published var recentImportDays: Int = (UserDefaults.standard.object(forKey: "pc_recentDays") as? Int) ?? 14 {
-        didSet { UserDefaults.standard.set(recentImportDays, forKey: "pc_recentDays") }
+        didSet { UserDefaults.standard.set(recentImportDays, forKey: "pc_recentDays"); libraryCountsCache = nil }
     }
     @Published var openLastCatalogOnLaunch: Bool =
         (UserDefaults.standard.object(forKey: "pc_openLast") as? Bool) ?? true {
@@ -1739,6 +1744,25 @@ final class AppState: ObservableObject {
         let result = countMetadataValues(\.client)
         clientListCache = result
         return result
+    }
+
+    /// Library sidebar tallies in one pass, cached and invalidated on assets/recent-days change.
+    var libraryCounts: LibraryCounts {
+        if let cache = libraryCountsCache { return cache }
+        var counts = LibraryCounts()
+        let cutoff = recentCutoff
+        for a in assets where !a.deleted {
+            counts.all += 1
+            if a.importedAt > cutoff { counts.recent += 1 }
+            if a.rating == 0 && a.flag != .reject { counts.unrated += 1 }
+            if a.flag == .pick { counts.picks += 1 }
+            if a.flag == .reject { counts.rejected += 1 }
+            if a.status == .missing || a.status == .offline { counts.missingOffline += 1 }
+            if !(a.gps.0 == 0 && a.gps.1 == 0) { counts.places += 1 }
+            if a.faces > 0 { counts.people += 1 }
+        }
+        libraryCountsCache = counts
+        return counts
     }
 
     private func countMetadataValues(_ keyPath: KeyPath<Asset, String>) -> [KeywordCount] {

@@ -44,28 +44,19 @@ struct Sidebar: View {
     }
 
     private var librarySection: some View {
-        SidebarSection(title: "资料库") {
-            row("photos", nil, "全部照片", "\(ready.count)", .lib, "all", "全部照片")
-            row("clock", nil, "最近导入",
-                "\(ready.filter { $0.importedAt > app.recentCutoff }.count)",
-                .lib, "recent", "最近导入")
-            row("star", nil, "未评分",
-                "\(ready.filter { $0.rating == 0 && $0.flag != .reject }.count)",
-                .lib, "unrated", "未评分")
-            row("flag", nil, "精选",
-                "\(ready.filter { $0.flag == .pick }.count)", .lib, "picks", "精选")
-            row("reject", nil, "被拒绝",
-                "\(ready.filter { $0.flag == .reject }.count)", .lib, "rejected", "被拒绝")
-            row("offline", Theme.yellow, "缺失 / 离线",
-                "\(ready.filter { $0.status == .missing || $0.status == .offline }.count)",
-                .lib, "missing", "缺失 / 离线")
+        let c = app.libraryCounts
+        return SidebarSection(title: "资料库") {
+            row("photos", nil, "全部照片", "\(c.all)", .lib, "all", "全部照片")
+            row("clock", nil, "最近导入", "\(c.recent)", .lib, "recent", "最近导入")
+            row("star", nil, "未评分", "\(c.unrated)", .lib, "unrated", "未评分")
+            row("flag", nil, "精选", "\(c.picks)", .lib, "picks", "精选")
+            row("reject", nil, "被拒绝", "\(c.rejected)", .lib, "rejected", "被拒绝")
+            row("offline", Theme.yellow, "缺失 / 离线", "\(c.missingOffline)", .lib, "missing", "缺失 / 离线")
             row("copy", Theme.purple, "重复文件",
                 "\(app.duplicateGroups.count) 组", .lib, "duplicates", "重复文件")
-            row("map", Theme.green, "地点",
-                "\(ready.filter { !($0.gps.0 == 0 && $0.gps.1 == 0) }.count)", .lib, "places", "地点")
-            let peopleCount = ready.filter { $0.faces > 0 }.count
-            if peopleCount > 0 {
-                row("camera", Theme.albumBlue, "人物", "\(peopleCount)", .lib, "people", "人物")
+            row("map", Theme.green, "地点", "\(c.places)", .lib, "places", "地点")
+            if c.people > 0 {
+                row("camera", Theme.albumBlue, "人物", "\(c.people)", .lib, "people", "人物")
             }
         }
     }
