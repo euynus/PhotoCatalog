@@ -41,36 +41,40 @@ final class ImportCoordinator: @unchecked Sendable {
     /// Full import of a folder (managed mode copies originals into Originals/YYYY/MM/DD;
     /// autoTag runs on-device Vision scene tagging + face detection).
     func importFolder(_ folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
-                      archiveRule: ManagedArchiveRule = .date, previewMaxPixel: Int = 2048,
+                      archiveRule: ManagedArchiveRule = .date, readSidecar: Bool = true,
+                      previewMaxPixel: Int = 2048,
                       control: ImportControl? = nil,
                       progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
         let files = FileScanner.scan(folder)
         progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
         return process(files, folder: folder, mode: mode, autoTag: autoTag, archiveRule: archiveRule,
-                       previewMaxPixel: previewMaxPixel, control: control, progress: progress)
+                       readSidecar: readSidecar, previewMaxPixel: previewMaxPixel, control: control,
+                       progress: progress)
     }
 
     /// Retry/import a known file list while preserving the original source folder identity.
     func importFiles(_ files: [URL], from folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
-                     archiveRule: ManagedArchiveRule = .date, previewMaxPixel: Int = 2048,
+                     archiveRule: ManagedArchiveRule = .date, readSidecar: Bool = true,
+                     previewMaxPixel: Int = 2048,
                      control: ImportControl? = nil,
                      progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
         progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
         return process(files, folder: folder, mode: mode, autoTag: autoTag, archiveRule: archiveRule,
-                       previewMaxPixel: previewMaxPixel, control: control, progress: progress)
+                       readSidecar: readSidecar, previewMaxPixel: previewMaxPixel, control: control,
+                       progress: progress)
     }
 
     /// Incremental: only files not already imported by path (for FSEvents rescans, §12.8).
     func scanNew(in folder: URL, knownPaths: Set<String>, mode: ImportMode = .referenced,
-                 autoTag: Bool = false, previewMaxPixel: Int = 2048) -> [Asset] {
+                 autoTag: Bool = false, readSidecar: Bool = true, previewMaxPixel: Int = 2048) -> [Asset] {
         let files = FileScanner.scan(folder).filter { !knownPaths.contains($0.path) }
-        return process(files, folder: folder, mode: mode, autoTag: autoTag,
+        return process(files, folder: folder, mode: mode, autoTag: autoTag, readSidecar: readSidecar,
                        previewMaxPixel: previewMaxPixel, control: nil, progress: nil)
     }
 
     /// Incremental: reprocess known originals whose quick hash changed so metadata and caches stay fresh.
     func scanChanged(in folder: URL, knownAssetsByPath: [String: Asset], mode: ImportMode = .referenced,
-                     autoTag: Bool = false, previewMaxPixel: Int = 2048) -> [Asset] {
+                     autoTag: Bool = false, readSidecar: Bool = true, previewMaxPixel: Int = 2048) -> [Asset] {
         let files = FileScanner.scan(folder).filter { url in
             let known = knownAssetsByPath[url.path] ?? knownAssetsByPath[url.resolvingSymlinksInPath().path]
             guard let known else { return false }
@@ -85,12 +89,12 @@ final class ImportCoordinator: @unchecked Sendable {
             let quickHashChanged = HashService.quickHash(url, fileSize: size) != known.quickHash
             return sizeChanged || modifiedChanged || quickHashChanged
         }
-        return process(files, folder: folder, mode: mode, autoTag: autoTag,
+        return process(files, folder: folder, mode: mode, autoTag: autoTag, readSidecar: readSidecar,
                        previewMaxPixel: previewMaxPixel, control: nil, progress: nil)
     }
 
     private func process(_ files: [URL], folder: URL, mode: ImportMode, autoTag: Bool,
-                         archiveRule: ManagedArchiveRule = .date,
+                         archiveRule: ManagedArchiveRule = .date, readSidecar: Bool = true,
                          previewMaxPixel: Int, control: ImportControl?,
                          progress: ((ImportProgress) -> Void)?) -> [Asset] {
         let folderId = sourceId(forFolder: folder)
@@ -108,7 +112,7 @@ final class ImportCoordinator: @unchecked Sendable {
             }
             if let asset = makeAsset(source: url, folderId: folderId, folderName: folderName,
                                      mode: mode, autoTag: autoTag, archiveRule: archiveRule,
-                                     previewMaxPixel: previewMaxPixel) {
+                                     readSidecar: readSidecar, previewMaxPixel: previewMaxPixel) {
                 assets.append(asset)
                 prog.processed += 1
                 prog.latestAsset = asset
@@ -125,7 +129,7 @@ final class ImportCoordinator: @unchecked Sendable {
 
     private func makeAsset(source url: URL, folderId: String, folderName: String,
                            mode: ImportMode, autoTag: Bool, archiveRule: ManagedArchiveRule = .date,
-                           previewMaxPixel: Int) -> Asset? {
+                           readSidecar: Bool = true, previewMaxPixel: Int) -> Asset? {
         let meta = MetadataReader.read(url)
         guard meta.width > 0, meta.height > 0 else { return nil }
         let finalURL = mode == .managed
@@ -168,8 +172,8 @@ final class ImportCoordinator: @unchecked Sendable {
             for tag in v.sceneLabels where !asset.keywords.contains(tag) { asset.keywords.append(tag) }
         }
 
-        // apply XMP sidecar metadata next to the original, if present (§6.5 META-006)
-        if let sc = XMPSidecar.read(XMPSidecar.sidecarURL(for: url)) {
+        // apply XMP sidecar metadata next to the original, if present (§6.5 META-006, §17.4)
+        if readSidecar, let sc = XMPSidecar.read(XMPSidecar.sidecarURL(for: url)) {
             asset.rating = sc.rating
             asset.colorLabel = sc.colorLabel
             if !sc.keywords.isEmpty { asset.keywords = KeywordService.normalize(sc.keywords) }

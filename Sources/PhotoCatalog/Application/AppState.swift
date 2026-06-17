@@ -50,6 +50,12 @@ final class AppState: ObservableObject {
     @Published var exportWritesXMP = UserDefaults.standard.bool(forKey: "pc_exportXMP") {
         didSet { UserDefaults.standard.set(exportWritesXMP, forKey: "pc_exportXMP") }
     }
+    @Published var readXMPSidecar: Bool = (UserDefaults.standard.object(forKey: "pc_readXMP") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(readXMPSidecar, forKey: "pc_readXMP") }
+    }
+    @Published var autoWriteXMPSidecar = UserDefaults.standard.bool(forKey: "pc_autoWriteXMP") {
+        didSet { UserDefaults.standard.set(autoWriteXMPSidecar, forKey: "pc_autoWriteXMP") }
+    }
     @Published var exportDirectoryStructure: ExportDirectoryStructure =
         ExportDirectoryStructure(rawValue: UserDefaults.standard.string(forKey: "pc_exportDirectoryStructure") ?? "")
             ?? .flat {
@@ -521,6 +527,7 @@ final class AppState: ObservableObject {
         let vision = visionEnabled
         let previewSize = previewMaxPixel
         let archiveRule = managedArchiveRule
+        let readXMP = readXMPSidecar
         importing = true
         sheet = "import"
         try? store.startImportSession(id: run.id.uuidString, startedAt: run.startedAt)
@@ -528,10 +535,10 @@ final class AppState: ObservableObject {
                                   mode: mode, autoTag: vision)
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: folder)
-        Task { [weak self, coordinator, store, folder, mode, vision, previewSize, archiveRule, bookmark, existingIds, sourceId, run, control] in
-            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, vision, previewSize, archiveRule, control] in
+        Task { [weak self, coordinator, store, folder, mode, vision, previewSize, archiveRule, readXMP, bookmark, existingIds, sourceId, run, control] in
+            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, vision, previewSize, archiveRule, readXMP, control] in
                 coordinator.importFolder(folder, mode: mode, autoTag: vision, archiveRule: archiveRule,
-                                         previewMaxPixel: previewSize, control: control) { progress in
+                                         readSidecar: readXMP, previewMaxPixel: previewSize, control: control) { progress in
                     Task { @MainActor [weak self] in
                         self?.recordImportProgress(progress, for: run.id)
                     }
@@ -916,18 +923,21 @@ final class AppState: ObservableObject {
         let knownPaths = Set(knownAssetsByPath.keys)
         let vision = visionEnabled
         let previewSize = previewMaxPixel
-        Task { [weak self, coordinator, store, roots, knownAssetsByPath, knownPaths, vision, previewSize] in
+        let readXMP = readXMPSidecar
+        Task { [weak self, coordinator, store, roots, knownAssetsByPath, knownPaths, vision, previewSize, readXMP] in
             let delta = await Task.detached(priority: .utility) {
                 var fresh: [Asset] = []
                 var changed: [Asset] = []
                 for root in roots {
                     fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
                                                                  mode: .referenced, autoTag: vision,
+                                                                 readSidecar: readXMP,
                                                                  previewMaxPixel: previewSize))
                     changed.append(contentsOf: coordinator.scanChanged(in: root,
                                                                        knownAssetsByPath: knownAssetsByPath,
                                                                        mode: .referenced,
                                                                        autoTag: vision,
+                                                                       readSidecar: readXMP,
                                                                        previewMaxPixel: previewSize))
                 }
                 return (fresh: fresh, changed: changed)
@@ -1549,6 +1559,12 @@ final class AppState: ObservableObject {
         guard let store else { return }
         let changed = assets.filter { ids.contains($0.id) && !$0.isDemo }
         if !changed.isEmpty { try? store.upsert(changed) }
+        // mirror user-metadata edits to XMP sidecars when enabled (§17.4 META-007)
+        if autoWriteXMPSidecar {
+            for a in changed where a.localPath != nil {
+                XMPSidecar.write(a, to: XMPSidecar.sidecarURL(for: URL(fileURLWithPath: a.localPath!)))
+            }
+        }
     }
 
     // ---------- toasts ----------

@@ -116,6 +116,19 @@ struct SettingsSheet: View {
                 }
             }
 
+            section("元数据") {
+                Toggle(isOn: $app.readXMPSidecar) {
+                    Text("导入时读取 XMP sidecar").font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                }.toggleStyle(.switch).tint(Theme.accent)
+                Toggle(isOn: $app.autoWriteXMPSidecar) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("编辑时自动写入 XMP sidecar").font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                        Text("评分 / 关键词 / 标题等改动会写入同名 .xmp，不改动原图。")
+                            .font(.system(size: 11)).foregroundStyle(Theme.text3)
+                    }
+                }.toggleStyle(.switch).tint(Theme.accent)
+            }
+
             section("缩略图与缓存") {
                 row("预览长边") {
                     Segmented(options: [
