@@ -596,6 +596,7 @@ final class AppState: ObservableObject {
         let previewSize = previewMaxPixel
         let archiveRule = managedArchiveRule
         let readXMP = readXMPSidecar
+        cancelBackfill()  // let the import generate thumbnails without a background pass contending
         importing = true
         sheet = "import"
         try? store.startImportSession(id: run.id.uuidString, startedAt: run.startedAt)
@@ -1274,9 +1275,19 @@ final class AppState: ObservableObject {
     }
 
     private var isBackfilling = false
+    private var backfillTask: Task<Void, Never>?
+
+    /// Stop any in-flight thumbnail backfill (e.g. when a fresh import is about to
+    /// generate its own thumbnails, or the catalog is closing) so the two passes
+    /// don't contend for disk I/O.
+    func cancelBackfill() { backfillTask?.cancel() }
 
     /// Low-priority background pass that fills in any missing/stale thumbnails for
     /// imported photos (visible-first generation is handled per-cell). PRD §6.6 THM-003.
+    ///
+    /// Processed in small chunks so the pass stays cooperative: it yields between
+    /// chunks, honors cancellation, and re-checks Low Power Mode mid-run rather than
+    /// only once at the start.
     func backfillThumbnails() {
         guard let coordinator, !isBackfilling else { return }
         // battery saver: skip background work under Low Power Mode (§17.5)
@@ -1285,19 +1296,31 @@ final class AppState: ObservableObject {
         guard !real.isEmpty else { return }
         isBackfilling = true
         let previewSize = previewMaxPixel
-        Task { [weak self, coordinator, real, previewSize] in
-            await Task.detached(priority: .background) {
-                for a in real {
-                    guard let path = a.localPath,
-                          FileManager.default.fileExists(atPath: path) else { continue }
-                    let original = URL(fileURLWithPath: path)
-                    _ = coordinator.thumbnails.ensureCached(from: original, assetId: a.id, kind: .thumb512)
-                    _ = coordinator.thumbnails.ensureCached(
-                        from: original, assetId: a.id,
-                        kind: ThumbnailService.previewKind(forCachePath: a.preview, fallbackMaxPixel: previewSize))
-                }
-            }.value
+        let lowPowerSensitive = reduceBackgroundOnLowPower
+        backfillTask = Task { [weak self, coordinator, real, previewSize] in
+            let chunkSize = 16
+            var index = 0
+            while index < real.count {
+                if Task.isCancelled { break }
+                // re-check Low Power Mode between chunks — it can be toggled mid-run
+                if lowPowerSensitive, ProcessInfo.processInfo.isLowPowerModeEnabled { break }
+                let chunk = Array(real[index..<min(index + chunkSize, real.count)])
+                await Task.detached(priority: .background) {
+                    for a in chunk {
+                        guard let path = a.localPath,
+                              FileManager.default.fileExists(atPath: path) else { continue }
+                        let original = URL(fileURLWithPath: path)
+                        _ = coordinator.thumbnails.ensureCached(from: original, assetId: a.id, kind: .thumb512)
+                        _ = coordinator.thumbnails.ensureCached(
+                            from: original, assetId: a.id,
+                            kind: ThumbnailService.previewKind(forCachePath: a.preview, fallbackMaxPixel: previewSize))
+                    }
+                }.value
+                index += chunkSize
+                await Task.yield()
+            }
             self?.isBackfilling = false
+            self?.backfillTask = nil
             self?.enforceCacheLimitIfNeeded()
         }
     }
