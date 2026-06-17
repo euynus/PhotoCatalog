@@ -64,7 +64,7 @@ enum CatalogStoreError: Error, Equatable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    private static let latestSchemaVersion = 14
+    private static let latestSchemaVersion = 15
     let packageURL: URL
     let db: Database
 
@@ -185,6 +185,10 @@ final class CatalogStore: @unchecked Sendable {
             try db.execChecked("CREATE INDEX IF NOT EXISTS idx_album_assets_asset ON album_assets(asset_id);")
             try recordMigration(14)
         }
+        if current < 15 {
+            try db.run("ALTER TABLE assets ADD COLUMN perceptual_hash INTEGER;")
+            try recordMigration(15)
+        }
     }
 
     private func recordMigration(_ version: Int) throws {
@@ -286,11 +290,11 @@ final class CatalogStore: @unchecked Sendable {
     capture_date,width,height,orientation,camera,lens,focal,aperture,shutter,iso,\
     color_space,has_icc_profile,file_mb,rating,flag,color_label,keywords,title,caption,author,copyright,maker_notes,project,client,location,gps_lat,gps_lon,gps_altitude,\
     status,imported_at,deleted,is_demo,local_path,capture_date_source,content_hash,quick_hash,faces,\
-    file_modified_at,file_created_at
+    file_modified_at,file_created_at,perceptual_hash
     """
 
     func upsert(_ assets: [Asset]) throws {
-        let placeholders = Array(repeating: "?", count: 49).joined(separator: ",")
+        let placeholders = Array(repeating: "?", count: 50).joined(separator: ",")
         let sql = "INSERT OR REPLACE INTO assets(\(Self.columns)) VALUES(\(placeholders));"
         try db.transaction {
             for a in assets {
@@ -624,6 +628,7 @@ final class CatalogStore: @unchecked Sendable {
             .int(a.faces),
             a.fileModifiedAt.map { SQLValue.double($0.timeIntervalSince1970) } ?? .null,
             a.fileCreatedAt.map { SQLValue.double($0.timeIntervalSince1970) } ?? .null,
+            a.perceptualHash.map { SQLValue.int(Int(Int64(bitPattern: $0))) } ?? .null,
         ]
     }
 
@@ -664,7 +669,8 @@ final class CatalogStore: @unchecked Sendable {
             localPath: row.text("local_path"),
             captureDateSource: row.text("capture_date_source") ?? "EXIF · DateTimeOriginal",
             contentHash: row.text("content_hash"), quickHash: row.text("quick_hash"),
-            isDemo: row.bool("is_demo"), faces: row.int("faces") ?? 0)
+            isDemo: row.bool("is_demo"), faces: row.int("faces") ?? 0,
+            perceptualHash: row.int("perceptual_hash").map { UInt64(bitPattern: Int64($0)) })
     }
 
     private static func importSession(from row: Row) -> ImportSessionRecord? {

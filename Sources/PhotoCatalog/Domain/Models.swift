@@ -68,6 +68,7 @@ struct Asset: Identifiable, Equatable, Sendable {
     var quickHash: String? = nil
     var isDemo: Bool = true                     // false once scanned from a real folder
     var faces: Int = 0                          // Vision-detected face count (§4.3)
+    var perceptualHash: UInt64? = nil           // cached dHash for similar-photo grouping (§6.10)
 
     var megapixels: Double { Double(width * height) / 1_000_000 }
 

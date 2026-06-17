@@ -43,6 +43,8 @@ enum PerceptualHash {
     /// Group assets whose cached-thumbnail dHash is within `threshold` (but not exact-content matches).
     static func similarGroups(_ assets: [Asset], threshold: Int = 10) -> [DuplicateGroup] {
         let hashed: [(asset: Asset, hash: UInt64)] = assets.compactMap { a in
+            // reuse the persisted dHash; only decode the thumbnail when it's missing
+            if let h = a.perceptualHash { return (a, h) }
             guard !a.thumb.isEmpty, !a.thumb.hasPrefix("http"), let h = dHash(path: a.thumb) else { return nil }
             return (a, h)
         }

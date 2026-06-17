@@ -301,6 +301,7 @@ enum PipelineCheck {
         try? store.upsert(assets)
         let reloaded = (try? store.loadAssets()) ?? []
         check(reloaded.count == 7, "reloaded 7 assets from SQLite — got \(reloaded.count)")
+        check(reloaded.allSatisfy { $0.perceptualHash != nil }, "perceptual hash computed at import + persisted")
         let reloadedTimestamped = reloaded.first { $0.filename == "IMG_0000.jpg" }
         check(reloadedTimestamped?.fileModifiedAt.map { abs($0.timeIntervalSince(fixedModifiedAt)) < 1 } == true
               && reloadedTimestamped?.fileCreatedAt != nil,

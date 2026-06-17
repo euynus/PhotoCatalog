@@ -182,6 +182,9 @@ final class ImportCoordinator: @unchecked Sendable {
             if !sc.author.isEmpty { asset.author = sc.author }
             if !sc.copyright.isEmpty { asset.copyright = sc.copyright }
         }
+
+        // cache the perceptual hash from the just-generated thumbnail (avoids re-decoding later)
+        if !asset.thumb.isEmpty { asset.perceptualHash = PerceptualHash.dHash(path: asset.thumb) }
         return asset
     }
 
