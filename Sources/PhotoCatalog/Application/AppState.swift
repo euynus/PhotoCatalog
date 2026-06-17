@@ -73,6 +73,10 @@ final class AppState: ObservableObject {
         (UserDefaults.standard.object(forKey: "pc_openLast") as? Bool) ?? true {
         didSet { UserDefaults.standard.set(openLastCatalogOnLaunch, forKey: "pc_openLast") }
     }
+    @Published var reduceBackgroundOnLowPower: Bool =
+        (UserDefaults.standard.object(forKey: "pc_lowPower") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(reduceBackgroundOnLowPower, forKey: "pc_lowPower") }
+    }
 
     var recentCutoff: Date { Date().addingTimeInterval(-86400 * Double(max(1, recentImportDays))) }
     @Published var visionEnabled = UserDefaults.standard.bool(forKey: "pc_vision") {
@@ -1220,6 +1224,8 @@ final class AppState: ObservableObject {
     /// imported photos (visible-first generation is handled per-cell). PRD §6.6 THM-003.
     func backfillThumbnails() {
         guard let coordinator, !isBackfilling else { return }
+        // battery saver: skip background work under Low Power Mode (§17.5)
+        if reduceBackgroundOnLowPower, ProcessInfo.processInfo.isLowPowerModeEnabled { return }
         let real = assets.filter { !$0.isDemo && $0.localPath != nil }
         guard !real.isEmpty else { return }
         isBackfilling = true

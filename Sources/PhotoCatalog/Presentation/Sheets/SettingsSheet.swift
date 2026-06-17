@@ -190,6 +190,16 @@ struct SettingsSheet: View {
                 }
             }
 
+            section("性能") {
+                Toggle(isOn: $app.reduceBackgroundOnLowPower) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("低电量模式下减少后台任务").font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                        Text("开启「低电量模式」时暂停后台缩略图补齐，节省电量。")
+                            .font(.system(size: 11)).foregroundStyle(Theme.text3)
+                    }
+                }.toggleStyle(.switch).tint(Theme.accent)
+            }
+
             section("维护") {
                 row("自动备份") {
                     Segmented(options: [
