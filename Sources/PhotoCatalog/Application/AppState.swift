@@ -66,6 +66,15 @@ final class AppState: ObservableObject {
     @Published var exportPresets: [ExportPreset] = AppState.loadExportPresets() {
         didSet { AppState.saveExportPresets(exportPresets) }
     }
+    @Published var recentImportDays: Int = (UserDefaults.standard.object(forKey: "pc_recentDays") as? Int) ?? 14 {
+        didSet { UserDefaults.standard.set(recentImportDays, forKey: "pc_recentDays") }
+    }
+    @Published var openLastCatalogOnLaunch: Bool =
+        (UserDefaults.standard.object(forKey: "pc_openLast") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(openLastCatalogOnLaunch, forKey: "pc_openLast") }
+    }
+
+    var recentCutoff: Date { Date().addingTimeInterval(-86400 * Double(max(1, recentImportDays))) }
     @Published var visionEnabled = UserDefaults.standard.bool(forKey: "pc_vision") {
         didSet { UserDefaults.standard.set(visionEnabled, forKey: "pc_vision") }
     }
@@ -144,7 +153,7 @@ final class AppState: ObservableObject {
         assets = a
         albums = DemoData.initialAlbums(a)
         smartAlbums = DemoData.initialSmartAlbums(a)
-        if let error = loadExistingCatalog() {
+        if openLastCatalogOnLaunch, let error = loadExistingCatalog() {
             push(catalogOpenFailureMessage(error), "warning")
         }
         startVolumeMonitor()
@@ -1885,8 +1894,7 @@ final class AppState: ObservableObject {
         case .lib:
             switch selection.id {
             case "recent":
-                let cutoff = Date().addingTimeInterval(-60 * 60 * 24 * 14)
-                return live.filter { $0.importedAt > cutoff }
+                return live.filter { $0.importedAt > recentCutoff }
             case "unrated":
                 return live.filter { $0.rating == 0 && $0.flag != .reject }
             case "picks":

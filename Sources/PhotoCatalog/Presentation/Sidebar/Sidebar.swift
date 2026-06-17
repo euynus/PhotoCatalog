@@ -47,7 +47,7 @@ struct Sidebar: View {
         SidebarSection(title: "资料库") {
             row("photos", nil, "全部照片", "\(ready.count)", .lib, "all", "全部照片")
             row("clock", nil, "最近导入",
-                "\(ready.filter { $0.importedAt > Date().addingTimeInterval(-60*60*24*14) }.count)",
+                "\(ready.filter { $0.importedAt > app.recentCutoff }.count)",
                 .lib, "recent", "最近导入")
             row("star", nil, "未评分",
                 "\(ready.filter { $0.rating == 0 && $0.flag != .reject }.count)",

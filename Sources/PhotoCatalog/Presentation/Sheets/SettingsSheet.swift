@@ -41,6 +41,19 @@ struct SettingsSheet: View {
 
     private var body_: some View {
         VStack(alignment: .leading, spacing: 18) {
+            section("常规") {
+                Toggle(isOn: $app.openLastCatalogOnLaunch) {
+                    Text("启动时打开上次目录库").font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                }.toggleStyle(.switch).tint(Theme.accent)
+                HStack(spacing: 12) {
+                    Stepper(value: $app.recentImportDays, in: 1...365) {
+                        Text("「最近导入」窗口 \(app.recentImportDays) 天")
+                            .font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                    }
+                    Spacer()
+                }
+            }
+
             section("导入") {
                 row("导入模式") {
                     Segmented(options: [
