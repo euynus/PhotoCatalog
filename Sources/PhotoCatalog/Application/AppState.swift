@@ -13,7 +13,18 @@ final class AppState: ObservableObject {
     @Published var welcomeAnim = false
 
     // ----- core data -----
-    @Published var assets: [Asset]
+    @Published var assets: [Asset] {
+        didSet { assetIndexCache = nil }
+    }
+    /// id → index map, lazily rebuilt after any `assets` change (invalidated above).
+    private var assetIndexCache: [String: Int]?
+    private var assetIndex: [String: Int] {
+        if let cache = assetIndexCache { return cache }
+        var map = [String: Int](minimumCapacity: assets.count)
+        for (i, a) in assets.enumerated() { map[a.id] = i }
+        assetIndexCache = map
+        return map
+    }
     @Published var albums: [Album]
     @Published var smartAlbums: [SmartAlbum]
     @Published var folders: [Folder] = DemoData.folders
@@ -959,14 +970,15 @@ final class AppState: ObservableObject {
                 return (fresh: fresh, changed: changed)
             }.value
             guard let self else { return }
-            let trulyNew = delta.fresh.filter { a in !self.assets.contains { $0.id == a.id } }
-            let changedAssets = delta.changed.filter { a in self.assets.contains { $0.id == a.id } }
+            var indexById = [String: Int](minimumCapacity: self.assets.count)
+            for (i, a) in self.assets.enumerated() { indexById[a.id] = i }
+            let trulyNew = delta.fresh.filter { indexById[$0.id] == nil }
+            let changedAssets = delta.changed.filter { indexById[$0.id] != nil }
             if !trulyNew.isEmpty || !changedAssets.isEmpty {
+                // appending leaves existing indices valid, so indexById stays correct for replacements
                 self.assets.append(contentsOf: trulyNew)
                 for asset in changedAssets {
-                    if let index = self.assets.firstIndex(where: { $0.id == asset.id }) {
-                        self.assets[index] = asset
-                    }
+                    if let index = indexById[asset.id] { self.assets[index] = asset }
                 }
                 try? store.upsert(trulyNew + changedAssets)
                 self.recomputeDuplicates()
@@ -1981,7 +1993,7 @@ final class AppState: ObservableObject {
         return dir < 0 ? a > b : a < b
     }
 
-    var primary: Asset? { assets.first { $0.id == primaryId } }
+    var primary: Asset? { primaryId.flatMap { assetIndex[$0] }.map { assets[$0] } }
     var isDuplicates: Bool { selection.type == .lib && selection.id == "duplicates" }
     var isPlaces: Bool { selection.type == .lib && selection.id == "places" }
     var isPeople: Bool { selection.type == .lib && selection.id == "people" }
@@ -2137,7 +2149,7 @@ final class AppState: ObservableObject {
     }
 
     func mutateAsset(_ id: String, _ transform: (inout Asset) -> Void) {
-        guard let i = assets.firstIndex(where: { $0.id == id }) else { return }
+        guard let i = assetIndex[id] else { return }
         transform(&assets[i])
         persist([id])
     }
