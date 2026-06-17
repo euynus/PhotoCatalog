@@ -63,6 +63,9 @@ final class AppState: ObservableObject {
             UserDefaults.standard.set(exportDirectoryStructure.rawValue, forKey: "pc_exportDirectoryStructure")
         }
     }
+    @Published var exportPresets: [ExportPreset] = AppState.loadExportPresets() {
+        didSet { AppState.saveExportPresets(exportPresets) }
+    }
     @Published var visionEnabled = UserDefaults.standard.bool(forKey: "pc_vision") {
         didSet { UserDefaults.standard.set(visionEnabled, forKey: "pc_vision") }
     }
@@ -1327,6 +1330,37 @@ final class AppState: ObservableObject {
 
     private func formatCacheMB(_ bytes: Int64) -> String {
         String(format: "%.1f MB", Double(bytes) / (1024 * 1024))
+    }
+
+    // ---------- export presets (§4.2) ----------
+    static func loadExportPresets() -> [ExportPreset] {
+        guard let data = UserDefaults.standard.data(forKey: "pc_exportPresets"),
+              let presets = try? JSONDecoder().decode([ExportPreset].self, from: data) else { return [] }
+        return presets
+    }
+    static func saveExportPresets(_ presets: [ExportPreset]) {
+        if let data = try? JSONEncoder().encode(presets) {
+            UserDefaults.standard.set(data, forKey: "pc_exportPresets")
+        }
+    }
+
+    func saveExportPreset(name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        let preset = ExportPreset(name: trimmed,
+                                  directoryStructure: exportDirectoryStructure.rawValue,
+                                  writesXMP: exportWritesXMP)
+        exportPresets.removeAll { $0.name == trimmed }
+        exportPresets.append(preset)
+        push("已保存导出预设「\(trimmed)」", "check")
+    }
+    func applyExportPreset(_ preset: ExportPreset) {
+        exportDirectoryStructure = ExportDirectoryStructure(rawValue: preset.directoryStructure) ?? .flat
+        exportWritesXMP = preset.writesXMP
+        push("已应用导出预设「\(preset.name)」")
+    }
+    func deleteExportPreset(_ preset: ExportPreset) {
+        exportPresets.removeAll { $0.name == preset.name }
     }
 
     // ---------- export originals (§6.11) ----------

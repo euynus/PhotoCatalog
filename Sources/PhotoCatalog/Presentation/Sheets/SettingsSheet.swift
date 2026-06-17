@@ -10,6 +10,7 @@ struct SettingsSheet: View {
     @State private var shiftHours = 1
     @State private var shiftMinutes = 0
     @State private var absoluteDate = Date()
+    @State private var exportPresetName = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -112,6 +113,32 @@ struct SettingsSheet: View {
                 Toggle(isOn: $app.exportWritesXMP) {
                     Text("导出时写入 XMP sidecar").font(.system(size: 12.5)).foregroundStyle(Theme.text)
                 }.toggleStyle(.switch).tint(Theme.accent)
+                HStack(spacing: 9) {
+                    TextField("预设名", text: $exportPresetName)
+                        .textFieldStyle(.plain).font(.system(size: 12.5))
+                        .padding(.horizontal, 10).padding(.vertical, 7)
+                        .background(Color.black.opacity(0.28))
+                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .frame(width: 140)
+                    ghostButton(nil, "保存为预设", small: true) {
+                        app.saveExportPreset(name: exportPresetName); exportPresetName = ""
+                    }
+                    if !app.exportPresets.isEmpty {
+                        Menu {
+                            ForEach(app.exportPresets) { p in
+                                Button(p.name) { app.applyExportPreset(p) }
+                            }
+                            Divider()
+                            ForEach(app.exportPresets) { p in
+                                Button("删除「\(p.name)」", role: .destructive) { app.deleteExportPreset(p) }
+                            }
+                        } label: {
+                            Text("应用预设").font(.system(size: 12)).foregroundStyle(Theme.accent)
+                        }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    }
+                    Spacer()
+                }
                 HStack(spacing: 9) {
                     ghostButton("eye", "导出选中预览图", small: true) { app.exportSelectionPreviews() }
                     Spacer()
