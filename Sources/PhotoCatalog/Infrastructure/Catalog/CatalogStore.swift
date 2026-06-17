@@ -64,7 +64,7 @@ enum CatalogStoreError: Error, Equatable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    private static let latestSchemaVersion = 13
+    private static let latestSchemaVersion = 14
     let packageURL: URL
     let db: Database
 
@@ -177,6 +177,13 @@ final class CatalogStore: @unchecked Sendable {
             try db.run("ALTER TABLE assets ADD COLUMN project TEXT DEFAULT '';")
             try db.run("ALTER TABLE assets ADD COLUMN client TEXT DEFAULT '';")
             try recordMigration(13)
+        }
+        if current < 14 {
+            // indexes for the hot deleted/quick_hash filters and reverse album lookups
+            try db.execChecked("CREATE INDEX IF NOT EXISTS idx_assets_deleted ON assets(deleted);")
+            try db.execChecked("CREATE INDEX IF NOT EXISTS idx_assets_quick_hash ON assets(quick_hash);")
+            try db.execChecked("CREATE INDEX IF NOT EXISTS idx_album_assets_asset ON album_assets(asset_id);")
+            try recordMigration(14)
         }
     }
 
@@ -302,7 +309,8 @@ final class CatalogStore: @unchecked Sendable {
     func updateAsset(_ a: Asset) throws { try upsert([a]) }
 
     func loadAssets() throws -> [Asset] {
-        try db.query("SELECT \(Self.columns) FROM assets;").compactMap(Self.asset(from:))
+        // soft-deleted rows are never shown; skip materializing them (uses idx_assets_deleted)
+        try db.query("SELECT \(Self.columns) FROM assets WHERE deleted=0;").compactMap(Self.asset(from:))
     }
 
     func assetCount(includeDeleted: Bool = false) -> Int {
