@@ -1059,12 +1059,15 @@ final class AppState: ObservableObject {
     }
 
     // ---------- batch rename (§4.2) ----------
-    func batchRename(prefix: String) {
-        let trimmed = prefix.trimmingCharacters(in: .whitespaces)
+    /// Rename selected originals from a token template ({seq}/{date}/{time}/{camera}/{original}).
+    /// A plain prefix with no token becomes "<prefix>_{seq}".
+    func batchRename(template rawTemplate: String) {
+        let trimmed = rawTemplate.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
+        let template = trimmed.contains("{") ? trimmed : "\(trimmed)_{seq}"
         let real = list.filter { selectedIds.contains($0.id) && !$0.isDemo && $0.localPath != nil }
         guard !real.isEmpty else { push("仅可重命名已导入照片", "warning"); return }
-        let map = RenameService.rename(real, prefix: trimmed)
+        let map = RenameService.renameWithTemplate(real, template: template)
         for (id, url) in map {
             mutateAsset(id) { $0.filename = url.lastPathComponent; $0.localPath = url.path }
         }

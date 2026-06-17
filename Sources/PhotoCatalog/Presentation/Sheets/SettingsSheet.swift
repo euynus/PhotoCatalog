@@ -173,17 +173,17 @@ struct SettingsSheet: View {
             }
 
             section("批量重命名") {
-                Text("对当前选中的已导入照片按「前缀_序号」重命名原件。")
+                Text("按命名模板重命名选中已导入照片的原件。可用占位符：{seq} {date} {time} {camera} {original}（纯前缀等价于「前缀_{seq}」）。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 HStack(spacing: 9) {
-                    TextField("前缀", text: $renamePrefix)
+                    TextField("如 {date}_{seq} 或 IMG", text: $renamePrefix)
                         .textFieldStyle(.plain).font(.system(size: 12.5))
                         .padding(.horizontal, 10).padding(.vertical, 7)
                         .background(Color.black.opacity(0.28))
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
                         .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .frame(width: 160)
-                    ghostButton(nil, "重命名选中", small: true) { app.batchRename(prefix: renamePrefix) }
+                        .frame(width: 200)
+                    ghostButton(nil, "重命名选中", small: true) { app.batchRename(template: renamePrefix) }
                     Spacer()
                 }
             }
