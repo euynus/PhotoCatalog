@@ -243,10 +243,14 @@ final class ThumbnailService: @unchecked Sendable {
     }
 
     /// Generate both thumbnail sizes + the configured loupe preview.
+    /// The original is decoded once for the preview (important for slow RAW); the smaller
+    /// sizes are then downscaled from that preview JPEG, falling back to the original if the
+    /// preview couldn't be produced.
     func generateAll(from original: URL, assetId: String, previewMaxPixel: Int = 2048) -> (thumb: URL?, preview: URL?) {
-        _ = generate(from: original, assetId: assetId, kind: .thumb256)
-        let thumb = generate(from: original, assetId: assetId, kind: .thumb512)
         let preview = generate(from: original, assetId: assetId, kind: Self.previewKind(maxPixel: previewMaxPixel))
+        let source = preview ?? original
+        let thumb = generate(from: source, assetId: assetId, kind: .thumb512)
+        _ = generate(from: source, assetId: assetId, kind: .thumb256)
         return (thumb, preview)
     }
 }
