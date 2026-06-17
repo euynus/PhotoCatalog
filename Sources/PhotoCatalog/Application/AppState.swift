@@ -14,7 +14,13 @@ final class AppState: ObservableObject {
 
     // ----- core data -----
     @Published var assets: [Asset] {
-        didSet { assetIndexCache = nil }
+        didSet {
+            assetIndexCache = nil
+            keywordListCache = nil
+            keywordSuggestionPoolCache = nil
+            projectListCache = nil
+            clientListCache = nil
+        }
     }
     /// id → index map, lazily rebuilt after any `assets` change (invalidated above).
     private var assetIndexCache: [String: Int]?
@@ -30,8 +36,16 @@ final class AppState: ObservableObject {
     @Published var folders: [Folder] = DemoData.folders
     @Published var importing = false
     @Published var importRun: ImportRun?
-    @Published var duplicateGroupsCache: [DuplicateGroup] = DemoData.duplicateGroups
+    @Published var duplicateGroupsCache: [DuplicateGroup] = DemoData.duplicateGroups {
+        didSet { photoStacksCache = nil; stackByAssetCache = nil }
+    }
     @Published private var collapsedStackIds: Set<String> = []
+    private var photoStacksCache: [PhotoStack]?
+    private var stackByAssetCache: [String: PhotoStack]?
+    private var keywordListCache: [KeywordCount]?
+    private var keywordSuggestionPoolCache: [String]?
+    private var projectListCache: [KeywordCount]?
+    private var clientListCache: [KeywordCount]?
 
     // ----- settings (PRD §17) -----
     @Published var importMode: ImportMode =
@@ -1656,6 +1670,7 @@ final class AppState: ObservableObject {
 
     // ---------- keyword sidebar list ----------
     var keywordList: [KeywordCount] {
+        if let cache = keywordListCache { return cache }
         // Preserve first-encounter order (like a JS Map) so ties sort stably,
         // matching the prototype's keyword sidebar order.
         var order: [String] = []
@@ -1666,13 +1681,16 @@ final class AppState: ObservableObject {
                 counts[k, default: 0] += 1
             }
         }
-        return order.map { KeywordCount(name: $0, count: counts[$0] ?? 0) }
+        let result = order.map { KeywordCount(name: $0, count: counts[$0] ?? 0) }
             .sorted { $0.count > $1.count }   // Swift 5 sort is stable
             .prefix(8)
             .map { $0 }
+        keywordListCache = result
+        return result
     }
 
     var keywordSuggestionPool: [String] {
+        if let cache = keywordSuggestionPoolCache { return cache }
         var seen = Set<String>()
         var result: [String] = []
         for asset in assets where !asset.deleted {
@@ -1683,15 +1701,22 @@ final class AppState: ObservableObject {
         for keyword in DemoData.keywordPool where seen.insert(keyword).inserted {
             result.append(keyword)
         }
+        keywordSuggestionPoolCache = result
         return result
     }
 
     var projectList: [KeywordCount] {
-        countMetadataValues(\.project)
+        if let cache = projectListCache { return cache }
+        let result = countMetadataValues(\.project)
+        projectListCache = result
+        return result
     }
 
     var clientList: [KeywordCount] {
-        countMetadataValues(\.client)
+        if let cache = clientListCache { return cache }
+        let result = countMetadataValues(\.client)
+        clientListCache = result
+        return result
     }
 
     private func countMetadataValues(_ keyPath: KeyPath<Asset, String>) -> [KeywordCount] {
@@ -1727,18 +1752,28 @@ final class AppState: ObservableObject {
     }
 
     private var photoStacks: [PhotoStack] {
-        PhotoStackService.stacks(from: duplicateGroupsCache)
+        if let cache = photoStacksCache { return cache }
+        let stacks = PhotoStackService.stacks(from: duplicateGroupsCache)
+        photoStacksCache = stacks
+        return stacks
+    }
+
+    /// O(1) asset → stack lookup, rebuilt only when the stacks change (invalidated in didSet).
+    private var stackByAsset: [String: PhotoStack] {
+        if let cache = stackByAssetCache { return cache }
+        var map: [String: PhotoStack] = [:]
+        for stack in photoStacks { for id in stack.assetIds { map[id] = stack } }
+        stackByAssetCache = map
+        return map
     }
 
     func stackInfo(for asset: Asset) -> (count: Int, collapsed: Bool)? {
-        guard let stack = PhotoStackService.stack(containing: asset.id, in: photoStacks) else {
-            return nil
-        }
+        guard let stack = stackByAsset[asset.id] else { return nil }
         return (stack.count, collapsedStackIds.contains(stack.id))
     }
 
     func toggleStack(containing assetId: String) {
-        guard let stack = PhotoStackService.stack(containing: assetId, in: photoStacks) else { return }
+        guard let stack = stackByAsset[assetId] else { return }
         if collapsedStackIds.contains(stack.id) {
             collapsedStackIds.remove(stack.id)
             push("已展开堆栈")
