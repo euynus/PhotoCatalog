@@ -981,19 +981,21 @@ final class AppState: ObservableObject {
     private func incrementalRescan() {
         guard let coordinator, let store else { return }
         let roots = prioritizedWatchedRoots(watchedRoots)
-        var knownAssetsByPath: [String: Asset] = [:]
-        for asset in assets where !asset.deleted {
-            if let path = asset.localPath {
-                knownAssetsByPath[path] = asset
-                knownAssetsByPath[URL(fileURLWithPath: path).resolvingSymlinksInPath().path] = asset
-            }
-        }
-        let knownPaths = Set(knownAssetsByPath.keys)
+        let liveAssets = assets.filter { !$0.deleted }
         let vision = visionEnabled
         let previewSize = previewMaxPixel
         let readXMP = readXMPSidecar
-        Task { [weak self, coordinator, store, roots, knownAssetsByPath, knownPaths, vision, previewSize, readXMP] in
+        Task { [weak self, coordinator, store, roots, liveAssets, vision, previewSize, readXMP] in
             let delta = await Task.detached(priority: .utility) {
+                // build the path index off the main thread (resolvingSymlinksInPath stats each asset)
+                var knownAssetsByPath: [String: Asset] = [:]
+                for asset in liveAssets {
+                    if let path = asset.localPath {
+                        knownAssetsByPath[path] = asset
+                        knownAssetsByPath[URL(fileURLWithPath: path).resolvingSymlinksInPath().path] = asset
+                    }
+                }
+                let knownPaths = Set(knownAssetsByPath.keys)
                 var fresh: [Asset] = []
                 var changed: [Asset] = []
                 for root in roots {
