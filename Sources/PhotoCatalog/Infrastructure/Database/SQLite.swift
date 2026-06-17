@@ -45,6 +45,9 @@ enum DBError: Error, CustomStringConvertible {
 // mode, and in this app all db access is funnelled through the main thread anyway.
 final class Database: @unchecked Sendable {
     private var db: OpaquePointer?
+    // prepared-statement cache (keyed by SQL); db access is single-threaded so this is safe.
+    // prepare_v2 statements auto-reprepare on schema change, so cached statements survive migrations.
+    private var statementCache: [String: OpaquePointer] = [:]
     let path: String
 
     init(path: String) throws {
@@ -59,7 +62,10 @@ final class Database: @unchecked Sendable {
         exec("PRAGMA busy_timeout=4000;")
     }
 
-    deinit { sqlite3_close(db) }
+    deinit {
+        for stmt in statementCache.values { sqlite3_finalize(stmt) }
+        sqlite3_close(db)
+    }
 
     @discardableResult
     func exec(_ sql: String) -> Bool {
@@ -71,8 +77,8 @@ final class Database: @unchecked Sendable {
     }
 
     func run(_ sql: String, _ params: [SQLValue] = []) throws {
-        let stmt = try prepare(sql, params)
-        defer { sqlite3_finalize(stmt) }
+        let stmt = try preparedStatement(sql, params)
+        defer { sqlite3_reset(stmt); sqlite3_clear_bindings(stmt) }
         let rc = sqlite3_step(stmt)
         guard rc == SQLITE_DONE || rc == SQLITE_ROW else {
             throw DBError.step(String(cString: sqlite3_errmsg(db)))
@@ -80,8 +86,8 @@ final class Database: @unchecked Sendable {
     }
 
     func query(_ sql: String, _ params: [SQLValue] = []) throws -> [Row] {
-        let stmt = try prepare(sql, params)
-        defer { sqlite3_finalize(stmt) }
+        let stmt = try preparedStatement(sql, params)
+        defer { sqlite3_reset(stmt); sqlite3_clear_bindings(stmt) }
         var rows: [Row] = []
         let cols = Int(sqlite3_column_count(stmt))
         // column names are stable for the statement — read them once, not per row
@@ -130,10 +136,19 @@ final class Database: @unchecked Sendable {
         }) ?? nil
     }
 
-    private func prepare(_ sql: String, _ params: [SQLValue]) throws -> OpaquePointer? {
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            throw DBError.prepare(String(cString: sqlite3_errmsg(db)))
+    private func preparedStatement(_ sql: String, _ params: [SQLValue]) throws -> OpaquePointer {
+        let stmt: OpaquePointer
+        if let cached = statementCache[sql] {
+            stmt = cached
+            sqlite3_reset(stmt)
+            sqlite3_clear_bindings(stmt)
+        } else {
+            var newStmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &newStmt, nil) == SQLITE_OK, let prepared = newStmt else {
+                throw DBError.prepare(String(cString: sqlite3_errmsg(db)))
+            }
+            statementCache[sql] = prepared
+            stmt = prepared
         }
         for (i, p) in params.enumerated() {
             let idx = Int32(i + 1)
