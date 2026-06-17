@@ -20,6 +20,7 @@ final class AppState: ObservableObject {
             keywordSuggestionPoolCache = nil
             projectListCache = nil
             clientListCache = nil
+            folderTreeCache = nil
         }
     }
     /// id → index map, lazily rebuilt after any `assets` change (invalidated above).
@@ -33,7 +34,9 @@ final class AppState: ObservableObject {
     }
     @Published var albums: [Album]
     @Published var smartAlbums: [SmartAlbum]
-    @Published var folders: [Folder] = DemoData.folders
+    @Published var folders: [Folder] = DemoData.folders {
+        didSet { folderTreeCache = nil }
+    }
     @Published var importing = false
     @Published var importRun: ImportRun?
     @Published var duplicateGroupsCache: [DuplicateGroup] = DemoData.duplicateGroups {
@@ -46,6 +49,7 @@ final class AppState: ObservableObject {
     private var keywordSuggestionPoolCache: [String]?
     private var projectListCache: [KeywordCount]?
     private var clientListCache: [KeywordCount]?
+    private var folderTreeCache: [FolderTreeItem]?
 
     // ----- settings (PRD §17) -----
     @Published var importMode: ImportMode =
@@ -133,7 +137,9 @@ final class AppState: ObservableObject {
     private var watcher: FileWatcher?
     private var watchedRoots: [URL] = []
     private var securityScopedRoots: [URL] = []
-    private var sourceRootPathsById: [String: String] = [:]
+    private var sourceRootPathsById: [String: String] = [:] {
+        didSet { folderTreeCache = nil }
+    }
     private var volumeMonitor: VolumeMonitor?
     private var lastImportSessionPersistedCount = 0
     private var importControl: ImportControl?
@@ -156,7 +162,9 @@ final class AppState: ObservableObject {
     @Published var showInfo = true
     @Published var insTab = "org"
     @Published private var pinnedSidebarItems = AppState.loadPinnedSidebarItems()
-    @Published private var sourcePriorities = AppState.loadSourcePriorities()
+    @Published private var sourcePriorities = AppState.loadSourcePriorities() {
+        didSet { folderTreeCache = nil }
+    }
     private var anchorId: String?
 
     // ----- filters / sort -----
@@ -1747,8 +1755,11 @@ final class AppState: ObservableObject {
     }
 
     var folderTree: [FolderTreeItem] {
-        FolderTreeService.build(sourceFolders: orderedFolders, assets: assets,
-                                sourceRootPaths: sourceRootPathsById)
+        if let cache = folderTreeCache { return cache }
+        let tree = FolderTreeService.build(sourceFolders: orderedFolders, assets: assets,
+                                           sourceRootPaths: sourceRootPathsById)
+        folderTreeCache = tree
+        return tree
     }
 
     private var photoStacks: [PhotoStack] {
