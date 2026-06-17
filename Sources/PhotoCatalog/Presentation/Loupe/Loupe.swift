@@ -113,7 +113,7 @@ struct Loupe: View {
     private func filmstrip(_ list: [Asset]) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+                LazyHStack(spacing: 6) {
                     ForEach(list) { a in
                         ZStack {
                             Thumb(asset: a, radius: 2)

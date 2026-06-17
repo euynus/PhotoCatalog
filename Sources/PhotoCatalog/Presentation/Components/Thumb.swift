@@ -37,7 +37,14 @@ func gradientFor(_ pid: Int) -> LinearGradient {
 final class ThumbLoader: ObservableObject {
     @Published var image: NSImage?
     @Published var failed = false
-    private static let cache = NSCache<NSString, NSImage>()
+    // Bounded so resident memory can't grow unbounded while scrolling a large grid
+    // or browsing multi-MB loupe previews (NSCache evicts by count + byte cost).
+    private static let cache: NSCache<NSString, NSImage> = {
+        let c = NSCache<NSString, NSImage>()
+        c.countLimit = 400
+        c.totalCostLimit = 512 * 1024 * 1024   // 512 MB of decoded pixels
+        return c
+    }()
     private var task: Task<Void, Never>?
     private var loadedURL: String?
 
@@ -79,11 +86,18 @@ final class ThumbLoader: ObservableObject {
     private func finish(_ source: String, _ img: NSImage?) {
         guard loadedURL == source else { return }
         if let img {
-            Self.cache.setObject(img, forKey: source as NSString)
+            Self.cache.setObject(img, forKey: source as NSString, cost: Self.cost(of: img))
             withAnimation(.easeOut(duration: 0.3)) { image = img }
         } else {
             failed = true
         }
+    }
+
+    private static func cost(of image: NSImage) -> Int {
+        if let rep = image.representations.first, rep.pixelsWide > 0 {
+            return rep.pixelsWide * rep.pixelsHigh * 4
+        }
+        return max(1, Int(image.size.width * image.size.height) * 4)
     }
 
     private static func readImageData(at path: String) async -> Data? {
