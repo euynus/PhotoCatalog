@@ -21,6 +21,7 @@ final class AppState: ObservableObject {
             projectListCache = nil
             clientListCache = nil
             folderTreeCache = nil
+            listInputsVersion &+= 1
         }
     }
     /// id → index map, lazily rebuilt after any `assets` change (invalidated above).
@@ -32,15 +33,15 @@ final class AppState: ObservableObject {
         assetIndexCache = map
         return map
     }
-    @Published var albums: [Album]
-    @Published var smartAlbums: [SmartAlbum]
+    @Published var albums: [Album] { didSet { listInputsVersion &+= 1 } }
+    @Published var smartAlbums: [SmartAlbum] { didSet { listInputsVersion &+= 1 } }
     @Published var folders: [Folder] = DemoData.folders {
-        didSet { folderTreeCache = nil }
+        didSet { folderTreeCache = nil; listInputsVersion &+= 1 }
     }
     @Published var importing = false
     @Published var importRun: ImportRun?
     @Published var duplicateGroupsCache: [DuplicateGroup] = DemoData.duplicateGroups {
-        didSet { photoStacksCache = nil; stackByAssetCache = nil }
+        didSet { photoStacksCache = nil; stackByAssetCache = nil; listInputsVersion &+= 1 }
     }
     @Published private var collapsedStackIds: Set<String> = []
     private var photoStacksCache: [PhotoStack]?
@@ -50,6 +51,19 @@ final class AppState: ObservableObject {
     private var projectListCache: [KeywordCount]?
     private var clientListCache: [KeywordCount]?
     private var folderTreeCache: [FolderTreeItem]?
+    /// Bumped whenever an array input to `list` changes (assets/albums/smartAlbums/folders/
+    /// source roots/priorities/duplicate groups); the small value inputs are compared directly.
+    private var listInputsVersion = 0
+    private var listCache: (signature: ListSignature, value: [Asset])?
+    private struct ListSignature: Equatable {
+        let inputsVersion: Int
+        let selection: Selection
+        let filters: Filters
+        let search: String
+        let sort: Sort
+        let collapsed: Set<String>
+        let recentDays: Int
+    }
 
     // ----- settings (PRD §17) -----
     @Published var importMode: ImportMode =
@@ -138,7 +152,7 @@ final class AppState: ObservableObject {
     private var watchedRoots: [URL] = []
     private var securityScopedRoots: [URL] = []
     private var sourceRootPathsById: [String: String] = [:] {
-        didSet { folderTreeCache = nil }
+        didSet { folderTreeCache = nil; listInputsVersion &+= 1 }
     }
     private var volumeMonitor: VolumeMonitor?
     private var lastImportSessionPersistedCount = 0
@@ -163,7 +177,7 @@ final class AppState: ObservableObject {
     @Published var insTab = "org"
     @Published private var pinnedSidebarItems = AppState.loadPinnedSidebarItems()
     @Published private var sourcePriorities = AppState.loadSourcePriorities() {
-        didSet { folderTreeCache = nil }
+        didSet { folderTreeCache = nil; listInputsVersion &+= 1 }
     }
     private var anchorId: String?
 
@@ -1979,6 +1993,16 @@ final class AppState: ObservableObject {
 
     // ---------- apply filter bar + search + sort ----------
     var list: [Asset] {
+        let signature = ListSignature(inputsVersion: listInputsVersion, selection: selection,
+                                      filters: filters, search: search, sort: sort,
+                                      collapsed: collapsedStackIds, recentDays: recentImportDays)
+        if let cache = listCache, cache.signature == signature { return cache.value }
+        let value = computeList()
+        listCache = (signature, value)
+        return value
+    }
+
+    private func computeList() -> [Asset] {
         let calendar = Calendar.current
         let now = Date.now
         let currentDate = calendar.dateComponents([.year, .month], from: now)
