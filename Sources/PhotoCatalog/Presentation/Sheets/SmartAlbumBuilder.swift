@@ -14,7 +14,9 @@ struct SmartAlbumBuilder: View {
     ]
 
     private var rule: SmartRule { SmartRule(match: match, conditions: conditions) }
-    private var matched: [Asset] { SmartMatcher.match(app.assets, rule) }
+    // exclude trashed assets so the preview count matches the sidebar/grid (all other
+    // SmartMatcher call sites filter !deleted)
+    private var matched: [Asset] { SmartMatcher.match(app.assets.filter { !$0.deleted }, rule) }
 
     var body: some View {
         VStack(spacing: 0) {
