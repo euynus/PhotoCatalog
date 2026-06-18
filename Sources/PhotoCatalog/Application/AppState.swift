@@ -1727,6 +1727,8 @@ final class AppState: ObservableObject {
     }
 
     func restoreBackup() {
+        // never replace the catalog file while an import task still holds the live connection
+        guard !importing else { push("导入中无法恢复备份", "warning"); return }
         openOrCreateCatalog()
         guard let packageURL = store?.packageURL else {
             push("无目录库可恢复", "warning")
