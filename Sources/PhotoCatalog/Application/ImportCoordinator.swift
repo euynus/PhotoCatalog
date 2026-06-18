@@ -176,7 +176,9 @@ final class ImportCoordinator: @unchecked Sendable {
         if readSidecar, let sc = XMPSidecar.read(XMPSidecar.sidecarURL(for: url)) {
             asset.rating = sc.rating
             asset.colorLabel = sc.colorLabel
-            if !sc.keywords.isEmpty { asset.keywords = KeywordService.normalize(sc.keywords) }
+            // merge, not overwrite, so sidecar keywords don't discard the Vision scene tags
+            // appended above (normalize de-dups, keeping sidecar keywords first)
+            if !sc.keywords.isEmpty { asset.keywords = KeywordService.normalize(sc.keywords + asset.keywords) }
             if !sc.title.isEmpty { asset.title = sc.title }
             if !sc.caption.isEmpty { asset.caption = sc.caption }
             if !sc.author.isEmpty { asset.author = sc.author }
