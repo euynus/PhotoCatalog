@@ -107,7 +107,10 @@ enum ExportService {
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted]) else {
             return false
         }
-        return (try? data.write(to: fileURL)) != nil
+        // don't clobber a copied original sharing this name (a flat export of a photo literally
+        // named metadata.json); fall back to a numbered name, as the originals themselves do.
+        guard let target = resolve(fileURL, conflict: .rename, fm: .default) else { return false }
+        return (try? data.write(to: target)) != nil
     }
 
     /// Export per-asset metadata as CSV for spreadsheet workflows (PRD §6.11 EXP-003).
@@ -148,7 +151,9 @@ enum ExportService {
             ].map(csvField).joined(separator: ",")
         }
         let csv = ([header.joined(separator: ",")] + rows).joined(separator: "\n") + "\n"
-        return (try? csv.write(to: fileURL, atomically: true, encoding: .utf8)) != nil
+        // see exportMetadataJSON: never overwrite a copied original of the same name
+        guard let target = resolve(fileURL, conflict: .rename, fm: .default) else { return false }
+        return (try? csv.write(to: target, atomically: true, encoding: .utf8)) != nil
     }
 
     private static func resolve(_ url: URL, conflict: ExportConflict, fm: FileManager) -> URL? {
