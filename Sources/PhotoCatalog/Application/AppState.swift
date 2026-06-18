@@ -748,7 +748,14 @@ final class AppState: ObservableObject {
         let fresh = applyPostImportMetadata(to: dedup.fresh)
         let skipped = dedup.skipped
         assets.append(contentsOf: fresh)
-        try? store.upsert(fresh)
+        // fresh is already in the in-memory `assets`; if the catalog write fails the photos
+        // would silently vanish on the next load, so track it and report honestly below.
+        var persistFailed = false
+        do {
+            try store.upsert(fresh)
+        } catch {
+            persistFailed = true
+        }
         var rootId: String?
         if let fid = fresh.first?.folderId ?? imported.first?.folderId ?? sourceId {
             rootId = fid
@@ -778,10 +785,13 @@ final class AppState: ObservableObject {
             run.finishedAt = .now
             let previewAssets = fresh.isEmpty ? imported : fresh
             run.recentAssets = Array(previewAssets.prefix(28))
-            run.errorMessage = importFailureSummary(run.failures)
+            run.errorMessage = persistFailed
+                ? [importFailureSummary(run.failures), "写入目录库失败"].compactMap { $0 }.joined(separator: " · ")
+                : importFailureSummary(run.failures)
             importRun = run
             lastImportSessionPersistedCount = run.processed + run.failed
-            try? store.updateImportSession(id: run.id.uuidString, rootId: rootId, state: "completed",
+            try? store.updateImportSession(id: run.id.uuidString, rootId: rootId,
+                                           state: persistFailed ? "failed" : "completed",
                                            totalCount: run.total, importedCount: run.imported,
                                            skippedCount: run.skipped, failedCount: run.failed,
                                            finishedAt: run.finishedAt, errorMessage: run.errorMessage)
@@ -790,8 +800,8 @@ final class AppState: ObservableObject {
         importing = false
         importControl = nil
         if let activeImportJobId {
-            try? store.updateJob(id: activeImportJobId, state: "succeeded", lockedAt: nil,
-                                 lastError: importRun?.errorMessage)
+            try? store.updateJob(id: activeImportJobId, state: persistFailed ? "failed" : "succeeded",
+                                 lockedAt: nil, lastError: importRun?.errorMessage)
             self.activeImportJobId = nil
         }
         applyPostImportAlbum(assetIds: fresh.map(\.id))
@@ -806,6 +816,9 @@ final class AppState: ObservableObject {
             icon = "warning"
         } else if fresh.isEmpty {
             message = failedCount > 0 ? "导入失败 \(failedCount) 个文件" : "未发现可导入的照片"
+            icon = "warning"
+        } else if persistFailed {
+            message = "已导入 \(fresh.count) 张，但写入目录库失败，请重试"
             icon = "warning"
         } else {
             message = "已导入 \(fresh.count) 张照片" + (failedCount > 0 ? " · \(failedCount) 失败" : "")
