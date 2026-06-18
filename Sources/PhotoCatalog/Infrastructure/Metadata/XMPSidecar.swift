@@ -12,9 +12,19 @@ struct SidecarMetadata: Equatable {
     var caption: String = ""
     var author: String = ""
     var copyright: String = ""
+    var captureDate: Date?
 }
 
 enum XMPSidecar {
+    /// exif:DateTimeOriginal is a wall-clock time; format/parse it in the capture frame (UTC).
+    static let exifDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone.captureWallClock
+        return f
+    }()
+
     /// Sidecar path for an original: `<original>.xmp`.
     static func sidecarURL(for original: URL) -> URL {
         original.deletingPathExtension().appendingPathExtension("xmp")
@@ -30,8 +40,10 @@ enum XMPSidecar {
           <rdf:Description rdf:about=""
             xmlns:xmp="http://ns.adobe.com/xap/1.0/"
             xmlns:dc="http://purl.org/dc/elements/1.1/"
+            xmlns:exif="http://ns.adobe.com/exif/1.0/"
             xmp:Rating="\(a.rating)"
-            xmp:Label="\(escape(label))">
+            xmp:Label="\(escape(label))"
+            exif:DateTimeOriginal="\(exifDateFormatter.string(from: a.date))">
            <dc:subject>
             <rdf:Bag>
         \(kws)
@@ -87,6 +99,9 @@ private final class SidecarParser: NSObject, XMLParserDelegate {
             }
             if let l = attrs["xmp:Label"] ?? attrs["Label"], !l.isEmpty {
                 result.colorLabel = ColorLabel(rawValue: l.lowercased())
+            }
+            if let d = attrs["exif:DateTimeOriginal"] ?? attrs["DateTimeOriginal"], !d.isEmpty {
+                result.captureDate = XMPSidecar.exifDateFormatter.date(from: d)
             }
         }
     }

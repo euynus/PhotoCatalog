@@ -641,12 +641,14 @@ enum PipelineCheck {
         sample.rating = 4; sample.keywords = ["旅行", "测试"]; sample.title = "标题A"
         sample.caption = "说明B"; sample.colorLabel = .red
         sample.author = "作者B"; sample.copyright = "Copyright B"
+        sample.date = XMPSidecar.exifDateFormatter.date(from: "2019-03-08T09:15:00") ?? sample.date
         let xmpURL = tmp.appendingPathComponent("sample.xmp")
         XMPSidecar.write(sample, to: xmpURL)
         if let sc = XMPSidecar.read(xmpURL) {
             check(sc.rating == 4 && sc.keywords == ["旅行", "测试"] && sc.title == "标题A"
                   && sc.caption == "说明B" && sc.colorLabel == .red
-                  && sc.author == "作者B" && sc.copyright == "Copyright B",
+                  && sc.author == "作者B" && sc.copyright == "Copyright B"
+                  && sc.captureDate == sample.date,
                   "XMP sidecar write/read roundtrip")
         } else { check(false, "XMP sidecar read") }
 

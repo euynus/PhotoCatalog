@@ -197,6 +197,8 @@ final class ImportCoordinator: @unchecked Sendable {
             if !sc.caption.isEmpty { asset.caption = sc.caption }
             if !sc.author.isEmpty { asset.author = sc.author }
             if !sc.copyright.isEmpty { asset.copyright = sc.copyright }
+            // a capture-time correction made in another app (or mirrored by us) takes precedence
+            if let d = sc.captureDate { asset.date = d; asset.captureDateSource = "sidecar" }
         }
 
         // cache the perceptual hash from the just-generated thumbnail (avoids re-decoding later)
