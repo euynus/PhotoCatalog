@@ -75,14 +75,14 @@ enum SmartMatcher {
         case "type":
             return c.value == "RAW" ? a.isRaw : a.type == c.value
         case "captureYear":
-            let y = Calendar.current.component(.year, from: a.date)
+            let y = Calendar.captureWallClock.component(.year, from: a.date)
             let v = Int(c.value) ?? 0
             if c.op == ">=" { return y >= v }
             if c.op == "<=" { return y <= v }
             return y == v
         case "datePreset":
             let current = Calendar.current.dateComponents([.year, .month], from: .now)
-            let assetDate = Calendar.current.dateComponents([.year, .month], from: a.date)
+            let assetDate = Calendar.captureWallClock.dateComponents([.year, .month], from: a.date)
             if c.value == "thisYear" { return assetDate.year == current.year }
             if c.value == "thisMonth" {
                 return assetDate.year == current.year && assetDate.month == current.month

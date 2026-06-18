@@ -59,7 +59,7 @@ enum SelfCheck {
             asset.rating >= 3
                 && asset.status == .missing
                 && !(asset.gps.0 == 0 && asset.gps.1 == 0)
-                && Calendar.current.component(.year, from: asset.date) == Calendar.current.component(.year, from: .now)
+                && Calendar.captureWallClock.component(.year, from: asset.date) == Calendar.current.component(.year, from: .now)
                 && [asset.filename, asset.camera, asset.lens, asset.title, asset.caption, asset.location]
                     .joined(separator: " ")
                     .localizedStandardContains("IMG")

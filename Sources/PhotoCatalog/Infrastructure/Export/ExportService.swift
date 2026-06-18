@@ -187,8 +187,8 @@ enum ExportService {
         case .flat:
             components = []
         case .date:
-            let parts = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day],
-                                                                        from: asset.date)
+            let parts = Calendar.captureWallClock.dateComponents([.year, .month, .day],
+                                                                 from: asset.date)
             components = [
                 String(format: "%04d", parts.year ?? 0),
                 String(format: "%02d", parts.month ?? 1),

@@ -205,7 +205,7 @@ final class ImportCoordinator: @unchecked Sendable {
     }
 
     private func copyToOriginals(_ url: URL, date: Date, camera: String, rule: ManagedArchiveRule) -> URL? {
-        let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        let c = Calendar.captureWallClock.dateComponents([.year, .month, .day], from: date)
         let year = String(format: "%04d", c.year ?? 1970)
         let month = String(format: "%02d", c.month ?? 1)
         let day = String(format: "%02d", c.day ?? 1)

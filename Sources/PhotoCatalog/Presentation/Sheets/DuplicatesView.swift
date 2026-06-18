@@ -126,7 +126,7 @@ struct DuplicatesView: View {
                 Text(it.filename).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
                 Text("\(String(format: "%.1f", it.fileMB)) MB · \(it.width)×\(it.height) · \(it.folderName)")
                     .font(.system(size: 11)).foregroundStyle(Theme.text3)
-                Text("\(DateFmt.short(it.date)) · \(it.camera)")
+                Text("\(DateFmt.shortCapture(it.date)) · \(it.camera)")
                     .font(.system(size: 10.5, design: .monospaced)).foregroundStyle(Theme.text3)
             }
             Spacer(minLength: 4)

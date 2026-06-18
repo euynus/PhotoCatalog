@@ -124,6 +124,20 @@ enum PipelineCheck {
         let reimported = coordinator.importFolder(src, knownAssetsById: knownForReimport)
         check(reimported.count == assets.count && reimported.allSatisfy { $0.rating == 5 },
               "re-import reuses cataloged referenced assets instead of re-processing")
+        // capture wall-clock: an EXIF DateTimeOriginal is read as a fixed UTC wall-clock, so it
+        // decomposes to the exact recorded components regardless of the test machine's timezone
+        let exifSrc = tmp.appendingPathComponent("exif-date")
+        try? fm.createDirectory(at: exifSrc, withIntermediateDirectories: true)
+        writeTestImage(to: exifSrc.appendingPathComponent("DATED.jpg"), width: 320, height: 240, seed: 7,
+                       exif: [kCGImagePropertyExifDateTimeOriginal: "2021:07:15 14:30:00"])
+        if let dated = coordinator.importFolder(exifSrc).first {
+            let c = Calendar.captureWallClock.dateComponents([.year, .month, .day, .hour, .minute],
+                                                             from: dated.date)
+            check(c.year == 2021 && c.month == 7 && c.day == 15 && c.hour == 14 && c.minute == 30,
+                  "EXIF capture time read as fixed wall-clock — got \(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0) \(c.hour ?? 0):\(c.minute ?? 0)")
+        } else {
+            check(false, "EXIF-dated image imported")
+        }
         let timestampedAsset = assets.first { $0.filename == "IMG_0000.jpg" }
         check(timestampedAsset?.fileModifiedAt.map { abs($0.timeIntervalSince(fixedModifiedAt)) < 1 } == true
               && timestampedAsset?.fileCreatedAt != nil,
@@ -445,8 +459,8 @@ enum PipelineCheck {
         check(report.copied == 7, "exported 7 originals — copied \(report.copied), failed \(report.failed)")
         if let first = assets.first, let firstPath = first.localPath {
             let sourceURL = URL(fileURLWithPath: firstPath)
-            let dateParts = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day],
-                                                                            from: first.date)
+            let dateParts = Calendar.captureWallClock.dateComponents([.year, .month, .day],
+                                                                     from: first.date)
             let dateExportDir = tmp.appendingPathComponent("export-date")
             let dateReport = ExportService.copyOriginals(assets, to: dateExportDir,
                                                          directoryStructure: .date)
@@ -716,7 +730,7 @@ enum PipelineCheck {
     }
 
     private static func writeTestImage(to url: URL, width: Int, height: Int, seed: Int,
-                                       gps: [CFString: Any]? = nil) {
+                                       gps: [CFString: Any]? = nil, exif: [CFString: Any]? = nil) {
         let cs = CGColorSpaceCreateDeviceRGB()
         guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
                                   bytesPerRow: 0, space: cs,
@@ -730,8 +744,10 @@ enum PipelineCheck {
         guard let cg = ctx.makeImage(),
               let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)
         else { return }
-        let properties = gps.map { [kCGImagePropertyGPSDictionary: $0] as CFDictionary }
-        CGImageDestinationAddImage(dest, cg, properties)
+        var properties: [CFString: Any] = [:]
+        if let gps { properties[kCGImagePropertyGPSDictionary] = gps }
+        if let exif { properties[kCGImagePropertyExifDictionary] = exif }
+        CGImageDestinationAddImage(dest, cg, properties.isEmpty ? nil : properties as CFDictionary)
         CGImageDestinationFinalize(dest)
     }
 

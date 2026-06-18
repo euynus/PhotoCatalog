@@ -180,6 +180,9 @@ enum MetadataReader {
         let f = DateFormatter()
         f.dateFormat = "yyyy:MM:dd HH:mm:ss"
         f.locale = Locale(identifier: "en_US_POSIX")
+        // EXIF DateTimeOriginal is a timezone-naive wall-clock; anchor it to UTC so the stored
+        // instant is stable regardless of the importing machine's timezone (§ capture wall-clock).
+        f.timeZone = TimeZone.captureWallClock
         return f.date(from: s)
     }
 }

@@ -168,7 +168,7 @@ struct InspectorView: View {
                 exifCell("ISO", "\(a.iso)")
             }
             InsGroup([
-                .init("拍摄时间", DateFmt.long(a.date)),
+                .init("拍摄时间", DateFmt.longCapture(a.date)),
                 .init("时间来源", a.captureDateSource),
             ])
             let rightsRows = [
@@ -229,8 +229,8 @@ struct InspectorView: View {
             .init("Quick Hash",
                   a.quickHash.map { "\($0.prefix(10))…" } ?? "\(Int(a.fileMB))M·\(a.pid)af",
                   mono: true),
-            .init("原件修改", a.fileModifiedAt.map(DateFmt.short) ?? "—"),
-            .init("原件创建", a.fileCreatedAt.map(DateFmt.short) ?? "—"),
+            .init("原件修改", a.fileModifiedAt.map { DateFmt.short($0) } ?? "—"),
+            .init("原件创建", a.fileCreatedAt.map { DateFmt.short($0) } ?? "—"),
             .init("备份状态", "已包含于上次目录库备份", accent: true),
         ])
     }

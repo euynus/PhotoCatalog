@@ -9,8 +9,12 @@ enum RenameService {
     /// Supported tokens: {seq} {date} {time} {camera} {original}. The extension is preserved.
     static func renameWithTemplate(_ assets: [Asset], template: String, start: Int = 1) -> [String: URL] {
         let fm = FileManager.default
+        // {date}/{time} come from the capture wall-clock (UTC-anchored), so renamed files carry
+        // the time the camera recorded regardless of the machine's timezone
         let dateFmt = DateFormatter(); dateFmt.dateFormat = "yyyyMMdd"; dateFmt.locale = Locale(identifier: "en_US_POSIX")
+        dateFmt.timeZone = TimeZone.captureWallClock
         let timeFmt = DateFormatter(); timeFmt.dateFormat = "HHmmss"; timeFmt.locale = Locale(identifier: "en_US_POSIX")
+        timeFmt.timeZone = TimeZone.captureWallClock
         var result: [String: URL] = [:]
         var seq = start
         for a in assets {

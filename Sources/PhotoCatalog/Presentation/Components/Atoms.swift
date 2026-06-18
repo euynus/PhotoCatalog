@@ -233,18 +233,23 @@ extension View {
 enum DateFmt {
     private static let weekdays = ["日", "一", "二", "三", "四", "五", "六"]
 
-    static func long(_ d: Date, withTime: Bool = true) -> String {
-        let cal = Calendar.current
-        let c = cal.dateComponents([.year, .month, .day, .hour, .minute, .weekday], from: d)
+    static func long(_ d: Date, withTime: Bool = true, calendar: Calendar = .current) -> String {
+        let c = calendar.dateComponents([.year, .month, .day, .hour, .minute, .weekday], from: d)
         let wk = weekdays[(c.weekday ?? 1) - 1]
         let base = "\(c.year ?? 0)年\(c.month ?? 0)月\(c.day ?? 0)日 周\(wk)"
         if !withTime { return base }
         return base + String(format: " %02d:%02d", c.hour ?? 0, c.minute ?? 0)
     }
 
-    static func short(_ d: Date) -> String {
-        let cal = Calendar.current
-        let c = cal.dateComponents([.year, .month, .day], from: d)
+    static func short(_ d: Date, calendar: Calendar = .current) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: d)
         return String(format: "%d/%02d/%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
+
+    /// Capture dates are fixed wall-clock (UTC-anchored) — display them in that frame so the
+    /// time shown always matches what the camera recorded, regardless of the viewer's timezone.
+    static func longCapture(_ d: Date, withTime: Bool = true) -> String {
+        long(d, withTime: withTime, calendar: .captureWallClock)
+    }
+    static func shortCapture(_ d: Date) -> String { short(d, calendar: .captureWallClock) }
 }

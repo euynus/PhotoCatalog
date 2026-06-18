@@ -2313,7 +2313,7 @@ final class AppState: ObservableObject {
             if !cameraQuery.isEmpty && !a.camera.localizedStandardContains(cameraQuery) { return false }
             if !lensQuery.isEmpty && !a.lens.localizedStandardContains(lensQuery) { return false }
             if filters.date != "any" {
-                let assetDate = calendar.dateComponents([.year, .month], from: a.date)
+                let assetDate = Calendar.captureWallClock.dateComponents([.year, .month], from: a.date)
                 if filters.date == "thisYear" && assetDate.year != currentDate.year { return false }
                 if filters.date == "thisMonth" &&
                     (assetDate.year != currentDate.year || assetDate.month != currentDate.month) {
