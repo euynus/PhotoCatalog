@@ -320,6 +320,14 @@ enum PipelineCheck {
         try? store.saveAlbum(album)
         let loadedAlbum = (try? store.loadAlbums())?.first { $0.id == album.id }
         check(loadedAlbum?.assetIds == album.assetIds, "manual album persisted membership")
+        // regression: a metadata edit (upsert) must NOT drop the asset from manual albums.
+        // INSERT OR REPLACE would delete-then-insert and cascade album_assets via the FK.
+        var editedInAlbum = assets[0]
+        editedInAlbum.rating = 5
+        try? store.upsert([editedInAlbum])
+        let albumAfterEdit = (try? store.loadAlbums())?.first { $0.id == album.id }
+        check(albumAfterEdit?.assetIds == album.assetIds,
+              "manual album membership survives a metadata edit (no FK cascade on upsert)")
         let smartRule = SmartRule(match: "all", conditions: [
             SmartCondition(field: "type", op: "=", value: assets[0].type),
         ])

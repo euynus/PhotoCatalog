@@ -294,8 +294,14 @@ final class CatalogStore: @unchecked Sendable {
     """
 
     func upsert(_ assets: [Asset]) throws {
-        let placeholders = Array(repeating: "?", count: 50).joined(separator: ",")
-        let sql = "INSERT OR REPLACE INTO assets(\(Self.columns)) VALUES(\(placeholders));"
+        let cols = Self.columns.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let placeholders = Array(repeating: "?", count: cols.count).joined(separator: ",")
+        // True in-place upsert. INSERT OR REPLACE would DELETE the conflicting row before
+        // re-inserting, which — with foreign_keys=ON — fires album_assets' ON DELETE CASCADE
+        // and silently drops the asset from every manual album on each metadata edit. The
+        // ON CONFLICT…DO UPDATE form updates the row in place, leaving FK children intact.
+        let assignments = cols.filter { $0 != "id" }.map { "\($0)=excluded.\($0)" }.joined(separator: ",")
+        let sql = "INSERT INTO assets(\(Self.columns)) VALUES(\(placeholders)) ON CONFLICT(id) DO UPDATE SET \(assignments);"
         try db.transaction {
             for a in assets {
                 try db.run(sql, Self.params(a))
