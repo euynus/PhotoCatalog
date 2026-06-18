@@ -1247,7 +1247,12 @@ final class AppState: ObservableObject {
             let url = XMPSidecar.sidecarURL(for: URL(fileURLWithPath: a.localPath!))
             if XMPSidecar.write(a, to: url) { count += 1 }
         }
-        push("已写入 \(count) 个 XMP sidecar", "check")
+        let failures = real.count - count
+        if failures > 0 {
+            push("已写入 \(count) 个 · \(failures) 失败", "warning")
+        } else {
+            push("已写入 \(count) 个 XMP sidecar", "check")
+        }
     }
 
     // ---------- batch rename (§4.2) ----------
@@ -1849,8 +1854,14 @@ final class AppState: ObservableObject {
         }
         // mirror user-metadata edits to XMP sidecars when enabled (§17.4 META-007)
         if autoWriteXMPSidecar {
+            var sidecarFailures = 0
             for a in changed where a.localPath != nil {
-                XMPSidecar.write(a, to: XMPSidecar.sidecarURL(for: URL(fileURLWithPath: a.localPath!)))
+                if !XMPSidecar.write(a, to: XMPSidecar.sidecarURL(for: URL(fileURLWithPath: a.localPath!))) {
+                    sidecarFailures += 1
+                }
+            }
+            if sidecarFailures > 0 {
+                push("\(sidecarFailures) 个 XMP sidecar 写入失败", "warning")
             }
         }
     }
