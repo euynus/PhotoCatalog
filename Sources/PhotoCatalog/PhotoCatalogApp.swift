@@ -64,5 +64,8 @@ struct PhotoCatalogApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1440, height: 900)
         .windowToolbarStyle(.unifiedCompact)
+        .commands {
+            PhotoCatalogCommands(app: app)
+        }
     }
 }

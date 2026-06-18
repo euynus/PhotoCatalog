@@ -24,7 +24,7 @@ A clickable, dark-mode macOS app with the amber accent (`#ff9f0a`) and the full 
 - **Import / scan** — animated scan→import progress with a 5-stat panel and a thumbnail wall.
 - **First-launch / Welcome** — catalog creation card with recents.
 - **Interactions** — click / ⌘-click / ⇧-click selection, live search, filter bar, sort, toasts, and keyboard shortcuts:
-  `1–5` rate · `0` clear · `P/X/U` flags · `6–9` color · `G/E/C` views · `⌘F` search · `⌘I` inspector · arrows navigate · `⌫` remove.
+  `1–5` rate · `0` clear · `P/X/U` flags · `6–9` color · `G/E/C` views · arrows navigate · `Return` loupe · `Esc` close panels · `F` filters · `I` thumbnail info · `⌘F` search · `⌘I` inspector · `⌘N/⌘O` catalog · `⇧⌘I` import · `⌘E` export · `⇧⌘E` preview export · `⌘R` rescan · `⌘B` backup · `⌘,` settings · `⌘+/-/0` thumbnail size · `⌫` remove · `⌘⌫` trash originals.
 
 ### Real catalog backend (PRD Infrastructure layer, §11)
 

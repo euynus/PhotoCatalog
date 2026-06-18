@@ -115,6 +115,8 @@ struct KeyCatcher: NSViewRepresentable {
             case 124: return "right"
             case 125: return "down"
             case 126: return "up"
+            case 36, 76: return "return"
+            case 53: return "escape"
             case 51: return "backspace"
             case 117: return "delete"
             case 49: return " "

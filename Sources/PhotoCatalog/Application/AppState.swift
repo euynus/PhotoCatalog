@@ -235,6 +235,45 @@ final class AppState: ObservableObject {
     @Published var searchFocusToken = 0
     func focusSearch() { searchFocusToken += 1 }
 
+    func showSettings() { sheet = "settings" }
+
+    func toggleFilterBar() {
+        filterOpen.toggle()
+        push(filterOpen ? "已显示筛选栏" : "已隐藏筛选栏", "filter")
+    }
+
+    func toggleGridInfo() {
+        showInfo.toggle()
+        push(showInfo ? "已显示缩略图信息" : "已隐藏缩略图信息", showInfo ? "info" : "eye")
+    }
+
+    func adjustThumbnailSize(by delta: CGFloat) {
+        let next = min(280, max(108, thumbSize + delta))
+        guard next != thumbSize else { return }
+        thumbSize = next
+    }
+
+    func resetThumbnailSize() {
+        thumbSize = 168
+    }
+
+    @discardableResult
+    func dismissTransientUI() -> Bool {
+        if sheet != nil {
+            sheet = nil
+            return true
+        }
+        if filterOpen {
+            filterOpen = false
+            return true
+        }
+        if view != .grid {
+            view = .grid
+            return true
+        }
+        return false
+    }
+
     init() {
         let a = DemoData.assets
         assets = a
@@ -2400,6 +2439,16 @@ final class AppState: ObservableObject {
     func setProject(_ p: String) { mutate { $0.project = p.trimmingCharacters(in: .whitespacesAndNewlines) } }
     func setClient(_ c: String) { mutate { $0.client = c.trimmingCharacters(in: .whitespacesAndNewlines) } }
 
+    func applyRatingShortcut(_ rating: Int) {
+        guard (0...5).contains(rating) else { return }
+        setRating(rating)
+        if rating == 0 {
+            push("已清除评分")
+        } else {
+            push("评分 \(rating) 星", "star")
+        }
+    }
+
     func removeSelectedSource() {
         guard selectedFolderIsCatalogSource else { return }
         let folderId = selection.id
@@ -2757,14 +2806,41 @@ final class AppState: ObservableObject {
     func handleKey(_ key: String, hasCommand: Bool, hasShift: Bool = false) -> Bool {
         if hasCommand {
             switch key {
+            case "n":
+                createCatalog()
+            case "o":
+                openCatalog()
             case "f":
-                focusSearch()
+                if hasShift {
+                    toggleFilterBar()
+                } else {
+                    focusSearch()
+                }
             case "i":
-                showInspector.toggle()
+                if hasShift {
+                    addFolder()
+                } else {
+                    showInspector.toggle()
+                }
             case "e":
-                exportSelection()
+                if hasShift {
+                    exportSelectionPreviews()
+                } else {
+                    exportSelection()
+                }
             case "r":
                 rescanCurrentSource()
+            case ",":
+                showSettings()
+            case "b":
+                if hasShift {
+                    restoreBackup()
+                } else {
+                    runBackup()
+                }
+            case "s":
+                guard canSaveCurrentFilter else { return false }
+                saveCurrentFilterAsSmartAlbum()
             case "a":
                 if hasShift {
                     guard invertVisibleSelection() else { return false }
@@ -2773,6 +2849,14 @@ final class AppState: ObservableObject {
                     guard selectAllVisible() else { return false }
                     push("已全选当前列表")
                 }
+            case "=", "+":
+                adjustThumbnailSize(by: 16)
+            case "-":
+                adjustThumbnailSize(by: -16)
+            case "0":
+                resetThumbnailSize()
+            case "delete", "backspace":
+                trashSelectedOriginals()
             default:
                 return false
             }
@@ -2781,26 +2865,39 @@ final class AppState: ObservableObject {
         guard onboarded else { return false }
 
         switch key {
+        case "escape":
+            guard dismissTransientUI() else { return false }
+        case "return":
+            guard let primaryId else { return false }
+            openLoupe(primaryId)
         case "1", "2", "3", "4", "5":
-            setRating(Int(key) ?? 0); push("评分 \(key) 星", "star")
+            applyRatingShortcut(Int(key) ?? 0)
         case "0":
-            setRating(0); push("已清除评分")
+            applyRatingShortcut(0)
         case "p":
             setFlag(.pick); push("标记为精选", "flag")
         case "x":
             setFlag(.reject); push("标记为拒绝", "reject")
         case "u":
             setFlag(.none); push("已清除旗标")
-        case "6": setColor(.red)
-        case "7": setColor(.yellow)
-        case "8": setColor(.green)
-        case "9": setColor(.blue)
+        case "6":
+            setColor(.red); push("颜色标签：红", "tag")
+        case "7":
+            setColor(.yellow); push("颜色标签：黄", "tag")
+        case "8":
+            setColor(.green); push("颜色标签：绿", "tag")
+        case "9":
+            setColor(.blue); push("颜色标签：蓝", "tag")
+        case "f":
+            toggleFilterBar()
         case "g":
             view = .grid
         case "e", " ":
             view = (view == .loupe) ? .grid : .loupe
         case "c":
             enterCompare()
+        case "i":
+            toggleGridInfo()
         case "s":
             toggleStackForPrimary()
         case "up", "down", "left", "right":
