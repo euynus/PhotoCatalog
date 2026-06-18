@@ -1825,7 +1825,15 @@ final class AppState: ObservableObject {
     private func persist(_ ids: Set<String>) {
         guard let store else { return }
         let changed = assets.filter { ids.contains($0.id) && !$0.isDemo }
-        if !changed.isEmpty { try? store.upsert(changed) }
+        if !changed.isEmpty {
+            // this is the single funnel for every metadata edit and the soft-delete-on-trash;
+            // a swallowed failure here desyncs the catalog from disk, so surface it (§16.2).
+            do {
+                try store.upsert(changed)
+            } catch {
+                push("保存失败，更改未写入目录库", "warning")
+            }
+        }
         // mirror user-metadata edits to XMP sidecars when enabled (§17.4 META-007)
         if autoWriteXMPSidecar {
             for a in changed where a.localPath != nil {
