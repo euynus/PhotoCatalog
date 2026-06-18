@@ -715,6 +715,9 @@ final class AppState: ObservableObject {
         }
     }
 
+    // O(1) failure-dedup state: the set of failure ids already recorded for the current run
+    private var failureSeenIds: (runId: UUID?, ids: Set<String>) = (nil, [])
+
     private func recordImportProgress(_ progress: ImportProgress, for runId: UUID) {
         guard var run = importRun, run.id == runId, run.phase.isActive else { return }
         if run.phase != .paused {
@@ -730,8 +733,15 @@ final class AppState: ObservableObject {
                 run.recentAssets.removeLast(run.recentAssets.count - 28)
             }
         }
-        if let failure = progress.latestFailure, !run.failures.contains(where: { $0.id == failure.id }) {
-            run.failures.append(failure)
+        if let failure = progress.latestFailure {
+            // rebuild the seen-id set once when the run changes, then dedup in O(1) per event
+            // instead of an O(n) scan of run.failures on every failed file
+            if failureSeenIds.runId != run.id {
+                failureSeenIds = (run.id, Set(run.failures.map(\.id)))
+            }
+            if failureSeenIds.ids.insert(failure.id).inserted {
+                run.failures.append(failure)
+            }
         }
         importRun = run
         persistImportSessionProgress(run)
