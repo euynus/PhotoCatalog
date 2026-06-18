@@ -17,10 +17,14 @@ enum VisionService {
     static func analyze(_ url: URL, maxLabels: Int = 3, minConfidence: Float = 0.18) -> VisionResult {
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
               let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return VisionResult() }
+        // honor EXIF orientation so face detection works on rotated portraits (CGImage carries
+        // raw pixels with no orientation); without this, orientation 6/8 photos undercount faces.
+        let rawOrientation = (CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any])?[kCGImagePropertyOrientation] as? UInt32 ?? 1
+        let orientation = CGImagePropertyOrientation(rawValue: rawOrientation) ?? .up
         var result = VisionResult()
         let classify = VNClassifyImageRequest()
         let faces = VNDetectFaceRectanglesRequest()
-        let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+        let handler = VNImageRequestHandler(cgImage: cg, orientation: orientation, options: [:])
         try? handler.perform([classify, faces])
         if let obs = classify.results {
             result.sceneLabels = obs
