@@ -1577,6 +1577,20 @@ final class AppState: ObservableObject {
         String(format: "%.1f MB", Double(bytes) / (1024 * 1024))
     }
 
+    /// Best-effort removal of an asset's cached thumbnails/previews when it leaves the catalog,
+    /// so deleting photos reclaims their cache instead of leaving orphans behind. Deletion is
+    /// one-way (no un-delete), so this is safe to do eagerly.
+    private func purgeCacheFiles<S: Sequence>(forAssetIds ids: S) where S.Element == String {
+        guard let thumbnails = coordinator?.thumbnails else { return }
+        let fm = FileManager.default
+        let kinds: [ThumbnailService.Kind] = [.thumb256, .thumb512, .preview1600, .preview2048]
+        for id in ids {
+            for kind in kinds {
+                try? fm.removeItem(at: thumbnails.cachePath(assetId: id, kind: kind))
+            }
+        }
+    }
+
     // ---------- export presets (§4.2) ----------
     static func loadExportPresets() -> [ExportPreset] {
         guard let data = UserDefaults.standard.data(forKey: "pc_exportPresets"),
@@ -1848,6 +1862,7 @@ final class AppState: ObservableObject {
 
         assets = updated
         persist(report.removedIds)
+        purgeCacheFiles(forAssetIds: report.removedIds)
         duplicateGroupsCache.removeAll { $0.id == group.id }
         recomputeDuplicates()
         ensurePrimaryValid()
@@ -2522,6 +2537,7 @@ final class AppState: ObservableObject {
         let ids = Set(indexed.map(\.id))
         if !ids.isEmpty {
             mutate(ids) { $0.deleted = true }
+            purgeCacheFiles(forAssetIds: ids)
         }
         try? store?.removeSourceRoot(id: folderId)
         folders.removeAll { $0.id == folderId }
@@ -2739,6 +2755,7 @@ final class AppState: ObservableObject {
         let ids = targetIds
         guard !ids.isEmpty else { return }
         mutate(ids) { $0.deleted = true }
+        purgeCacheFiles(forAssetIds: ids)
         push("已从目录库移除 \(ids.count) 张（原件保留）", "trash")
         selectedIds = []
         ensurePrimaryValid()
@@ -2806,6 +2823,7 @@ final class AppState: ObservableObject {
 
             if !result.trashed.isEmpty {
                 self?.mutate(result.trashed) { $0.deleted = true }
+                self?.purgeCacheFiles(forAssetIds: result.trashed)
                 self?.selectedIds.subtract(result.trashed)
                 self?.ensurePrimaryValid()
                 self?.recomputeDuplicates()
