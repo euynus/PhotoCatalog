@@ -679,6 +679,11 @@ final class AppState: ObservableObject {
         let sourceId = coordinator.sourceId(forFolder: folder)
         setSourceFolder(id: sourceId, name: folder.lastPathComponent, path: folder.path, status: "scanning")
         let existingIds = Set(assets.map { $0.id })
+        // referenced assets already in this source folder can be reused on a re-import instead
+        // of being re-read/re-thumbnailed/re-Vision'd (process() skips by id)
+        let knownAssetsById = Dictionary(
+            assets.filter { !$0.deleted && !$0.isDemo && $0.folderId == sourceId }.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first })
         let run = ImportRun(source: folder, mode: mode)
         let control = ImportControl()
         let jobId = "job-" + run.id.uuidString
@@ -698,10 +703,11 @@ final class AppState: ObservableObject {
                                   mode: mode, autoTag: vision)
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: folder)
-        Task { [weak self, coordinator, store, folder, mode, vision, previewSize, archiveRule, readXMP, bookmark, existingIds, sourceId, run, control] in
-            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, vision, previewSize, archiveRule, readXMP, control] in
+        Task { [weak self, coordinator, store, folder, mode, vision, previewSize, archiveRule, readXMP, bookmark, existingIds, sourceId, run, control, knownAssetsById] in
+            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, vision, previewSize, archiveRule, readXMP, control, knownAssetsById] in
                 coordinator.importFolder(folder, mode: mode, autoTag: vision, archiveRule: archiveRule,
-                                         readSidecar: readXMP, previewMaxPixel: previewSize, control: control) { progress in
+                                         readSidecar: readXMP, previewMaxPixel: previewSize, control: control,
+                                         knownAssetsById: knownAssetsById) { progress in
                     Task { @MainActor [weak self] in
                         self?.recordImportProgress(progress, for: run.id)
                     }
@@ -962,6 +968,10 @@ final class AppState: ObservableObject {
         lastImportSessionPersistedCount = runningRun.processed + runningRun.failed
         let sourceId = coordinator.sourceId(forFolder: folder)
         setSourceFolder(id: sourceId, name: folder.lastPathComponent, path: folder.path, status: "scanning")
+        // skip re-processing originals already cataloged before the crash (referenced mode)
+        let knownAssetsById = Dictionary(
+            assets.filter { !$0.deleted && !$0.isDemo && $0.folderId == sourceId }.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first })
         importing = true
         sheet = "import"
         try? store.updateJob(id: jobId, state: "running")
@@ -971,10 +981,11 @@ final class AppState: ObservableObject {
         push("正在恢复导入「\(folder.lastPathComponent)」…", "refresh")
         let previewSize = previewMaxPixel
 
-        Task { [weak self, coordinator, store, folder, mode, autoTag, previewSize, existingIds, sourceId, runningRun, control] in
-            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, autoTag, previewSize, control] in
+        Task { [weak self, coordinator, store, folder, mode, autoTag, previewSize, existingIds, sourceId, runningRun, control, knownAssetsById] in
+            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, autoTag, previewSize, control, knownAssetsById] in
                 coordinator.importFolder(folder, mode: mode, autoTag: autoTag,
-                                         previewMaxPixel: previewSize, control: control) { progress in
+                                         previewMaxPixel: previewSize, control: control,
+                                         knownAssetsById: knownAssetsById) { progress in
                     Task { @MainActor [weak self] in
                         self?.recordImportProgress(progress, for: runningRun.id)
                     }

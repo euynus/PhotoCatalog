@@ -44,12 +44,13 @@ final class ImportCoordinator: @unchecked Sendable {
                       archiveRule: ManagedArchiveRule = .date, readSidecar: Bool = true,
                       previewMaxPixel: Int = 2048,
                       control: ImportControl? = nil,
+                      knownAssetsById: [String: Asset] = [:],
                       progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
         let files = FileScanner.scan(folder)
         progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
         return process(files, folder: folder, mode: mode, autoTag: autoTag, archiveRule: archiveRule,
                        readSidecar: readSidecar, previewMaxPixel: previewMaxPixel, control: control,
-                       progress: progress)
+                       knownAssetsById: knownAssetsById, progress: progress)
     }
 
     /// Retry/import a known file list while preserving the original source folder identity.
@@ -57,11 +58,12 @@ final class ImportCoordinator: @unchecked Sendable {
                      archiveRule: ManagedArchiveRule = .date, readSidecar: Bool = true,
                      previewMaxPixel: Int = 2048,
                      control: ImportControl? = nil,
+                     knownAssetsById: [String: Asset] = [:],
                      progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
         progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
         return process(files, folder: folder, mode: mode, autoTag: autoTag, archiveRule: archiveRule,
                        readSidecar: readSidecar, previewMaxPixel: previewMaxPixel, control: control,
-                       progress: progress)
+                       knownAssetsById: knownAssetsById, progress: progress)
     }
 
     /// Incremental: only files not already imported by path (for FSEvents rescans, §12.8).
@@ -96,6 +98,7 @@ final class ImportCoordinator: @unchecked Sendable {
     private func process(_ files: [URL], folder: URL, mode: ImportMode, autoTag: Bool,
                          archiveRule: ManagedArchiveRule = .date, readSidecar: Bool = true,
                          previewMaxPixel: Int, control: ImportControl?,
+                         knownAssetsById: [String: Asset] = [:],
                          progress: ((ImportProgress) -> Void)?) -> [Asset] {
         let folderId = sourceId(forFolder: folder)
         let folderName = folder.lastPathComponent
@@ -107,6 +110,17 @@ final class ImportCoordinator: @unchecked Sendable {
                 prog.failed += 1
                 prog.latestAsset = nil
                 prog.latestFailure = ImportFailure(url: url, reason: "文件不存在或不可访问")
+                progress?(prog)
+                continue
+            }
+            // Referenced files already cataloged here keep the same id (derived from the source
+            // path). Reuse the known asset instead of re-reading metadata, regenerating
+            // thumbnails, and re-running Vision — dedup still counts it as skipped downstream.
+            if mode == .referenced, let known = knownAssetsById[assetId(forPath: url.path)] {
+                assets.append(known)
+                prog.processed += 1
+                prog.latestAsset = known
+                prog.latestFailure = nil
                 progress?(prog)
                 continue
             }

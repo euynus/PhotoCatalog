@@ -116,6 +116,14 @@ enum PipelineCheck {
         var progressSnapshots: [ImportProgress] = []
         let assets = coordinator.importFolder(src) { progressSnapshots.append($0) }
         check(assets.count == 7, "imported 7 assets — got \(assets.count)")
+        // re-import the same referenced folder reusing known assets: each file is reused, not
+        // re-made (the rating-5 sentinel survives, where a fresh makeAsset would set rating 0)
+        let knownForReimport = Dictionary(
+            assets.map { a -> (String, Asset) in var m = a; m.rating = 5; return (a.id, m) },
+            uniquingKeysWith: { first, _ in first })
+        let reimported = coordinator.importFolder(src, knownAssetsById: knownForReimport)
+        check(reimported.count == assets.count && reimported.allSatisfy { $0.rating == 5 },
+              "re-import reuses cataloged referenced assets instead of re-processing")
         let timestampedAsset = assets.first { $0.filename == "IMG_0000.jpg" }
         check(timestampedAsset?.fileModifiedAt.map { abs($0.timeIntervalSince(fixedModifiedAt)) < 1 } == true
               && timestampedAsset?.fileCreatedAt != nil,
