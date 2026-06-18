@@ -104,17 +104,18 @@ final class ThumbnailService: @unchecked Sendable {
             return out
         }
 
+        // generate() now writes atomically, so we don't pre-delete `out`: if regeneration
+        // fails (offline RAW, Quick Look timeout), the prior displayable file stays in place
+        // instead of being left dangling and counted as missing.
         if kind.isThumbnail,
            let fallbackPreview,
            FileManager.default.fileExists(atPath: fallbackPreview.path),
            !Self.imageIsUniformBlack(at: fallbackPreview) {
-            try? FileManager.default.removeItem(at: out)
             if let repaired = generate(from: fallbackPreview, assetId: assetId, kind: kind) {
                 return repaired
             }
         }
 
-        try? FileManager.default.removeItem(at: out)
         return generate(from: original, assetId: assetId, kind: kind)
     }
 
@@ -195,14 +196,30 @@ final class ThumbnailService: @unchecked Sendable {
     }
 
     private func writeJPEG(_ cg: CGImage, to out: URL) -> URL? {
-        guard let dest = CGImageDestinationCreateWithURL(out as CFURL, UTType.jpeg.identifier as CFString, 1, nil)
+        // Encode to a unique temp sibling, then atomically move it into place, so concurrent
+        // generators and UI readers only ever observe a complete file — never a half-written one,
+        // and never a corrupt cache left behind by a crash mid-encode.
+        let fm = FileManager.default
+        let tmp = out.deletingLastPathComponent()
+            .appendingPathComponent(".tmp-\(UUID().uuidString)-\(out.lastPathComponent)")
+        guard let dest = CGImageDestinationCreateWithURL(tmp as CFURL, UTType.jpeg.identifier as CFString, 1, nil)
         else { return nil }
         CGImageDestinationAddImage(dest, cg, [kCGImageDestinationLossyCompressionQuality: 0.82] as CFDictionary)
         guard CGImageDestinationFinalize(dest) else {
-            try? FileManager.default.removeItem(at: out)
+            try? fm.removeItem(at: tmp)
             return nil
         }
-        return out
+        do {
+            if fm.fileExists(atPath: out.path) {
+                _ = try fm.replaceItemAt(out, withItemAt: tmp)
+            } else {
+                try fm.moveItem(at: tmp, to: out)
+            }
+            return out
+        } catch {
+            try? fm.removeItem(at: tmp)
+            return nil
+        }
     }
 
     private static func imageIsUniformBlack(at url: URL) -> Bool {
