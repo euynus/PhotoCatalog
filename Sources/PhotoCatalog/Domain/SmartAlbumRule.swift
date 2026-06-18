@@ -102,10 +102,22 @@ enum SmartMatcher {
         }
     }
 
-    static func match(_ assets: [Asset], _ rule: SmartRule) -> [Asset] {
-        assets.filter { a in
-            let results = rule.conditions.map { eval(a, $0) }
-            return rule.match == "all" ? results.allSatisfy { $0 } : results.contains { $0 }
+    static func matches(_ asset: Asset, _ rule: SmartRule) -> Bool {
+        if rule.match == "all" {
+            return rule.conditions.allSatisfy { eval(asset, $0) }
         }
+        return rule.conditions.contains { eval(asset, $0) }
+    }
+
+    static func count(_ assets: [Asset], _ rule: SmartRule) -> Int {
+        var total = 0
+        for asset in assets where matches(asset, rule) {
+            total += 1
+        }
+        return total
+    }
+
+    static func match(_ assets: [Asset], _ rule: SmartRule) -> [Asset] {
+        assets.filter { matches($0, rule) }
     }
 }

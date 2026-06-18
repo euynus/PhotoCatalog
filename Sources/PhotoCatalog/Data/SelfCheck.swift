@@ -53,6 +53,8 @@ enum SelfCheck {
                "saved filter condition fields")
         let savedFilterRule = SmartRule(match: "all", conditions: savedFilterConditions)
         let savedIds = Set(SmartMatcher.match(ready, savedFilterRule).map(\.id))
+        assert(SmartMatcher.count(ready, savedFilterRule) == savedIds.count,
+               "smart matcher count matches filtered results")
         let expectedIds = Set(ready.filter { asset in
             asset.rating >= 3
                 && asset.status == .missing

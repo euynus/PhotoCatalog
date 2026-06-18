@@ -21,7 +21,9 @@ final class AppState: ObservableObject {
             projectListCache = nil
             clientListCache = nil
             folderTreeCache = nil
+            folderTreeCountCache = nil
             libraryCountsCache = nil
+            sidebarCountIndexCache = nil
             listInputsVersion &+= 1
         }
     }
@@ -35,9 +37,18 @@ final class AppState: ObservableObject {
         return map
     }
     @Published var albums: [Album] { didSet { listInputsVersion &+= 1 } }
-    @Published var smartAlbums: [SmartAlbum] { didSet { listInputsVersion &+= 1 } }
+    @Published var smartAlbums: [SmartAlbum] {
+        didSet {
+            sidebarCountIndexCache = nil
+            listInputsVersion &+= 1
+        }
+    }
     @Published var folders: [Folder] = DemoData.folders {
-        didSet { folderTreeCache = nil; listInputsVersion &+= 1 }
+        didSet {
+            folderTreeCache = nil
+            folderTreeCountCache = nil
+            listInputsVersion &+= 1
+        }
     }
     @Published var importing = false
     @Published var importRun: ImportRun?
@@ -52,7 +63,16 @@ final class AppState: ObservableObject {
     private var projectListCache: [KeywordCount]?
     private var clientListCache: [KeywordCount]?
     private var folderTreeCache: [FolderTreeItem]?
+    private var folderTreeCountCache: [String: Int]?
     private var libraryCountsCache: LibraryCounts?
+    private var sidebarCountIndexCache: SidebarCountIndex?
+    private struct SidebarCountIndex {
+        var folderCounts: [String: Int] = [:]
+        var keywordCounts: [String: Int] = [:]
+        var projectCounts: [String: Int] = [:]
+        var clientCounts: [String: Int] = [:]
+        var smartAlbumCounts: [String: Int] = [:]
+    }
     struct LibraryCounts: Equatable {
         var all = 0, recent = 0, unrated = 0, picks = 0, rejected = 0, missingOffline = 0, places = 0, people = 0
     }
@@ -157,7 +177,11 @@ final class AppState: ObservableObject {
     private var watchedRoots: [URL] = []
     private var securityScopedRoots: [URL] = []
     private var sourceRootPathsById: [String: String] = [:] {
-        didSet { folderTreeCache = nil; listInputsVersion &+= 1 }
+        didSet {
+            folderTreeCache = nil
+            folderTreeCountCache = nil
+            listInputsVersion &+= 1
+        }
     }
     private var volumeMonitor: VolumeMonitor?
     private var lastImportSessionPersistedCount = 0
@@ -297,7 +321,7 @@ final class AppState: ObservableObject {
         let loadedSmartAlbums = (try? store.loadSmartAlbums()) ?? []
         smartAlbums = loadedSmartAlbums.map { album in
             SmartAlbum(id: album.id, name: album.name, rule: album.rule,
-                       count: SmartMatcher.match(assets, album.rule).count)
+                       count: SmartMatcher.count(assets, album.rule))
         }
     }
 
@@ -1825,6 +1849,14 @@ final class AppState: ObservableObject {
         return tree
     }
 
+    private var folderTreeCounts: [String: Int] {
+        if let cache = folderTreeCountCache { return cache }
+        let items = folderTree
+        let counts = FolderTreeService.counts(for: items, assets: assets)
+        folderTreeCountCache = counts
+        return counts
+    }
+
     private var photoStacks: [PhotoStack] {
         if let cache = photoStacksCache { return cache }
         let stacks = PhotoStackService.stacks(from: duplicateGroupsCache)
@@ -1864,7 +1896,7 @@ final class AppState: ObservableObject {
     }
 
     func countForFolderTreeItem(_ item: FolderTreeItem) -> Int {
-        assets.filter { !$0.deleted && FolderTreeService.matches($0, item: item) }.count
+        folderTreeCounts[item.id] ?? 0
     }
 
     var canPromoteSelectedSource: Bool {
@@ -1905,24 +1937,50 @@ final class AppState: ObservableObject {
     }
 
     func countForPinnedSidebarItem(_ item: PinnedSidebarItem) -> String {
-        let live = assets.filter { !$0.deleted }
+        let counts = sidebarCountIndex
         switch item.type {
         case .folder:
-            return "\(live.filter { $0.folderId == item.selectionId }.count)"
+            return "\(counts.folderCounts[item.selectionId] ?? 0)"
         case .album:
             return "\(albums.first(where: { $0.id == item.selectionId })?.assetIds.count ?? 0)"
         case .smart:
-            guard let smart = smartAlbums.first(where: { $0.id == item.selectionId }) else { return "0" }
-            return "\(SmartMatcher.match(live, smart.rule).count)"
+            return "\(counts.smartAlbumCounts[item.selectionId] ?? 0)"
         case .keyword:
-            return "\(live.filter { $0.keywords.contains(item.selectionId) }.count)"
+            return "\(counts.keywordCounts[item.selectionId] ?? 0)"
         case .project:
-            return "\(live.filter { $0.project == item.selectionId }.count)"
+            return "\(counts.projectCounts[item.selectionId] ?? 0)"
         case .client:
-            return "\(live.filter { $0.client == item.selectionId }.count)"
+            return "\(counts.clientCounts[item.selectionId] ?? 0)"
         case .lib:
             return ""
         }
+    }
+
+    func countForSmartAlbum(_ album: SmartAlbum) -> Int {
+        sidebarCountIndex.smartAlbumCounts[album.id] ?? album.count
+    }
+
+    private var sidebarCountIndex: SidebarCountIndex {
+        if let cache = sidebarCountIndexCache { return cache }
+        let live = assets.filter { !$0.deleted }
+        var index = SidebarCountIndex()
+        for asset in live {
+            index.folderCounts[asset.folderId, default: 0] += 1
+            for keyword in asset.keywords {
+                index.keywordCounts[keyword, default: 0] += 1
+            }
+            if !asset.project.isEmpty {
+                index.projectCounts[asset.project, default: 0] += 1
+            }
+            if !asset.client.isEmpty {
+                index.clientCounts[asset.client, default: 0] += 1
+            }
+        }
+        for album in smartAlbums {
+            index.smartAlbumCounts[album.id] = SmartMatcher.count(live, album.rule)
+        }
+        sidebarCountIndexCache = index
+        return index
     }
 
     private static func loadPinnedSidebarItems() -> [PinnedSidebarItem] {
@@ -2141,7 +2199,7 @@ final class AppState: ObservableObject {
         guard let name = promptAlbumName(defaultName: defaultFilterSmartAlbumName()) else { return }
 
         let rule = SmartRule(match: "all", conditions: conditions)
-        let count = SmartMatcher.match(assets.filter { !$0.deleted }, rule).count
+        let count = SmartMatcher.count(assets.filter { !$0.deleted }, rule)
         saveSmart(name: name, rule: rule, count: count)
     }
 

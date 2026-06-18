@@ -247,9 +247,9 @@ enum DemoData {
         ])
         return [
             SmartAlbum(id: "sm-5", name: "五星精选", rule: fiveStar,
-                       count: SmartMatcher.match(assets, fiveStar).count),
+                       count: SmartMatcher.count(assets, fiveStar)),
             SmartAlbum(id: "sm-trip", name: "旅行 · 3★以上", rule: trip,
-                       count: SmartMatcher.match(assets, trip).count),
+                       count: SmartMatcher.count(assets, trip)),
         ]
     }
 }

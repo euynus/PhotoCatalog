@@ -87,7 +87,7 @@ struct Sidebar: View {
             SBAddButton { app.sheet = "smart" }
         }) {
             ForEach(app.smartAlbums) { sa in
-                row("sparkles", Theme.accent, sa.name, "\(sa.count)", .smart, sa.id, sa.name)
+                row("sparkles", Theme.accent, sa.name, "\(app.countForSmartAlbum(sa))", .smart, sa.id, sa.name)
             }
         }
     }
@@ -182,21 +182,21 @@ struct Sidebar: View {
     }
 }
 
-struct SidebarSection<Content: View>: View {
+struct SidebarSection<Content: View, Action: View>: View {
     let title: String
-    var action: (() -> AnyView)?
-    @ViewBuilder let content: () -> Content
+    private let action: Action
+    private let content: Content
 
-    init(title: String, @ViewBuilder content: @escaping () -> Content) {
+    init(title: String, @ViewBuilder content: () -> Content) where Action == EmptyView {
         self.title = title
-        self.action = nil
-        self.content = content
+        self.action = EmptyView()
+        self.content = content()
     }
-    init<A: View>(title: String, @ViewBuilder action: @escaping () -> A,
-                  @ViewBuilder content: @escaping () -> Content) {
+    init(title: String, @ViewBuilder action: () -> Action,
+         @ViewBuilder content: () -> Content) {
         self.title = title
-        self.action = { AnyView(action()) }
-        self.content = content
+        self.action = action()
+        self.content = content()
     }
 
     var body: some View {
@@ -205,10 +205,10 @@ struct SidebarSection<Content: View>: View {
                 Text(title).font(.system(size: 11, weight: .bold)).tracking(0.3)
                     .foregroundStyle(Theme.text3).textCase(.uppercase)
                 Spacer()
-                if let action { action() }
+                action
             }
             .padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 5)
-            content()
+            content
         }
     }
 }

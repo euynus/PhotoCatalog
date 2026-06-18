@@ -51,6 +51,39 @@ enum FolderTreeService {
         return assetDir == directoryPath || isDescendant(assetDir, of: directoryPath)
     }
 
+    static func counts(for items: [FolderTreeItem], assets: [Asset]) -> [String: Int] {
+        var counts = Dictionary(uniqueKeysWithValues: items.map { ($0.id, 0) })
+        var rootIdsBySource: [String: [String]] = [:]
+        var directoryIdsBySource: [String: [String: String]] = [:]
+
+        for item in items {
+            if let directoryPath = item.directoryPath {
+                directoryIdsBySource[item.sourceId, default: [:]][directoryPath] = item.id
+            } else {
+                rootIdsBySource[item.sourceId, default: []].append(item.id)
+            }
+        }
+
+        for asset in assets where !asset.deleted {
+            for rootId in rootIdsBySource[asset.folderId] ?? [] {
+                counts[rootId, default: 0] += 1
+            }
+            guard let localPath = asset.localPath,
+                  let directoryIds = directoryIdsBySource[asset.folderId] else { continue }
+            var current = assetDirectoryPath(localPath)
+            while true {
+                if let id = directoryIds[current] {
+                    counts[id, default: 0] += 1
+                }
+                let parent = (current as NSString).deletingLastPathComponent
+                if parent.isEmpty || parent == current { break }
+                current = normalizedPath(parent)
+            }
+        }
+
+        return counts
+    }
+
     private static func subfolderId(for path: String) -> String {
         subfolderPrefix + path
     }

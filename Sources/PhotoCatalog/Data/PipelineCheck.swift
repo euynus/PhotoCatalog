@@ -234,12 +234,17 @@ enum PipelineCheck {
                 let tokyoCount = treeAssets.filter { FolderTreeService.matches($0, item: tokyo) }.count
                 check(tripsCount == 2 && tokyoCount == 1,
                       "folder tree filters nested source folders")
+                let treeCounts = FolderTreeService.counts(for: tree, assets: treeAssets)
+                check(treeCounts[trips.id] == 2 && treeCounts[tokyo.id] == 1,
+                      "folder tree count index matches nested folders")
             } else {
                 check(false, "folder tree filters nested source folders")
+                check(false, "folder tree count index matches nested folders")
             }
         } else {
             check(false, "folder tree derives nested source folders")
             check(false, "folder tree filters nested source folders")
+            check(false, "folder tree count index matches nested folders")
         }
         check(assets.allSatisfy { $0.contentHash != nil && $0.quickHash != nil }, "content + quick hashes computed")
         let groupedDedup = ImportDeduplicationService.apply(imported: assets, existingAssets: [],
