@@ -39,8 +39,10 @@ final class VolumeMonitor: @unchecked Sendable {
     }
 
     static func volumeIdentifier(for url: URL) -> String? {
-        guard let values = try? url.resourceValues(forKeys: [.volumeIdentifierKey]),
-              let value = values.allValues[.volumeIdentifierKey] else { return nil }
+        // .volumeUUIDStringKey is a stable UUID that survives remount/reboot; .volumeIdentifierKey
+        // is an ephemeral per-session token that would break cross-session offline/relocation match.
+        guard let values = try? url.resourceValues(forKeys: [.volumeUUIDStringKey]),
+              let value = values.allValues[.volumeUUIDStringKey] else { return nil }
         let identifier = String(describing: value).trimmingCharacters(in: .whitespacesAndNewlines)
         return identifier.isEmpty ? nil : identifier
     }
