@@ -209,6 +209,12 @@ final class ImportCoordinator: @unchecked Sendable {
         var dest = dir.appendingPathComponent(url.lastPathComponent)
         var i = 1
         while FileManager.default.fileExists(atPath: dest.path) {
+            // An identical original is already here — e.g. an import resumed after a crash
+            // re-scans files already copied. Reuse it (its asset id then matches the existing
+            // one and dedups) instead of writing a duplicate "name (1).ext" + duplicate asset.
+            if let existing = HashService.contentHash(dest), existing == HashService.contentHash(url) {
+                return dest
+            }
             let base = url.deletingPathExtension().lastPathComponent
             dest = dir.appendingPathComponent("\(base) (\(i)).\(url.pathExtension)")
             i += 1
