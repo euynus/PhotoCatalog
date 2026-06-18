@@ -14,9 +14,11 @@ enum FileScanner {
         "jpg", "jpeg", "heic", "heif", "png", "tif", "tiff", "gif", "webp", "bmp",
     ]
 
-    /// Directory / package names to skip while enumerating.
+    /// Directory / package names to skip while enumerating. Genuine library package internals
+    /// are already excluded by the enumerator's .skipsPackageDescendants; a bare "Thumbnails"
+    /// here would also prune an ordinary user folder of that name, silently dropping its photos.
     private static let skipNames: Set<String> = [
-        ".photolibrary", ".lrdata", ".lrcat", "Thumbnails", ".Trash",
+        ".photolibrary", ".lrdata", ".lrcat", ".Trash",
     ]
 
     static func isSupported(_ url: URL) -> Bool {
