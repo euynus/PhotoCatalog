@@ -94,8 +94,10 @@ enum SmartMatcher {
         case "status":
             return a.status.rawValue == c.value
         case "search":
-            let haystack = ([a.filename, a.camera, a.lens, a.title, a.caption, a.location]
-                + a.keywords).joined(separator: " ")
+            // keep this haystack in sync with AppState.computeList (which includes project/client),
+            // so a smart album saved from a search matches the live filtered list
+            let haystack = ([a.filename, a.camera, a.lens, a.title, a.caption, a.location,
+                             a.project, a.client] + a.keywords).joined(separator: " ")
             return haystack.localizedStandardContains(c.value)
         default:
             return true
