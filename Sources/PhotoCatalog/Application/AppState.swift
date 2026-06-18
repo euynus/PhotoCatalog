@@ -2737,6 +2737,10 @@ final class AppState: ObservableObject {
         push("已从目录库移除 \(ids.count) 张（原件保留）", "trash")
         selectedIds = []
         ensurePrimaryValid()
+        // drop the removed assets from duplicate groups / collapsed stacks, like the
+        // trash and duplicate-resolution paths do — otherwise the sidebar count, the
+        // Duplicates sheet, and stack badges keep showing ghosts of the removed photos.
+        recomputeDuplicates()
     }
 
     /// Delete-key flow: confirm whether to remove from the catalog or trash the originals (§15).
