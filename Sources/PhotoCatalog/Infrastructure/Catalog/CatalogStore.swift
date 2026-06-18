@@ -200,7 +200,11 @@ final class CatalogStore: @unchecked Sendable {
     func search(_ query: String) -> [String] {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return [] }
-        let match = q.split(separator: " ").map { "\"\($0)\"*" }.joined(separator: " ")
+        // wrap each token as a quoted FTS5 prefix term; double any embedded quote so a query
+        // like 5"x7 produces a well-formed phrase instead of a malformed MATCH (zero results)
+        let match = q.split(separator: " ")
+            .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"*" }
+            .joined(separator: " ")
         let rows = (try? db.query("SELECT asset_id FROM asset_search WHERE asset_search MATCH ?;", [.text(match)])) ?? []
         return rows.compactMap { $0.text("asset_id") }
     }
