@@ -1412,11 +1412,19 @@ final class AppState: ObservableObject {
 
     private var isBackfilling = false
     private var backfillTask: Task<Void, Never>?
+    private var backfillGeneration = 0
 
     /// Stop any in-flight thumbnail backfill (e.g. when a fresh import is about to
     /// generate its own thumbnails, or the catalog is closing) so the two passes
-    /// don't contend for disk I/O.
-    func cancelBackfill() { backfillTask?.cancel() }
+    /// don't contend for disk I/O. Resets state eagerly so a subsequent
+    /// backfillThumbnails() isn't blocked by the cancelled run's lingering flag, and
+    /// bumps the generation so the orphaned task's cleanup can't clobber a newer run.
+    func cancelBackfill() {
+        backfillTask?.cancel()
+        backfillTask = nil
+        isBackfilling = false
+        backfillGeneration &+= 1
+    }
 
     /// Low-priority background pass that fills in any missing/stale thumbnails for
     /// imported photos (visible-first generation is handled per-cell). PRD §6.6 THM-003.
@@ -1431,6 +1439,8 @@ final class AppState: ObservableObject {
         let real = assets.filter { !$0.isDemo && $0.localPath != nil }
         guard !real.isEmpty else { return }
         isBackfilling = true
+        backfillGeneration &+= 1
+        let generation = backfillGeneration
         let previewSize = previewMaxPixel
         let lowPowerSensitive = reduceBackgroundOnLowPower
         backfillTask = Task { [weak self, coordinator, real, previewSize] in
@@ -1455,9 +1465,12 @@ final class AppState: ObservableObject {
                 index += chunkSize
                 await Task.yield()
             }
-            self?.isBackfilling = false
-            self?.backfillTask = nil
-            self?.enforceCacheLimitIfNeeded()
+            // only reset shared state if we're still the current run — a cancel or a newer
+            // backfill may have superseded us and must not have its state clobbered.
+            guard let self, self.backfillGeneration == generation else { return }
+            self.isBackfilling = false
+            self.backfillTask = nil
+            self.enforceCacheLimitIfNeeded()
         }
     }
 
