@@ -80,7 +80,11 @@ private final class SidecarParser: NSObject, XMLParserDelegate {
         path.append(name)
         text = ""
         if name == "rdf:Description" || name == "Description" {
-            if let r = attrs["xmp:Rating"] ?? attrs["Rating"] { result.rating = Int(r) ?? 0 }
+            if let r = attrs["xmp:Rating"] ?? attrs["Rating"] {
+                // Lightroom/Bridge may write "5.0" (Int("5.0") is nil) or "-1" (rejected);
+                // parse leniently and clamp into the app's 0…5 range.
+                result.rating = min(5, max(0, Int(r) ?? Int(Double(r) ?? 0)))
+            }
             if let l = attrs["xmp:Label"] ?? attrs["Label"], !l.isEmpty {
                 result.colorLabel = ColorLabel(rawValue: l.lowercased())
             }
