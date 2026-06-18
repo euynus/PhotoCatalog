@@ -1636,9 +1636,12 @@ final class AppState: ObservableObject {
                 let csvOK = ExportService.exportMetadataCSV(real, to: dest.appendingPathComponent("metadata.csv"))
                 return (report: report, metadataOK: jsonOK && csvOK)
             }.value
+            let xmpNote = xmp
+                ? (result.report.xmpFailed > 0 ? " · \(result.report.xmpFailed) 个 XMP 失败" : " · 含 XMP")
+                : ""
             self?.push("已导出 \(result.report.copied) 张原件"
                        + (result.report.failed > 0 ? " · \(result.report.failed) 失败" : "")
-                       + (xmp ? " · 含 XMP" : "")
+                       + xmpNote
                        + (result.metadataOK ? " · 含元数据" : " · 元数据失败"), "export")
         }
     }

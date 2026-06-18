@@ -9,6 +9,7 @@ struct ExportReport {
     var copied = 0
     var skipped = 0
     var failed = 0
+    var xmpFailed = 0
 }
 
 enum ExportService {
@@ -42,7 +43,9 @@ enum ExportService {
                    let mtime = attrs[.modificationDate] as? Date {
                     try? fm.setAttributes([.modificationDate: mtime], ofItemAtPath: target.path)
                 }
-                if xmp { XMPSidecar.write(a, to: XMPSidecar.sidecarURL(for: target)) }
+                if xmp, !XMPSidecar.write(a, to: XMPSidecar.sidecarURL(for: target)) {
+                    report.xmpFailed += 1
+                }
                 report.copied += 1
             } catch {
                 report.failed += 1
@@ -164,10 +167,11 @@ enum ExportService {
         case .rename:
             let base = url.deletingPathExtension().lastPathComponent
             let ext = url.pathExtension
+            let suffix = ext.isEmpty ? "" : ".\(ext)"  // extensionless originals must not gain a trailing dot
             var i = 1
             while true {
                 let candidate = url.deletingLastPathComponent()
-                    .appendingPathComponent("\(base) (\(i)).\(ext)")
+                    .appendingPathComponent("\(base) (\(i))\(suffix)")
                 if !fm.fileExists(atPath: candidate.path) { return candidate }
                 i += 1
             }
@@ -242,9 +246,17 @@ enum ExportService {
     }
 
     private static func csvField(_ value: String) -> String {
-        guard value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r") else {
-            return value
+        var v = value
+        // Mitigate CSV/formula injection: spreadsheet apps execute a cell that begins with
+        // = + - @ (or a leading tab/CR), even inside quotes, so attacker-controlled EXIF/XMP
+        // text (caption, keywords, makerNotes, …) could run formulas. Force such cells to text
+        // with a leading apostrophe — but leave genuine numbers (e.g. "-122.4" GPS) untouched.
+        if let first = v.first, "=+-@\t\r".contains(first), Double(v) == nil {
+            v = "'" + v
         }
-        return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        guard v.contains(",") || v.contains("\"") || v.contains("\n") || v.contains("\r") else {
+            return v
+        }
+        return "\"" + v.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 }

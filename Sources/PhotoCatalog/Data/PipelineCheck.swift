@@ -499,6 +499,16 @@ enum PipelineCheck {
               && csvText.contains("Export MakerNotes") && csvText.contains("Export Project")
               && csvText.contains("Export Client"),
               "exported CSV metadata")
+        // regression: attacker-controlled metadata starting with = must be neutralized for
+        // spreadsheets, while a legitimate negative number stays a number.
+        var injectionAssets = assets
+        injectionAssets[0].caption = "=HYPERLINK(\"http://evil\")"
+        injectionAssets[0].gpsAltitude = -12.5
+        let injectionCSV = exportDir.appendingPathComponent("metadata-injection.csv")
+        _ = ExportService.exportMetadataCSV(injectionAssets, to: injectionCSV)
+        let injectionText = (try? String(contentsOf: injectionCSV, encoding: .utf8)) ?? ""
+        check(injectionText.contains("'=HYPERLINK") && injectionText.contains("-12.5"),
+              "CSV neutralizes formula injection yet preserves negative numbers")
         let previewExportDir = tmp.appendingPathComponent("export-previews")
         let previewReport = ExportService.exportPreviews(assets, to: previewExportDir)
         let previewTargetName = URL(fileURLWithPath: assets[0].filename)
