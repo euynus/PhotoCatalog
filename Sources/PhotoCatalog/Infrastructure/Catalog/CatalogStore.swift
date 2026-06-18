@@ -560,10 +560,17 @@ final class CatalogStore: @unchecked Sendable {
     func backup(stamp: String) throws -> URL {
         // checkpoint WAL so the single .sqlite file is current, then copy it
         db.exec("PRAGMA wal_checkpoint(TRUNCATE);")
-        let dest = backupsURL.appendingPathComponent("catalog-\(stamp).sqlite")
         let src = packageURL.appendingPathComponent("catalog.sqlite")
-        try? FileManager.default.removeItem(at: dest)
-        try FileManager.default.copyItem(at: src, to: dest)
+        // the stamp is 1-second granular, so a pre-restore safety backup can collide with an
+        // auto-backup from the same second — never overwrite an existing backup; pick -N instead.
+        let fm = FileManager.default
+        var dest = backupsURL.appendingPathComponent("catalog-\(stamp).sqlite")
+        var n = 1
+        while fm.fileExists(atPath: dest.path) {
+            dest = backupsURL.appendingPathComponent("catalog-\(stamp)-\(n).sqlite")
+            n += 1
+        }
+        try fm.copyItem(at: src, to: dest)
         return dest
     }
 
