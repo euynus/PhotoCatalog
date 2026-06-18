@@ -2822,6 +2822,11 @@ final class AppState: ObservableObject {
         var ids = list.map { $0.id }.filter { selectedIds.contains($0) }
         if ids.count < 2 { ids = list.prefix(3).map { $0.id } }
         compareIds = Array(ids.prefix(4))
+        // align the grid selection with the compared panels so rating/flag/color shortcuts
+        // act on what's on screen rather than a now-hidden grid selection
+        selectedIds = Set(compareIds)
+        if primaryId == nil || !compareIds.contains(primaryId!) { primaryId = compareIds.first }
+        anchorId = primaryId
         winner = nil
         view = .compare
     }
@@ -2960,6 +2965,7 @@ final class AppState: ObservableObject {
         case "s":
             toggleStackForPrimary()
         case "up", "down", "left", "right":
+            if view == .compare { return false }  // don't navigate the hidden grid from compare
             moveSelection(key)
         case "delete", "backspace":
             confirmDeleteSelected()
@@ -2974,8 +2980,10 @@ final class AppState: ObservableObject {
         guard let cur = ids.firstIndex(of: primaryId ?? "") else { return }
         var cols = 1
         if view == .grid {
+            // mirror GridView's exact column math so arrow nav lands on the right row
             let w = gridWidth ?? 800
-            cols = max(1, Int(w / (thumbSize + 14)))
+            let gap = max(8, thumbSize * 0.06)
+            cols = max(1, Int((w + gap) / (thumbSize + gap)))
         }
         var next = cur
         switch key {

@@ -28,8 +28,9 @@ struct Loupe: View {
         let list = app.list
         guard !list.isEmpty else { return }
         let idx = max(0, list.firstIndex { $0.id == app.primaryId } ?? 0)
-        let next = list[(idx + delta + list.count) % list.count]
-        app.setPrimary(next.id)
+        let target = idx + delta
+        guard target >= 0, target < list.count else { return }  // clamp at ends, like the arrow keys
+        app.setPrimary(list[target].id)
     }
 
     private func stage(_ asset: Asset, idx: Int, count: Int) -> some View {
