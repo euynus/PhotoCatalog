@@ -2357,10 +2357,15 @@ final class AppState: ObservableObject {
     private func ensurePrimaryValid() {
         let ids = list
         guard !ids.isEmpty else { return }
+        // selection must never retain assets hidden by the current collection/filter/search,
+        // or batch edits (rating, flag, keyword, delete) would silently mutate off-screen photos.
+        selectedIds.formIntersection(Set(ids.map { $0.id }))
         if primaryId == nil || !ids.contains(where: { $0.id == primaryId }) {
             primaryId = ids[0].id
             selectedIds = [ids[0].id]
             anchorId = ids[0].id
+        } else if selectedIds.isEmpty {
+            selectedIds = [primaryId!]
         }
     }
 
