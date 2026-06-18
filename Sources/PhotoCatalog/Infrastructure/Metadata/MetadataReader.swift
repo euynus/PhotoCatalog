@@ -52,6 +52,10 @@ enum MetadataReader {
         m.width = (props[kCGImagePropertyPixelWidth] as? Int) ?? 0
         m.height = (props[kCGImagePropertyPixelHeight] as? Int) ?? 0
         m.orientation = (props[kCGImagePropertyOrientation] as? Int) ?? 1
+        // orientations 5–8 rotate 90°/270°, so the displayed geometry transposes the stored
+        // pixel dimensions. Report display dimensions to match the transformed thumbnails and
+        // the landscape/portrait flag derived from them.
+        if (5...8).contains(m.orientation) { swap(&m.width, &m.height) }
         if let model = props[kCGImagePropertyColorModel] as? String {
             m.colorSpace = (props[kCGImagePropertyProfileName] as? String) ?? model
         }
