@@ -76,6 +76,13 @@ final class Database: @unchecked Sendable {
         guard exec(sql) else { throw DBError.step(String(cString: sqlite3_errmsg(db))) }
     }
 
+    /// Checkpoint the WAL into the main database file and truncate it, returning true only when
+    /// the WAL was fully flushed. Unlike `PRAGMA wal_checkpoint`, this reports busy/partial
+    /// checkpoints (which would otherwise leave recent commits only in the -wal sidecar).
+    func walCheckpointTruncate() -> Bool {
+        sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil) == SQLITE_OK
+    }
+
     func run(_ sql: String, _ params: [SQLValue] = []) throws {
         let stmt = try preparedStatement(sql, params)
         defer { sqlite3_reset(stmt); sqlite3_clear_bindings(stmt) }

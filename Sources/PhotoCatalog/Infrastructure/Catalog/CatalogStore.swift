@@ -562,8 +562,12 @@ final class CatalogStore: @unchecked Sendable {
     // ---------- backup (§6.12) ----------
     @discardableResult
     func backup(stamp: String) throws -> URL {
-        // checkpoint WAL so the single .sqlite file is current, then copy it
-        db.exec("PRAGMA wal_checkpoint(TRUNCATE);")
+        // Flush the WAL into the single .sqlite file before copying it. The restore path deletes
+        // the -wal/-shm sidecars, so the copied file must be self-contained; abort rather than
+        // produce a stale backup if the checkpoint didn't fully complete.
+        guard db.walCheckpointTruncate() else {
+            throw DBError.step("WAL checkpoint incomplete — backup aborted to avoid a stale copy")
+        }
         let src = packageURL.appendingPathComponent("catalog.sqlite")
         // the stamp is 1-second granular, so a pre-restore safety backup can collide with an
         // auto-backup from the same second — never overwrite an existing backup; pick -N instead.
