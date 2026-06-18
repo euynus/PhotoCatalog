@@ -6,6 +6,12 @@ import Combine
 import AppKit
 import UniformTypeIdentifiers
 
+private struct StatusMetrics: Equatable, Sendable {
+    var cacheBytes: Int64?
+    var lastBackupDate: Date?
+    var backupCount = 0
+}
+
 @MainActor
 final class AppState: ObservableObject {
     // ----- onboarding -----
@@ -167,6 +173,7 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(automaticBackupFrequency, forKey: "pc_autoBackupFrequency") }
     }
     @Published var healthReport: HealthReport?
+    @Published private var statusMetrics = StatusMetrics()
     @Published private var recentCatalogPaths =
         UserDefaults.standard.stringArray(forKey: "pc_recentCatalogs") ?? []
 
@@ -261,6 +268,26 @@ final class AppState: ObservableObject {
             .map { RecentCatalog(path: $0) }
     }
 
+    var statusAssetCount: Int { libraryCounts.all }
+
+    var statusCacheText: String {
+        guard let cacheBytes = statusMetrics.cacheBytes else { return "缓存 --" }
+        return "缓存 " + ByteCountFormatter.string(fromByteCount: cacheBytes, countStyle: .file)
+    }
+
+    var statusBackupText: String {
+        guard let date = statusMetrics.lastBackupDate else { return "尚未备份" }
+        let time = date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute())
+        if Calendar.current.isDateInToday(date) {
+            return "上次备份 今天 \(time)"
+        }
+        if Calendar.current.isDateInYesterday(date) {
+            return "上次备份 昨天 \(time)"
+        }
+        let day = date.formatted(.dateTime.month(.twoDigits).day(.twoDigits))
+        return "上次备份 \(day) \(time)"
+    }
+
     private var configuredCatalogURL: URL {
         UserDefaults.standard.url(forKey: Self.catalogURLKey) ?? CatalogStore.defaultURL
     }
@@ -278,6 +305,7 @@ final class AppState: ObservableObject {
         store = s
         coordinator = ImportCoordinator(store: s)
         rememberCatalog(url)
+        refreshStatusMetrics()
         let real = ((try? s.loadAssets()) ?? []).filter { !$0.isDemo && !$0.deleted }
         let hasInterruptedImport = (try? s.loadJobs(type: "scan", states: ["running", "paused"]).isEmpty) == false
         guard !real.isEmpty else {
@@ -313,6 +341,7 @@ final class AppState: ObservableObject {
         restoreAlbums(from: s, assets: checked)
         recoverInterruptedImportJobs(existingAssets: checked)
         backfillThumbnails()
+        refreshStatusMetrics()
         return nil
     }
 
@@ -442,6 +471,7 @@ final class AppState: ObservableObject {
             let s = try CatalogStore(packageURL: configuredCatalogURL)
             store = s
             coordinator = ImportCoordinator(store: s)
+            refreshStatusMetrics()
         } catch {
             push(catalogOpenFailureMessage(error, fallback: "无法创建目录库"), "warning")
         }
@@ -469,6 +499,7 @@ final class AppState: ObservableObject {
             store = nextStore
             coordinator = ImportCoordinator(store: nextStore)
             setActiveCatalog(url)
+            refreshStatusMetrics()
             UserDefaults.standard.set("1", forKey: "pc_onboarded")
             onboarded = true
             push("已创建目录库 · \(url.lastPathComponent)", "check")
@@ -1269,7 +1300,31 @@ final class AppState: ObservableObject {
         guard let store else { push("无目录库", "warning"); return }
         let report = CatalogHealth.check(store, assets: assets)
         healthReport = report
+        statusMetrics = StatusMetrics(cacheBytes: report.cacheBytes,
+                                      lastBackupDate: statusMetrics.lastBackupDate,
+                                      backupCount: report.backupCount)
         push(report.summary, report.isHealthy ? "check" : "warning")
+    }
+
+    private func refreshStatusMetrics() {
+        guard let store else {
+            statusMetrics = StatusMetrics()
+            return
+        }
+        let packageURL = store.packageURL
+        Task { [weak self, store, packageURL] in
+            let metrics = await Task.detached(priority: .utility) {
+                let backups = BackupService.listBackups(store)
+                let lastBackupDate = backups.first.flatMap {
+                    try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+                }
+                return StatusMetrics(cacheBytes: CatalogHealth.directorySize(store.cacheURL),
+                                     lastBackupDate: lastBackupDate,
+                                     backupCount: backups.count)
+            }.value
+            guard self?.store?.packageURL == packageURL else { return }
+            self?.statusMetrics = metrics
+        }
     }
 
     func rebuildThumbnails() {
@@ -1372,6 +1427,7 @@ final class AppState: ObservableObject {
         for dir in [store.thumb256URL, store.thumb512URL, store.preview1600URL, store.preview2048URL] {
             try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
+        refreshStatusMetrics()
         push("已清理缩略图缓存", "trash")
     }
 
@@ -1426,6 +1482,7 @@ final class AppState: ObservableObject {
         guard let store else { push("无目录库", "warning"); return }
         let report = CacheService.prune(store.cacheURL, maxBytes: cacheLimitBytes)
         healthReport = CatalogHealth.check(store, assets: assets)
+        refreshStatusMetrics()
         if report.removedFiles == 0 {
             push("缓存已在 \(cacheLimitMB) MB 上限内", "check")
         } else {
@@ -1442,6 +1499,7 @@ final class AppState: ObservableObject {
         let report = CacheService.prune(store.cacheURL, maxBytes: cacheLimitBytes)
         if report.removedFiles > 0 {
             healthReport = CatalogHealth.check(store, assets: assets)
+            refreshStatusMetrics()
         }
     }
 
@@ -1560,6 +1618,7 @@ final class AppState: ObservableObject {
         guard let store else { push("无目录库可备份", "warning"); return }
         try? store.upsert(assets.filter { !$0.isDemo })
         if let url = try? BackupService.backup(store) {
+            refreshStatusMetrics()
             push("已备份目录库 · \(url.lastPathComponent)", "check")
         } else {
             push("备份失败", "warning")
@@ -1587,6 +1646,7 @@ final class AppState: ObservableObject {
             try store.upsert(assets.filter { !$0.isDemo })
             let url = try BackupService.backup(store, at: now)
             UserDefaults.standard.set(now, forKey: Self.lastAutoBackupKey)
+            refreshStatusMetrics()
             push("已自动备份目录库 · \(url.lastPathComponent)", "check")
         } catch {
             push("自动备份失败", "warning")
@@ -1651,6 +1711,7 @@ final class AppState: ObservableObject {
         importing = false
         store = nil
         coordinator = nil
+        statusMetrics = StatusMetrics()
     }
 
     private func resetToDemoCatalog() {
