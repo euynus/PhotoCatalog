@@ -119,9 +119,15 @@ struct Segmented: View {
     var body: some View {
         HStack(spacing: 2) {
             ForEach(options) { o in
-                SegItem(option: o, active: value == o.value, height: height, hpad: hpad,
-                        fontSize: fontSize, iconSize: iconSize, fontWeight: size == "sm" ? .medium : .regular)
-                    .onTapGesture { onChange(o.value) }
+                // a real Button, not a tap gesture — otherwise the segment is
+                // invisible to VoiceOver and Full Keyboard Access
+                Button { onChange(o.value) } label: {
+                    SegItem(option: o, active: value == o.value, height: height, hpad: hpad,
+                            fontSize: fontSize, iconSize: iconSize, fontWeight: size == "sm" ? .medium : .regular)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(o.label ?? o.title ?? o.value)
+                .accessibilityAddTraits(value == o.value ? .isSelected : [])
             }
         }
         .padding(2)
