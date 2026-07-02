@@ -8,6 +8,11 @@ struct PhotoCatalogCommands: Commands {
     let app: AppState
 
     var body: some Commands {
+        // Drop the default File ▸ New Window item: its ⌘N wins over
+        // 目录库 ▸ 新建目录库 whenever a text field has focus (the key
+        // monitor passes typing through), opening a stray duplicate window.
+        CommandGroup(replacing: .newItem) {}
+
         CommandMenu("目录库") {
             Button("新建目录库…") { app.createCatalog() }
                 .keyboardShortcut("n", modifiers: .command)
