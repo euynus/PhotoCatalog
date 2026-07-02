@@ -52,6 +52,8 @@ struct PhotoCatalogApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(app)
+                .environment(\.appStateRef, app)
+                .environment(\.previewMaxPixel, app.previewMaxPixel)
                 .frame(minWidth: 1080, minHeight: 680)
                 .preferredColorScheme(.dark)
                 .onAppear {
