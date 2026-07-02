@@ -210,7 +210,7 @@ private struct StackBadge: View {
                     .font(.system(size: 9.5, weight: .bold))
                     .monospacedDigit()
             }
-            .foregroundStyle(collapsed ? Color.black.opacity(0.82) : Theme.text2)
+            .foregroundStyle(collapsed ? Theme.onAccent : Theme.text2)
             .padding(.horizontal, 5)
             .padding(.vertical, 3)
             .background(collapsed ? Theme.accent : Color.black.opacity(0.58))
