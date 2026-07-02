@@ -17,7 +17,8 @@ struct DuplicatesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 head
-                VStack(spacing: 14) {
+                // lazy: each card kicks off thumbnail loads for every member
+                LazyVStack(spacing: 14) {
                     ForEach(groups) { g in groupCard(g) }
                 }
                 .frame(maxWidth: 920, alignment: .leading)
