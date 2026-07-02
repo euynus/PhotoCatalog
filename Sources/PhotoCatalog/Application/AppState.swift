@@ -2939,6 +2939,13 @@ final class AppState: ObservableObject {
     /// Returns true if the key was handled.
     @discardableResult
     func handleKey(_ key: String, hasCommand: Bool, hasShift: Bool = false) -> Bool {
+        // Sheets are overlays, not real modal windows — while one is open,
+        // global shortcuts must not reach the photos behind the backdrop
+        // (rating/flag/delete keys would silently mutate the selection).
+        if sheet != nil {
+            if !hasCommand && key == "escape" { return dismissTransientUI() }
+            return false
+        }
         if hasCommand {
             switch key {
             case "n":
