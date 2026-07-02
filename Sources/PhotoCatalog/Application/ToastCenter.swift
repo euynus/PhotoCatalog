@@ -4,11 +4,12 @@
 //  overlay, not every view observing AppState.
 // ============================================================
 import Foundation
-import Combine
+import Observation
 
 @MainActor
-final class ToastCenter: ObservableObject {
-    @Published var toasts: [Toast] = []
+@Observable
+final class ToastCenter {
+    var toasts: [Toast] = []
 
     func push(_ message: String, _ icon: String = "check") {
         let toast = Toast(message: message, icon: icon)

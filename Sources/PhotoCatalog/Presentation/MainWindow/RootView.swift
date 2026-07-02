@@ -34,7 +34,7 @@ struct RootView: View {
 
 // ---------- Toasts ----------
 struct ToastOverlay: View {
-    @ObservedObject var center: ToastCenter
+    let center: ToastCenter   // @Observable: body reads register automatically
     var body: some View {
         VStack {
             Spacer()
