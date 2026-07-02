@@ -19,10 +19,13 @@ struct SmartAlbumBuilder: View {
     private var matched: [Asset] { SmartMatcher.match(app.assets.filter { !$0.deleted }, rule) }
 
     var body: some View {
+        // one match pass per render — the preview count, empty state, thumbs
+        // and save button all share it, and it re-runs on every keystroke
+        let matched = self.matched
         VStack(spacing: 0) {
             head
-            ScrollView { body_ }
-            foot
+            ScrollView { body_(matched) }
+            foot(matchedCount: matched.count)
         }
         .frame(width: 580)
         .background(Color(hex: "#232325"))
@@ -44,7 +47,7 @@ struct SmartAlbumBuilder: View {
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
-    private var body_: some View {
+    private func body_(_ matched: [Asset]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             // name
             HStack(spacing: 12) {
@@ -177,13 +180,13 @@ struct SmartAlbumBuilder: View {
         }
     }
 
-    private var foot: some View {
+    private func foot(matchedCount: Int) -> some View {
         HStack(spacing: 9) {
             Text("动态集合 · 新导入照片若符合规则会自动加入")
                 .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 .frame(maxWidth: .infinity, alignment: .leading)
             ghostButton(nil, "取消") { app.sheet = nil }
-            Button { app.saveSmart(name: name, rule: rule, count: matched.count) } label: {
+            Button { app.saveSmart(name: name, rule: rule, count: matchedCount) } label: {
                 Text("创建智能相册").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.onAccent)
                     .padding(.horizontal, 17).padding(.vertical, 8)
                     .background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 7))
