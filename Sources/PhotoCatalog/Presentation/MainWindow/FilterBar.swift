@@ -58,7 +58,7 @@ struct FilterBar: View {
             label("评分")
             HStack(spacing: 2) {
                 ForEach(1...5, id: \.self) { n in
-                    FBStar(on: app.filters.minRating >= n) {
+                    FBStar(n: n, on: app.filters.minRating >= n) {
                         var f = app.filters
                         f.minRating = (f.minRating == n) ? 0 : n
                         app.setFilters(f)
@@ -113,12 +113,16 @@ struct FilterBar: View {
                                 .strokeBorder(on ? c.hex : .clear, lineWidth: 1))
                             .clipShape(RoundedRectangle(cornerRadius: 4))
                     }.buttonStyle(.plain)
+                        .help(c.name)
+                        .accessibilityLabel(c.name)
+                        .accessibilityAddTraits(on ? .isSelected : [])
                 }
             }
         }
     }
 
     private struct FBStar: View {
+        let n: Int
         let on: Bool
         let action: () -> Void
         @State private var hover = false
@@ -129,6 +133,7 @@ struct FilterBar: View {
                     .foregroundStyle(on ? Theme.accent : (hover ? Theme.accent2 : Theme.text4))
                     .padding(2)
             }.buttonStyle(.plain).onHover { hover = $0 }
+                .accessibilityLabel("\(n) 星及以上")
         }
     }
 

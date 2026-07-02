@@ -7,8 +7,9 @@ struct InspectorView: View {
     @EnvironmentObject var app: AppState
     let asset: Asset?
 
-    private let tabs: [(String, String)] = [
-        ("info", "info"), ("meta", "aperture"), ("org", "organize"), ("hist", "history"),
+    private let tabs: [(String, String, String)] = [
+        ("info", "info", "信息"), ("meta", "aperture", "元数据"),
+        ("org", "organize", "整理"), ("hist", "history", "历史"),
     ]
 
     var body: some View {
@@ -92,7 +93,7 @@ struct InspectorView: View {
     private var tabBar: some View {
         HStack(spacing: 4) {
             ForEach(tabs, id: \.0) { tab in
-                InsTabButton(icon: tab.1, active: app.insTab == tab.0) { app.insTab = tab.0 }
+                InsTabButton(icon: tab.1, name: tab.2, active: app.insTab == tab.0) { app.insTab = tab.0 }
             }
         }
         .padding(.horizontal, 12).padding(.top, 7)
@@ -252,6 +253,7 @@ func formatAltitude(_ value: Double) -> String {
 
 private struct InsTabButton: View {
     let icon: String
+    let name: String
     let active: Bool
     let action: () -> Void
     @State private var hover = false
@@ -271,6 +273,9 @@ private struct InsTabButton: View {
                 }
         }
         .buttonStyle(.plain).onHover { hover = $0 }
+        .help(name)
+        .accessibilityLabel(name)
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 }
 

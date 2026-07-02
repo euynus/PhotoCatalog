@@ -14,16 +14,28 @@ struct StarsView: View {
     var body: some View {
         HStack(spacing: gap) {
             ForEach(1...5, id: \.self) { n in
-                let on = n <= value
-                Image(systemName: on ? "star.fill" : "star")
-                    .font(.system(size: size))
-                    .foregroundStyle(on ? Theme.accent
-                        : (dim ? Color.white(0.16) : Color.white(0.26)))
-                    .contentShape(Rectangle())
-                    .onTapGesture { onRate?(n) }
-                    .allowsHitTesting(onRate != nil)   // passive stars let taps reach the cell
+                if let onRate {
+                    Button { onRate(n) } label: { star(n) }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(n) 星")
+                } else {
+                    star(n).allowsHitTesting(false)   // passive stars let taps reach the cell
+                }
             }
         }
+        // passive: one readable 评分 element; interactive: keep the 5 buttons
+        .accessibilityElement(children: onRate == nil ? .ignore : .contain)
+        .accessibilityLabel("评分")
+        .accessibilityValue("\(value) 星")
+    }
+
+    private func star(_ n: Int) -> some View {
+        let on = n <= value
+        return Image(systemName: on ? "star.fill" : "star")
+            .font(.system(size: size))
+            .foregroundStyle(on ? Theme.accent
+                : (dim ? Color.white(0.16) : Color.white(0.26)))
+            .contentShape(Rectangle())
     }
 }
 
@@ -216,6 +228,7 @@ struct ToolButton<Trailing: View>: View {
         .opacity(disabled ? 0.35 : 1)
         .onHover { hover = $0 }
         .help(label)
+        .accessibilityLabel(label)   // otherwise VoiceOver reads the SF Symbol name
     }
 }
 

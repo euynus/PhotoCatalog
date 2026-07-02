@@ -56,9 +56,9 @@ struct Loupe: View {
 
             // nav arrows
             HStack {
-                navButton("chevronL") { go(-1) }
+                navButton("chevronL", label: "上一张") { go(-1) }
                 Spacer()
-                navButton("chevronR") { go(1) }
+                navButton("chevronR", label: "下一张") { go(1) }
             }.padding(.horizontal, 14)
 
             // offline badge
@@ -89,12 +89,14 @@ struct Loupe: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func navButton(_ icon: String, action: @escaping () -> Void) -> some View {
+    private func navButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Icon(icon, size: 24).foregroundStyle(Theme.text)
                 .frame(width: 44, height: 44)
                 .background(Color(hex: "#28282a").opacity(0.72), in: Circle())
         }.buttonStyle(.plain)
+            .help(label)
+            .accessibilityLabel(label)
     }
 
     private func hud(_ asset: Asset, idx: Int, count: Int) -> some View {
@@ -129,28 +131,32 @@ struct Loupe: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 6) {
                     ForEach(list) { a in
-                        ZStack {
-                            Thumb(asset: a, radius: 2)
-                                .overlay(alignment: .bottomLeading) {
-                                    if a.rating > 0 {
-                                        StarsView(value: a.rating, size: 7, dim: true).padding(.leading, 3).padding(.bottom, 2)
+                        Button { app.setPrimary(a.id) } label: {
+                            ZStack {
+                                Thumb(asset: a, radius: 2)
+                                    .overlay(alignment: .bottomLeading) {
+                                        if a.rating > 0 {
+                                            StarsView(value: a.rating, size: 7, dim: true).padding(.leading, 3).padding(.bottom, 2)
+                                        }
                                     }
-                                }
-                                .overlay(alignment: .topTrailing) {
-                                    if a.flag == .pick {
-                                        Circle().fill(Theme.accent).frame(width: 7, height: 7).padding(3)
-                                    } else if a.flag == .reject {
-                                        Circle().fill(Theme.red).frame(width: 7, height: 7).padding(3)
+                                    .overlay(alignment: .topTrailing) {
+                                        if a.flag == .pick {
+                                            Circle().fill(Theme.accent).frame(width: 7, height: 7).padding(3)
+                                        } else if a.flag == .reject {
+                                            Circle().fill(Theme.red).frame(width: 7, height: 7).padding(3)
+                                        }
                                     }
-                                }
+                            }
+                            .frame(width: 108, height: 72)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
                         }
-                        .frame(width: 108, height: 72)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .buttonStyle(.plain)
                         .opacity(a.id == app.primaryId ? 1 : 0.62)
                         .overlay(RoundedRectangle(cornerRadius: 3)
                             .strokeBorder(a.id == app.primaryId ? Theme.accent : .clear, lineWidth: 2))
                         .id(a.id)
-                        .onTapGesture { app.setPrimary(a.id) }
+                        .accessibilityLabel(a.filename)
+                        .accessibilityAddTraits(a.id == app.primaryId ? .isSelected : [])
                     }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 10)
