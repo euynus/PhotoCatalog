@@ -21,7 +21,12 @@ struct MainView: View {
             StatusBar()
         }
         .background(Theme.bgContent)
-        .overlay { sheets }
+        .overlay {
+            // the animation makes SheetBackdrop's .transition(.opacity) real —
+            // app.sheet is never set inside withAnimation, so sheets popped in
+            ZStack { sheets }
+                .animation(.easeOut(duration: 0.18), value: app.sheet)
+        }
     }
 
     @ViewBuilder private var sheets: some View {
