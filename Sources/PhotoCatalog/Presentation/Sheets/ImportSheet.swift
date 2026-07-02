@@ -308,23 +308,50 @@ struct ImportSheet: View {
 // shared sheet helpers
 @MainActor
 func sheetClose(_ action: @escaping () -> Void) -> some View {
-    Button(action: action) {
-        Icon("close", size: 15).foregroundStyle(Theme.text2)
-            .frame(width: 26, height: 26).background(Theme.surface).clipShape(Circle())
-    }.buttonStyle(.plain)
+    SheetCloseButton(action: action)
 }
 
 @MainActor
 func ghostButton(_ icon: String?, _ label: String, danger: Bool = false, small: Bool = false,
                  action: @escaping () -> Void) -> some View {
-    Button(action: action) {
-        HStack(spacing: 6) {
-            if let icon { Icon(icon, size: small ? 13 : 14) }
-            Text(label).font(.system(size: small ? 12 : 12.5))
-        }
-        .foregroundStyle(danger ? Theme.redSoft : Theme.text)
-        .padding(.horizontal, small ? 10 : 15).padding(.vertical, small ? 5 : 8)
-        .background(danger ? Theme.red.opacity(0.001) : Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-    }.buttonStyle(.plain)
+    GhostButton(icon: icon, label: label, danger: danger, small: small, action: action)
+}
+
+private struct SheetCloseButton: View {
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            Icon("close", size: 15).foregroundStyle(hover ? Theme.text : Theme.text2)
+                .frame(width: 26, height: 26)
+                .background(hover ? Theme.surfaceHi : Theme.surface)
+                .clipShape(Circle())
+        }.buttonStyle(.plain).onHover { hover = $0 }
+            .help("关闭")
+            .accessibilityLabel("关闭")
+    }
+}
+
+private struct GhostButton: View {
+    let icon: String?
+    let label: String
+    let danger: Bool
+    let small: Bool
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if let icon { Icon(icon, size: small ? 13 : 14) }
+                Text(label).font(.system(size: small ? 12 : 12.5))
+            }
+            .foregroundStyle(danger ? Theme.redSoft : Theme.text)
+            .padding(.horizontal, small ? 10 : 15).padding(.vertical, small ? 5 : 8)
+            .background(danger ? Theme.red.opacity(hover ? 0.26 : 0.16)
+                               : (hover ? Theme.surfaceHi : Theme.surface))
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+        }.buttonStyle(.plain).onHover { hover = $0 }
+    }
 }
