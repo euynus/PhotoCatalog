@@ -2561,10 +2561,6 @@ final class AppState: ObservableObject {
     func setRating(_ n: Int) { mutate { $0.rating = n } }
     func setFlag(_ f: Flag) { mutate { $0.flag = f } }
     func setColor(_ c: ColorLabel?) { mutate { $0.colorLabel = c } }
-    func setTitle(_ t: String) { mutate { $0.title = t } }
-    func setCaption(_ c: String) { mutate { $0.caption = c } }
-    func setProject(_ p: String) { mutate { $0.project = p.trimmingCharacters(in: .whitespacesAndNewlines) } }
-    func setClient(_ c: String) { mutate { $0.client = c.trimmingCharacters(in: .whitespacesAndNewlines) } }
 
     func applyRatingShortcut(_ rating: Int) {
         guard (0...5).contains(rating) else { return }

@@ -10,6 +10,23 @@ struct OrganizeTab: View {
     private enum Field { case title, caption, project, client }
     @FocusState private var focusedField: Field?
 
+    // Text edits are buffered locally and committed on focus loss / selection
+    // change / disappear — every committed edit is a SQLite upsert + XMP
+    // sidecar write + full list recompute, far too heavy to run per keystroke.
+    private struct Drafts: Equatable {
+        var title = "", caption = "", project = "", client = ""
+    }
+    @State private var drafts = Drafts()
+    @State private var seeded = Drafts()
+    /// Ids snapshotted when a field gains focus, so the commit can't land on
+    /// a different photo the user clicked mid-edit.
+    @State private var editTargets: Set<String> = []
+
+    private var assetDrafts: Drafts {
+        Drafts(title: asset.title, caption: asset.caption,
+               project: asset.project, client: asset.client)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             // rating
@@ -47,8 +64,7 @@ struct OrganizeTab: View {
             }
             // title
             block("标题") {
-                TextField("为这张照片添加标题…",
-                          text: Binding(get: { asset.title }, set: { app.setTitle($0) }))
+                TextField("为这张照片添加标题…", text: $drafts.title)
                     .textFieldStyle(.plain).font(.system(size: 12.5))
                     .focused($focusedField, equals: .title)
                     .padding(.horizontal, 10).padding(.vertical, 8)
@@ -59,11 +75,11 @@ struct OrganizeTab: View {
             // caption
             block("说明") {
                 ZStack(alignment: .topLeading) {
-                    if asset.caption.isEmpty {
+                    if drafts.caption.isEmpty {
                         Text("添加说明…").font(.system(size: 12.5)).foregroundStyle(Theme.text4)
                             .padding(.horizontal, 12).padding(.vertical, 10)
                     }
-                    TextEditor(text: Binding(get: { asset.caption }, set: { app.setCaption($0) }))
+                    TextEditor(text: $drafts.caption)
                         .font(.system(size: 12.5)).scrollContentBackground(.hidden)
                         .focused($focusedField, equals: .caption)
                         .frame(minHeight: 56)
@@ -74,8 +90,7 @@ struct OrganizeTab: View {
                 .focusRing(focusedField == .caption, radius: 6)
             }
             block("项目") {
-                TextField("项目名称",
-                          text: Binding(get: { asset.project }, set: { app.setProject($0) }))
+                TextField("项目名称", text: $drafts.project)
                     .textFieldStyle(.plain).font(.system(size: 12.5))
                     .focused($focusedField, equals: .project)
                     .padding(.horizontal, 10).padding(.vertical, 8)
@@ -84,8 +99,7 @@ struct OrganizeTab: View {
                     .focusRing(focusedField == .project, radius: 6)
             }
             block("客户") {
-                TextField("客户名称",
-                          text: Binding(get: { asset.client }, set: { app.setClient($0) }))
+                TextField("客户名称", text: $drafts.client)
                     .textFieldStyle(.plain).font(.system(size: 12.5))
                     .focused($focusedField, equals: .client)
                     .padding(.horizontal, 10).padding(.vertical, 8)
@@ -93,6 +107,44 @@ struct OrganizeTab: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .focusRing(focusedField == .client, radius: 6)
             }
+        }
+        .onChange(of: asset.id, initial: true) { commitDrafts(); seedDrafts() }
+        .onChange(of: assetDrafts) {
+            // adopt external changes, but never clobber an in-flight edit
+            if focusedField == nil, drafts == seeded { seedDrafts() }
+        }
+        .onChange(of: focusedField) {
+            if focusedField == nil {
+                commitDrafts()
+            } else if editTargets.isEmpty {
+                editTargets = app.selectedIds.isEmpty ? [asset.id] : app.selectedIds
+            }
+        }
+        .onDisappear { commitDrafts() }
+    }
+
+    private func seedDrafts() {
+        drafts = assetDrafts
+        seeded = drafts
+        editTargets = []
+    }
+
+    private func commitDrafts() {
+        defer { editTargets = []; seeded = drafts }
+        guard !editTargets.isEmpty else { return }
+        let project = drafts.project.trimmingCharacters(in: .whitespacesAndNewlines)
+        let client = drafts.client.trimmingCharacters(in: .whitespacesAndNewlines)
+        let titleChanged = drafts.title != seeded.title
+        let captionChanged = drafts.caption != seeded.caption
+        let projectChanged = project != seeded.project
+        let clientChanged = client != seeded.client
+        guard titleChanged || captionChanged || projectChanged || clientChanged else { return }
+        let d = drafts
+        app.mutate(editTargets) {
+            if titleChanged { $0.title = d.title }
+            if captionChanged { $0.caption = d.caption }
+            if projectChanged { $0.project = project }
+            if clientChanged { $0.client = client }
         }
     }
 
