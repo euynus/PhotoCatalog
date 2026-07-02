@@ -51,8 +51,9 @@ struct InspectorView: View {
 
     private func preview(_ asset: Asset) -> some View {
         ZStack {
+            // no .id(asset.id): keep the loader alive across selection changes
+            // so the preview doesn't flash the gradient placeholder
             Thumb(asset: asset, urlString: asset.thumb, radius: 5, contentMode: .fit)
-                .id(asset.id)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .shadow(color: .black.opacity(0.5), radius: 11, y: 6)
                 .padding(14)
