@@ -4,6 +4,7 @@
 // ============================================================
 import SwiftUI
 import AppKit
+import ImageIO
 
 /// HSL → Color (SwiftUI's Color(hue:…) is HSB, so we convert manually).
 private func hsl(_ h: Double, _ s: Double, _ l: Double) -> Color {
@@ -52,7 +53,7 @@ final class ThumbLoader: ObservableObject {
         task?.cancel()
     }
 
-    func load(_ source: String) {
+    func load(_ source: String, maxPixel: Int) {
         // already showing / fetching this exact source
         if source == loadedURL { return }
         loadedURL = source
@@ -79,8 +80,27 @@ final class ThumbLoader: ObservableObject {
                 data = await Self.readImageData(at: source)
             }
             guard !Task.isCancelled else { return }
-            self?.finish(source, data.flatMap { NSImage(data: $0) })
+            let decoded = await Self.decodeImage(data, maxPixel: maxPixel)
+            guard !Task.isCancelled else { return }
+            self?.finish(source, decoded)
         }
+    }
+
+    /// Decode + downsample to the display pixel budget off the main thread;
+    /// kCGImageSourceShouldCacheImmediately rasterizes the bitmap inside the
+    /// detached task so the render pass never pays JPEG decompression.
+    private static func decodeImage(_ data: Data?, maxPixel: Int) async -> NSImage? {
+        await Task.detached(priority: .userInitiated) { () -> NSImage? in
+            guard let data, let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+            let opts: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+            ]
+            guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return nil }
+            return NSImage(cgImage: cg, size: .zero)
+        }.value
     }
 
     private func finish(_ source: String, _ img: NSImage?) {
@@ -145,7 +165,7 @@ struct Thumb: View {
         .task(id: loadKey) {
             let resolved = await app.visibleImageSource(for: asset, requestedSource: source, kind: cacheKind)
             guard !Task.isCancelled else { return }
-            loader.load(resolved)
+            loader.load(resolved, maxPixel: cacheKind.maxPixel)
         }
     }
 }
