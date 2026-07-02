@@ -56,12 +56,14 @@ struct OrganizeTab: View {
             }
             // color
             block("颜色标签") { ColorLabelPicker(value: asset.colorLabel) { app.setColor($0) } }
-            // keywords
+            // keywords — zIndex lifts the suggestion dropdown above the
+            // 标题/说明 blocks below, which otherwise draw and hit-test over it
             block("关键词") {
                 KeywordEditor(keywords: asset.keywords,
                               suggestions: app.keywordSuggestionPool,
                               onAdd: { app.addKeyword($0) }, onRemove: { app.removeKeyword($0) })
             }
+            .zIndex(10)
             // title
             block("标题") {
                 TextField("为这张照片添加标题…", text: $drafts.title)
