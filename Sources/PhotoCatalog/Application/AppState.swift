@@ -30,6 +30,7 @@ final class AppState: ObservableObject {
             folderTreeCountCache = nil
             libraryCountsCache = nil
             sidebarCountIndexCache = nil
+            pinnedSidebarFavoritesCache = nil
             listInputsVersion &+= 1
         }
     }
@@ -42,10 +43,16 @@ final class AppState: ObservableObject {
         assetIndexCache = map
         return map
     }
-    @Published var albums: [Album] { didSet { listInputsVersion &+= 1 } }
+    @Published var albums: [Album] {
+        didSet {
+            pinnedSidebarFavoritesCache = nil
+            listInputsVersion &+= 1
+        }
+    }
     @Published var smartAlbums: [SmartAlbum] {
         didSet {
             sidebarCountIndexCache = nil
+            pinnedSidebarFavoritesCache = nil
             listInputsVersion &+= 1
         }
     }
@@ -53,6 +60,7 @@ final class AppState: ObservableObject {
         didSet {
             folderTreeCache = nil
             folderTreeCountCache = nil
+            pinnedSidebarFavoritesCache = nil
             listInputsVersion &+= 1
         }
     }
@@ -211,7 +219,9 @@ final class AppState: ObservableObject {
     @Published var showInspector = true
     @Published var showInfo = true
     @Published var insTab = "org"
-    @Published private var pinnedSidebarItems = AppState.loadPinnedSidebarItems()
+    @Published private var pinnedSidebarItems = AppState.loadPinnedSidebarItems() {
+        didSet { pinnedSidebarFavoritesCache = nil }
+    }
     @Published private var sourcePriorities = AppState.loadSourcePriorities() {
         didSet { folderTreeCache = nil; listInputsVersion &+= 1 }
     }
@@ -2038,8 +2048,14 @@ final class AppState: ObservableObject {
             .sorted { $0.count > $1.count }
     }
 
+    // Cached like the other derived sidebar collections — resolving a pinned
+    // keyword scans every asset, and Sidebar reads this on each render.
+    private var pinnedSidebarFavoritesCache: [PinnedSidebarItem]?
     var pinnedSidebarFavorites: [PinnedSidebarItem] {
-        pinnedSidebarItems.compactMap(resolvePinnedSidebarItem)
+        if let cache = pinnedSidebarFavoritesCache { return cache }
+        let resolved = pinnedSidebarItems.compactMap(resolvePinnedSidebarItem)
+        pinnedSidebarFavoritesCache = resolved
+        return resolved
     }
 
     var orderedFolders: [Folder] {
