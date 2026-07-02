@@ -239,7 +239,7 @@ final class AppState: ObservableObject {
 
     // ----- sheets / toasts -----
     @Published var sheet: String?
-    @Published var toasts: [Toast] = []
+    let toastCenter = ToastCenter()
 
     // ----- search focus signal (Cmd+F) -----
     @Published var searchFocusToken = 0
@@ -1957,12 +1957,7 @@ final class AppState: ObservableObject {
 
     // ---------- toasts ----------
     func push(_ message: String, _ icon: String = "check") {
-        let toast = Toast(message: message, icon: icon)
-        toasts.append(toast)
-        Task { [weak self, toast] in
-            try? await Task.sleep(for: .seconds(2.2))
-            self?.toasts.removeAll { $0.id == toast.id }
-        }
+        toastCenter.push(message, icon)
     }
 
     // ---------- keyword sidebar list ----------

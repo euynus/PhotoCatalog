@@ -24,7 +24,7 @@ struct RootView: View {
                 }
                 .animation(.easeInOut(duration: 0.4), value: app.welcomeAnim)
             }
-            ToastOverlay()
+            ToastOverlay(center: app.toastCenter)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bgDesktop.ignoresSafeArea())
@@ -34,12 +34,12 @@ struct RootView: View {
 
 // ---------- Toasts ----------
 struct ToastOverlay: View {
-    @EnvironmentObject var app: AppState
+    @ObservedObject var center: ToastCenter
     var body: some View {
         VStack {
             Spacer()
             VStack(spacing: 8) {
-                ForEach(app.toasts) { toast in
+                ForEach(center.toasts) { toast in
                     HStack(spacing: 8) {
                         Icon(toast.icon, size: 14).foregroundStyle(Theme.accent)
                         Text(toast.message).font(.system(size: 12.5)).foregroundStyle(Theme.text)
@@ -55,7 +55,7 @@ struct ToastOverlay: View {
             .padding(.bottom, 40)
         }
         .allowsHitTesting(false)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: app.toasts)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: center.toasts)
     }
 }
 
