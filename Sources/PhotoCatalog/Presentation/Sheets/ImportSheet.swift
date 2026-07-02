@@ -66,6 +66,7 @@ struct ImportSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 7))
             }
             .buttonStyle(.plain)
+            .keyboardShortcut(.defaultAction)
         }
         .frame(maxWidth: .infinity, minHeight: 260)
         .padding(18)

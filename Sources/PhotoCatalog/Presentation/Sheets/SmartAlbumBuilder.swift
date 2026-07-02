@@ -191,6 +191,7 @@ struct SmartAlbumBuilder: View {
                     .padding(.horizontal, 17).padding(.vertical, 8)
                     .background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 7))
             }.buttonStyle(.plain)
+                .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, 18).padding(.vertical, 13)
         .background(Color.black.opacity(0.18))
