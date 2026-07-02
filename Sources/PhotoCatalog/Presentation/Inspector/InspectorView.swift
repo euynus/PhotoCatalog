@@ -4,7 +4,7 @@
 import SwiftUI
 
 struct InspectorView: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
     let asset: Asset?
 
     private let tabs: [(String, String, String)] = [

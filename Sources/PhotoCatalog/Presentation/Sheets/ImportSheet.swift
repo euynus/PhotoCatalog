@@ -4,7 +4,7 @@
 import SwiftUI
 
 struct ImportSheet: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
 
     var body: some View {
         VStack(spacing: 0) {

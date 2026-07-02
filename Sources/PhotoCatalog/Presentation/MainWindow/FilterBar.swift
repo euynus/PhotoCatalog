@@ -4,7 +4,7 @@
 import SwiftUI
 
 struct FilterBar: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
     // Local echoes of the camera/lens filters — committed debounced so each
     // keystroke doesn't pay a synchronous full-library filter + sort.
     @State private var cameraText = ""

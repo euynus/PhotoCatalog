@@ -4,7 +4,7 @@
 import SwiftUI
 
 struct Titlebar: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
     @FocusState private var searchFocused: Bool
     // Local echo of app.search — committed debounced so each keystroke doesn't
     // pay a synchronous full-library filter + sort.
@@ -148,7 +148,8 @@ struct Titlebar: View {
     }
 
     private var sizeSlider: some View {
-        HStack(spacing: 6) {
+        @Bindable var app = app   // the slider binding needs the Bindable projection
+        return HStack(spacing: 6) {
             Icon("photos", size: 13).foregroundStyle(Theme.text3)
             Slider(value: $app.thumbSize, in: 108...280)
                 .frame(width: 76)

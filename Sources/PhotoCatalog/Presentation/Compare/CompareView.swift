@@ -4,7 +4,7 @@
 import SwiftUI
 
 struct CompareView: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
     @State private var trayOpen = false
 
     private var assets: [Asset] { app.compareIds.compactMap { id in app.assets.first { $0.id == id } } }
@@ -95,7 +95,7 @@ struct CompareView: View {
 }
 
 struct ComparePanel: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
     let asset: Asset
     let isWinner: Bool
     @State private var hover = false

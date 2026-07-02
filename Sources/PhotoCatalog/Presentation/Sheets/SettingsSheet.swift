@@ -5,7 +5,7 @@
 import SwiftUI
 
 struct SettingsSheet: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
     @State private var renamePrefix = "IMG"
     @State private var shiftHours = 1
     @State private var shiftMinutes = 0
@@ -40,7 +40,8 @@ struct SettingsSheet: View {
     }
 
     private var body_: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        @Bindable var app = app   // $app bindings below need the Bindable projection
+        return VStack(alignment: .leading, spacing: 18) {
             section("常规") {
                 Toggle(isOn: $app.openLastCatalogOnLaunch) {
                     Text("启动时打开上次目录库").font(.system(size: 12.5)).foregroundStyle(Theme.text)

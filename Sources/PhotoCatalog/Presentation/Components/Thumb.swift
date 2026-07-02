@@ -143,9 +143,11 @@ final class ThumbLoader: ObservableObject {
 }
 
 /// A photo tile that fills or fits the frame it is given (caller controls sizing).
+// Under @Observable, reading app.previewMaxPixel in body subscribes each tile
+// to exactly that one property — the old unobserved-environment workaround
+// (appStateRef) is no longer needed.
 struct Thumb: View {
-    @Environment(\.appStateRef) private var app
-    @Environment(\.previewMaxPixel) private var previewMaxPixel
+    @Environment(AppState.self) private var app
 
     let asset: Asset
     var urlString: String?
@@ -160,7 +162,7 @@ struct Thumb: View {
     private var cacheKind: ThumbnailService.Kind {
         kind ?? (urlString == nil || urlString == asset.thumb ? .thumb512 : .preview2048)
     }
-    private var loadKey: String { "\(asset.id)|\(source)|\(cacheKind.maxPixel)|\(previewMaxPixel)" }
+    private var loadKey: String { "\(asset.id)|\(source)|\(cacheKind.maxPixel)|\(app.previewMaxPixel)" }
 
     var body: some View {
         ZStack {
@@ -179,10 +181,6 @@ struct Thumb: View {
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .opacity(dim ? 0.4 : 1)
         .task(id: loadKey) {
-            guard let app else {
-                loader.load(source, maxPixel: cacheKind.maxPixel)
-                return
-            }
             let resolved = await app.visibleImageSource(for: asset, requestedSource: source, kind: cacheKind)
             guard !Task.isCancelled else { return }
             loader.load(resolved, maxPixel: cacheKind.maxPixel)

@@ -4,7 +4,7 @@
 import SwiftUI
 
 struct OrganizeTab: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
     let asset: Asset
 
     private enum Field { case title, caption, project, client }

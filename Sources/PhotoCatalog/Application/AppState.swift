@@ -2,7 +2,7 @@
 //  AppState — port of App() state, derived collections & mutations
 // ============================================================
 import SwiftUI
-import Combine
+import Observation
 import AppKit
 import UniformTypeIdentifiers
 
@@ -12,14 +12,21 @@ private struct StatusMetrics: Equatable, Sendable {
     var backupCount = 0
 }
 
+// @Observable gives per-property observation: a view re-renders only when a
+// property it actually read in body changes, not on every mutation anywhere
+// in the store. Lazy caches are @ObservationIgnored and their getters touch
+// the tracked inputs instead — a cache HIT must still register the same
+// dependencies as a miss, or views go stale (see the `_ = listInputsVersion`
+// lines). Filling an ignored cache inside a getter is safe during body.
 @MainActor
-final class AppState: ObservableObject {
+@Observable
+final class AppState {
     // ----- onboarding -----
-    @Published var onboarded: Bool = UserDefaults.standard.string(forKey: "pc_onboarded") == "1"
-    @Published var welcomeAnim = false
+    var onboarded: Bool = UserDefaults.standard.string(forKey: "pc_onboarded") == "1"
+    var welcomeAnim = false
 
     // ----- core data -----
-    @Published var assets: [Asset] {
+    var assets: [Asset] {
         didSet {
             assetIndexCache = nil
             keywordListCache = nil
@@ -35,28 +42,29 @@ final class AppState: ObservableObject {
         }
     }
     /// id → index map, lazily rebuilt after any `assets` change (invalidated above).
-    private var assetIndexCache: [String: Int]?
+    @ObservationIgnored private var assetIndexCache: [String: Int]?
     private var assetIndex: [String: Int] {
+        _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = assetIndexCache { return cache }
         var map = [String: Int](minimumCapacity: assets.count)
         for (i, a) in assets.enumerated() { map[a.id] = i }
         assetIndexCache = map
         return map
     }
-    @Published var albums: [Album] {
+    var albums: [Album] {
         didSet {
             pinnedSidebarFavoritesCache = nil
             listInputsVersion &+= 1
         }
     }
-    @Published var smartAlbums: [SmartAlbum] {
+    var smartAlbums: [SmartAlbum] {
         didSet {
             sidebarCountIndexCache = nil
             pinnedSidebarFavoritesCache = nil
             listInputsVersion &+= 1
         }
     }
-    @Published var folders: [Folder] = DemoData.folders {
+    var folders: [Folder] = DemoData.folders {
         didSet {
             folderTreeCache = nil
             folderTreeCountCache = nil
@@ -64,22 +72,22 @@ final class AppState: ObservableObject {
             listInputsVersion &+= 1
         }
     }
-    @Published var importing = false
-    @Published var importRun: ImportRun?
-    @Published var duplicateGroupsCache: [DuplicateGroup] = DemoData.duplicateGroups {
+    var importing = false
+    var importRun: ImportRun?
+    var duplicateGroupsCache: [DuplicateGroup] = DemoData.duplicateGroups {
         didSet { photoStacksCache = nil; stackByAssetCache = nil; listInputsVersion &+= 1 }
     }
-    @Published private var collapsedStackIds: Set<String> = []
-    private var photoStacksCache: [PhotoStack]?
-    private var stackByAssetCache: [String: PhotoStack]?
-    private var keywordListCache: [KeywordCount]?
-    private var keywordSuggestionPoolCache: [String]?
-    private var projectListCache: [KeywordCount]?
-    private var clientListCache: [KeywordCount]?
-    private var folderTreeCache: [FolderTreeItem]?
-    private var folderTreeCountCache: [String: Int]?
-    private var libraryCountsCache: LibraryCounts?
-    private var sidebarCountIndexCache: SidebarCountIndex?
+    private var collapsedStackIds: Set<String> = []
+    @ObservationIgnored private var photoStacksCache: [PhotoStack]?
+    @ObservationIgnored private var stackByAssetCache: [String: PhotoStack]?
+    @ObservationIgnored private var keywordListCache: [KeywordCount]?
+    @ObservationIgnored private var keywordSuggestionPoolCache: [String]?
+    @ObservationIgnored private var projectListCache: [KeywordCount]?
+    @ObservationIgnored private var clientListCache: [KeywordCount]?
+    @ObservationIgnored private var folderTreeCache: [FolderTreeItem]?
+    @ObservationIgnored private var folderTreeCountCache: [String: Int]?
+    @ObservationIgnored private var libraryCountsCache: LibraryCounts?
+    @ObservationIgnored private var sidebarCountIndexCache: SidebarCountIndex?
     private struct SidebarCountIndex {
         var folderCounts: [String: Int] = [:]
         var keywordCounts: [String: Int] = [:]
@@ -92,8 +100,8 @@ final class AppState: ObservableObject {
     }
     /// Bumped whenever an array input to `list` changes (assets/albums/smartAlbums/folders/
     /// source roots/priorities/duplicate groups); the small value inputs are compared directly.
-    private var listInputsVersion = 0
-    private var listCache: (signature: ListSignature, value: [Asset])?
+    private var listInputsVersion = 0   // tracked: cached getters read it so cache HITS register deps
+    @ObservationIgnored private var listCache: (signature: ListSignature, value: [Asset])?
     private struct ListSignature: Equatable {
         let inputsVersion: Int
         let selection: Selection
@@ -105,104 +113,104 @@ final class AppState: ObservableObject {
     }
 
     // ----- settings (PRD §17) -----
-    @Published var importMode: ImportMode =
+    var importMode: ImportMode =
         ImportMode(rawValue: UserDefaults.standard.string(forKey: "pc_importMode") ?? "") ?? .referenced {
         didSet { UserDefaults.standard.set(importMode.rawValue, forKey: "pc_importMode") }
     }
-    @Published var managedArchiveRule: ManagedArchiveRule =
+    var managedArchiveRule: ManagedArchiveRule =
         ManagedArchiveRule(rawValue: UserDefaults.standard.string(forKey: "pc_managedArchive") ?? "") ?? .date {
         didSet { UserDefaults.standard.set(managedArchiveRule.rawValue, forKey: "pc_managedArchive") }
     }
-    @Published var importDuplicateStrategy: ImportDuplicateStrategy =
+    var importDuplicateStrategy: ImportDuplicateStrategy =
         ImportDuplicateStrategy(rawValue: UserDefaults.standard.string(forKey: "pc_importDuplicateStrategy") ?? "")
             ?? .groupExact {
         didSet {
             UserDefaults.standard.set(importDuplicateStrategy.rawValue, forKey: "pc_importDuplicateStrategy")
         }
     }
-    @Published var importPostKeywords = UserDefaults.standard.string(forKey: "pc_importPostKeywords") ?? "" {
+    var importPostKeywords = UserDefaults.standard.string(forKey: "pc_importPostKeywords") ?? "" {
         didSet { UserDefaults.standard.set(importPostKeywords, forKey: "pc_importPostKeywords") }
     }
-    @Published var importPostColorLabel = UserDefaults.standard.string(forKey: "pc_importPostColorLabel") ?? "" {
+    var importPostColorLabel = UserDefaults.standard.string(forKey: "pc_importPostColorLabel") ?? "" {
         didSet { UserDefaults.standard.set(importPostColorLabel, forKey: "pc_importPostColorLabel") }
     }
-    @Published var importPostAlbumName = UserDefaults.standard.string(forKey: "pc_importPostAlbumName") ?? "" {
+    var importPostAlbumName = UserDefaults.standard.string(forKey: "pc_importPostAlbumName") ?? "" {
         didSet { UserDefaults.standard.set(importPostAlbumName, forKey: "pc_importPostAlbumName") }
     }
-    @Published var exportWritesXMP = UserDefaults.standard.bool(forKey: "pc_exportXMP") {
+    var exportWritesXMP = UserDefaults.standard.bool(forKey: "pc_exportXMP") {
         didSet { UserDefaults.standard.set(exportWritesXMP, forKey: "pc_exportXMP") }
     }
-    @Published var readXMPSidecar: Bool = (UserDefaults.standard.object(forKey: "pc_readXMP") as? Bool) ?? true {
+    var readXMPSidecar: Bool = (UserDefaults.standard.object(forKey: "pc_readXMP") as? Bool) ?? true {
         didSet { UserDefaults.standard.set(readXMPSidecar, forKey: "pc_readXMP") }
     }
-    @Published var autoWriteXMPSidecar = UserDefaults.standard.bool(forKey: "pc_autoWriteXMP") {
+    var autoWriteXMPSidecar = UserDefaults.standard.bool(forKey: "pc_autoWriteXMP") {
         didSet { UserDefaults.standard.set(autoWriteXMPSidecar, forKey: "pc_autoWriteXMP") }
     }
-    @Published var exportDirectoryStructure: ExportDirectoryStructure =
+    var exportDirectoryStructure: ExportDirectoryStructure =
         ExportDirectoryStructure(rawValue: UserDefaults.standard.string(forKey: "pc_exportDirectoryStructure") ?? "")
             ?? .flat {
         didSet {
             UserDefaults.standard.set(exportDirectoryStructure.rawValue, forKey: "pc_exportDirectoryStructure")
         }
     }
-    @Published var exportPresets: [ExportPreset] = AppState.loadExportPresets() {
+    var exportPresets: [ExportPreset] = AppState.loadExportPresets() {
         didSet { AppState.saveExportPresets(exportPresets) }
     }
-    @Published var recentImportDays: Int = (UserDefaults.standard.object(forKey: "pc_recentDays") as? Int) ?? 14 {
+    var recentImportDays: Int = (UserDefaults.standard.object(forKey: "pc_recentDays") as? Int) ?? 14 {
         didSet { UserDefaults.standard.set(recentImportDays, forKey: "pc_recentDays"); libraryCountsCache = nil }
     }
-    @Published var openLastCatalogOnLaunch: Bool =
+    var openLastCatalogOnLaunch: Bool =
         (UserDefaults.standard.object(forKey: "pc_openLast") as? Bool) ?? true {
         didSet { UserDefaults.standard.set(openLastCatalogOnLaunch, forKey: "pc_openLast") }
     }
-    @Published var reduceBackgroundOnLowPower: Bool =
+    var reduceBackgroundOnLowPower: Bool =
         (UserDefaults.standard.object(forKey: "pc_lowPower") as? Bool) ?? true {
         didSet { UserDefaults.standard.set(reduceBackgroundOnLowPower, forKey: "pc_lowPower") }
     }
 
     var recentCutoff: Date { Date().addingTimeInterval(-86400 * Double(max(1, recentImportDays))) }
-    @Published var visionEnabled = UserDefaults.standard.bool(forKey: "pc_vision") {
+    var visionEnabled = UserDefaults.standard.bool(forKey: "pc_vision") {
         didSet { UserDefaults.standard.set(visionEnabled, forKey: "pc_vision") }
     }
-    @Published var cacheLimitMB: Int = {
+    var cacheLimitMB: Int = {
         let saved = UserDefaults.standard.integer(forKey: "pc_cacheLimitMB")
         return saved > 0 ? saved : 2_048
     }() {
         didSet { UserDefaults.standard.set(cacheLimitMB, forKey: "pc_cacheLimitMB") }
     }
-    @Published var previewMaxPixel: Int = {
+    var previewMaxPixel: Int = {
         let saved = UserDefaults.standard.integer(forKey: "pc_previewMaxPixel")
         return saved == 1600 ? 1600 : 2_048
     }() {
         didSet { UserDefaults.standard.set(previewMaxPixel, forKey: Self.previewMaxPixelKey) }
     }
-    @Published var automaticBackupFrequency =
+    var automaticBackupFrequency =
         UserDefaults.standard.string(forKey: "pc_autoBackupFrequency") ?? "weekly" {
         didSet { UserDefaults.standard.set(automaticBackupFrequency, forKey: "pc_autoBackupFrequency") }
     }
-    @Published var healthReport: HealthReport?
-    @Published private var statusMetrics = StatusMetrics()
-    @Published private var recentCatalogPaths =
+    var healthReport: HealthReport?
+    private var statusMetrics = StatusMetrics()
+    private var recentCatalogPaths =
         UserDefaults.standard.stringArray(forKey: "pc_recentCatalogs") ?? []
 
     // ----- catalog (real persistence / scanning) -----
     private var store: CatalogStore?
     private var coordinator: ImportCoordinator?
-    private var watcher: FileWatcher?
-    private var watchedRoots: [URL] = []
-    private var securityScopedRoots: [URL] = []
-    private var sourceRootPathsById: [String: String] = [:] {
+    @ObservationIgnored private var watcher: FileWatcher?
+    @ObservationIgnored private var watchedRoots: [URL] = []
+    @ObservationIgnored private var securityScopedRoots: [URL] = []
+    @ObservationIgnored private var sourceRootPathsById: [String: String] = [:] {
         didSet {
             folderTreeCache = nil
             folderTreeCountCache = nil
             listInputsVersion &+= 1
         }
     }
-    private var volumeMonitor: VolumeMonitor?
-    private var lastImportSessionPersistedCount = 0
-    private var importControl: ImportControl?
-    private var activeImportJobId: String?
-    private var launchCatalogHandled = false
+    @ObservationIgnored private var volumeMonitor: VolumeMonitor?
+    @ObservationIgnored private var lastImportSessionPersistedCount = 0
+    @ObservationIgnored private var importControl: ImportControl?
+    @ObservationIgnored private var activeImportJobId: String?
+    @ObservationIgnored private var launchCatalogHandled = false
     private static let catalogURLKey = "pc_catalogURL"
     private static let recentCatalogsKey = "pc_recentCatalogs"
     private static let lastAutoBackupKey = "pc_lastAutoBackupAt"
@@ -211,38 +219,38 @@ final class AppState: ObservableObject {
     private static let previewMaxPixelKey = "pc_previewMaxPixel"
 
     // ----- selection / view -----
-    @Published var selection = Selection(type: .lib, id: "all", name: "全部照片")
-    @Published var selectedIds: Set<String> = []
-    @Published var primaryId: String?
-    @Published var view: ViewMode = .grid
-    @Published var thumbSize: CGFloat = 168
-    @Published var showInspector = true
-    @Published var showInfo = true
-    @Published var insTab = "org"
-    @Published private var pinnedSidebarItems = AppState.loadPinnedSidebarItems() {
+    var selection = Selection(type: .lib, id: "all", name: "全部照片")
+    var selectedIds: Set<String> = []
+    var primaryId: String?
+    var view: ViewMode = .grid
+    var thumbSize: CGFloat = 168
+    var showInspector = true
+    var showInfo = true
+    var insTab = "org"
+    private var pinnedSidebarItems = AppState.loadPinnedSidebarItems() {
         didSet { pinnedSidebarFavoritesCache = nil }
     }
-    @Published private var sourcePriorities = AppState.loadSourcePriorities() {
+    private var sourcePriorities = AppState.loadSourcePriorities() {
         didSet { folderTreeCache = nil; listInputsVersion &+= 1 }
     }
-    private var anchorId: String?
+    @ObservationIgnored private var anchorId: String?
 
     // ----- filters / sort -----
-    @Published var filters = Filters()
-    @Published var filterOpen = false
-    @Published var search = ""
-    @Published var sort = Sort()
+    var filters = Filters()
+    var filterOpen = false
+    var search = ""
+    var sort = Sort()
 
     // ----- compare -----
-    @Published var compareIds: [String] = []
-    @Published var winner: String?
+    var compareIds: [String] = []
+    var winner: String?
 
     // ----- sheets / toasts -----
-    @Published var sheet: String?
+    var sheet: String?
     let toastCenter = ToastCenter()
 
     // ----- search focus signal (Cmd+F) -----
-    @Published var searchFocusToken = 0
+    var searchFocusToken = 0
     func focusSearch() { searchFocusToken += 1 }
 
     func showSettings() { sheet = "settings" }
@@ -732,12 +740,12 @@ final class AppState: ObservableObject {
     }
 
     // O(1) failure-dedup state: the set of failure ids already recorded for the current run
-    private var failureSeenIds: (runId: UUID?, ids: Set<String>) = (nil, [])
+    @ObservationIgnored private var failureSeenIds: (runId: UUID?, ids: Set<String>) = (nil, [])
     // Progress events arrive once per file; accumulate here and publish to the
-    // @Published importRun at most every ~100 ms — each publish redraws every
+    // observed importRun at most every ~100 ms — each publish redraws every
     // observing view, so per-file publishing stalls the UI on fast imports.
-    private var pendingImportRun: ImportRun?
-    private var lastImportRunFlush: ContinuousClock.Instant?
+    @ObservationIgnored private var pendingImportRun: ImportRun?
+    @ObservationIgnored private var lastImportRunFlush: ContinuousClock.Instant?
 
     private func recordImportProgress(_ progress: ImportProgress, for runId: UUID) {
         guard let live = importRun, live.id == runId, live.phase.isActive else { return }
@@ -1460,9 +1468,9 @@ final class AppState: ObservableObject {
         }
     }
 
-    private var isBackfilling = false
-    private var backfillTask: Task<Void, Never>?
-    private var backfillGeneration = 0
+    @ObservationIgnored private var isBackfilling = false
+    @ObservationIgnored private var backfillTask: Task<Void, Never>?
+    @ObservationIgnored private var backfillGeneration = 0
 
     /// Stop any in-flight thumbnail backfill (e.g. when a fresh import is about to
     /// generate its own thumbnails, or the catalog is closing) so the two passes
@@ -1962,6 +1970,7 @@ final class AppState: ObservableObject {
 
     // ---------- keyword sidebar list ----------
     var keywordList: [KeywordCount] {
+        _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = keywordListCache { return cache }
         // Preserve first-encounter order (like a JS Map) so ties sort stably,
         // matching the prototype's keyword sidebar order.
@@ -1982,6 +1991,7 @@ final class AppState: ObservableObject {
     }
 
     var keywordSuggestionPool: [String] {
+        _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = keywordSuggestionPoolCache { return cache }
         var seen = Set<String>()
         var result: [String] = []
@@ -1998,6 +2008,7 @@ final class AppState: ObservableObject {
     }
 
     var projectList: [KeywordCount] {
+        _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = projectListCache { return cache }
         let result = countMetadataValues(\.project)
         projectListCache = result
@@ -2005,6 +2016,7 @@ final class AppState: ObservableObject {
     }
 
     var clientList: [KeywordCount] {
+        _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = clientListCache { return cache }
         let result = countMetadataValues(\.client)
         clientListCache = result
@@ -2013,6 +2025,8 @@ final class AppState: ObservableObject {
 
     /// Library sidebar tallies in one pass, cached and invalidated on assets/recent-days change.
     var libraryCounts: LibraryCounts {
+        _ = listInputsVersion   // register the dependency even on a cache hit
+        _ = recentImportDays    // its didSet clears this cache without bumping the version
         if let cache = libraryCountsCache { return cache }
         var counts = LibraryCounts()
         let cutoff = recentCutoff
@@ -2045,8 +2059,10 @@ final class AppState: ObservableObject {
 
     // Cached like the other derived sidebar collections — resolving a pinned
     // keyword scans every asset, and Sidebar reads this on each render.
-    private var pinnedSidebarFavoritesCache: [PinnedSidebarItem]?
+    @ObservationIgnored private var pinnedSidebarFavoritesCache: [PinnedSidebarItem]?
     var pinnedSidebarFavorites: [PinnedSidebarItem] {
+        _ = listInputsVersion   // register the dependency even on a cache hit
+        _ = pinnedSidebarItems  // its didSet clears this cache without bumping the version
         if let cache = pinnedSidebarFavoritesCache { return cache }
         let resolved = pinnedSidebarItems.compactMap(resolvePinnedSidebarItem)
         pinnedSidebarFavoritesCache = resolved
@@ -2064,6 +2080,7 @@ final class AppState: ObservableObject {
     }
 
     var folderTree: [FolderTreeItem] {
+        _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = folderTreeCache { return cache }
         let tree = FolderTreeService.build(sourceFolders: orderedFolders, assets: assets,
                                            sourceRootPaths: sourceRootPathsById)
@@ -2072,6 +2089,7 @@ final class AppState: ObservableObject {
     }
 
     private var folderTreeCounts: [String: Int] {
+        _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = folderTreeCountCache { return cache }
         let items = folderTree
         let counts = FolderTreeService.counts(for: items, assets: assets)
@@ -2080,6 +2098,7 @@ final class AppState: ObservableObject {
     }
 
     private var photoStacks: [PhotoStack] {
+        _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = photoStacksCache { return cache }
         let stacks = PhotoStackService.stacks(from: duplicateGroupsCache)
         photoStacksCache = stacks
@@ -2088,6 +2107,7 @@ final class AppState: ObservableObject {
 
     /// O(1) asset → stack lookup, rebuilt only when the stacks change (invalidated in didSet).
     private var stackByAsset: [String: PhotoStack] {
+        _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = stackByAssetCache { return cache }
         var map: [String: PhotoStack] = [:]
         for stack in photoStacks { for id in stack.assetIds { map[id] = stack } }
@@ -2183,6 +2203,7 @@ final class AppState: ObservableObject {
     }
 
     private var sidebarCountIndex: SidebarCountIndex {
+        _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = sidebarCountIndexCache { return cache }
         let live = assets.filter { !$0.deleted }
         var index = SidebarCountIndex()
@@ -3075,5 +3096,5 @@ final class AppState: ObservableObject {
     }
 
     /// Updated by the grid so arrow-key navigation knows the column count.
-    var gridWidth: CGFloat?
+    @ObservationIgnored var gridWidth: CGFloat?
 }

@@ -4,7 +4,7 @@
 import SwiftUI
 
 struct WelcomeView: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
 
     var body: some View {
         HStack(spacing: 0) {

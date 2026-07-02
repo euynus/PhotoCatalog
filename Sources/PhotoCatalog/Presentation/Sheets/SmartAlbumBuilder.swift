@@ -4,7 +4,7 @@
 import SwiftUI
 
 struct SmartAlbumBuilder: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
 
     @State private var name = "五星精选 · 旅行"
     @State private var match = "all"

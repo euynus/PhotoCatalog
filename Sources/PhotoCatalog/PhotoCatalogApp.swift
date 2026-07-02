@@ -46,14 +46,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 struct PhotoCatalogApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @StateObject private var app = AppState()
+    @State private var app = AppState()
 
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environmentObject(app)
-                .environment(\.appStateRef, app)
-                .environment(\.previewMaxPixel, app.previewMaxPixel)
+                .environment(app)
                 .frame(minWidth: 1080, minHeight: 680)
                 .preferredColorScheme(.dark)
                 .onAppear {

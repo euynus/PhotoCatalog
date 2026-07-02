@@ -4,7 +4,7 @@
 import SwiftUI
 
 struct MainView: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,7 +42,7 @@ struct MainView: View {
 
 // ---------- Content column (header + main) ----------
 struct ContentColumn: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
 
     var body: some View {
         VStack(spacing: 0) {
@@ -70,7 +70,7 @@ struct ContentColumn: View {
 
 // ---------- Content header ----------
 struct ContentHeader: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
     @State private var infoHover = false
     @State private var dirHover = false
 

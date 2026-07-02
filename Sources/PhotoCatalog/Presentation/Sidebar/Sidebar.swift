@@ -4,7 +4,7 @@
 import SwiftUI
 
 struct Sidebar: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
 
     private var ready: [Asset] { app.assets.filter { !$0.deleted } }
 

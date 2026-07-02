@@ -5,7 +5,7 @@ import SwiftUI
 import MapKit
 
 struct PlacesMapView: View {
-    @EnvironmentObject var app: AppState
+    @Environment(AppState.self) var app
     @State private var position: MapCameraPosition = .automatic
     /// Camera height in meters — drives the clustering grid size.
     @State private var cameraDistance: Double = 10_000_000
