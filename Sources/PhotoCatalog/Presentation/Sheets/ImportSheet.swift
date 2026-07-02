@@ -170,6 +170,9 @@ struct ImportSheet: View {
                             .transition(.scale(scale: 0.6).combined(with: .opacity))
                     }
                 }
+                // makes the declared transition real — recentAssets is updated
+                // outside withAnimation, so thumbs otherwise pop in
+                .animation(.easeOut(duration: 0.25), value: run.recentAssets)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 120, maxHeight: 120, alignment: .topLeading)
