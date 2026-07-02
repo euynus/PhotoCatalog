@@ -6,6 +6,9 @@ import SwiftUI
 struct Titlebar: View {
     @EnvironmentObject var app: AppState
     @FocusState private var searchFocused: Bool
+    // Local echo of app.search — committed debounced so each keystroke doesn't
+    // pay a synchronous full-library filter + sort.
+    @State private var searchText = ""
 
     var body: some View {
         ZStack {
@@ -117,13 +120,13 @@ struct Titlebar: View {
     private var searchField: some View {
         HStack(spacing: 6) {
             Icon("search", size: 14).foregroundStyle(Theme.text3)
-            TextField("搜索", text: Binding(get: { app.search }, set: { app.setSearch($0) }))
+            TextField("搜索", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.text)
                 .focused($searchFocused)
-            if !app.search.isEmpty {
-                Button { app.setSearch("") } label: {
+            if !searchText.isEmpty {
+                Button { searchText = ""; app.setSearch("") } label: {
                     Icon("close", size: 12, weight: .bold).foregroundStyle(Theme.text3)
                 }.buttonStyle(.plain)
             }
@@ -133,6 +136,14 @@ struct Titlebar: View {
         .background(Color.black.opacity(0.28))
         .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
         .focusRing(searchFocused, radius: Theme.rSm)
+        .onAppear { searchText = app.search }
+        .onChange(of: app.search) { if app.search != searchText { searchText = app.search } }
+        .task(id: searchText) {
+            // the do/catch matters: .task(id:) cancels on each keystroke and a
+            // swallowed CancellationError would still commit the stale text
+            do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+            if app.search != searchText { app.setSearch(searchText) }
+        }
         .onChange(of: app.searchFocusToken) { searchFocused = true }
     }
 

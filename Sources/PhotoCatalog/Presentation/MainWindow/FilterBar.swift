@@ -5,6 +5,10 @@ import SwiftUI
 
 struct FilterBar: View {
     @EnvironmentObject var app: AppState
+    // Local echoes of the camera/lens filters — committed debounced so each
+    // keystroke doesn't pay a synchronous full-library filter + sort.
+    @State private var cameraText = ""
+    @State private var lensText = ""
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -161,25 +165,31 @@ struct FilterBar: View {
     private var metadataGroup: some View {
         HStack(spacing: 8) {
             label("元数据")
-            filterTextField("相机", value: app.filters.camera) { value in
-                var f = app.filters
-                f.camera = value
-                app.setFilters(f)
-            }
-            filterTextField("镜头", value: app.filters.lens) { value in
-                var f = app.filters
-                f.lens = value
-                app.setFilters(f)
-            }
+            filterTextField("相机", text: $cameraText)
+            filterTextField("镜头", text: $lensText)
+        }
+        .onAppear {
+            cameraText = app.filters.camera
+            lensText = app.filters.lens
+        }
+        .onChange(of: app.filters.camera) { if app.filters.camera != cameraText { cameraText = app.filters.camera } }
+        .onChange(of: app.filters.lens) { if app.filters.lens != lensText { lensText = app.filters.lens } }
+        .task(id: cameraText) {
+            // the do/catch matters: .task(id:) cancels on each keystroke and a
+            // swallowed CancellationError would still commit the stale text
+            do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+            guard cameraText != app.filters.camera else { return }
+            var f = app.filters; f.camera = cameraText; app.setFilters(f)
+        }
+        .task(id: lensText) {
+            do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+            guard lensText != app.filters.lens else { return }
+            var f = app.filters; f.lens = lensText; app.setFilters(f)
         }
     }
 
-    private func filterTextField(_ placeholder: String, value: String,
-                                 onChange: @escaping (String) -> Void) -> some View {
-        TextField(placeholder, text: Binding(
-            get: { value },
-            set: { newValue, _ in onChange(newValue) }
-        ))
+    private func filterTextField(_ placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
             .textFieldStyle(.plain)
             .font(.system(size: 11.5))
             .foregroundStyle(Theme.text)
