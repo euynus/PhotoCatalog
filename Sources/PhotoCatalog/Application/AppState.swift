@@ -723,12 +723,15 @@ final class AppState: ObservableObject {
 
     // O(1) failure-dedup state: the set of failure ids already recorded for the current run
     private var failureSeenIds: (runId: UUID?, ids: Set<String>) = (nil, [])
+    // Progress events arrive once per file; accumulate here and publish to the
+    // @Published importRun at most every ~100 ms — each publish redraws every
+    // observing view, so per-file publishing stalls the UI on fast imports.
+    private var pendingImportRun: ImportRun?
+    private var lastImportRunFlush: ContinuousClock.Instant?
 
     private func recordImportProgress(_ progress: ImportProgress, for runId: UUID) {
-        guard var run = importRun, run.id == runId, run.phase.isActive else { return }
-        if run.phase != .paused {
-            run.phase = .importing
-        }
+        guard let live = importRun, live.id == runId, live.phase.isActive else { return }
+        var run = (pendingImportRun?.id == runId ? pendingImportRun : nil) ?? live
         run.total = progress.total
         run.processed = progress.processed
         run.failed = progress.failed
@@ -749,13 +752,28 @@ final class AppState: ObservableObject {
                 run.failures.append(failure)
             }
         }
-        importRun = run
+        pendingImportRun = run
         persistImportSessionProgress(run)
+        let due = lastImportRunFlush.map { ContinuousClock.now - $0 >= .milliseconds(100) } ?? true
+        let final = progress.total > 0 && progress.processed + progress.failed >= progress.total
+        if due || final { flushPendingImportRun() }
+    }
+
+    /// Publish the accumulated progress. The pending copy never owns the phase:
+    /// pause/resume writes phase straight into importRun, so adopt the live one.
+    private func flushPendingImportRun() {
+        guard var flush = pendingImportRun else { return }
+        pendingImportRun = nil
+        guard let live = importRun, live.id == flush.id, live.phase.isActive else { return }
+        flush.phase = live.phase == .paused ? .paused : .importing
+        lastImportRunFlush = ContinuousClock.now
+        importRun = flush
     }
 
     private func finishImport(folder: URL, imported: [Asset], existingIds: Set<String>, store: CatalogStore,
                               bookmark: Data?, mode: ImportMode, runId: UUID, sourceId: String? = nil,
                               persistSourceRoot: Bool) {
+        flushPendingImportRun()  // adopt any progress still waiting on the 100 ms window
         let dedup = ImportDeduplicationService.apply(
             imported: imported,
             existingAssets: assets.filter { !$0.deleted && !$0.isDemo },
@@ -870,6 +888,7 @@ final class AppState: ObservableObject {
     }
 
     func toggleImportPaused() {
+        flushPendingImportRun()  // pause/resume must act on current counts
         guard var run = importRun, run.phase.isActive else { return }
         guard let importControl else {
             if run.phase == .paused {
