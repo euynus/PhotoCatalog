@@ -44,6 +44,17 @@ struct GridView: View {
                                     app.selectCell(asset.id, shift: f.contains(.shift),
                                                    meta: f.contains(.command))
                                 }
+                                // one element per photo: tap gestures alone are
+                                // invisible to VoiceOver, making the grid unusable
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel(Self.accessibilityLabel(asset, stack: stack))
+                                .accessibilityAddTraits(app.selectedIds.contains(asset.id)
+                                    ? [.isButton, .isSelected] : .isButton)
+                                .accessibilityAction { app.selectCell(asset.id, shift: false, meta: false) }
+                                .accessibilityAction(named: "打开放大视图") { app.openLoupe(asset.id) }
+                                .accessibilityAction(named: stack?.collapsed == true ? "展开堆栈" : "折叠堆栈") {
+                                    if stack != nil { app.toggleStack(containing: asset.id) }
+                                }
                         }
                     }
                     .padding(18)
@@ -52,6 +63,23 @@ struct GridView: View {
                 .onChange(of: avail) { app.gridWidth = avail }
             }
         }
+    }
+
+    /// Spoken summary matching the cell's visible badges.
+    private static func accessibilityLabel(_ asset: Asset,
+                                           stack: (count: Int, collapsed: Bool)?) -> String {
+        var parts = [asset.filename]
+        if asset.rating > 0 { parts.append("\(asset.rating) 星") }
+        switch asset.flag {
+        case .pick: parts.append("精选")
+        case .reject: parts.append("拒绝")
+        case .none: break
+        }
+        if let label = asset.colorLabel { parts.append("\(label.name)色标签") }
+        if asset.status == .missing { parts.append("缺失") }
+        if asset.status == .offline { parts.append("离线") }
+        if let stack { parts.append(stack.collapsed ? "堆栈 \(stack.count) 张（已折叠）" : "堆栈 \(stack.count) 张") }
+        return parts.joined(separator: "，")
     }
 }
 
