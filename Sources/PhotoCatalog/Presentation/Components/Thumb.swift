@@ -86,6 +86,21 @@ final class ThumbLoader: ObservableObject {
         }
     }
 
+    /// Warm the shared cache (e.g. loupe neighbors) without touching any
+    /// loader's published state — a failed warm-up stays silent.
+    static func prefetch(_ source: String, maxPixel: Int) async {
+        guard !source.isEmpty, cache.object(forKey: source as NSString) == nil else { return }
+        let data: Data?
+        if source.hasPrefix("http") {
+            guard let url = URL(string: source) else { return }
+            data = try? await URLSession.shared.data(from: url).0
+        } else {
+            data = await readImageData(at: source)
+        }
+        guard let img = await decodeImage(data, maxPixel: maxPixel) else { return }
+        cache.setObject(img, forKey: source as NSString, cost: cost(of: img))
+    }
+
     /// Decode + downsample to the display pixel budget off the main thread;
     /// kCGImageSourceShouldCacheImmediately rasterizes the bitmap inside the
     /// detached task so the render pass never pays JPEG decompression.

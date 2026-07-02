@@ -21,6 +21,17 @@ struct Loupe: View {
                 filmstrip(list)
             }
             .background(Color(hex: "#0e0e0f"))
+            .task(id: asset.id) {
+                // warm the neighbors so arrow-key navigation lands on a cache hit
+                for neighbor in [idx - 1, idx + 1] where neighbor >= 0 && neighbor < list.count {
+                    let a = list[neighbor]
+                    guard !a.preview.isEmpty else { continue }
+                    let resolved = await app.visibleImageSource(for: a, requestedSource: a.preview,
+                                                                kind: .preview2048)
+                    guard !Task.isCancelled else { return }
+                    await ThumbLoader.prefetch(resolved, maxPixel: ThumbnailService.Kind.preview2048.maxPixel)
+                }
+            }
         }
     }
 
@@ -35,8 +46,10 @@ struct Loupe: View {
 
     private func stage(_ asset: Asset, idx: Int, count: Int) -> some View {
         ZStack {
+            // No .id(asset.id): keeping the loader alive across navigation
+            // holds the current photo on screen instead of flashing the
+            // gradient placeholder while the next one resolves.
             Thumb(asset: asset, urlString: asset.preview, kind: .preview2048, radius: 4, contentMode: .fit)
-                .id(asset.id)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .shadow(color: .black.opacity(0.6), radius: 30, y: 16)
                 .padding(.horizontal, 64).padding(.vertical, 28)
