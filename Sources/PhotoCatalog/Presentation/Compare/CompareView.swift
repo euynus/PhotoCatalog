@@ -25,15 +25,18 @@ struct CompareView: View {
                 .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
             Spacer()
             Text("\(assets.count) / 4 张").font(.system(size: 12)).monospacedDigit().foregroundStyle(Theme.text2)
-            Button { trayOpen.toggle() } label: {
-                HStack(spacing: 5) { Icon("plus", size: 13, weight: .bold); Text("添加照片").font(.system(size: 12)) }
-                    .foregroundStyle(Theme.text)
-                    .padding(.horizontal, 11).padding(.vertical, 6)
-                    .background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: 6))
+            Hover { hover in
+                Button { trayOpen.toggle() } label: {
+                    HStack(spacing: 5) { Icon("plus", size: 13, weight: .bold); Text("添加照片").font(.system(size: 12)) }
+                        .foregroundStyle(Theme.text)
+                        .padding(.horizontal, 11).padding(.vertical, 6)
+                        .background(hover ? Theme.surfaceHi : Theme.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+                .disabled(assets.count >= 4)
+                .opacity(assets.count >= 4 ? 0.4 : 1)
             }
-            .buttonStyle(.plain)
-            .disabled(assets.count >= 4)
-            .opacity(assets.count >= 4 ? 0.4 : 1)
         }
         .padding(.horizontal, 16)
         .frame(height: 44)
@@ -45,14 +48,19 @@ struct CompareView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(app.list.filter { !app.compareIds.contains($0.id) }.prefix(24)) { a in
-                    Thumb(asset: a, radius: 3)
-                        .frame(width: 76, height: 52)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .opacity(0.8)
-                        .onTapGesture {
+                    Hover { hover in
+                        Button {
                             app.compareIds = Array((app.compareIds + [a.id]).prefix(4))
                             trayOpen = false
+                        } label: {
+                            Thumb(asset: a, radius: 3)
+                                .frame(width: 76, height: 52)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                .opacity(hover ? 1 : 0.8)
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(a.filename)
+                    }
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 10)
@@ -67,13 +75,18 @@ struct CompareView: View {
                 ComparePanel(asset: a, isWinner: app.winner == a.id)
             }
             if assets.count < 2 {
-                Button { trayOpen = true } label: {
-                    VStack(spacing: 8) { Icon("plus", size: 24); Text("添加照片以开始比较").font(.system(size: 12.5)) }
-                        .foregroundStyle(Theme.text4)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .overlay(RoundedRectangle(cornerRadius: Theme.r)
-                            .strokeBorder(Theme.line2, style: StrokeStyle(lineWidth: 2, dash: [6, 4])))
-                }.buttonStyle(.plain)
+                Hover { hover in
+                    Button { trayOpen = true } label: {
+                        VStack(spacing: 8) { Icon("plus", size: 24); Text("添加照片以开始比较").font(.system(size: 12.5)) }
+                            .foregroundStyle(hover ? Theme.text3 : Theme.text4)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(hover ? Color.white(0.02) : .clear)
+                            .overlay(RoundedRectangle(cornerRadius: Theme.r)
+                                .strokeBorder(hover ? Color.white(0.22) : Theme.line2,
+                                              style: StrokeStyle(lineWidth: 2, dash: [6, 4])))
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.r))
+                    }.buttonStyle(.plain)
+                }
             }
         }
         .padding(14)
@@ -104,11 +117,17 @@ struct ComparePanel: View {
                 }
                 VStack { HStack {
                     Spacer()
-                    Button { app.compareIds.removeAll { $0 == asset.id } } label: {
-                        Icon("close", size: 13, weight: .bold).foregroundStyle(Theme.text2)
-                            .frame(width: 24, height: 24).background(Color.black.opacity(0.5)).clipShape(Circle())
+                    Hover { btnHover in
+                        Button { app.compareIds.removeAll { $0 == asset.id } } label: {
+                            Icon("close", size: 13, weight: .bold)
+                                .foregroundStyle(btnHover ? Theme.text : Theme.text2)
+                                .frame(width: 24, height: 24)
+                                .background(Color.black.opacity(btnHover ? 0.75 : 0.5))
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain).help("移出比较")
+                        .accessibilityLabel("移出比较")
                     }
-                    .buttonStyle(.plain).help("移出比较")
                     .opacity(hover ? 1 : 0)
                 }; Spacer() }.padding(9)
             }
@@ -141,15 +160,17 @@ struct ComparePanel: View {
                     miniFlag(.reject, "reject")
                 }
                 Spacer()
-                Button {
-                    app.winner = asset.id; app.push("已选为最佳", "check")
-                } label: {
-                    Text("选为最佳").font(.system(size: 11.5, weight: isWinner ? .semibold : .regular))
-                        .foregroundStyle(isWinner ? Theme.onAccent : Theme.text2)
-                        .padding(.horizontal, 11).padding(.vertical, 5)
-                        .background(isWinner ? Theme.accent : Theme.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                }.buttonStyle(.plain)
+                Hover { hover in
+                    Button {
+                        app.winner = asset.id; app.push("已选为最佳", "check")
+                    } label: {
+                        Text("选为最佳").font(.system(size: 11.5, weight: isWinner ? .semibold : .regular))
+                            .foregroundStyle(isWinner ? Theme.onAccent : (hover ? Theme.text : Theme.text2))
+                            .padding(.horizontal, 11).padding(.vertical, 5)
+                            .background(isWinner ? Theme.accent : (hover ? Theme.surfaceHi : Theme.surface))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }.buttonStyle(.plain)
+                }
             }
         }
         .padding(.horizontal, 13).padding(.vertical, 11)
@@ -162,13 +183,16 @@ struct ComparePanel: View {
         let on = asset.flag == flag
         let tint: Color = flag == .pick ? Theme.accent : Theme.redSoft
         let bg: Color = flag == .pick ? Theme.accentSoft : Theme.red.opacity(0.16)
-        return Button {
-            app.mutateAsset(asset.id) { $0.flag = on ? .none : flag }
-        } label: {
-            Icon(icon, size: 13).foregroundStyle(on ? tint : Theme.text3)
-                .frame(width: 26, height: 24)
-                .background(on ? bg : Theme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 5))
-        }.buttonStyle(.plain).help(flag == .pick ? "精选" : "拒绝")
+        return Hover { hover in
+            Button {
+                app.mutateAsset(asset.id) { $0.flag = on ? .none : flag }
+            } label: {
+                Icon(icon, size: 13).foregroundStyle(on ? tint : (hover ? Theme.text2 : Theme.text3))
+                    .frame(width: 26, height: 24)
+                    .background(on ? bg : (hover ? Theme.surfaceHi : Theme.surface))
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+            }.buttonStyle(.plain).help(flag == .pick ? "精选" : "拒绝")
+                .accessibilityLabel(flag == .pick ? "精选" : "拒绝")
+        }
     }
 }

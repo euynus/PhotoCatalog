@@ -50,17 +50,20 @@ struct WelcomeView: View {
     }
 
     private func wbtn(_ icon: String, _ label: String, primary: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 9) {
-                Icon(icon, size: 16); Text(label).font(.system(size: 13.5, weight: .medium))
-                Spacer()
-            }
-            .foregroundStyle(primary ? Theme.onAccent : Theme.text)
-            .padding(.horizontal, 16).frame(height: 40)
-            .background(primary ? Theme.accent : Theme.surface)
-            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(primary ? .clear : Theme.line2, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 9))
-        }.buttonStyle(.plain)
+        Hover { hover in
+            Button(action: action) {
+                HStack(spacing: 9) {
+                    Icon(icon, size: 16); Text(label).font(.system(size: 13.5, weight: .medium))
+                    Spacer()
+                }
+                .foregroundStyle(primary ? Theme.onAccent : Theme.text)
+                .padding(.horizontal, 16).frame(height: 40)
+                .background(primary ? (hover ? Theme.accent2 : Theme.accent)
+                                    : (hover ? Theme.surfaceHi : Theme.surface))
+                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(primary ? .clear : Theme.line2, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 9))
+            }.buttonStyle(.plain)
+        }
     }
 
     private var right: some View {
@@ -75,9 +78,11 @@ struct WelcomeView: View {
                     .padding(.vertical, 18)
             } else {
                 ForEach(app.recentCatalogs) { catalog in
-                    Button { app.openRecentCatalog(catalog) } label: {
-                        recentRow(catalog)
-                    }.buttonStyle(.plain)
+                    Hover { hover in
+                        Button { app.openRecentCatalog(catalog) } label: {
+                            recentRow(catalog, hover: hover)
+                        }.buttonStyle(.plain)
+                    }
                 }
             }
 
@@ -94,7 +99,7 @@ struct WelcomeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func recentRow(_ catalog: RecentCatalog) -> some View {
+    private func recentRow(_ catalog: RecentCatalog, hover: Bool) -> some View {
         HStack(spacing: 12) {
             Icon("photos", size: 18).foregroundStyle(Theme.accent)
                 .frame(width: 38, height: 38).background(Theme.surface)
@@ -105,9 +110,11 @@ struct WelcomeView: View {
                     .foregroundStyle(Theme.text3).lineLimit(1)
             }
             Spacer()
-            Icon("chevronR", size: 12).foregroundStyle(Theme.text4)
+            Icon("chevronR", size: 12).foregroundStyle(hover ? Theme.text3 : Theme.text4)
         }
         .padding(11)
+        .background(hover ? Color.white(0.035) : .clear)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
         .contentShape(Rectangle())
     }
 }

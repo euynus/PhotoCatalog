@@ -232,6 +232,18 @@ struct ToolButton<Trailing: View>: View {
     }
 }
 
+// ---------- Hover tracking ----------
+/// Wraps inline controls that need hover feedback without a dedicated struct
+/// (SwiftUI @State can't live in a ForEach row built by a plain function).
+struct Hover<Content: View>: View {
+    @ViewBuilder let content: (Bool) -> Content
+    @State private var hover = false
+
+    var body: some View {
+        content(hover).onHover { hover = $0 }
+    }
+}
+
 // ---------- Focus ring ----------
 extension View {
     /// Accent border + 3px accent-soft glow when focused (CSS :focus / :focus-within).

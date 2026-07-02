@@ -36,10 +36,13 @@ struct OrganizeTab: View {
                         app.setRating(asset.rating == n ? 0 : n)
                     }
                     if asset.rating > 0 {
-                        Button { app.setRating(0) } label: {
-                            Text("清除").font(.system(size: 11.5)).foregroundStyle(Theme.text3)
-                                .padding(.horizontal, 7).padding(.vertical, 3)
-                        }.buttonStyle(.plain)
+                        Hover { hover in
+                            Button { app.setRating(0) } label: {
+                                Text("清除").font(.system(size: 11.5))
+                                    .foregroundStyle(hover ? Theme.text : Theme.text3)
+                                    .padding(.horizontal, 7).padding(.vertical, 3)
+                            }.buttonStyle(.plain)
+                        }
                     }
                 }
             }
@@ -200,17 +203,31 @@ struct ColorLabelPicker: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            Button { onPick(nil) } label: {
-                Icon("close", size: 11, weight: .bold).foregroundStyle(Theme.text3)
-                    .frame(width: 26, height: 26).background(Theme.surface).clipShape(Circle())
-                    .overlay { if value == nil { ring(Theme.text3) } }
-            }.buttonStyle(.plain).help("无")
+            Hover { hover in
+                Button { onPick(nil) } label: {
+                    Icon("close", size: 11, weight: .bold).foregroundStyle(Theme.text3)
+                        .frame(width: 26, height: 26)
+                        .background(hover ? Theme.surfaceHi : Theme.surface).clipShape(Circle())
+                        .overlay {
+                            if value == nil { ring(Theme.text3) }
+                            else if hover { ring(Color.white(0.25)) }
+                        }
+                }.buttonStyle(.plain).help("无")
+                    .accessibilityLabel("无颜色标签")
+            }
 
             ForEach(ColorLabel.allCases) { c in
-                Button { onPick(value == c ? nil : c) } label: {
-                    Circle().fill(c.hex).frame(width: 26, height: 26)
-                        .overlay { if value == c { ring(c.hex) } }
-                }.buttonStyle(.plain).help(c.name)
+                Hover { hover in
+                    Button { onPick(value == c ? nil : c) } label: {
+                        Circle().fill(c.hex).frame(width: 26, height: 26)
+                            .overlay {
+                                if value == c { ring(c.hex) }
+                                else if hover { ring(Color.white(0.25)) }
+                            }
+                    }.buttonStyle(.plain).help(c.name)
+                        .accessibilityLabel(c.name)
+                        .accessibilityAddTraits(value == c ? .isSelected : [])
+                }
             }
         }
     }
@@ -245,10 +262,16 @@ struct KeywordEditor: View {
                     ForEach(keywords, id: \.self) { k in
                         HStack(spacing: 5) {
                             Text(k).font(.system(size: 12))
-                            Button { onRemove(k) } label: {
-                                Icon("close", size: 10, weight: .bold).foregroundStyle(Theme.text3)
-                                    .frame(width: 15, height: 15)
-                            }.buttonStyle(.plain)
+                            Hover { hover in
+                                Button { onRemove(k) } label: {
+                                    Icon("close", size: 10, weight: .bold)
+                                        .foregroundStyle(hover ? Theme.text : Theme.text3)
+                                        .frame(width: 15, height: 15)
+                                        .background(hover ? Color.white(0.08) : .clear)
+                                        .clipShape(Circle())
+                                }.buttonStyle(.plain)
+                                    .accessibilityLabel("移除关键词 \(k)")
+                            }
                         }
                         .padding(.leading, 9).padding(.trailing, 5).padding(.vertical, 3)
                         .background(Theme.surface)
