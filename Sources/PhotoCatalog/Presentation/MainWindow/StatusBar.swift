@@ -21,9 +21,10 @@ struct StatusBar: View {
                     HStack(spacing: 5) {
                         if run.total > 0 {
                             ProgressView(value: Double(run.processed + run.failed), total: Double(run.total))
+                                .tint(Theme.accent)
                                 .frame(width: 54)
                         } else {
-                            ProgressView().controlSize(.mini)
+                            ProgressView().controlSize(.mini).tint(Theme.accent)
                         }
                         Text(statusText(run))
                     }
