@@ -37,6 +37,7 @@ struct GridView: View {
                                      stackCount: stack?.count,
                                      stackCollapsed: stack?.collapsed == true,
                                      onToggleStack: { app.toggleStack(containing: asset.id) })
+                                .equatable()
                                 .onTapGesture(count: 2) { app.openLoupe(asset.id) }
                                 .onTapGesture {
                                     let f = NSEvent.modifierFlags
@@ -142,6 +143,29 @@ struct GridCell: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 2)
+    }
+}
+
+// The onToggleStack closure would otherwise defeat SwiftUI's memberwise
+// diffing, re-running every visible cell on any AppState publish. Compare
+// exactly the asset fields the body renders (Asset.== is identity-only, so
+// comparing whole assets would leave stale stars/flags after in-place edits).
+extension GridCell: Equatable {
+    static func == (l: GridCell, r: GridCell) -> Bool {
+        l.asset.id == r.asset.id &&
+        l.asset.rating == r.asset.rating &&
+        l.asset.flag == r.asset.flag &&
+        l.asset.colorLabel == r.asset.colorLabel &&
+        l.asset.status == r.asset.status &&
+        l.asset.filename == r.asset.filename &&
+        l.asset.thumb == r.asset.thumb &&
+        l.asset.localPath == r.asset.localPath &&
+        l.size == r.size &&
+        l.selected == r.selected &&
+        l.isPrimary == r.isPrimary &&
+        l.showInfo == r.showInfo &&
+        l.stackCount == r.stackCount &&
+        l.stackCollapsed == r.stackCollapsed
     }
 }
 
