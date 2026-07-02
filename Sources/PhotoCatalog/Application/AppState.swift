@@ -1528,8 +1528,15 @@ final class AppState: ObservableObject {
             return requestedSource
         }
 
-        let fm = FileManager.default
-        let requestedExists = !requestedSource.isEmpty && fm.fileExists(atPath: requestedSource)
+        // Stat off the main actor: a referenced original on a stalled network
+        // volume can block for seconds, and this runs once per appearing cell.
+        let (requestedExists, originalExists, previewExists) = await Task.detached(priority: .userInitiated) {
+            [requestedSource, localPath = asset.localPath, preview = asset.preview] in
+            let fm = FileManager.default
+            return (!requestedSource.isEmpty && fm.fileExists(atPath: requestedSource),
+                    localPath.map { fm.fileExists(atPath: $0) } ?? false,
+                    !preview.isEmpty && fm.fileExists(atPath: preview))
+        }.value
         if requestedExists && (!kind.isThumbnail || !asset.isRaw) {
             return requestedSource
         }
@@ -1541,8 +1548,7 @@ final class AppState: ObservableObject {
 
         let original = URL(fileURLWithPath: localPath)
         let fallbackPreview = asset.preview.isEmpty ? nil : URL(fileURLWithPath: asset.preview)
-        guard fm.fileExists(atPath: localPath)
-              || fallbackPreview.map({ fm.fileExists(atPath: $0.path) }) == true else {
+        guard originalExists || previewExists else {
             return requestedSource
         }
 
