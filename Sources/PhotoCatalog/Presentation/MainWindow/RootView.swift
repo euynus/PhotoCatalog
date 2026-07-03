@@ -63,6 +63,10 @@ struct ToastOverlay: View {
 struct KeyCatcher: NSViewRepresentable {
     let app: AppState
 
+    nonisolated static func shouldPassThroughGlobalShortcut(_ flags: NSEvent.ModifierFlags) -> Bool {
+        !flags.intersection([.option, .control]).isEmpty
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator(app: app) }
     func makeNSView(context: Context) -> NSView {
         context.coordinator.install()
@@ -98,6 +102,7 @@ struct KeyCatcher: NSViewRepresentable {
         private func handle(_ event: NSEvent) -> NSEvent? {
             let cmd = event.modifierFlags.contains(.command)
             let shift = event.modifierFlags.contains(.shift)
+            if KeyCatcher.shouldPassThroughGlobalShortcut(event.modifierFlags) { return event }
             let key = Self.keyString(event)
             let app = app
 
