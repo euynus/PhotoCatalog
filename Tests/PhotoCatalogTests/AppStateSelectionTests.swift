@@ -592,6 +592,55 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testMaintenanceActionsCleanLocalCatalogState() throws {
+        let defaults = UserDefaults.standard
+        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
+        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
+        defer {
+            if let previousCatalogURL {
+                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
+            } else {
+                defaults.removeObject(forKey: "pc_catalogURL")
+            }
+            if let previousRecent {
+                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
+            } else {
+                defaults.removeObject(forKey: "pc_recentCatalogs")
+            }
+        }
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-maintenance-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        let logFile = store.logsURL.appendingPathComponent("import.log")
+        let cacheFile = store.thumb256URL.appendingPathComponent("stale.jpg")
+        try Data("log".utf8).write(to: logFile)
+        try Data("cache".utf8).write(to: cacheFile)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        XCTAssertTrue(app.recentCatalogs.contains { $0.path == package.path })
+        app.clearRecentCatalogs()
+        XCTAssertTrue(app.recentCatalogs.isEmpty)
+
+        app.clearLogs()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: logFile.path))
+
+        app.clearCache()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cacheFile.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.thumb256URL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.preview2048URL.path))
+
+        app.runBackup()
+        XCTAssertEqual(BackupService.listBackups(store).count, 1)
+    }
+
+    @MainActor
     func testStaleDuplicateRecomputeResultIsIgnored() async throws {
         let app = AppState()
         app.onboarded = true
