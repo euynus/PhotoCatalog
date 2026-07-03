@@ -336,6 +336,23 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testRemovingDemoAssetDropsDuplicateGhosts() throws {
+        let app = AppState()
+        app.onboarded = true
+        let duplicateAssetId = try XCTUnwrap(app.duplicateGroups.first?.items.first?.id)
+
+        app.setPrimary(duplicateAssetId)
+        app.removeSelected()
+
+        XCTAssertTrue(app.assets.first { $0.id == duplicateAssetId }?.deleted ?? false)
+        XCTAssertFalse(app.list.contains { $0.id == duplicateAssetId })
+        XCTAssertFalse(app.duplicateGroups.contains { group in
+            group.items.contains { $0.id == duplicateAssetId }
+        })
+        XCTAssertFalse(app.selectedIds.contains(duplicateAssetId))
+    }
+
+    @MainActor
     func testPinnedKeywordSidebarFavoriteTogglesAndCounts() throws {
         let app = AppState()
         app.onboarded = true

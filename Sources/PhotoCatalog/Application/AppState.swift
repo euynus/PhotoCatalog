@@ -1892,8 +1892,12 @@ final class AppState {
     func recomputeDuplicates() {
         let live = assets.filter { !$0.isDemo && !$0.deleted }
         guard !live.isEmpty else {
-            duplicateGroupsCache = DemoData.duplicateGroups
-            collapsedStackIds = []
+            let demoLiveIds = Set(assets.filter { $0.isDemo && !$0.deleted }.map(\.id))
+            duplicateGroupsCache = DemoData.duplicateGroups.filter { group in
+                group.items.contains { demoLiveIds.contains($0.id) }
+            }
+            let validStackIds = Set(PhotoStackService.stacks(from: duplicateGroupsCache).map(\.id))
+            collapsedStackIds.formIntersection(validStackIds)
             return
         }
         Task { [weak self, live] in
