@@ -740,6 +740,44 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testReplacingWatchedSourceRootStopsScanningOldFolder() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-watch-replace-\(UUID().uuidString)")
+        let oldRoot = dir.appendingPathComponent("Old")
+        let newRoot = dir.appendingPathComponent("New")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: oldRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: newRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let oldOnlyPhoto = oldRoot.appendingPathComponent("old-only.jpg")
+        let newOnlyPhoto = newRoot.appendingPathComponent("new-only.jpg")
+        try writeTestJPEG(to: oldOnlyPhoto, black: false)
+        try writeTestJPEG(to: newOnlyPhoto, black: false)
+        _ = try CatalogStore(packageURL: package)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.replaceWatchedSourceRoot(oldRootPath: nil, newRoot: oldRoot)
+        app.replaceWatchedSourceRoot(oldRootPath: oldRoot.path, newRoot: newRoot)
+
+        app.rescanCurrentSource()
+        func imported(_ url: URL) -> Bool {
+            let path = url.resolvingSymlinksInPath().path
+            return app.assets.contains { asset in
+                asset.localPath.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path == path } ?? false
+            }
+        }
+
+        for _ in 0..<30 where !imported(newOnlyPhoto) {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+
+        XCTAssertTrue(imported(newOnlyPhoto))
+        XCTAssertFalse(imported(oldOnlyPhoto))
+    }
+
+    @MainActor
     func testMaintenanceActionsCleanLocalCatalogState() throws {
         let defaults = UserDefaults.standard
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")

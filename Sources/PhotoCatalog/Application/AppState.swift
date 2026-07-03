@@ -1178,6 +1178,18 @@ final class AppState {
         watcher = w
     }
 
+    func replaceWatchedSourceRoot(oldRootPath: String?, newRoot: URL) {
+        let newPath = newRoot.standardizedFileURL.path
+        if let oldRootPath, oldRootPath != newRoot.path {
+            let oldPath = URL(fileURLWithPath: oldRootPath).standardizedFileURL.path
+            watchedRoots.removeAll { $0.standardizedFileURL.path == oldPath }
+        }
+        if !watchedRoots.contains(where: { $0.standardizedFileURL.path == newPath }) {
+            watchedRoots.append(newRoot)
+        }
+        refreshWatcher()
+    }
+
     private func incrementalRescan() {
         guard let coordinator, let store else { return }
         if isIncrementalRescanning {
@@ -2791,10 +2803,7 @@ final class AppState {
         if let oldRootPath, oldRootPath != folder.path {
             rebaseSourceRootAssetPaths(folderId: folderId, oldRoot: oldRootPath, newRoot: folder.path)
         }
-        if !watchedRoots.contains(folder) {
-            watchedRoots.append(folder)
-            refreshWatcher()
-        }
+        replaceWatchedSourceRoot(oldRootPath: oldRootPath, newRoot: folder)
         detectMissingRealAssets()
         push("已恢复源文件夹访问", "check")
     }
