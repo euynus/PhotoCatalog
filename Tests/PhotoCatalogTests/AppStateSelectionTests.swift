@@ -219,6 +219,32 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testBatchRenameFallsBackToPrimarySelection() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rename-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let original = dir.appendingPathComponent("original.jpg")
+        try Data("image".utf8).write(to: original)
+
+        let app = AppState()
+        app.onboarded = true
+        var asset = try XCTUnwrap(app.assets.first)
+        asset.filename = original.lastPathComponent
+        asset.localPath = original.path
+        asset.isDemo = false
+        app.assets = [asset]
+        app.primaryId = asset.id
+        app.selectedIds = []
+
+        app.batchRename(template: "RENAMED")
+
+        let renamed = dir.appendingPathComponent("RENAMED_0001.jpg")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: renamed.path))
+        XCTAssertEqual(app.assets.first?.filename, renamed.lastPathComponent)
+        XCTAssertEqual(app.assets.first?.localPath, renamed.path)
+    }
+
+    @MainActor
     func testKeywordActionsExpandDedupeAndFilterSelection() throws {
         let app = AppState()
         app.onboarded = true

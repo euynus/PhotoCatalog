@@ -1337,7 +1337,8 @@ final class AppState {
         let trimmed = rawTemplate.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         let template = trimmed.contains("{") ? trimmed : "\(trimmed)_{seq}"
-        let real = list.filter { selectedIds.contains($0.id) && !$0.isDemo && $0.localPath != nil }
+        let ids = targetIds
+        let real = list.filter { ids.contains($0.id) && !$0.isDemo && $0.localPath != nil }
         guard !real.isEmpty else { push("仅可重命名已导入照片", "warning"); return }
         let map = RenameService.renameWithTemplate(real, template: template)
         for (id, url) in map {
