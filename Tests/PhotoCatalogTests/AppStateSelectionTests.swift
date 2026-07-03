@@ -479,6 +479,22 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testThumbnailMaintenanceSkipsSoftDeletedAssets() throws {
+        let app = AppState()
+        var live = try XCTUnwrap(app.assets.first)
+        var deleted = try XCTUnwrap(app.assets.dropFirst().first)
+        live.isDemo = false
+        live.localPath = "/tmp/live.jpg"
+        live.deleted = false
+        deleted.isDemo = false
+        deleted.localPath = "/tmp/deleted.jpg"
+        deleted.deleted = true
+        app.assets = [live, deleted]
+
+        XCTAssertEqual(app.thumbnailMaintenanceAssets.map(\.id), [live.id])
+    }
+
+    @MainActor
     func testStaleDuplicateRecomputeResultIsIgnored() async throws {
         let app = AppState()
         app.onboarded = true

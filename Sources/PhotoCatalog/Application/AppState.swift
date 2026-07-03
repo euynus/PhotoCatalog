@@ -1481,7 +1481,7 @@ final class AppState {
 
     func rebuildThumbnails() {
         guard let coordinator else { push("无已导入照片", "warning"); return }
-        let real = assets.filter { !$0.isDemo && $0.localPath != nil }
+        let real = thumbnailMaintenanceAssets
         guard !real.isEmpty else { push("无已导入照片", "warning"); return }
         push("正在重建缩略图…", "refresh")
         let previewSize = previewMaxPixel
@@ -1531,7 +1531,7 @@ final class AppState {
         guard let coordinator, !isBackfilling else { return }
         // battery saver: skip background work under Low Power Mode (§17.5)
         if reduceBackgroundOnLowPower, ProcessInfo.processInfo.isLowPowerModeEnabled { return }
-        let real = assets.filter { !$0.isDemo && $0.localPath != nil }
+        let real = thumbnailMaintenanceAssets
         guard !real.isEmpty else { return }
         isBackfilling = true
         backfillGeneration &+= 1
@@ -1567,6 +1567,10 @@ final class AppState {
             self.backfillTask = nil
             self.enforceCacheLimitIfNeeded()
         }
+    }
+
+    var thumbnailMaintenanceAssets: [Asset] {
+        assets.filter { !$0.deleted && !$0.isDemo && $0.localPath != nil }
     }
 
     /// Privacy: delete catalog log files (§17.6).
