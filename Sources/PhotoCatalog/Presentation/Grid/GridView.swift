@@ -179,7 +179,7 @@ struct GridCell: View {
 // exactly the asset fields the body renders (Asset.== is identity-only, so
 // comparing whole assets would leave stale stars/flags after in-place edits).
 extension GridCell: Equatable {
-    static func == (l: GridCell, r: GridCell) -> Bool {
+    nonisolated static func == (l: GridCell, r: GridCell) -> Bool {
         l.asset.id == r.asset.id &&
         l.asset.rating == r.asset.rating &&
         l.asset.flag == r.asset.flag &&
