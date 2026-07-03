@@ -77,7 +77,7 @@ struct Sidebar: View {
             SBAddButton { app.createAlbumFromSelection() }
         }) {
             ForEach(app.albums) { al in
-                row("album", Theme.albumBlue, al.name, "\(al.assetIds.count)", .album, al.id, al.name)
+                row("album", Theme.albumBlue, al.name, "\(app.countForAlbum(al))", .album, al.id, al.name)
             }
         }
     }

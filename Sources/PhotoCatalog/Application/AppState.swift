@@ -53,6 +53,7 @@ final class AppState {
     }
     var albums: [Album] {
         didSet {
+            sidebarCountIndexCache = nil
             pinnedSidebarFavoritesCache = nil
             listInputsVersion &+= 1
         }
@@ -90,6 +91,7 @@ final class AppState {
     @ObservationIgnored private var sidebarCountIndexCache: SidebarCountIndex?
     private struct SidebarCountIndex {
         var folderCounts: [String: Int] = [:]
+        var albumCounts: [String: Int] = [:]
         var keywordCounts: [String: Int] = [:]
         var projectCounts: [String: Int] = [:]
         var clientCounts: [String: Int] = [:]
@@ -2231,7 +2233,7 @@ final class AppState {
         case .folder:
             return "\(counts.folderCounts[item.selectionId] ?? 0)"
         case .album:
-            return "\(albums.first(where: { $0.id == item.selectionId })?.assetIds.count ?? 0)"
+            return "\(counts.albumCounts[item.selectionId] ?? 0)"
         case .smart:
             return "\(counts.smartAlbumCounts[item.selectionId] ?? 0)"
         case .keyword:
@@ -2249,10 +2251,15 @@ final class AppState {
         sidebarCountIndex.smartAlbumCounts[album.id] ?? album.count
     }
 
+    func countForAlbum(_ album: Album) -> Int {
+        sidebarCountIndex.albumCounts[album.id] ?? 0
+    }
+
     private var sidebarCountIndex: SidebarCountIndex {
         _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = sidebarCountIndexCache { return cache }
         let live = assets.filter { !$0.deleted }
+        let liveIds = Set(live.map(\.id))
         var index = SidebarCountIndex()
         for asset in live {
             index.folderCounts[asset.folderId, default: 0] += 1
@@ -2268,6 +2275,9 @@ final class AppState {
         }
         for album in smartAlbums {
             index.smartAlbumCounts[album.id] = SmartMatcher.count(live, album.rule)
+        }
+        for album in albums {
+            index.albumCounts[album.id] = album.assetIds.filter { liveIds.contains($0) }.count
         }
         sidebarCountIndexCache = index
         return index

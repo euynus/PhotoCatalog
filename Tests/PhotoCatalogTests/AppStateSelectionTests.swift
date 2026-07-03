@@ -462,6 +462,23 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testAlbumCountsIgnoreSoftDeletedAssets() throws {
+        let app = AppState()
+        app.onboarded = true
+        let album = try XCTUnwrap(app.albums.first { $0.assetIds.count > 1 })
+        let firstId = try XCTUnwrap(album.assetIds.first)
+        app.select(Selection(type: .album, id: album.id, name: album.name))
+        app.setPrimary(firstId)
+        app.togglePinCurrentSelection()
+
+        app.removeSelected()
+
+        XCTAssertEqual(app.countForAlbum(album), album.assetIds.count - 1)
+        let pinned = try XCTUnwrap(app.pinnedSidebarFavorites.first)
+        XCTAssertEqual(app.countForPinnedSidebarItem(pinned), "\(album.assetIds.count - 1)")
+    }
+
+    @MainActor
     func testStaleDuplicateRecomputeResultIsIgnored() async throws {
         let app = AppState()
         app.onboarded = true
