@@ -1135,6 +1135,10 @@ final class AppState {
     }
 
     // ---------- FSEvents incremental watch (§12.8) ----------
+    @ObservationIgnored private var isIncrementalRescanning = false
+    @ObservationIgnored private var needsIncrementalRescan = false
+    @ObservationIgnored private var incrementalRescanGeneration = 0
+
     private func refreshWatcher() {
         watcher?.stop()
         let paths = prioritizedWatchedRoots(watchedRoots).map { $0.path }
@@ -1146,6 +1150,13 @@ final class AppState {
 
     private func incrementalRescan() {
         guard let coordinator, let store else { return }
+        if isIncrementalRescanning {
+            needsIncrementalRescan = true
+            return
+        }
+        isIncrementalRescanning = true
+        incrementalRescanGeneration &+= 1
+        let generation = incrementalRescanGeneration
         let roots = prioritizedWatchedRoots(watchedRoots)
         let liveAssets = assets.filter { !$0.deleted }
         let vision = visionEnabled
@@ -1179,6 +1190,7 @@ final class AppState {
                 return (fresh: fresh, changed: changed)
             }.value
             guard let self else { return }
+            guard self.incrementalRescanGeneration == generation else { return }
             var indexById = [String: Int](minimumCapacity: self.assets.count)
             for (i, a) in self.assets.enumerated() { indexById[a.id] = i }
             let trulyNew = delta.fresh.filter { indexById[$0.id] == nil }
@@ -1199,6 +1211,11 @@ final class AppState {
                 }
             }
             self.detectMissingRealAssets()
+            self.isIncrementalRescanning = false
+            if self.needsIncrementalRescan {
+                self.needsIncrementalRescan = false
+                self.incrementalRescan()
+            }
         }
     }
 
@@ -1852,6 +1869,9 @@ final class AppState {
 
     private func closeCurrentCatalog() {
         cancelBackfill()
+        incrementalRescanGeneration &+= 1
+        isIncrementalRescanning = false
+        needsIncrementalRescan = false
         watcher?.stop()
         watcher = nil
         for url in securityScopedRoots {
