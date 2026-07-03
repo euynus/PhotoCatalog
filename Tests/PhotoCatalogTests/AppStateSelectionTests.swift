@@ -1,5 +1,12 @@
 import XCTest
+import Observation
 @testable import PhotoCatalog
+
+private actor ObservationFlag {
+    private var changed = false
+    func markChanged() { changed = true }
+    func value() -> Bool { changed }
+}
 
 final class AppStateSelectionTests: XCTestCase {
     private var previousOpenLast: Any?
@@ -71,6 +78,51 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(app.assets.first { $0.id == id }?.colorLabel, .red)
         XCTAssertTrue(app.handleKey("9", hasCommand: false))
         XCTAssertEqual(app.assets.first { $0.id == id }?.colorLabel, .blue)
+    }
+
+    @MainActor
+    func testSelectionMutationRefreshesCachedListAndPrimary() throws {
+        let app = AppState()
+        app.onboarded = true
+        let id = try XCTUnwrap(app.primaryId)
+        _ = app.list
+
+        XCTAssertTrue(app.handleKey("4", hasCommand: false))
+
+        XCTAssertEqual(app.primary?.rating, 4)
+        XCTAssertEqual(app.list.first { $0.id == id }?.rating, 4)
+    }
+
+    @MainActor
+    func testPrimaryObservationInvalidatesAfterSelectionMutation() async throws {
+        let app = AppState()
+        app.onboarded = true
+        let flag = ObservationFlag()
+        withObservationTracking {
+            _ = app.primary?.rating
+        } onChange: {
+            Task { await flag.markChanged() }
+        }
+
+        XCTAssertTrue(app.handleKey("4", hasCommand: false))
+        try await Task.sleep(for: .milliseconds(50))
+
+        let didChange = await flag.value()
+        XCTAssertTrue(didChange)
+        XCTAssertEqual(app.primary?.rating, 4)
+    }
+
+    @MainActor
+    func testSingleAssetMutationRefreshesCachedList() throws {
+        let app = AppState()
+        app.onboarded = true
+        let id = try XCTUnwrap(app.primaryId)
+        _ = app.list
+
+        app.mutateAsset(id) { $0.flag = .pick }
+
+        XCTAssertEqual(app.primary?.flag, .pick)
+        XCTAssertEqual(app.list.first { $0.id == id }?.flag, .pick)
     }
 
     @MainActor

@@ -6,6 +6,7 @@ import SwiftUI
 struct InspectorView: View {
     @Environment(AppState.self) var app
     let asset: Asset?
+    let assetRevision: Int
 
     private let tabs: [(String, String, String)] = [
         ("info", "info", "信息"), ("meta", "aperture", "元数据"),
@@ -16,6 +17,7 @@ struct InspectorView: View {
         Group {
             if let asset {
                 content(asset)
+                    .id(assetRevision)
             } else {
                 VStack(spacing: 10) {
                     Icon("inspector", size: 34)

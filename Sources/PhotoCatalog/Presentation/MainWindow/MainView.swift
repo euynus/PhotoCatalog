@@ -7,14 +7,15 @@ struct MainView: View {
     @Environment(AppState.self) var app
 
     var body: some View {
+        let assetRevision = app.assetRenderVersion
         VStack(spacing: 0) {
             Titlebar()
             if app.filterOpen { FilterBar() }
             HStack(spacing: 0) {
-                Sidebar()
-                ContentColumn()
+                Sidebar(assetRevision: assetRevision)
+                ContentColumn(assetRevision: assetRevision)
                 if app.showInspector && !app.isDuplicates {
-                    InspectorView(asset: app.primary)
+                    InspectorView(asset: app.primary, assetRevision: assetRevision)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -43,6 +44,7 @@ struct MainView: View {
 // ---------- Content column (header + main) ----------
 struct ContentColumn: View {
     @Environment(AppState.self) var app
+    let assetRevision: Int
 
     var body: some View {
         VStack(spacing: 0) {
@@ -60,7 +62,7 @@ struct ContentColumn: View {
             PlacesMapView()
         } else {
             switch app.view {
-            case .grid: GridView()
+            case .grid: GridView(assetRevision: assetRevision)
             case .loupe: Loupe()
             case .compare: CompareView()
             }

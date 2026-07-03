@@ -5,10 +5,12 @@ import SwiftUI
 
 struct Sidebar: View {
     @Environment(AppState.self) var app
+    let assetRevision: Int
 
     private var ready: [Asset] { app.assets.filter { !$0.deleted } }
 
     var body: some View {
+        let _ = assetRevision
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 librarySection

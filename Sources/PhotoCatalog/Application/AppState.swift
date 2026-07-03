@@ -103,6 +103,7 @@ final class AppState {
     /// Bumped whenever an array input to `list` changes (assets/albums/smartAlbums/folders/
     /// source roots/priorities/duplicate groups); the small value inputs are compared directly.
     private var listInputsVersion = 0   // tracked: cached getters read it so cache HITS register deps
+    var assetRenderVersion = 0
     @ObservationIgnored private var listCache: (signature: ListSignature, value: [Asset])?
     private struct ListSignature: Equatable {
         let inputsVersion: Int
@@ -112,6 +113,14 @@ final class AppState {
         let sort: Sort
         let collapsed: Set<String>
         let recentDays: Int
+    }
+
+    private func replaceAssetsForMutation(_ updated: [Asset]) {
+        assets = updated
+        assetRenderVersion &+= 1
+        // Force views that render derived asset snapshots to re-read the current selection.
+        let currentPrimary = primaryId
+        primaryId = currentPrimary
     }
 
     // ----- settings (PRD §17) -----
@@ -802,7 +811,9 @@ final class AppState {
             strategy: importDuplicateStrategy)
         let fresh = applyPostImportMetadata(to: dedup.fresh)
         let skipped = dedup.skipped
-        assets.append(contentsOf: fresh)
+        if !fresh.isEmpty {
+            replaceAssetsForMutation(assets + fresh)
+        }
         // fresh is already in the in-memory `assets`; if the catalog write fails the photos
         // would silently vanish on the next load, so track it and report honestly below.
         var persistFailed = false
@@ -1215,11 +1226,13 @@ final class AppState {
             let trulyNew = delta.fresh.filter { indexById[$0.id] == nil }
             let changedAssets = delta.changed.filter { indexById[$0.id] != nil }
             if !trulyNew.isEmpty || !changedAssets.isEmpty {
+                var updated = self.assets
                 // appending leaves existing indices valid, so indexById stays correct for replacements
-                self.assets.append(contentsOf: trulyNew)
+                updated.append(contentsOf: trulyNew)
                 for asset in changedAssets {
-                    if let index = indexById[asset.id] { self.assets[index] = asset }
+                    if let index = indexById[asset.id] { updated[index] = asset }
                 }
+                self.replaceAssetsForMutation(updated)
                 try? store.upsert(trulyNew + changedAssets)
                 self.recomputeDuplicates()
                 if !trulyNew.isEmpty {
@@ -1270,14 +1283,16 @@ final class AppState {
 
     func detectMissingRealAssets() {
         var changed = false
+        var updated = assets
         let sourceRootsById = store.map { sourceRootRecordsById(from: $0) } ?? [:]
-        for i in assets.indices where !assets[i].isDemo {
-            let resolved = resolveAssetAccess(assets[i], sourceRootsById: sourceRootsById)
-            if assets[i].status != resolved.status || assets[i].localPath != resolved.localPath {
-                assets[i] = resolved
+        for i in updated.indices where !updated[i].isDemo {
+            let resolved = resolveAssetAccess(updated[i], sourceRootsById: sourceRootsById)
+            if updated[i].status != resolved.status || updated[i].localPath != resolved.localPath {
+                updated[i] = resolved
                 changed = true
             }
         }
+        if changed { replaceAssetsForMutation(updated) }
         updateFolderStatusesFromAssets()
         if changed, let store { try? store.upsert(assets.filter { !$0.isDemo }) }
     }
@@ -1424,15 +1439,17 @@ final class AppState {
     private func applyMovedOriginalLocations(_ locations: [String: URL]) {
         guard !locations.isEmpty else { return }
         let ids = Set(locations.keys)
-        for index in assets.indices {
-            guard let url = locations[assets[index].id] else { continue }
+        var updated = assets
+        for index in updated.indices {
+            guard let url = locations[updated[index].id] else { continue }
             let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-            assets[index].filename = url.lastPathComponent
-            assets[index].localPath = url.path
-            assets[index].fileModifiedAt = attrs?[.modificationDate] as? Date
-            assets[index].fileCreatedAt = attrs?[.creationDate] as? Date
-            assets[index].status = .ready
+            updated[index].filename = url.lastPathComponent
+            updated[index].localPath = url.path
+            updated[index].fileModifiedAt = attrs?[.modificationDate] as? Date
+            updated[index].fileCreatedAt = attrs?[.creationDate] as? Date
+            updated[index].status = .ready
         }
+        replaceAssetsForMutation(updated)
         persist(ids)
     }
 
@@ -1977,7 +1994,7 @@ final class AppState {
             return false
         }
 
-        assets = updated
+        replaceAssetsForMutation(updated)
         persist(report.removedIds)
         purgeCacheFiles(forAssetIds: report.removedIds)
         duplicateGroupsCache.removeAll { $0.id == group.id }
@@ -2474,7 +2491,10 @@ final class AppState {
         return dir < 0 ? a > b : a < b
     }
 
-    var primary: Asset? { primaryId.flatMap { assetIndex[$0] }.map { assets[$0] } }
+    var primary: Asset? {
+        _ = listInputsVersion
+        return primaryId.flatMap { assetIndex[$0] }.map { assets[$0] }
+    }
     var isDuplicates: Bool { selection.type == .lib && selection.id == "duplicates" }
     var isPlaces: Bool { selection.type == .lib && selection.id == "places" }
     var isPeople: Bool { selection.type == .lib && selection.id == "people" }
@@ -2646,16 +2666,20 @@ final class AppState {
     func mutate(_ ids: Set<String>? = nil, _ transform: (inout Asset) -> Void) {
         let target = ids ?? targetIds
         guard !target.isEmpty else { return }
-        for i in assets.indices where target.contains(assets[i].id) {
-            transform(&assets[i])
+        var updated = assets
+        for i in updated.indices where target.contains(updated[i].id) {
+            transform(&updated[i])
         }
+        replaceAssetsForMutation(updated)
         persist(target)
         ensurePrimaryValid()
     }
 
     func mutateAsset(_ id: String, _ transform: (inout Asset) -> Void) {
         guard let i = assetIndex[id] else { return }
-        transform(&assets[i])
+        var updated = assets
+        transform(&updated[i])
+        replaceAssetsForMutation(updated)
         persist([id])
         ensurePrimaryValid()
     }

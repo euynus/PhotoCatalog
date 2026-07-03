@@ -6,8 +6,10 @@ import AppKit
 
 struct GridView: View {
     @Environment(AppState.self) var app
+    let assetRevision: Int
 
     var body: some View {
+        let _ = assetRevision
         let list = app.list
         if list.isEmpty {
             VStack(spacing: 10) {
