@@ -298,9 +298,9 @@ final class AppStateSelectionTests: XCTestCase {
         let initialShowInspector = app.showInspector
         let initialThumbSize = app.thumbSize
 
-        XCTAssertFalse(app.handleKey("f", hasCommand: true, hasShift: true))
-        XCTAssertFalse(app.handleKey("i", hasCommand: true))
-        XCTAssertFalse(app.handleKey("=", hasCommand: true))
+        XCTAssertTrue(app.handleKey("f", hasCommand: true, hasShift: true))
+        XCTAssertTrue(app.handleKey("i", hasCommand: true))
+        XCTAssertTrue(app.handleKey("=", hasCommand: true))
         XCTAssertEqual(app.filterOpen, initialFilterOpen)
         XCTAssertEqual(app.showInspector, initialShowInspector)
         XCTAssertEqual(app.thumbSize, initialThumbSize)

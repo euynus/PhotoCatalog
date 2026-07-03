@@ -3127,6 +3127,15 @@ final class AppState {
         // (rating/flag/delete keys would silently mutate the selection).
         if sheet != nil {
             if !hasCommand && key == "escape" { return dismissTransientUI() }
+            if hasCommand {
+                switch key {
+                case "n", "o", "f", "i", "e", "r", ",", "b", "s", "a",
+                     "=", "+", "-", "0", "delete", "backspace":
+                    return true
+                default:
+                    return false
+                }
+            }
             return false
         }
         if hasCommand {

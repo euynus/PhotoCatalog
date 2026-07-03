@@ -16,74 +16,100 @@ struct PhotoCatalogCommands: Commands {
         CommandMenu("目录库") {
             Button("新建目录库…") { app.createCatalog() }
                 .keyboardShortcut("n", modifiers: .command)
-                .disabled(app.importing)
+                .disabled(app.importing || app.sheet != nil)
             Button("打开目录库…") { app.openCatalog() }
                 .keyboardShortcut("o", modifiers: .command)
-                .disabled(app.importing)
+                .disabled(app.importing || app.sheet != nil)
             Button("导入照片文件夹…") { app.addFolder() }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
+                .disabled(app.sheet != nil)
             Divider()
             Button("设置…") { app.showSettings() }
                 .keyboardShortcut(",", modifiers: .command)
+                .disabled(app.sheet != nil)
         }
 
         CommandMenu("照片") {
             Section("评分") {
                 Button("设置 1 星") { app.applyRatingShortcut(1) }
+                    .disabled(app.sheet != nil)
                 Button("设置 2 星") { app.applyRatingShortcut(2) }
+                    .disabled(app.sheet != nil)
                 Button("设置 3 星") { app.applyRatingShortcut(3) }
+                    .disabled(app.sheet != nil)
                 Button("设置 4 星") { app.applyRatingShortcut(4) }
+                    .disabled(app.sheet != nil)
                 Button("设置 5 星") { app.applyRatingShortcut(5) }
+                    .disabled(app.sheet != nil)
                 Button("清除评分") { app.applyRatingShortcut(0) }
+                    .disabled(app.sheet != nil)
             }
             Divider()
             Button("导出选中原件…") { app.exportSelection() }
                 .keyboardShortcut("e", modifiers: .command)
+                .disabled(app.sheet != nil)
             Button("导出选中预览图…") { app.exportSelectionPreviews() }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(app.sheet != nil)
             Divider()
             Button("加入相册…") { app.addSelectionToAlbum() }
-                .disabled(!app.canApplySelectionToAlbum)
+                .disabled(app.sheet != nil || !app.canApplySelectionToAlbum)
             Button("从当前相册移除") { app.removeSelectionFromCurrentAlbum() }
-                .disabled(!app.canRemoveSelectionFromCurrentAlbum)
+                .disabled(app.sheet != nil || !app.canRemoveSelectionFromCurrentAlbum)
             Button("保存筛选为智能相册…") { app.saveCurrentFilterAsSmartAlbum() }
                 .keyboardShortcut("s", modifiers: .command)
-                .disabled(!app.canSaveCurrentFilter)
+                .disabled(app.sheet != nil || !app.canSaveCurrentFilter)
             Divider()
             Button("从目录库移除…") { app.confirmDeleteSelected() }
+                .disabled(app.sheet != nil)
             Button("将原件移到废纸篓…") { app.trashSelectedOriginals() }
                 .keyboardShortcut(.delete, modifiers: .command)
+                .disabled(app.sheet != nil)
         }
 
         CommandMenu("视图") {
             Button("网格视图") { app.switchView(.grid) }
+                .disabled(app.sheet != nil)
             Button("单张查看") { app.switchView(.loupe) }
+                .disabled(app.sheet != nil)
             Button("比较视图") { app.enterCompare() }
+                .disabled(app.sheet != nil)
             Divider()
             Button("搜索") { app.focusSearch() }
                 .keyboardShortcut("f", modifiers: .command)
+                .disabled(app.sheet != nil)
             Button("显示/隐藏筛选栏") { app.toggleFilterBar() }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(app.sheet != nil)
             Button("显示/隐藏 Inspector") { app.showInspector.toggle() }
                 .keyboardShortcut("i", modifiers: .command)
+                .disabled(app.sheet != nil)
             Button("显示/隐藏缩略图信息") { app.toggleGridInfo() }
+                .disabled(app.sheet != nil)
             Divider()
             Button("放大缩略图") { app.adjustThumbnailSize(by: 16) }
                 .keyboardShortcut("=", modifiers: .command)
+                .disabled(app.sheet != nil)
             Button("缩小缩略图") { app.adjustThumbnailSize(by: -16) }
                 .keyboardShortcut("-", modifiers: .command)
+                .disabled(app.sheet != nil)
             Button("重置缩略图大小") { app.resetThumbnailSize() }
                 .keyboardShortcut("0", modifiers: .command)
+                .disabled(app.sheet != nil)
         }
 
         CommandMenu("维护") {
             Button("重新扫描当前源") { app.rescanCurrentSource() }
                 .keyboardShortcut("r", modifiers: .command)
+                .disabled(app.sheet != nil)
             Button("立即备份目录库") { app.runBackup() }
                 .keyboardShortcut("b", modifiers: .command)
+                .disabled(app.sheet != nil)
             Button("恢复备份…") { app.restoreBackup() }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
+                .disabled(app.sheet != nil)
             Button("运行健康检查") { app.runHealthCheck() }
+                .disabled(app.sheet != nil)
         }
     }
 }
