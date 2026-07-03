@@ -2764,6 +2764,7 @@ final class AppState {
     func reauthorizeSelectedSource() {
         guard selectedFolderIsCatalogSource else { return }
         let folderId = selection.id
+        let oldRootPath = sourceRootPathsById[folderId]
 
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -2787,12 +2788,33 @@ final class AppState {
             folders[i] = Folder(id: folderId, name: folder.lastPathComponent, status: "online")
         }
         sourceRootPathsById[folderId] = folder.path
+        if let oldRootPath, oldRootPath != folder.path {
+            rebaseSourceRootAssetPaths(folderId: folderId, oldRoot: oldRootPath, newRoot: folder.path)
+        }
         if !watchedRoots.contains(folder) {
             watchedRoots.append(folder)
             refreshWatcher()
         }
         detectMissingRealAssets()
         push("已恢复源文件夹访问", "check")
+    }
+
+    func rebaseSourceRootAssetPaths(folderId: String, oldRoot: String, newRoot: String) {
+        var updated = assets
+        var changedIds = Set<String>()
+        for index in updated.indices where updated[index].folderId == folderId {
+            guard let path = updated[index].localPath,
+                  let replacement = VolumeMonitor.pathByReplacingVolumeRoot(in: path,
+                                                                             oldRoot: oldRoot,
+                                                                             newRoot: newRoot),
+                  FileManager.default.fileExists(atPath: replacement) else { continue }
+            updated[index].localPath = replacement
+            updated[index].status = .ready
+            changedIds.insert(updated[index].id)
+        }
+        guard !changedIds.isEmpty else { return }
+        replaceAssetsForMutation(updated)
+        persist(changedIds)
     }
 
     func createAlbumFromSelection() {

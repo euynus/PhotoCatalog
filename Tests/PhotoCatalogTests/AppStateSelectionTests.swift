@@ -641,6 +641,54 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testReauthorizingSourceRebasesMovedAssetPaths() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rebase-source-\(UUID().uuidString)")
+        let oldRoot = dir.appendingPathComponent("Old")
+        let newRoot = dir.appendingPathComponent("New")
+        let nested = newRoot.appendingPathComponent("Nested")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let newPhoto = nested.appendingPathComponent("photo.jpg")
+        try Data("photo".utf8).write(to: newPhoto)
+
+        func asset(_ base: Asset, folderId: String, path: URL, status: AssetStatus) -> Asset {
+            Asset(id: base.id, pid: base.pid, ori: base.ori, thumb: base.thumb, preview: base.preview,
+                  filename: path.lastPathComponent, type: base.type, isRaw: base.isRaw, folderId: folderId,
+                  folderName: folderId, date: base.date, width: base.width, height: base.height,
+                  orientation: base.orientation, camera: base.camera, lens: base.lens, focal: base.focal,
+                  aperture: base.aperture, shutter: base.shutter, iso: base.iso,
+                  colorSpace: base.colorSpace, hasICCProfile: base.hasICCProfile, fileMB: base.fileMB,
+                  fileModifiedAt: base.fileModifiedAt, fileCreatedAt: base.fileCreatedAt,
+                  rating: base.rating, flag: base.flag, colorLabel: base.colorLabel,
+                  keywords: base.keywords, title: base.title, caption: base.caption,
+                  author: base.author, copyright: base.copyright, makerNotes: base.makerNotes,
+                  project: base.project, client: base.client, location: base.location, gps: base.gps,
+                  gpsAltitude: base.gpsAltitude, status: status, importedAt: base.importedAt,
+                  deleted: base.deleted, localPath: path.path,
+                  captureDateSource: base.captureDateSource, contentHash: base.contentHash,
+                  quickHash: base.quickHash, isDemo: false, faces: base.faces,
+                  perceptualHash: base.perceptualHash)
+        }
+
+        let moved = asset(DemoData.assets[0], folderId: "source-1",
+                          path: oldRoot.appendingPathComponent("Nested/photo.jpg"),
+                          status: .missing)
+        let otherPath = oldRoot.appendingPathComponent("other.jpg")
+        let other = asset(DemoData.assets[1], folderId: "other", path: otherPath, status: .missing)
+        let app = AppState()
+        app.onboarded = true
+        app.assets = [moved, other]
+
+        app.rebaseSourceRootAssetPaths(folderId: "source-1", oldRoot: oldRoot.path, newRoot: newRoot.path)
+
+        XCTAssertEqual(app.assets.first { $0.id == moved.id }?.localPath, newPhoto.path)
+        XCTAssertEqual(app.assets.first { $0.id == moved.id }?.status, .ready)
+        XCTAssertEqual(app.assets.first { $0.id == other.id }?.localPath, otherPath.path)
+        XCTAssertEqual(app.assets.first { $0.id == other.id }?.status, .missing)
+    }
+
+    @MainActor
     func testMaintenanceActionsCleanLocalCatalogState() throws {
         let defaults = UserDefaults.standard
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
