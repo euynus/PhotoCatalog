@@ -63,8 +63,10 @@ final class AppStateSelectionTests: XCTestCase {
         app.onboarded = true
         let id = try XCTUnwrap(app.primaryId)
 
-        XCTAssertTrue(app.handleKey("5", hasCommand: false))
-        XCTAssertEqual(app.assets.first { $0.id == id }?.rating, 5)
+        for rating in 1...5 {
+            XCTAssertTrue(app.handleKey("\(rating)", hasCommand: false))
+            XCTAssertEqual(app.assets.first { $0.id == id }?.rating, rating)
+        }
 
         XCTAssertTrue(app.handleKey("0", hasCommand: false))
         XCTAssertEqual(app.assets.first { $0.id == id }?.rating, 0)
@@ -78,6 +80,10 @@ final class AppStateSelectionTests: XCTestCase {
 
         XCTAssertTrue(app.handleKey("6", hasCommand: false))
         XCTAssertEqual(app.assets.first { $0.id == id }?.colorLabel, .red)
+        XCTAssertTrue(app.handleKey("7", hasCommand: false))
+        XCTAssertEqual(app.assets.first { $0.id == id }?.colorLabel, .yellow)
+        XCTAssertTrue(app.handleKey("8", hasCommand: false))
+        XCTAssertEqual(app.assets.first { $0.id == id }?.colorLabel, .green)
         XCTAssertTrue(app.handleKey("9", hasCommand: false))
         XCTAssertEqual(app.assets.first { $0.id == id }?.colorLabel, .blue)
     }
