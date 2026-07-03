@@ -41,14 +41,14 @@ enum CatalogHealth {
         r.assetCount = store.assetCount()
         let fm = FileManager.default
         r.missingOriginals = real.filter {
-            guard let p = $0.localPath else { return false }
+            guard let p = $0.localPath, !p.isEmpty else { return true }
             return !fm.fileExists(atPath: p)
         }.count
         r.missingThumbnails = real.filter {
-            !$0.thumb.isEmpty && !$0.thumb.hasPrefix("http") && !fm.fileExists(atPath: $0.thumb)
+            $0.thumb.isEmpty || (!$0.thumb.hasPrefix("http") && !fm.fileExists(atPath: $0.thumb))
         }.count
         r.missingPreviews = real.filter {
-            !$0.preview.isEmpty && !$0.preview.hasPrefix("http") && !fm.fileExists(atPath: $0.preview)
+            $0.preview.isEmpty || (!$0.preview.hasPrefix("http") && !fm.fileExists(atPath: $0.preview))
         }.count
         r.unavailableSourceRoots = ((try? store.loadSourceRoots()) ?? []).filter {
             $0.status != "online" || !fm.fileExists(atPath: $0.pathHint)
