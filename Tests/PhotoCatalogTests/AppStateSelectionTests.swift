@@ -212,6 +212,51 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testAdvancedFiltersMatchMetadataStatusAndLocation() throws {
+        let app = AppState()
+        app.onboarded = true
+
+        var filters = Filters()
+        filters.flag = Flag.pick.rawValue
+        app.setFilters(filters)
+        XCTAssertFalse(app.list.isEmpty)
+        XCTAssertTrue(app.list.allSatisfy { $0.flag == .pick })
+
+        let color = try XCTUnwrap(app.assets.first { $0.colorLabel != nil }?.colorLabel)
+        filters = Filters()
+        filters.color = color.rawValue
+        app.setFilters(filters)
+        XCTAssertFalse(app.list.isEmpty)
+        XCTAssertTrue(app.list.allSatisfy { $0.colorLabel == color })
+
+        let camera = try XCTUnwrap(app.assets.first?.camera)
+        filters = Filters()
+        filters.camera = camera
+        app.setFilters(filters)
+        XCTAssertFalse(app.list.isEmpty)
+        XCTAssertTrue(app.list.allSatisfy { $0.camera.localizedStandardContains(camera) })
+
+        let lens = try XCTUnwrap(app.assets.first?.lens)
+        filters = Filters()
+        filters.lens = lens
+        app.setFilters(filters)
+        XCTAssertFalse(app.list.isEmpty)
+        XCTAssertTrue(app.list.allSatisfy { $0.lens.localizedStandardContains(lens) })
+
+        filters = Filters()
+        filters.gps = "yes"
+        app.setFilters(filters)
+        XCTAssertFalse(app.list.isEmpty)
+        XCTAssertTrue(app.list.allSatisfy { !($0.gps.0 == 0 && $0.gps.1 == 0) })
+
+        filters = Filters()
+        filters.status = AssetStatus.missing.rawValue
+        app.setFilters(filters)
+        XCTAssertFalse(app.list.isEmpty)
+        XCTAssertTrue(app.list.allSatisfy { $0.status == .missing })
+    }
+
+    @MainActor
     func testLibrarySelectionsFilterExpectedAssets() {
         let app = AppState()
         app.onboarded = true
