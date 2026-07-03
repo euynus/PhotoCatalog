@@ -131,8 +131,18 @@ enum MetadataReader {
         let cleanModel = model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !cleanModel.isEmpty else { return cleanMake }
         guard !cleanMake.isEmpty else { return cleanModel }
-        return cleanModel.range(of: cleanMake, options: [.caseInsensitive, .anchored]) != nil
-            ? cleanModel : "\(cleanMake) \(cleanModel)"
+        let includesMake = cleanModel.compare(cleanMake, options: [.caseInsensitive]) == .orderedSame
+            || cleanModel.range(of: "\(cleanMake) ", options: [.caseInsensitive, .anchored]) != nil
+        return normalizedCameraName(includesMake ? cleanModel : "\(cleanMake) \(cleanModel)")
+    }
+
+    static func normalizedCameraName(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = trimmed.split(separator: " ")
+        // ponytail: handles the observed adjacent duplicated make; split make/model columns if this grows.
+        guard parts.count >= 2,
+              parts[0].caseInsensitiveCompare(parts[1]) == .orderedSame else { return trimmed }
+        return ([String(parts[0])] + parts.dropFirst(2).map(String.init)).joined(separator: " ")
     }
 
     private static func stringValue(_ value: Any?) -> String {

@@ -110,6 +110,8 @@ final class AppStateSelectionTests: XCTestCase {
 
     func testMetadataReaderAvoidsDuplicateCameraMake() {
         XCTAssertEqual(MetadataReader.cameraName(make: "Canon", model: "Canon EOS R6m2"), "Canon EOS R6m2")
+        XCTAssertEqual(MetadataReader.cameraName(make: "Canon", model: "Canon Canon EOS R6m2"), "Canon EOS R6m2")
+        XCTAssertEqual(MetadataReader.normalizedCameraName("Canon Canon EOS R6m2"), "Canon EOS R6m2")
         XCTAssertEqual(MetadataReader.cameraName(make: "Canon", model: "EOS R5"), "Canon EOS R5")
         XCTAssertEqual(MetadataReader.cameraName(make: "", model: "X-T5"), "X-T5")
     }

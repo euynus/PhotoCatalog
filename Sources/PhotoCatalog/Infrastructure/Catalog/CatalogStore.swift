@@ -684,7 +684,7 @@ final class CatalogStore: @unchecked Sendable {
             date: Date(timeIntervalSince1970: row.double("capture_date") ?? 0),
             width: row.int("width") ?? 0, height: row.int("height") ?? 0,
             orientation: row.int("orientation") ?? 1,
-            camera: row.text("camera") ?? "", lens: row.text("lens") ?? "",
+            camera: MetadataReader.normalizedCameraName(row.text("camera") ?? ""), lens: row.text("lens") ?? "",
             focal: row.int("focal") ?? 0, aperture: row.double("aperture") ?? 0,
             shutter: row.text("shutter") ?? "", iso: row.int("iso") ?? 0,
             colorSpace: row.text("color_space") ?? "",
