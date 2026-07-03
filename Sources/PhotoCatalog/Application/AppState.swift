@@ -1887,9 +1887,12 @@ final class AppState {
 
     // ---------- duplicate groups (§6.10): exact (content) + similar (perceptual) ----------
     var duplicateGroups: [DuplicateGroup] { duplicateGroupsCache }
+    @ObservationIgnored private var duplicateRecomputeGeneration = 0
 
     /// Recompute duplicates off the main thread (dHash reads thumbnails from disk).
     func recomputeDuplicates() {
+        duplicateRecomputeGeneration &+= 1
+        let generation = duplicateRecomputeGeneration
         let live = assets.filter { !$0.isDemo && !$0.deleted }
         guard !live.isEmpty else {
             let demoLiveIds = Set(assets.filter { $0.isDemo && !$0.deleted }.map(\.id))
@@ -1907,6 +1910,7 @@ final class AppState {
                     + PerceptualHash.similarGroups(live)
             }.value
             guard let self else { return }
+            guard self.duplicateRecomputeGeneration == generation else { return }
             self.duplicateGroupsCache = groups
             let validStackIds = Set(PhotoStackService.stacks(from: groups).map(\.id))
             self.collapsedStackIds.formIntersection(validStackIds)

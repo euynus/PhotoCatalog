@@ -436,6 +436,33 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testStaleDuplicateRecomputeResultIsIgnored() async throws {
+        let app = AppState()
+        app.onboarded = true
+        let realDuplicates = app.assets.prefix(2).map { asset -> Asset in
+            var copy = asset
+            copy.isDemo = false
+            copy.deleted = false
+            copy.fileMB = 1
+            copy.contentHash = "same-content"
+            return copy
+        }
+        XCTAssertEqual(realDuplicates.count, 2)
+
+        app.assets = realDuplicates
+        app.duplicateGroupsCache = []
+        app.recomputeDuplicates()
+        app.assets = DemoData.assets
+        app.recomputeDuplicates()
+
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertFalse(app.duplicateGroups.contains { group in
+            group.items.contains { !$0.isDemo }
+        })
+    }
+
+    @MainActor
     func testPinnedKeywordSidebarFavoriteTogglesAndCounts() throws {
         let app = AppState()
         app.onboarded = true
