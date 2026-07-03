@@ -62,6 +62,12 @@ enum PipelineCheck {
               && fm.fileExists(atPath: store.logsURL.path)
               && fm.fileExists(atPath: store.tempURL.path),
               "catalog package created cache/config/logs/temp directories")
+        let manifestURL = store.packageURL.appendingPathComponent("manifest.json")
+        let manifest = (try? Data(contentsOf: manifestURL))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let manifestSchema = manifest?["schemaVersion"] as? Int
+        let currentSchema = store.db.scalarInt("SELECT COALESCE(MAX(version),0) FROM schema_migrations;")
+        check(manifestSchema == currentSchema, "catalog manifest records current schema version")
         let launchPath = store.packageURL.path
         let launchFileURL = store.packageURL.absoluteString
         check(AppState.launchCatalogURL(from: ["PhotoCatalog", "--ignored", launchPath])?.path == launchPath

@@ -598,7 +598,7 @@ final class CatalogStore: @unchecked Sendable {
         let url = packageURL.appendingPathComponent("manifest.json")
         guard !FileManager.default.fileExists(atPath: url.path) else { return }
         let manifest: [String: Any] = [
-            "libraryVersion": 1, "schemaVersion": 1,
+            "libraryVersion": 1, "schemaVersion": Self.latestSchemaVersion,
             "createdAt": ISO8601DateFormatter().string(from: Date()),
             "appBuild": "1.0.0", "uuid": UUID().uuidString,
         ]
