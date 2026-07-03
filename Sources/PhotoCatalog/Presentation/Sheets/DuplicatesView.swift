@@ -78,12 +78,15 @@ struct DuplicatesView: View {
             .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
 
             // items
-            HStack(spacing: 12) {
-                ForEach(g.items) { it in
-                    dupItem(it, kept: it.id == keptId, groupId: g.id, resolved: isResolved)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(g.items) { it in
+                        dupItem(it, kept: it.id == keptId, groupId: g.id, resolved: isResolved)
+                            .frame(width: 360, alignment: .leading)
+                    }
                 }
+                .padding(15)
             }
-            .padding(15)
 
             // actions
             if !isResolved {
@@ -127,8 +130,10 @@ struct DuplicatesView: View {
                 Text(it.filename).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
                 Text("\(String(format: "%.1f", it.fileMB)) MB · \(it.width)×\(it.height) · \(it.folderName)")
                     .font(.system(size: 11)).foregroundStyle(Theme.text3)
+                    .lineLimit(1)
                 Text("\(DateFmt.shortCapture(it.date)) · \(it.camera)")
                     .font(.system(size: 10.5, design: .monospaced)).foregroundStyle(Theme.text3)
+                    .lineLimit(1)
             }
             Spacer(minLength: 4)
             if !resolved {
