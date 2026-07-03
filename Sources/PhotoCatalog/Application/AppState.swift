@@ -2454,16 +2454,33 @@ final class AppState {
 
     private func ensurePrimaryValid() {
         let ids = list
-        guard !ids.isEmpty else { return }
+        guard !ids.isEmpty else {
+            selectedIds = []
+            primaryId = nil
+            anchorId = nil
+            if view == .compare {
+                compareIds = []
+                winner = nil
+            }
+            return
+        }
+        let visibleIds = Set(ids.map(\.id))
         // selection must never retain assets hidden by the current collection/filter/search,
         // or batch edits (rating, flag, keyword, delete) would silently mutate off-screen photos.
-        selectedIds.formIntersection(Set(ids.map { $0.id }))
-        if primaryId == nil || !ids.contains(where: { $0.id == primaryId }) {
+        selectedIds.formIntersection(visibleIds)
+        if view == .compare {
+            compareIds.removeAll { !visibleIds.contains($0) }
+            if let winner, !visibleIds.contains(winner) { self.winner = nil }
+        }
+        if primaryId == nil || !visibleIds.contains(primaryId!) {
             primaryId = ids[0].id
             selectedIds = [ids[0].id]
             anchorId = ids[0].id
         } else if selectedIds.isEmpty {
             selectedIds = [primaryId!]
+        }
+        if view == .compare, compareIds.isEmpty, let primaryId {
+            compareIds = [primaryId]
         }
     }
 
