@@ -256,10 +256,11 @@ enum ExportService {
     private static func csvField(_ value: String) -> String {
         var v = value
         // Mitigate CSV/formula injection: spreadsheet apps execute a cell that begins with
-        // = + - @ (or a leading tab/CR), even inside quotes, so attacker-controlled EXIF/XMP
+        // = + - @ (or a leading tab/CR/LF), even inside quotes, so attacker-controlled EXIF/XMP
         // text (caption, keywords, makerNotes, …) could run formulas. Force such cells to text
         // with a leading apostrophe — but leave genuine numbers (e.g. "-122.4" GPS) untouched.
-        if let first = v.first, "=+-@\t\r".contains(first), Double(v) == nil {
+        let riskyPrefix = v.unicodeScalars.first.map { "=+-@\t\r\n".unicodeScalars.contains($0) } ?? false
+        if riskyPrefix, Double(v) == nil {
             v = "'" + v
         }
         guard v.contains(",") || v.contains("\"") || v.contains("\n") || v.contains("\r") else {
