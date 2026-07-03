@@ -1,6 +1,7 @@
 import XCTest
 import Observation
 import ImageIO
+import AppKit
 import UniformTypeIdentifiers
 @testable import PhotoCatalog
 
@@ -218,6 +219,39 @@ final class AppStateSelectionTests: XCTestCase {
 
         XCTAssertEqual(app.toastCenter.toasts.last?.message, "导入中无法切换目录库")
         XCTAssertEqual(app.toastCenter.toasts.last?.icon, "warning")
+    }
+
+    @MainActor
+    func testOpenCatalogPanelFiltersPhotoLibraryPackages() throws {
+        let app = AppState()
+        let panel = NSOpenPanel()
+        app.configureCatalogOpenPanel(panel)
+
+        let libraryType = try XCTUnwrap(UTType(filenameExtension: "photolibrary"))
+        XCTAssertTrue(panel.canChooseDirectories)
+        XCTAssertFalse(panel.canChooseFiles)
+        XCTAssertFalse(panel.allowsMultipleSelection)
+        XCTAssertEqual(panel.prompt, "打开")
+        XCTAssertEqual(panel.message, "选择 .photolibrary 目录库")
+        XCTAssertEqual(panel.allowedContentTypes, [libraryType])
+    }
+
+    func testCatalogSelectionRequiresCatalogDatabase() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-catalog-selection-\(UUID().uuidString)")
+        let plainFolder = root.appendingPathComponent("Backups")
+        let package = root.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: plainFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        XCTAssertFalse(AppState.isValidCatalogSelection(plainFolder))
+        XCTAssertFalse(AppState.isValidCatalogSelection(package))
+
+        FileManager.default.createFile(atPath: package.appendingPathComponent("catalog.sqlite").path,
+                                       contents: Data())
+        XCTAssertTrue(AppState.isValidCatalogSelection(package))
+        XCTAssertTrue(AppState.isValidCatalogSelection(root.appendingPathComponent("Library")))
     }
 
     @MainActor

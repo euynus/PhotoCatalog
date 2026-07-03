@@ -12,6 +12,17 @@ private struct StatusMetrics: Equatable, Sendable {
     var backupCount = 0
 }
 
+private final class CatalogOpenPanelDelegate: NSObject, NSOpenSavePanelDelegate {
+    func panel(_ sender: Any, validate url: URL) throws {
+        guard AppState.isValidCatalogSelection(url) else {
+            throw NSError(domain: "PhotoCatalog.CatalogOpenPanel", code: 1,
+                          userInfo: [
+                            NSLocalizedDescriptionKey: "请选择有效的 .photolibrary 目录库"
+                          ])
+        }
+    }
+}
+
 // @Observable gives per-property observation: a view re-renders only when a
 // property it actually read in body changes, not on every mutation anywhere
 // in the store. Lazy caches are @ObservationIgnored and their getters touch
@@ -562,7 +573,7 @@ final class AppState {
             panel.allowedContentTypes = [libraryType]
         }
         guard panel.runModal() == .OK, let selected = panel.url else { return }
-        let url = catalogPackageURL(from: selected)
+        let url = Self.catalogPackageURL(for: selected)
 
         do {
             closeCurrentCatalog()
@@ -588,13 +599,22 @@ final class AppState {
             return
         }
         let panel = NSOpenPanel()
+        configureCatalogOpenPanel(panel)
+        let panelDelegate = CatalogOpenPanelDelegate()
+        panel.delegate = panelDelegate
+        guard panel.runModal() == .OK, let selected = panel.url else { return }
+        openCatalog(at: selected)
+    }
+
+    func configureCatalogOpenPanel(_ panel: NSOpenPanel) {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = "打开"
         panel.message = "选择 .photolibrary 目录库"
-        guard panel.runModal() == .OK, let selected = panel.url else { return }
-        openCatalog(at: selected)
+        if let libraryType = UTType(filenameExtension: "photolibrary") {
+            panel.allowedContentTypes = [libraryType]
+        }
     }
 
     @discardableResult
@@ -604,7 +624,7 @@ final class AppState {
             return false
         }
 
-        let url = catalogPackageURL(from: selected)
+        let url = Self.catalogPackageURL(for: selected)
         guard FileManager.default.fileExists(atPath: url.appendingPathComponent("catalog.sqlite").path) else {
             push("所选目录库无效", "warning")
             forgetCatalog(url)
@@ -662,7 +682,12 @@ final class AppState {
         return fallback
     }
 
-    private func catalogPackageURL(from url: URL) -> URL {
+    nonisolated static func isValidCatalogSelection(_ selected: URL) -> Bool {
+        let url = catalogPackageURL(for: selected)
+        return FileManager.default.fileExists(atPath: url.appendingPathComponent("catalog.sqlite").path)
+    }
+
+    private nonisolated static func catalogPackageURL(for url: URL) -> URL {
         url.pathExtension == "photolibrary" ? url : url.appendingPathExtension("photolibrary")
     }
 
