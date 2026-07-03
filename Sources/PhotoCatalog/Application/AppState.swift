@@ -718,7 +718,8 @@ final class AppState {
         sheet = "import"
         try? store.startImportSession(id: run.id.uuidString, startedAt: run.startedAt)
         try? store.startImportJob(id: jobId, sessionId: run.id.uuidString, sourcePath: folder.path,
-                                  mode: mode, autoTag: vision)
+                                  mode: mode, autoTag: vision, archiveRule: archiveRule,
+                                  readSidecar: readXMP, previewMaxPixel: previewSize)
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: folder)
         Task { [weak self, coordinator, store, folder, mode, vision, previewSize, archiveRule, readXMP, bookmark, existingIds, sourceId, run, control, knownAssetsById] in
@@ -964,6 +965,9 @@ final class AppState {
 
         restartRecoveredImport(jobId: job.id, run: run, folder: folder, mode: mode,
                                autoTag: payload.autoTag,
+                               archiveRule: recoveredArchiveRule(payload),
+                               readSidecar: payload.readSidecar ?? readXMPSidecar,
+                               previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel,
                                existingIds: Set(existingAssets.map { $0.id }))
     }
 
@@ -990,11 +994,16 @@ final class AppState {
 
         restartRecoveredImport(jobId: job.id, run: run, folder: folder, mode: mode,
                                autoTag: payload.autoTag,
+                               archiveRule: recoveredArchiveRule(payload),
+                               readSidecar: payload.readSidecar ?? readXMPSidecar,
+                               previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel,
                                existingIds: Set(assets.map { $0.id }))
     }
 
     private func restartRecoveredImport(jobId: String, run: ImportRun, folder: URL, mode: ImportMode,
-                                        autoTag: Bool, existingIds: Set<String>) {
+                                        autoTag: Bool, archiveRule: ManagedArchiveRule,
+                                        readSidecar: Bool, previewMaxPixel: Int,
+                                        existingIds: Set<String>) {
         guard let coordinator, let store else { return }
         let control = ImportControl()
         var runningRun = run
@@ -1016,12 +1025,12 @@ final class AppState {
                                        totalCount: runningRun.total, importedCount: runningRun.imported,
                                        skippedCount: runningRun.skipped, failedCount: runningRun.failed)
         push("正在恢复导入「\(folder.lastPathComponent)」…", "refresh")
-        let previewSize = previewMaxPixel
 
-        Task { [weak self, coordinator, store, folder, mode, autoTag, previewSize, existingIds, sourceId, runningRun, control, knownAssetsById] in
-            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, autoTag, previewSize, control, knownAssetsById] in
+        Task { [weak self, coordinator, store, folder, mode, autoTag, archiveRule, readSidecar, previewMaxPixel, existingIds, sourceId, runningRun, control, knownAssetsById] in
+            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, mode, autoTag, archiveRule, readSidecar, previewMaxPixel, control, knownAssetsById] in
                 coordinator.importFolder(folder, mode: mode, autoTag: autoTag,
-                                         previewMaxPixel: previewSize, control: control,
+                                         archiveRule: archiveRule, readSidecar: readSidecar,
+                                         previewMaxPixel: previewMaxPixel, control: control,
                                          knownAssetsById: knownAssetsById) { progress in
                     Task { @MainActor [weak self] in
                         self?.recordImportProgress(progress, for: runningRun.id)
@@ -1061,6 +1070,10 @@ final class AppState {
         return try? JSONDecoder().decode(ImportJobPayload.self, from: data)
     }
 
+    private func recoveredArchiveRule(_ payload: ImportJobPayload) -> ManagedArchiveRule {
+        payload.archiveRule.flatMap(ManagedArchiveRule.init(rawValue:)) ?? managedArchiveRule
+    }
+
     func retryFailedImport() {
         guard let run = importRun, run.phase.isFinished, !run.failures.isEmpty else { return }
         guard let coordinator, let store else {
@@ -1083,14 +1096,18 @@ final class AppState {
         lastImportSessionPersistedCount = 0
         let vision = visionEnabled
         let previewSize = previewMaxPixel
+        let archiveRule = managedArchiveRule
+        let readXMP = readXMPSidecar
         importing = true
         try? store.startImportSession(id: retry.id.uuidString, startedAt: retry.startedAt)
         try? store.startImportJob(id: jobId, sessionId: retry.id.uuidString, sourcePath: folder.path,
-                                  mode: retry.mode, autoTag: vision)
+                                  mode: retry.mode, autoTag: vision, archiveRule: archiveRule,
+                                  readSidecar: readXMP, previewMaxPixel: previewSize)
         push("正在重试 \(files.count) 个失败文件…", "refresh")
-        Task { [weak self, coordinator, store, folder, files, existingIds, retry, vision, previewSize, control] in
-            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, files, retry, vision, previewSize, control] in
+        Task { [weak self, coordinator, store, folder, files, existingIds, retry, vision, archiveRule, readXMP, previewSize, control] in
+            let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, files, retry, vision, archiveRule, readXMP, previewSize, control] in
                 coordinator.importFiles(files, from: folder, mode: retry.mode, autoTag: vision,
+                                        archiveRule: archiveRule, readSidecar: readXMP,
                                         previewMaxPixel: previewSize, control: control) { progress in
                     Task { @MainActor [weak self] in
                         self?.recordImportProgress(progress, for: retry.id)

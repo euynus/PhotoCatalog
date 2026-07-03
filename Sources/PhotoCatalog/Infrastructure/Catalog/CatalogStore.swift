@@ -47,14 +47,21 @@ struct ImportJobPayload: Codable, Equatable, Sendable {
     let sourcePath: String
     let mode: String
     let autoTag: Bool
+    let archiveRule: String?
+    let readSidecar: Bool?
+    let previewMaxPixel: Int?
 
     init(kind: String = "importFolder", sessionId: String, sourcePath: String,
-         mode: String, autoTag: Bool) {
+         mode: String, autoTag: Bool, archiveRule: String? = nil,
+         readSidecar: Bool? = nil, previewMaxPixel: Int? = nil) {
         self.kind = kind
         self.sessionId = sessionId
         self.sourcePath = sourcePath
         self.mode = mode
         self.autoTag = autoTag
+        self.archiveRule = archiveRule
+        self.readSidecar = readSidecar
+        self.previewMaxPixel = previewMaxPixel
     }
 }
 
@@ -512,9 +519,13 @@ final class CatalogStore: @unchecked Sendable {
 
     // ---------- jobs (§10.2 / §13) ----------
     func startImportJob(id: String, sessionId: String, sourcePath: String, mode: ImportMode,
-                        autoTag: Bool, priority: Int = 10, createdAt: Date = .now) throws {
+                        autoTag: Bool, archiveRule: ManagedArchiveRule? = nil,
+                        readSidecar: Bool? = nil, previewMaxPixel: Int? = nil,
+                        priority: Int = 10, createdAt: Date = .now) throws {
         let payload = Self.importJobPayload(sessionId: sessionId, sourcePath: sourcePath,
-                                            mode: mode, autoTag: autoTag)
+                                            mode: mode, autoTag: autoTag,
+                                            archiveRule: archiveRule, readSidecar: readSidecar,
+                                            previewMaxPixel: previewMaxPixel)
         let now = Self.iso(createdAt)
         try db.run("""
         INSERT OR REPLACE INTO jobs(
@@ -617,9 +628,14 @@ final class CatalogStore: @unchecked Sendable {
     }
 
     private static func importJobPayload(sessionId: String, sourcePath: String,
-                                         mode: ImportMode, autoTag: Bool) -> String {
+                                         mode: ImportMode, autoTag: Bool,
+                                         archiveRule: ManagedArchiveRule?,
+                                         readSidecar: Bool?, previewMaxPixel: Int?) -> String {
         let payload = ImportJobPayload(sessionId: sessionId, sourcePath: sourcePath,
-                                       mode: mode.rawValue, autoTag: autoTag)
+                                       mode: mode.rawValue, autoTag: autoTag,
+                                       archiveRule: archiveRule?.rawValue,
+                                       readSidecar: readSidecar,
+                                       previewMaxPixel: previewMaxPixel)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let data = (try? encoder.encode(payload)) ?? Data()
