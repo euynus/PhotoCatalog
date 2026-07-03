@@ -596,11 +596,13 @@ final class CatalogStore: @unchecked Sendable {
     // ---------- manifest.json (§9) ----------
     private func writeManifestIfNeeded() {
         let url = packageURL.appendingPathComponent("manifest.json")
-        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        let existing = (try? Data(contentsOf: url))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        if existing["schemaVersion"] as? Int == Self.latestSchemaVersion { return }
         let manifest: [String: Any] = [
             "libraryVersion": 1, "schemaVersion": Self.latestSchemaVersion,
-            "createdAt": ISO8601DateFormatter().string(from: Date()),
-            "appBuild": "1.0.0", "uuid": UUID().uuidString,
+            "createdAt": existing["createdAt"] as? String ?? ISO8601DateFormatter().string(from: Date()),
+            "appBuild": "1.0.0", "uuid": existing["uuid"] as? String ?? UUID().uuidString,
         ]
         if let data = try? JSONSerialization.data(withJSONObject: manifest, options: .prettyPrinted) {
             try? data.write(to: url)

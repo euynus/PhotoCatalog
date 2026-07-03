@@ -73,6 +73,29 @@ enum PipelineCheck {
         check(AppState.launchCatalogURL(from: ["PhotoCatalog", "--ignored", launchPath])?.path == launchPath
               && AppState.launchCatalogURL(from: ["PhotoCatalog", launchFileURL])?.path == launchPath,
               "launch arguments recognize .photolibrary paths")
+        let staleManifestLibrary = tmp.appendingPathComponent("StaleManifest.photolibrary")
+        do {
+            let staleStore = try CatalogStore(packageURL: staleManifestLibrary)
+            let staleManifestURL = staleStore.packageURL.appendingPathComponent("manifest.json")
+            let staleManifest: [String: Any] = [
+                "libraryVersion": 1, "schemaVersion": 1,
+                "createdAt": "2026-01-01T00:00:00Z", "appBuild": "1.0.0", "uuid": "stable-id",
+            ]
+            let data = try JSONSerialization.data(withJSONObject: staleManifest, options: .prettyPrinted)
+            try data.write(to: staleManifestURL)
+        } catch {
+            check(false, "stale manifest fixture created")
+        }
+        if let reopened = try? CatalogStore(packageURL: staleManifestLibrary),
+           let data = try? Data(contentsOf: reopened.packageURL.appendingPathComponent("manifest.json")),
+           let updated = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let schema = updated["schemaVersion"] as? Int
+            let current = reopened.db.scalarInt("SELECT COALESCE(MAX(version),0) FROM schema_migrations;")
+            check(schema == current && updated["uuid"] as? String == "stable-id",
+                  "stale catalog manifest updates schema while preserving identity")
+        } else {
+            check(false, "stale catalog manifest updates schema while preserving identity")
+        }
         let futureLibrary = tmp.appendingPathComponent("Future.photolibrary")
         try? fm.createDirectory(at: futureLibrary, withIntermediateDirectories: true)
         do {
