@@ -342,6 +342,7 @@ final class AppState {
 
     var statusCacheText: String {
         guard let cacheBytes = statusMetrics.cacheBytes else { return "缓存 --" }
+        if cacheBytes == 0 { return "缓存 0 KB" }
         return "缓存 " + ByteCountFormatter.string(fromByteCount: cacheBytes, countStyle: .file)
     }
 

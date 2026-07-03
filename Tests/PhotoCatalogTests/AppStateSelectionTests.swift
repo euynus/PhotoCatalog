@@ -897,6 +897,22 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testStatusCacheTextUsesNumericZero() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-cache-zero-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try CatalogStore(packageURL: package)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        app.runHealthCheck()
+
+        XCTAssertEqual(app.statusCacheText, "缓存 0 KB")
+    }
+
+    @MainActor
     func testOriginalFileOperationsHandleConflictsAndUnavailableSources() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-file-ops-\(UUID().uuidString)")
         let sourceDir = dir.appendingPathComponent("Source")
