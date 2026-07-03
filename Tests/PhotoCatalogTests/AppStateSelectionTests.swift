@@ -225,4 +225,26 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertTrue(app.list.allSatisfy { $0.status == .missing || $0.status == .offline })
         XCTAssertEqual(app.primaryId, app.list.first?.id)
     }
+
+    @MainActor
+    func testSavingSmartAlbumSelectsMatchingDynamicCollection() {
+        let app = AppState()
+        app.onboarded = true
+        app.sheet = "smart"
+        let rule = SmartRule(match: "all", conditions: [
+            SmartCondition(field: "rating", op: ">=", value: "2"),
+            SmartCondition(field: "type", op: "=", value: "RAW"),
+        ])
+        let expectedCount = SmartMatcher.count(app.assets.filter { !$0.deleted }, rule)
+
+        app.saveSmart(name: "高分 RAW", rule: rule, count: expectedCount)
+
+        XCTAssertNil(app.sheet)
+        XCTAssertEqual(app.selection.type, .smart)
+        XCTAssertEqual(app.selection.name, "高分 RAW")
+        XCTAssertEqual(app.smartAlbums.last?.name, "高分 RAW")
+        XCTAssertEqual(app.smartAlbums.last?.count, expectedCount)
+        XCTAssertEqual(app.list.count, expectedCount)
+        XCTAssertTrue(app.list.allSatisfy { $0.rating >= 2 && $0.isRaw })
+    }
 }
