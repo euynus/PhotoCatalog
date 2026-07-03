@@ -141,6 +141,7 @@ struct Titlebar: View {
             if app.search != searchText { app.setSearch(searchText) }
         }
         .onChange(of: app.searchFocusToken) { searchFocused = true }
+        .onChange(of: app.searchBlurToken) { searchFocused = false }
     }
 
     private var sizeSlider: some View {

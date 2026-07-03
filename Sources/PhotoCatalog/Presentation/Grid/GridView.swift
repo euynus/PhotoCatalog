@@ -42,6 +42,7 @@ struct GridView: View {
                                 .equatable()
                                 .onTapGesture(count: 2) { app.openLoupe(asset.id) }
                                 .onTapGesture {
+                                    app.blurSearch()
                                     let f = NSEvent.modifierFlags
                                     app.selectCell(asset.id, shift: f.contains(.shift),
                                                    meta: f.contains(.command))
@@ -52,7 +53,10 @@ struct GridView: View {
                                 .accessibilityLabel(Self.accessibilityLabel(asset, stack: stack))
                                 .accessibilityAddTraits(app.selectedIds.contains(asset.id)
                                     ? [.isButton, .isSelected] : .isButton)
-                                .accessibilityAction { app.selectCell(asset.id, shift: false, meta: false) }
+                                .accessibilityAction {
+                                    app.blurSearch()
+                                    app.selectCell(asset.id, shift: false, meta: false)
+                                }
                                 .accessibilityAction(named: "打开放大视图") { app.openLoupe(asset.id) }
                                 .accessibilityAction(named: stack?.collapsed == true ? "展开堆栈" : "折叠堆栈") {
                                     if stack != nil { app.toggleStack(containing: asset.id) }

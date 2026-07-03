@@ -247,6 +247,16 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testSearchFocusCanBeReleasedAfterGridSelection() {
+        let app = AppState()
+        app.onboarded = true
+
+        XCTAssertEqual(app.searchBlurToken, 0)
+        app.blurSearch()
+        XCTAssertEqual(app.searchBlurToken, 1)
+    }
+
+    @MainActor
     func testSelectionCommandKeyboardShortcuts() {
         let app = AppState()
         app.onboarded = true

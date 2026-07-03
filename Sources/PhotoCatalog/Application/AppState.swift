@@ -262,7 +262,9 @@ final class AppState {
 
     // ----- search focus signal (Cmd+F) -----
     var searchFocusToken = 0
+    var searchBlurToken = 0
     func focusSearch() { searchFocusToken += 1 }
+    func blurSearch() { searchBlurToken += 1 }
 
     func showSettings() { sheet = "settings" }
 
