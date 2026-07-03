@@ -80,6 +80,18 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(app.assets.first { $0.id == id }?.colorLabel, .blue)
     }
 
+    func testExposureFormattingHidesUnknownValues() {
+        XCTAssertEqual(formatFocalLength(0), "—")
+        XCTAssertEqual(formatApertureValue(0), "—")
+        XCTAssertEqual(formatShutterSpeed(""), "—")
+        XCTAssertEqual(formatISO(0), "—")
+
+        XCTAssertEqual(formatFocalLength(63), "63mm")
+        XCTAssertEqual(formatApertureValue(2.8), "ƒ/2.8")
+        XCTAssertEqual(formatShutterSpeed("1/200"), "1/200s")
+        XCTAssertEqual(formatISO(400), "ISO400")
+    }
+
     @MainActor
     func testSelectionMutationRefreshesCachedListAndPrimary() throws {
         let app = AppState()

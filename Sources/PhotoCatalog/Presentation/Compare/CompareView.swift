@@ -148,7 +148,7 @@ struct ComparePanel: View {
         VStack(alignment: .leading, spacing: 9) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(asset.filename).font(.system(size: 12.5, weight: .semibold))
-                Text("\(asset.focal)mm · ƒ/\(formatAperture(asset.aperture)) · \(asset.shutter)s · ISO\(asset.iso)")
+                Text(exposureSummary(asset))
                     .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.text3)
             }
             HStack(spacing: 10) {

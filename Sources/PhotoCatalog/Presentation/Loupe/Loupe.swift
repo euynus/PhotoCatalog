@@ -108,7 +108,7 @@ struct Loupe: View {
                 Text("·").foregroundStyle(Theme.text4)
                 Text(asset.camera).font(.system(size: 12)).foregroundStyle(Theme.text2)
                 Text("·").foregroundStyle(Theme.text4)
-                Text("\(asset.focal)mm  ƒ/\(formatAperture(asset.aperture))  \(asset.shutter)s  ISO\(asset.iso)")
+                Text(exposureSummary(asset, separator: "  "))
                     .font(.system(size: 12)).monospacedDigit().foregroundStyle(Theme.text2)
             }.lineLimit(1)
             HStack(spacing: 12) {

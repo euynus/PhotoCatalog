@@ -164,12 +164,12 @@ struct InspectorView: View {
         VStack(alignment: .leading, spacing: 12) {
             InsGroup([.init("相机", a.camera), .init("镜头", a.lens)])
             HStack(spacing: 8) {
-                exifCell("焦距", "\(a.focal)mm")
-                exifCell("光圈", "ƒ/\(formatAperture(a.aperture))")
+                exifCell("焦距", formatFocalLength(a.focal))
+                exifCell("光圈", formatApertureValue(a.aperture))
             }
             HStack(spacing: 8) {
-                exifCell("快门", "\(a.shutter)s")
-                exifCell("ISO", "\(a.iso)")
+                exifCell("快门", formatShutterSpeed(a.shutter))
+                exifCell("ISO", formatISOValue(a.iso))
             }
             InsGroup([
                 .init("拍摄时间", DateFmt.longCapture(a.date)),
@@ -248,6 +248,36 @@ struct InspectorView: View {
 
 func formatAperture(_ v: Double) -> String {
     v == v.rounded() ? String(format: "%.0f", v) : String(format: "%.1f", v)
+}
+
+func formatFocalLength(_ value: Int) -> String {
+    value > 0 ? "\(value)mm" : "—"
+}
+
+func formatApertureValue(_ value: Double) -> String {
+    value > 0 ? "ƒ/\(formatAperture(value))" : "—"
+}
+
+func formatShutterSpeed(_ value: String) -> String {
+    value.isEmpty ? "—" : "\(value)s"
+}
+
+func formatISO(_ value: Int) -> String {
+    value > 0 ? "ISO\(value)" : "—"
+}
+
+func formatISOValue(_ value: Int) -> String {
+    value > 0 ? "\(value)" : "—"
+}
+
+func exposureSummary(_ asset: Asset, separator: String = " · ") -> String {
+    let parts = [
+        formatFocalLength(asset.focal),
+        formatApertureValue(asset.aperture),
+        formatShutterSpeed(asset.shutter),
+        formatISO(asset.iso),
+    ].filter { $0 != "—" }
+    return parts.isEmpty ? "—" : parts.joined(separator: separator)
 }
 
 func formatAltitude(_ value: Double) -> String {
