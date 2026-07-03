@@ -249,4 +249,29 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(app.primaryId, app.list.first?.id)
         XCTAssertEqual(app.selectedIds, Set(app.list.prefix(1).map(\.id)))
     }
+
+    @MainActor
+    func testRemovingFromManualAlbumKeepsSelectionVisible() throws {
+        let app = AppState()
+        app.onboarded = true
+        let album = try XCTUnwrap(app.albums.first { $0.assetIds.count > 1 })
+        app.select(Selection(type: .album, id: album.id, name: album.name))
+        let firstVisible = try XCTUnwrap(app.list.first?.id)
+
+        app.setPrimary(firstVisible)
+        app.removeSelectionFromCurrentAlbum()
+
+        XCTAssertFalse(app.albums.first { $0.id == album.id }?.assetIds.contains(firstVisible) ?? true)
+        XCTAssertFalse(app.list.contains { $0.id == firstVisible })
+        XCTAssertFalse(app.selectedIds.contains(firstVisible))
+        XCTAssertEqual(app.primaryId, app.list.first?.id)
+        XCTAssertTrue(app.primaryId.map { app.selectedIds.contains($0) } ?? app.selectedIds.isEmpty)
+
+        XCTAssertTrue(app.selectAllVisible())
+        app.removeSelectionFromCurrentAlbum()
+
+        XCTAssertTrue(app.list.isEmpty)
+        XCTAssertNil(app.primaryId)
+        XCTAssertTrue(app.selectedIds.isEmpty)
+    }
 }
