@@ -103,4 +103,63 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertTrue(app.handleKey("escape", hasCommand: false))
         XCTAssertNil(app.sheet)
     }
+
+    @MainActor
+    func testSafeCommandKeyboardShortcuts() {
+        let app = AppState()
+        app.onboarded = true
+
+        XCTAssertTrue(app.handleKey("f", hasCommand: true))
+        XCTAssertEqual(app.searchFocusToken, 1)
+
+        XCTAssertFalse(app.filterOpen)
+        XCTAssertTrue(app.handleKey("f", hasCommand: true, hasShift: true))
+        XCTAssertTrue(app.filterOpen)
+
+        XCTAssertTrue(app.showInspector)
+        XCTAssertTrue(app.handleKey("i", hasCommand: true))
+        XCTAssertFalse(app.showInspector)
+
+        XCTAssertEqual(app.thumbSize, 168)
+        XCTAssertTrue(app.handleKey("=", hasCommand: true))
+        XCTAssertEqual(app.thumbSize, 184)
+        XCTAssertTrue(app.handleKey("-", hasCommand: true))
+        XCTAssertEqual(app.thumbSize, 168)
+        app.thumbSize = 220
+        XCTAssertTrue(app.handleKey("0", hasCommand: true))
+        XCTAssertEqual(app.thumbSize, 168)
+    }
+
+    @MainActor
+    func testSelectionCommandKeyboardShortcuts() {
+        let app = AppState()
+        app.onboarded = true
+        let visible = Set(app.list.map(\.id))
+        XCTAssertFalse(visible.isEmpty)
+
+        XCTAssertTrue(app.handleKey("a", hasCommand: true))
+        XCTAssertEqual(app.selectedIds, visible)
+
+        XCTAssertTrue(app.handleKey("a", hasCommand: true, hasShift: true))
+        XCTAssertTrue(app.selectedIds.isEmpty)
+        XCTAssertNil(app.primaryId)
+    }
+
+    @MainActor
+    func testCommandKeyboardShortcutsRespectSheets() {
+        let app = AppState()
+        app.onboarded = true
+        app.sheet = "settings"
+        let initialFilterOpen = app.filterOpen
+        let initialShowInspector = app.showInspector
+        let initialThumbSize = app.thumbSize
+
+        XCTAssertFalse(app.handleKey("f", hasCommand: true, hasShift: true))
+        XCTAssertFalse(app.handleKey("i", hasCommand: true))
+        XCTAssertFalse(app.handleKey("=", hasCommand: true))
+        XCTAssertEqual(app.filterOpen, initialFilterOpen)
+        XCTAssertEqual(app.showInspector, initialShowInspector)
+        XCTAssertEqual(app.thumbSize, initialThumbSize)
+        XCTAssertEqual(app.sheet, "settings")
+    }
 }
