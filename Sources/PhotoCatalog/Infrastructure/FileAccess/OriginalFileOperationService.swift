@@ -28,6 +28,10 @@ enum OriginalFileOperationService {
             guard let path = asset.localPath else { report.skipped += 1; continue }
             let source = URL(fileURLWithPath: path)
             guard fm.fileExists(atPath: source.path) else { report.failed += 1; continue }
+            if operation == .move && destination.standardizedFileURL == source.deletingLastPathComponent().standardizedFileURL {
+                report.skipped += 1
+                continue
+            }
             guard let target = resolvedTarget(for: source, in: destination, fm: fm) else {
                 report.skipped += 1
                 continue

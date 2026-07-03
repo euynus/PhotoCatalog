@@ -627,6 +627,18 @@ enum PipelineCheck {
                   && fm.fileExists(atPath: movedURL!.path)
                   && !fm.fileExists(atPath: sourceCopy.path),
                   "original file operation moves originals")
+            let sameDirSource = tmp.appendingPathComponent("file-op-same-dir.jpg")
+            try? fm.copyItem(at: movedURL!, to: sameDirSource)
+            fileOpAsset.filename = sameDirSource.lastPathComponent
+            fileOpAsset.localPath = sameDirSource.path
+            let sameDirReport = OriginalFileOperationService.perform(
+                .move,
+                assets: [fileOpAsset],
+                destination: sameDirSource.deletingLastPathComponent())
+            check(sameDirReport.skipped == 1
+                  && fm.fileExists(atPath: sameDirSource.path)
+                  && !fm.fileExists(atPath: tmp.appendingPathComponent("file-op-same-dir (1).jpg").path),
+                  "original file operation skips same-folder moves")
         } else {
             check(false, "original file operation copies and moves originals")
         }
