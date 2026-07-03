@@ -463,6 +463,17 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testExportingDemoOriginalsShowsAccurateMessage() {
+        let app = AppState()
+        app.onboarded = true
+
+        app.exportSelection()
+
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "演示照片没有本地原件可导出")
+        XCTAssertEqual(app.toastCenter.toasts.last?.icon, "warning")
+    }
+
+    @MainActor
     func testPinnedKeywordSidebarFavoriteTogglesAndCounts() throws {
         let app = AppState()
         app.onboarded = true

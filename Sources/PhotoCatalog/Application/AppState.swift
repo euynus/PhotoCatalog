@@ -1709,7 +1709,7 @@ final class AppState {
         let selected = assets.filter { ids.contains($0.id) && !$0.deleted }
         let real = selected.filter { !$0.isDemo && $0.localPath != nil }
         guard !real.isEmpty else {
-            push("正在导出 \(max(selected.count, 1)) 张原件…（演示照片无本地原件）", "export")
+            push("演示照片没有本地原件可导出", "warning")
             return
         }
         let panel = NSOpenPanel()
