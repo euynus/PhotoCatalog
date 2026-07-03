@@ -408,6 +408,7 @@ final class AppState {
         recomputeDuplicates()
         restoreAlbums(from: s, assets: checked)
         recoverInterruptedImportJobs(existingAssets: checked)
+        ensurePrimaryValid()
         backfillThumbnails()
         refreshStatusMetrics()
         return nil

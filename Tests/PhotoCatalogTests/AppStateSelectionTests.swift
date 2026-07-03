@@ -955,6 +955,54 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testOpeningRealCatalogSelectsFirstVisibleAsset() throws {
+        let defaults = UserDefaults.standard
+        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
+        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
+        defer {
+            if let previousCatalogURL {
+                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
+            } else {
+                defaults.removeObject(forKey: "pc_catalogURL")
+            }
+            if let previousRecent {
+                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
+            } else {
+                defaults.removeObject(forKey: "pc_recentCatalogs")
+            }
+        }
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-open-selection-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        let realAssets = try DemoData.assets.dropFirst(5).prefix(2).map { base -> Asset in
+            try store.addSourceRoot(id: base.folderId, displayName: base.folderName,
+                                    path: source.path, bookmark: nil)
+            var asset = base
+            let file = source.appendingPathComponent(asset.filename)
+            try Data("image".utf8).write(to: file)
+            asset.localPath = file.path
+            asset.status = .ready
+            asset.isDemo = false
+            asset.deleted = false
+            return asset
+        }
+        try store.upsert(realAssets)
+
+        let app = AppState()
+        app.onboarded = true
+
+        XCTAssertTrue(app.openCatalog(at: package))
+        let firstVisible = try XCTUnwrap(app.list.first?.id)
+        XCTAssertEqual(app.primaryId, firstVisible)
+        XCTAssertEqual(app.selectedIds, [firstVisible])
+    }
+
+    @MainActor
     func testStaleDuplicateRecomputeResultIsIgnored() async throws {
         let app = AppState()
         app.onboarded = true
