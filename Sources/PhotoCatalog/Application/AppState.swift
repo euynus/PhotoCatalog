@@ -2972,6 +2972,7 @@ final class AppState {
         smartAlbums.append(album)
         sheet = nil
         selection = Selection(type: .smart, id: id, name: name)
+        ensurePrimaryValid()
         push("已创建智能相册「\(name)」", "sparkles")
     }
 

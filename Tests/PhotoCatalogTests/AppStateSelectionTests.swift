@@ -231,9 +231,9 @@ final class AppStateSelectionTests: XCTestCase {
         let app = AppState()
         app.onboarded = true
         app.sheet = "smart"
+        let target = app.assets.first { $0.id != app.primaryId && !$0.deleted }!
         let rule = SmartRule(match: "all", conditions: [
-            SmartCondition(field: "rating", op: ">=", value: "2"),
-            SmartCondition(field: "type", op: "=", value: "RAW"),
+            SmartCondition(field: "search", op: "包含", value: target.filename),
         ])
         let expectedCount = SmartMatcher.count(app.assets.filter { !$0.deleted }, rule)
 
@@ -245,6 +245,8 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(app.smartAlbums.last?.name, "高分 RAW")
         XCTAssertEqual(app.smartAlbums.last?.count, expectedCount)
         XCTAssertEqual(app.list.count, expectedCount)
-        XCTAssertTrue(app.list.allSatisfy { $0.rating >= 2 && $0.isRaw })
+        XCTAssertTrue(app.list.allSatisfy { $0.filename.localizedStandardContains(target.filename) })
+        XCTAssertEqual(app.primaryId, app.list.first?.id)
+        XCTAssertEqual(app.selectedIds, Set(app.list.prefix(1).map(\.id)))
     }
 }
