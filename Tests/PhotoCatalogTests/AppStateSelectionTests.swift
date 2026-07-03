@@ -162,4 +162,23 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(app.thumbSize, initialThumbSize)
         XCTAssertEqual(app.sheet, "settings")
     }
+
+    @MainActor
+    func testBatchCaptureTimeActionsApplyToSelection() throws {
+        let app = AppState()
+        app.onboarded = true
+        let id = try XCTUnwrap(app.primaryId)
+        let originalDate = try XCTUnwrap(app.assets.first { $0.id == id }?.date)
+
+        app.shiftCaptureTime(hours: 1, minutes: -15)
+        let shifted = try XCTUnwrap(app.assets.first { $0.id == id })
+        XCTAssertEqual(shifted.date.timeIntervalSince(originalDate), 45 * 60, accuracy: 0.1)
+        XCTAssertEqual(shifted.captureDateSource, "手动调整")
+
+        let absolute = Date(timeIntervalSince1970: 1_700_000_000)
+        app.setCaptureDate(absolute)
+        let updated = try XCTUnwrap(app.assets.first { $0.id == id })
+        XCTAssertEqual(updated.date, absolute)
+        XCTAssertEqual(updated.captureDateSource, "手动设置")
+    }
 }
