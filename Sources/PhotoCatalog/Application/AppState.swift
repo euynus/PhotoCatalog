@@ -2584,16 +2584,19 @@ final class AppState {
     /// Apply an in-place edit to the current selection (or an explicit set).
     func mutate(_ ids: Set<String>? = nil, _ transform: (inout Asset) -> Void) {
         let target = ids ?? targetIds
+        guard !target.isEmpty else { return }
         for i in assets.indices where target.contains(assets[i].id) {
             transform(&assets[i])
         }
         persist(target)
+        ensurePrimaryValid()
     }
 
     func mutateAsset(_ id: String, _ transform: (inout Asset) -> Void) {
         guard let i = assetIndex[id] else { return }
         transform(&assets[i])
         persist([id])
+        ensurePrimaryValid()
     }
 
     func setRating(_ n: Int) { mutate { $0.rating = n } }

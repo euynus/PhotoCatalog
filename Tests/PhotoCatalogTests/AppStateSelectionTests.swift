@@ -183,6 +183,34 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testKeywordActionsExpandDedupeAndFilterSelection() throws {
+        let app = AppState()
+        app.onboarded = true
+        let ids = Array(app.list.prefix(2).map(\.id))
+        XCTAssertEqual(ids.count, 2)
+        app.selectedIds = Set(ids)
+        app.primaryId = ids[0]
+
+        app.addKeyword("客户 / 婚礼 / 精修, 客户>婚礼>精修")
+
+        for id in ids {
+            let keywords = try XCTUnwrap(app.assets.first { $0.id == id }?.keywords)
+            XCTAssertEqual(keywords.filter { $0 == "客户" }.count, 1)
+            XCTAssertEqual(keywords.filter { $0 == "客户/婚礼" }.count, 1)
+            XCTAssertEqual(keywords.filter { $0 == "客户/婚礼/精修" }.count, 1)
+        }
+
+        app.select(Selection(type: .keyword, id: "客户/婚礼/精修", name: "客户/婚礼/精修"))
+        XCTAssertEqual(Set(app.list.map(\.id)), Set(ids))
+        XCTAssertEqual(app.primaryId, ids[0])
+
+        app.removeKeyword("客户/婚礼/精修")
+        XCTAssertTrue(app.list.isEmpty)
+        XCTAssertNil(app.primaryId)
+        XCTAssertTrue(app.selectedIds.isEmpty)
+    }
+
+    @MainActor
     func testSearchFiltersAndSortKeepListConsistent() throws {
         let app = AppState()
         app.onboarded = true
