@@ -76,7 +76,7 @@ struct Sidebar: View {
 
     private var albumSection: some View {
         SidebarSection(title: "相册", action: {
-            SBAddButton { app.createAlbumFromSelection() }
+            SBAddButton(help: "新建相册") { app.createAlbumFromSelection() }
         }) {
             ForEach(app.albums) { al in
                 row("album", Theme.albumBlue, al.name, "\(app.countForAlbum(al))", .album, al.id, al.name)
@@ -86,7 +86,7 @@ struct Sidebar: View {
 
     private var smartSection: some View {
         SidebarSection(title: "智能相册", action: {
-            SBAddButton { app.sheet = "smart" }
+            SBAddButton(help: "新建智能相册") { app.sheet = "smart" }
         }) {
             ForEach(app.smartAlbums) { sa in
                 row("sparkles", Theme.accent, sa.name, "\(app.countForSmartAlbum(sa))", .smart, sa.id, sa.name)
@@ -216,6 +216,7 @@ struct SidebarSection<Content: View, Action: View>: View {
 }
 
 private struct SBAddButton: View {
+    let help: String
     let action: () -> Void
     @State private var hover = false
     var body: some View {
@@ -226,7 +227,8 @@ private struct SBAddButton: View {
                 .background(hover ? Theme.surface : .clear)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
         }
-        .buttonStyle(.plain).onHover { hover = $0 }.help("新建智能相册")
+        .buttonStyle(.plain).onHover { hover = $0 }.help(help)
+        .accessibilityLabel(help)
     }
 }
 
