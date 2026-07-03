@@ -17,11 +17,16 @@ struct DuplicateResolutionReport {
 enum DuplicateResolutionService {
     static func resolve(_ group: DuplicateGroup, keepId: String?, in assets: inout [Asset],
                         action: DuplicateResolutionAction) -> DuplicateResolutionReport {
+        let groupIds = Set(group.items.map(\.id))
         let keptId = keepId ?? group.items.first?.id
         var report = DuplicateResolutionReport(keptId: keptId)
         guard let keptId else { return report }
+        guard groupIds.contains(keptId) else {
+            report.failedCount = 1
+            return report
+        }
 
-        let removeIds = Set(group.items.map(\.id).filter { $0 != keptId })
+        let removeIds = groupIds.subtracting([keptId])
         guard !removeIds.isEmpty else { return report }
 
         for id in removeIds {

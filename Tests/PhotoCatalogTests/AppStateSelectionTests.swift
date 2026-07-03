@@ -514,6 +514,19 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testDuplicateResolutionRejectsKeepIdOutsideGroup() throws {
+        var assets = Array(DemoData.assets.prefix(2))
+        let group = DuplicateGroup(id: "dg-invalid-keep", method: "contentHash", score: 1, items: assets)
+
+        let report = DuplicateResolutionService.resolve(group, keepId: "not-in-group",
+                                                        in: &assets, action: .removeFromCatalog)
+
+        XCTAssertTrue(report.removedIds.isEmpty)
+        XCTAssertEqual(report.failedCount, 1)
+        XCTAssertTrue(assets.allSatisfy { !$0.deleted })
+    }
+
+    @MainActor
     func testAlbumCountsIgnoreSoftDeletedAssets() throws {
         let app = AppState()
         app.onboarded = true
