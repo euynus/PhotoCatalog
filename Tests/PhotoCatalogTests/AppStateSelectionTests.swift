@@ -3,11 +3,14 @@ import XCTest
 
 final class AppStateSelectionTests: XCTestCase {
     private var previousOpenLast: Any?
+    private var previousPinnedSidebarItems: Any?
 
     override func setUp() {
         super.setUp()
         previousOpenLast = UserDefaults.standard.object(forKey: "pc_openLast")
+        previousPinnedSidebarItems = UserDefaults.standard.object(forKey: "pc_pinnedSidebarItems")
         UserDefaults.standard.set(false, forKey: "pc_openLast")
+        UserDefaults.standard.removeObject(forKey: "pc_pinnedSidebarItems")
     }
 
     override func tearDown() {
@@ -15,6 +18,11 @@ final class AppStateSelectionTests: XCTestCase {
             UserDefaults.standard.set(previousOpenLast, forKey: "pc_openLast")
         } else {
             UserDefaults.standard.removeObject(forKey: "pc_openLast")
+        }
+        if let previousPinnedSidebarItems {
+            UserDefaults.standard.set(previousPinnedSidebarItems, forKey: "pc_pinnedSidebarItems")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "pc_pinnedSidebarItems")
         }
         super.tearDown()
     }
@@ -297,6 +305,31 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertFalse(app.list.isEmpty)
         XCTAssertTrue(app.list.allSatisfy { $0.status == .missing || $0.status == .offline })
         XCTAssertEqual(app.primaryId, app.list.first?.id)
+    }
+
+    @MainActor
+    func testPinnedKeywordSidebarFavoriteTogglesAndCounts() throws {
+        let app = AppState()
+        app.onboarded = true
+        let keyword = try XCTUnwrap(app.keywordList.first)
+
+        app.select(Selection(type: .keyword, id: keyword.name, name: keyword.name))
+
+        XCTAssertTrue(app.canPinCurrentSelection)
+        XCTAssertFalse(app.isCurrentSelectionPinned)
+
+        app.togglePinCurrentSelection()
+
+        XCTAssertTrue(app.isCurrentSelectionPinned)
+        let pinned = try XCTUnwrap(app.pinnedSidebarFavorites.first)
+        XCTAssertEqual(pinned.type, .keyword)
+        XCTAssertEqual(pinned.selectionId, keyword.name)
+        XCTAssertEqual(app.countForPinnedSidebarItem(pinned), "\(keyword.count)")
+
+        app.togglePinCurrentSelection()
+
+        XCTAssertFalse(app.isCurrentSelectionPinned)
+        XCTAssertTrue(app.pinnedSidebarFavorites.isEmpty)
     }
 
     @MainActor
