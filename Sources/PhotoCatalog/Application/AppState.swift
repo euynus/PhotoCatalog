@@ -1647,7 +1647,7 @@ final class AppState {
                     localPath.map { fm.fileExists(atPath: $0) } ?? false,
                     !preview.isEmpty && fm.fileExists(atPath: preview))
         }.value
-        if requestedExists && (!kind.isThumbnail || !asset.isRaw) {
+        if requestedExists && !asset.isRaw {
             return requestedSource
         }
 

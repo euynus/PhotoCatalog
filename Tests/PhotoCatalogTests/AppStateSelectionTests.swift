@@ -1,5 +1,7 @@
 import XCTest
 import Observation
+import ImageIO
+import UniformTypeIdentifiers
 @testable import PhotoCatalog
 
 private actor ObservationFlag {
@@ -689,6 +691,55 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testVisibleImageSourceRepairsBlackRawPreviewCache() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-raw-visible-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let original = source.appendingPathComponent("CANON.CR3")
+        try writeTestJPEG(to: original, black: false)
+
+        let store = try CatalogStore(packageURL: package)
+        let thumbnails = ThumbnailService(store: store)
+        let assetId = "raw-preview-test"
+        let previewURL = thumbnails.cachePath(assetId: assetId, kind: .preview2048)
+        try writeTestJPEG(to: previewURL, black: true)
+
+        let base = DemoData.assets[0]
+        let asset = Asset(id: assetId, pid: base.pid, ori: base.ori, thumb: base.thumb, preview: previewURL.path,
+                          filename: original.lastPathComponent, type: "CR3", isRaw: true, folderId: "source-1",
+                          folderName: "Source", date: base.date, width: base.width, height: base.height,
+                          orientation: base.orientation, camera: base.camera, lens: base.lens, focal: base.focal,
+                          aperture: base.aperture, shutter: base.shutter, iso: base.iso,
+                          colorSpace: base.colorSpace, hasICCProfile: base.hasICCProfile, fileMB: base.fileMB,
+                          fileModifiedAt: base.fileModifiedAt, fileCreatedAt: base.fileCreatedAt,
+                          rating: base.rating, flag: base.flag, colorLabel: base.colorLabel,
+                          keywords: base.keywords, title: base.title, caption: base.caption,
+                          author: base.author, copyright: base.copyright, makerNotes: base.makerNotes,
+                          project: base.project, client: base.client, location: base.location, gps: base.gps,
+                          gpsAltitude: base.gpsAltitude, status: .ready, importedAt: base.importedAt,
+                          deleted: base.deleted, localPath: original.path,
+                          captureDateSource: base.captureDateSource, contentHash: base.contentHash,
+                          quickHash: base.quickHash, isDemo: false, faces: base.faces,
+                          perceptualHash: base.perceptualHash)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.assets = [asset]
+
+        XCTAssertTrue(imageIsUniformBlack(at: previewURL))
+        let resolved = await app.visibleImageSource(for: asset,
+                                                    requestedSource: previewURL.path,
+                                                    kind: .preview2048)
+
+        XCTAssertEqual(resolved, previewURL.path)
+        XCTAssertFalse(imageIsUniformBlack(at: previewURL))
+    }
+
+    @MainActor
     func testMaintenanceActionsCleanLocalCatalogState() throws {
         let defaults = UserDefaults.standard
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
@@ -957,5 +1008,73 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertTrue(app.list.isEmpty)
         XCTAssertNil(app.primaryId)
         XCTAssertTrue(app.selectedIds.isEmpty)
+    }
+
+    private func writeTestJPEG(to url: URL, black: Bool) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(data: nil,
+                                      width: 80,
+                                      height: 60,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: 0,
+                                      space: colorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else {
+            throw NSError(domain: "PhotoCatalogTests", code: 1)
+        }
+        context.setFillColor(black ? CGColor.black : CGColor(red: 0.7, green: 0.2, blue: 0.1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 80, height: 60))
+        if !black {
+            context.setFillColor(CGColor(red: 0.1, green: 0.5, blue: 0.8, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: 80, height: 30))
+        }
+        guard let image = context.makeImage(),
+              let destination = CGImageDestinationCreateWithURL(url as CFURL,
+                                                                UTType.jpeg.identifier as CFString,
+                                                                1,
+                                                                nil) else {
+            throw NSError(domain: "PhotoCatalogTests", code: 2)
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            throw NSError(domain: "PhotoCatalogTests", code: 3)
+        }
+    }
+
+    private func imageIsUniformBlack(at url: URL) -> Bool {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, [
+            kCGImageSourceShouldCache: false,
+        ] as CFDictionary) else { return true }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: false,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 32,
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return true
+        }
+
+        let bytesPerPixel = 4
+        var data = [UInt8](repeating: 0, count: image.width * image.height * bytesPerPixel)
+        guard let context = CGContext(data: &data,
+                                      width: image.width,
+                                      height: image.height,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: image.width * bytesPerPixel,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            return true
+        }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        var index = 0
+        while index < data.count {
+            if data[index] > 2 || data[index + 1] > 2 || data[index + 2] > 2 {
+                return false
+            }
+            index += bytesPerPixel
+        }
+        return true
     }
 }
