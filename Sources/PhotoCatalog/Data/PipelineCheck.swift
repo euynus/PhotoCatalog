@@ -551,6 +551,9 @@ enum PipelineCheck {
               && jsonText.contains("\"project\"") && jsonText.contains("Export Project")
               && jsonText.contains("\"client\"") && jsonText.contains("Export Client"),
               "exported JSON metadata")
+        let jsonRows = (try? JSONSerialization.jsonObject(with: Data(jsonText.utf8)) as? [[String: Any]]) ?? []
+        let jsonWithGPS = jsonRows.first { $0["filename"] as? String == metadataAssets[0].filename }
+        let jsonMissingGPS = jsonRows.first { $0["filename"] as? String == metadataAssets[1].filename }
         let exportedCSV = ExportService.exportMetadataCSV(metadataAssets, to: metadataCSV)
         let csvText = (try? String(contentsOf: metadataCSV, encoding: .utf8)) ?? ""
         check(exportedCSV && csvText.contains("author,copyright,makerNotes,project,client")
@@ -558,6 +561,16 @@ enum PipelineCheck {
               && csvText.contains("Export MakerNotes") && csvText.contains("Export Project")
               && csvText.contains("Export Client"),
               "exported CSV metadata")
+        let missingGPSCSVFields = csvText.split(separator: "\n", omittingEmptySubsequences: false)
+            .first { $0.contains(metadataAssets[1].filename) }?
+            .split(separator: ",", omittingEmptySubsequences: false)
+        check((jsonWithGPS?["gpsLatitude"] as? NSNumber) != nil
+              && jsonMissingGPS?["gpsLatitude"] is NSNull
+              && jsonMissingGPS?["gpsLongitude"] is NSNull
+              && (missingGPSCSVFields?.count ?? 0) > 18
+              && missingGPSCSVFields?[17].isEmpty == true
+              && missingGPSCSVFields?[18].isEmpty == true,
+              "exported metadata omits missing GPS coordinates")
         // regression: attacker-controlled metadata starting with = must be neutralized for
         // spreadsheets, while a legitimate negative number stays a number.
         var injectionAssets = assets

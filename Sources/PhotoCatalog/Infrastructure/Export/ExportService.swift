@@ -104,8 +104,8 @@ enum ExportService {
                 "fileModifiedAt": jsonDate(a.fileModifiedAt, formatter: formatter),
                 "fileCreatedAt": jsonDate(a.fileCreatedAt, formatter: formatter),
                 "hasICCProfile": a.hasICCProfile,
-                "gpsLatitude": a.gps.0,
-                "gpsLongitude": a.gps.1,
+                "gpsLatitude": jsonGPS(a.gps.0, asset: a),
+                "gpsLongitude": jsonGPS(a.gps.1, asset: a),
                 "gpsAltitude": jsonNumber(a.gpsAltitude),
                 "camera": a.camera, "lens": a.lens,
                 "originalPath": a.localPath ?? a.thumb,
@@ -149,8 +149,8 @@ enum ExportService {
                 a.fileModifiedAt.map { formatter.string(from: $0) } ?? "",
                 a.fileCreatedAt.map { formatter.string(from: $0) } ?? "",
                 a.hasICCProfile ? "true" : "false",
-                String(a.gps.0),
-                String(a.gps.1),
+                csvGPS(a.gps.0, asset: a),
+                csvGPS(a.gps.1, asset: a),
                 a.gpsAltitude.map { String($0) } ?? "",
                 a.camera,
                 a.lens,
@@ -251,6 +251,18 @@ enum ExportService {
     private static func jsonNumber(_ value: Double?) -> Any {
         guard let value else { return NSNull() }
         return value
+    }
+
+    private static func jsonGPS(_ value: Double, asset: Asset) -> Any {
+        hasGPS(asset) ? value : NSNull()
+    }
+
+    private static func csvGPS(_ value: Double, asset: Asset) -> String {
+        hasGPS(asset) ? String(value) : ""
+    }
+
+    private static func hasGPS(_ asset: Asset) -> Bool {
+        !(asset.gps.0 == 0 && asset.gps.1 == 0)
     }
 
     private static func csvField(_ value: String) -> String {
