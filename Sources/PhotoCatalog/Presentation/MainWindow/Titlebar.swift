@@ -11,31 +11,27 @@ struct Titlebar: View {
     @State private var searchText = ""
 
     var body: some View {
-        ZStack {
-            // left + right groups
-            HStack(spacing: 10) {
-                // leading padding clears the real macOS traffic-light controls
-                Color.clear.frame(width: 62, height: 1)
+        HStack(spacing: 10) {
+            // leading padding clears the real macOS traffic-light controls
+            Color.clear.frame(width: 62, height: 1)
 
-                ToolButton(icon: "importIcon", label: "导入 / 添加文件夹",
-                           action: { app.addFolder() }) {
-                    Text("导入").font(.system(size: 12.5, weight: .medium))
-                }
-
-                Spacer()
-
-                rightGroup
+            ToolButton(icon: "importIcon", label: "导入 / 添加文件夹",
+                       action: { app.addFolder() }) {
+                Text("导入").font(.system(size: 12.5, weight: .medium))
             }
-            .padding(.horizontal, 14)
 
-            // absolutely-centered catalog name
             HStack(spacing: 7) {
                 Icon("aperture", size: 14).foregroundStyle(Theme.accent)
                 Text("PhotoCatalog Library")
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(Theme.text2)
+                    .lineLimit(1)
             }
+
+            Spacer(minLength: 8)
+            rightGroup
         }
+        .padding(.horizontal, 14)
         .frame(height: Theme.titlebarH)
         .background(Theme.titlebarGradient)
         .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.04)).frame(height: 1) }
