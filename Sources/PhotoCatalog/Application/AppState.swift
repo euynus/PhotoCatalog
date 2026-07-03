@@ -1217,8 +1217,9 @@ final class AppState {
                 var knownAssetsByPath: [String: Asset] = [:]
                 for asset in liveAssets {
                     if let path = asset.localPath {
-                        knownAssetsByPath[path] = asset
-                        knownAssetsByPath[URL(fileURLWithPath: path).resolvingSymlinksInPath().path] = asset
+                        for alias in PathIdentity.aliases(forPath: path) {
+                            knownAssetsByPath[alias] = asset
+                        }
                     }
                 }
                 let knownPaths = Set(knownAssetsByPath.keys)

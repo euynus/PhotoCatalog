@@ -806,6 +806,48 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testRescanDoesNotReimportCanonicalPathAliases() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rescan-alias-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let photo = source.appendingPathComponent("photo.jpg")
+        try writeTestJPEG(to: photo, black: false)
+        let canonicalPath = try XCTUnwrap(try photo.resourceValues(forKeys: [.canonicalPathKey]).canonicalPath)
+        let plainPath = photo.path
+        try XCTSkipIf(canonicalPath == plainPath, "filesystem does not expose a canonical path alias")
+
+        let store = try CatalogStore(packageURL: package)
+        let attrs = try FileManager.default.attributesOfItem(atPath: plainPath)
+        let size = try XCTUnwrap(attrs[.size] as? Int64)
+        var asset = DemoData.assets[0]
+        asset.filename = photo.lastPathComponent
+        asset.fileMB = Double(size) / (1024 * 1024)
+        asset.fileModifiedAt = attrs[.modificationDate] as? Date
+        asset.fileCreatedAt = attrs[.creationDate] as? Date
+        asset.quickHash = HashService.quickHash(photo, fileSize: size)
+        asset.contentHash = HashService.contentHash(photo)
+        asset.localPath = plainPath
+        asset.status = .ready
+        asset.isDemo = false
+        asset.deleted = false
+        try store.upsert([asset])
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.replaceWatchedSourceRoot(oldRootPath: nil, newRoot: source)
+
+        app.rescanCurrentSource()
+        try await Task.sleep(for: .milliseconds(500))
+
+        XCTAssertEqual(app.assets.filter { !$0.deleted }.count, 1)
+        XCTAssertFalse(app.assets.contains { $0.id != asset.id && $0.localPath == canonicalPath })
+    }
+
+    @MainActor
     func testMaintenanceActionsCleanLocalCatalogState() throws {
         let defaults = UserDefaults.standard
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")

@@ -69,7 +69,13 @@ final class ImportCoordinator: @unchecked Sendable {
     /// Incremental: only files not already imported by path (for FSEvents rescans, §12.8).
     func scanNew(in folder: URL, knownPaths: Set<String>, mode: ImportMode = .referenced,
                  autoTag: Bool = false, readSidecar: Bool = true, previewMaxPixel: Int = 2048) -> [Asset] {
-        let files = FileScanner.scan(folder).filter { !knownPaths.contains($0.path) }
+        var knownAliases = knownPaths
+        for path in knownPaths {
+            knownAliases.formUnion(PathIdentity.aliases(forPath: path))
+        }
+        let files = FileScanner.scan(folder).filter {
+            PathIdentity.aliases(for: $0).isDisjoint(with: knownAliases)
+        }
         return process(files, folder: folder, mode: mode, autoTag: autoTag, readSidecar: readSidecar,
                        previewMaxPixel: previewMaxPixel, control: nil, progress: nil)
     }
@@ -78,7 +84,7 @@ final class ImportCoordinator: @unchecked Sendable {
     func scanChanged(in folder: URL, knownAssetsByPath: [String: Asset], mode: ImportMode = .referenced,
                      autoTag: Bool = false, readSidecar: Bool = true, previewMaxPixel: Int = 2048) -> [Asset] {
         let files = FileScanner.scan(folder).filter { url in
-            let known = knownAssetsByPath[url.path] ?? knownAssetsByPath[url.resolvingSymlinksInPath().path]
+            let known = PathIdentity.aliases(for: url).lazy.compactMap { knownAssetsByPath[$0] }.first
             guard let known else { return false }
             guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
                   let size = attrs[.size] as? Int64 else { return true }
