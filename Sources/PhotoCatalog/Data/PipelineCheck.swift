@@ -239,6 +239,15 @@ enum PipelineCheck {
             let originalURL = URL(fileURLWithPath: localPath)
             let missingOriginalURL = rawSrc.appendingPathComponent("MISSING.CR3")
             let previewURL = URL(fileURLWithPath: cr3Asset.preview)
+            writeBlackImage(to: previewURL, width: 96, height: 64)
+            let detectedBlackPreview = coordinator.thumbnails.cachedRepresentationNeedsRegeneration(
+                at: previewURL,
+                original: originalURL,
+                kind: .preview2048
+            )
+            let repairedPreview = coordinator.thumbnails.ensureCached(from: originalURL,
+                                                                       assetId: cr3Asset.id,
+                                                                       kind: .preview2048)
             writeBlackImage(to: thumbURL, width: 64, height: 64)
             let detectedBlackCache = coordinator.thumbnails.cachedRepresentationNeedsRegeneration(
                 at: thumbURL,
@@ -249,10 +258,14 @@ enum PipelineCheck {
                                                                      fallbackPreview: previewURL,
                                                                      assetId: cr3Asset.id,
                                                                      kind: .thumb512)
+            check(detectedBlackPreview && repairedPreview?.path == cr3Asset.preview
+                  && !imageIsUniformBlack(at: previewURL),
+                  "CR3 black preview cache regenerates from original")
             check(detectedBlackCache && repairedThumb?.path == cr3Asset.thumb
                   && !imageIsUniformBlack(at: thumbURL),
                   "CR3 black thumbnail cache regenerates from preview fallback")
         } else {
+            check(false, "CR3 black preview cache regenerates from original")
             check(false, "CR3 black thumbnail cache regenerates from preview fallback")
         }
         let preview1600Src = tmp.appendingPathComponent("preview-1600")

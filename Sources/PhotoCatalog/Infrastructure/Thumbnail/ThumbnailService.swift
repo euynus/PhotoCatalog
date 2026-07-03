@@ -120,7 +120,7 @@ final class ThumbnailService: @unchecked Sendable {
     }
 
     func cachedRepresentationNeedsRegeneration(at cached: URL, original: URL, kind: Kind) -> Bool {
-        guard kind.isThumbnail, Self.prefersQuickLook(for: original) else { return false }
+        guard Self.prefersQuickLook(for: original) else { return false }
         return Self.imageIsUniformBlack(at: cached)
     }
 
@@ -146,7 +146,8 @@ final class ThumbnailService: @unchecked Sendable {
         if prefersQuickLook,
            let written = quickLookThumbnail(from: original, maxPixel: kind.maxPixel)
             .flatMap({ writeJPEG($0, to: out) }) {
-            return written
+            if !Self.imageIsUniformBlack(at: written) { return written }
+            try? FileManager.default.removeItem(at: written)
         }
 
         if let written = imageIOThumbnail(from: original, maxPixel: kind.maxPixel)
