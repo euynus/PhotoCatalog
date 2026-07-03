@@ -571,6 +571,23 @@ enum PipelineCheck {
         check(previewReport.copied == 7
               && fm.fileExists(atPath: previewExportDir.appendingPathComponent(previewTargetName).path),
               "exported cached previews")
+        if let first = assets.first, let originalPath = first.localPath {
+            try? fm.removeItem(at: URL(fileURLWithPath: first.preview))
+            try? fm.removeItem(at: URL(fileURLWithPath: first.thumb))
+            let rebuiltPreviewDir = tmp.appendingPathComponent("export-previews-rebuilt")
+            let rebuiltReport = ExportService.exportPreviews([first], to: rebuiltPreviewDir,
+                                                             thumbnails: coordinator.thumbnails)
+            check(rebuiltReport.copied == 1
+                  && fm.fileExists(atPath: first.preview)
+                  && fm.fileExists(atPath: originalPath)
+                  && fm.fileExists(atPath: rebuiltPreviewDir.appendingPathComponent(previewTargetName).path),
+                  "exported previews regenerate missing cache")
+            _ = coordinator.thumbnails.ensureCached(from: URL(fileURLWithPath: originalPath),
+                                                     assetId: first.id,
+                                                     kind: .thumb512)
+        } else {
+            check(false, "exported previews regenerate missing cache")
+        }
         if var fileOpAsset = assets.first, let sourcePath = fileOpAsset.localPath {
             let sourceCopy = tmp.appendingPathComponent("file-op-source.jpg")
             try? fm.copyItem(at: URL(fileURLWithPath: sourcePath), to: sourceCopy)

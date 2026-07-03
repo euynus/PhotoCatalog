@@ -1810,9 +1810,13 @@ final class AppState {
         panel.prompt = "导出预览到此处"
         guard panel.runModal() == .OK, let dest = panel.url else { return }
 
-        Task { [weak self, selected, dest] in
+        let thumbnails = coordinator?.thumbnails
+        let previewSize = previewMaxPixel
+        Task { [weak self, selected, dest, thumbnails, previewSize] in
             let report = await Task.detached(priority: .userInitiated) {
-                ExportService.exportPreviews(selected, to: dest)
+                ExportService.exportPreviews(selected, to: dest,
+                                             thumbnails: thumbnails,
+                                             previewMaxPixel: previewSize)
             }.value
             self?.push("已导出 \(report.copied) 张预览图"
                        + (report.failed > 0 ? " · \(report.failed) 失败" : "")

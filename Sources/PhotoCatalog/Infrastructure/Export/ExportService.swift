@@ -56,13 +56,17 @@ enum ExportService {
 
     /// Export cached previews for lightweight sharing (PRD §6.11 EXP-004).
     static func exportPreviews(_ assets: [Asset], to destination: URL,
-                               conflict: ExportConflict = .rename) -> ExportReport {
+                               conflict: ExportConflict = .rename,
+                               thumbnails: ThumbnailService? = nil,
+                               previewMaxPixel: Int = 2048) -> ExportReport {
         var report = ExportReport()
         let fm = FileManager.default
         try? fm.createDirectory(at: destination, withIntermediateDirectories: true)
 
         for asset in assets where !asset.deleted {
-            guard let source = previewSource(for: asset, fm: fm) else {
+            guard let source = previewSource(for: asset, fm: fm,
+                                             thumbnails: thumbnails,
+                                             previewMaxPixel: previewMaxPixel) else {
                 report.skipped += 1
                 continue
             }
@@ -229,11 +233,15 @@ enum ExportService {
         return cleaned.isEmpty ? fallback : cleaned
     }
 
-    private static func previewSource(for asset: Asset, fm: FileManager) -> URL? {
+    private static func previewSource(for asset: Asset, fm: FileManager,
+                                      thumbnails: ThumbnailService?,
+                                      previewMaxPixel: Int) -> URL? {
         for path in [asset.preview, asset.thumb] where !path.isEmpty && !path.hasPrefix("http") {
             if fm.fileExists(atPath: path) { return URL(fileURLWithPath: path) }
         }
-        return nil
+        guard let thumbnails, let path = asset.localPath, fm.fileExists(atPath: path) else { return nil }
+        let kind = ThumbnailService.previewKind(forCachePath: asset.preview, fallbackMaxPixel: previewMaxPixel)
+        return thumbnails.ensureCached(from: URL(fileURLWithPath: path), assetId: asset.id, kind: kind)
     }
 
     private static func jsonDate(_ date: Date?, formatter: ISO8601DateFormatter) -> Any {
