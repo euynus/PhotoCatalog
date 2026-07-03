@@ -181,4 +181,48 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(updated.date, absolute)
         XCTAssertEqual(updated.captureDateSource, "手动设置")
     }
+
+    @MainActor
+    func testSearchFiltersAndSortKeepListConsistent() throws {
+        let app = AppState()
+        app.onboarded = true
+        let filename = try XCTUnwrap(app.assets.first?.filename)
+
+        app.setSearch(filename)
+        XCTAssertFalse(app.list.isEmpty)
+        XCTAssertTrue(app.list.allSatisfy { $0.filename.localizedStandardContains(filename) })
+        XCTAssertEqual(app.primaryId, app.list.first?.id)
+
+        app.setSearch("")
+        var filters = Filters()
+        filters.minRating = 2
+        filters.type = "RAW"
+        app.setFilters(filters)
+        XCTAssertFalse(app.list.isEmpty)
+        XCTAssertTrue(app.list.allSatisfy { $0.rating >= 2 && $0.isRaw })
+
+        app.setFilters(Filters())
+        app.setSort(Sort(field: .name, descending: false))
+        let ascending = app.list.map(\.filename)
+        XCTAssertEqual(ascending, ascending.sorted { $0.localizedCompare($1) == .orderedAscending })
+
+        app.setSort(Sort(field: .name, descending: true))
+        let descending = app.list.map(\.filename)
+        XCTAssertEqual(descending, ascending.reversed())
+    }
+
+    @MainActor
+    func testLibrarySelectionsFilterExpectedAssets() {
+        let app = AppState()
+        app.onboarded = true
+
+        app.select(Selection(type: .lib, id: "unrated", name: "未评分"))
+        XCTAssertFalse(app.list.isEmpty)
+        XCTAssertTrue(app.list.allSatisfy { $0.rating == 0 && $0.flag != .reject })
+
+        app.select(Selection(type: .lib, id: "missing", name: "缺失 / 离线"))
+        XCTAssertFalse(app.list.isEmpty)
+        XCTAssertTrue(app.list.allSatisfy { $0.status == .missing || $0.status == .offline })
+        XCTAssertEqual(app.primaryId, app.list.first?.id)
+    }
 }
