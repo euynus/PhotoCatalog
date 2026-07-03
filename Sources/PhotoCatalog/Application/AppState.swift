@@ -1602,7 +1602,22 @@ final class AppState {
     /// Privacy: drop stored security-scoped bookmarks; sources need re-authorization (§17.6).
     func clearSecurityBookmarks() {
         guard let store else { push("无目录库", "warning"); return }
-        try? store.clearSourceBookmarks()
+        do {
+            try store.clearSourceBookmarks()
+        } catch {
+            push("清除安全书签失败", "warning")
+            return
+        }
+        let sourceIds = Set(((try? store.loadSourceRoots()) ?? []).map(\.id))
+        for url in securityScopedRoots {
+            url.stopAccessingSecurityScopedResource()
+        }
+        securityScopedRoots = []
+        watchedRoots = []
+        for i in folders.indices where sourceIds.contains(folders[i].id) {
+            folders[i] = Folder(id: folders[i].id, name: folders[i].name, status: "permissionLost")
+        }
+        refreshWatcher()
         push("已清除安全书签，下次访问需重新授权", "trash")
     }
 

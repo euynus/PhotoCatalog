@@ -547,6 +547,51 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testClearingSecurityBookmarksRequiresSourceReauthorization() throws {
+        let defaults = UserDefaults.standard
+        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
+        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
+        defer {
+            if let previousCatalogURL {
+                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
+            } else {
+                defaults.removeObject(forKey: "pc_catalogURL")
+            }
+            if let previousRecent {
+                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
+            } else {
+                defaults.removeObject(forKey: "pc_recentCatalogs")
+            }
+        }
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-bookmarks-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        let bookmark = try XCTUnwrap(FileAccessService.createBookmark(for: source))
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path,
+                                bookmark: bookmark, volumeIdentifier: nil)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        XCTAssertEqual(app.folders.first { $0.id == "source-1" }?.status, "online")
+
+        app.clearSecurityBookmarks()
+
+        let root = try XCTUnwrap(try store.loadSourceRoots().first { $0.id == "source-1" })
+        XCTAssertNil(root.bookmarkData)
+        XCTAssertEqual(root.status, "permissionLost")
+        XCTAssertEqual(app.folders.first { $0.id == "source-1" }?.status, "permissionLost")
+
+        app.rescanCurrentSource()
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "当前没有可重新扫描的源")
+    }
+
+    @MainActor
     func testStaleDuplicateRecomputeResultIsIgnored() async throws {
         let app = AppState()
         app.onboarded = true

@@ -353,7 +353,7 @@ final class CatalogStore: @unchecked Sendable {
 
     /// Drop all stored security-scoped bookmarks, forcing re-authorization (§17.6).
     func clearSourceBookmarks() throws {
-        try db.run("UPDATE source_roots SET bookmark_data = NULL;")
+        try db.run("UPDATE source_roots SET bookmark_data = NULL, status = 'permissionLost';")
     }
 
     func loadSourceRoots() throws -> [SourceRootRecord] {
