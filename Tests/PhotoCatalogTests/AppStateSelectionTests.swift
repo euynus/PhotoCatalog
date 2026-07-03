@@ -154,6 +154,34 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testStackToggleKeepsSelectionVisible() throws {
+        let app = AppState()
+        app.onboarded = true
+        let stackAssets = Array(app.list.prefix(2))
+        XCTAssertEqual(stackAssets.count, 2)
+        app.duplicateGroupsCache = [
+            DuplicateGroup(id: "dg-test", method: "contentHash", score: 1, items: stackAssets)
+        ]
+        let fullCount = app.list.count
+
+        app.setPrimary(stackAssets[1].id)
+        app.toggleStack(containing: stackAssets[1].id)
+
+        XCTAssertEqual(app.list.count, fullCount - 1)
+        XCTAssertTrue(app.list.contains { $0.id == stackAssets[0].id })
+        XCTAssertFalse(app.list.contains { $0.id == stackAssets[1].id })
+        XCTAssertEqual(app.primaryId, app.list.first?.id)
+        XCTAssertTrue(app.primaryId.map { app.selectedIds.contains($0) } ?? false)
+        XCTAssertEqual(app.stackInfo(for: stackAssets[0])?.collapsed, true)
+
+        app.toggleStack(containing: stackAssets[0].id)
+
+        XCTAssertEqual(app.list.count, fullCount)
+        XCTAssertTrue(app.list.contains { $0.id == stackAssets[1].id })
+        XCTAssertEqual(app.stackInfo(for: stackAssets[0])?.collapsed, false)
+    }
+
+    @MainActor
     func testCommandKeyboardShortcutsRespectSheets() {
         let app = AppState()
         app.onboarded = true
