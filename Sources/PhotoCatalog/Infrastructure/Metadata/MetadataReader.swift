@@ -66,8 +66,8 @@ enum MetadataReader {
         let gps = props[kCGImagePropertyGPSDictionary] as? [CFString: Any] ?? [:]
         let iptc = props[kCGImagePropertyIPTCDictionary] as? [CFString: Any] ?? [:]
 
-        m.camera = [tiff[kCGImagePropertyTIFFMake] as? String, tiff[kCGImagePropertyTIFFModel] as? String]
-            .compactMap { $0 }.joined(separator: " ")
+        m.camera = cameraName(make: tiff[kCGImagePropertyTIFFMake] as? String,
+                              model: tiff[kCGImagePropertyTIFFModel] as? String)
         m.lens = (exif[kCGImagePropertyExifLensModel] as? String) ?? ""
         if let f = (exif[kCGImagePropertyExifFocalLength] as? NSNumber)?.doubleValue { m.focal = Int(f.rounded()) }
         m.aperture = (exif[kCGImagePropertyExifFNumber] as? NSNumber)?.doubleValue ?? 0
@@ -124,6 +124,15 @@ enum MetadataReader {
         default:
             return nil
         }
+    }
+
+    static func cameraName(make: String?, model: String?) -> String {
+        let cleanMake = make?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let cleanModel = model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !cleanModel.isEmpty else { return cleanMake }
+        guard !cleanMake.isEmpty else { return cleanModel }
+        return cleanModel.range(of: cleanMake, options: [.caseInsensitive, .anchored]) != nil
+            ? cleanModel : "\(cleanMake) \(cleanModel)"
     }
 
     private static func stringValue(_ value: Any?) -> String {
