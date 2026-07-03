@@ -579,6 +579,10 @@ final class AppState {
     }
 
     func openCatalog() {
+        guard !importing else {
+            push("导入中无法切换目录库", "warning")
+            return
+        }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false

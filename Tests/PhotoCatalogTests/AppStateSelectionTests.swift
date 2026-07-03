@@ -209,6 +209,18 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testOpeningCatalogIsBlockedDuringImportBeforeShowingPicker() {
+        let app = AppState()
+        app.onboarded = true
+        app.importing = true
+
+        app.openCatalog()
+
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "导入中无法切换目录库")
+        XCTAssertEqual(app.toastCenter.toasts.last?.icon, "warning")
+    }
+
+    @MainActor
     func testSafeCommandKeyboardShortcuts() {
         let app = AppState()
         app.onboarded = true
