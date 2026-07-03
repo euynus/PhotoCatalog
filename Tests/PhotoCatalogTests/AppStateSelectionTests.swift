@@ -66,6 +66,26 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testMetadataKeyboardShortcutsRequireASelection() {
+        let app = AppState()
+        app.onboarded = true
+        let ratings = Dictionary(uniqueKeysWithValues: app.assets.map { ($0.id, $0.rating) })
+        let flags = Dictionary(uniqueKeysWithValues: app.assets.map { ($0.id, $0.flag) })
+        let colors = Dictionary(uniqueKeysWithValues: app.assets.map { ($0.id, $0.colorLabel) })
+
+        app.setSearch("NO_SUCH_PHOTO_123")
+        XCTAssertNil(app.primaryId)
+        XCTAssertTrue(app.selectedIds.isEmpty)
+
+        XCTAssertFalse(app.handleKey("5", hasCommand: false))
+        XCTAssertFalse(app.handleKey("p", hasCommand: false))
+        XCTAssertFalse(app.handleKey("6", hasCommand: false))
+        XCTAssertEqual(Dictionary(uniqueKeysWithValues: app.assets.map { ($0.id, $0.rating) }), ratings)
+        XCTAssertEqual(Dictionary(uniqueKeysWithValues: app.assets.map { ($0.id, $0.flag) }), flags)
+        XCTAssertEqual(Dictionary(uniqueKeysWithValues: app.assets.map { ($0.id, $0.colorLabel) }), colors)
+    }
+
+    @MainActor
     func testNavigationAndSheetKeyboardGuards() throws {
         let app = AppState()
         app.onboarded = true

@@ -2600,14 +2600,16 @@ final class AppState {
     func setFlag(_ f: Flag) { mutate { $0.flag = f } }
     func setColor(_ c: ColorLabel?) { mutate { $0.colorLabel = c } }
 
-    func applyRatingShortcut(_ rating: Int) {
-        guard (0...5).contains(rating) else { return }
+    @discardableResult
+    func applyRatingShortcut(_ rating: Int) -> Bool {
+        guard (0...5).contains(rating), !targetIds.isEmpty else { return false }
         setRating(rating)
         if rating == 0 {
             push("已清除评分")
         } else {
             push("评分 \(rating) 星", "star")
         }
+        return true
     }
 
     func removeSelectedSource() {
@@ -3051,22 +3053,29 @@ final class AppState {
             guard let primaryId else { return false }
             openLoupe(primaryId)
         case "1", "2", "3", "4", "5":
-            applyRatingShortcut(Int(key) ?? 0)
+            guard applyRatingShortcut(Int(key) ?? 0) else { return false }
         case "0":
-            applyRatingShortcut(0)
+            guard applyRatingShortcut(0) else { return false }
         case "p":
+            guard !targetIds.isEmpty else { return false }
             setFlag(.pick); push("标记为精选", "flag")
         case "x":
+            guard !targetIds.isEmpty else { return false }
             setFlag(.reject); push("标记为拒绝", "reject")
         case "u":
+            guard !targetIds.isEmpty else { return false }
             setFlag(.none); push("已清除旗标")
         case "6":
+            guard !targetIds.isEmpty else { return false }
             setColor(.red); push("颜色标签：红", "tag")
         case "7":
+            guard !targetIds.isEmpty else { return false }
             setColor(.yellow); push("颜色标签：黄", "tag")
         case "8":
+            guard !targetIds.isEmpty else { return false }
             setColor(.green); push("颜色标签：绿", "tag")
         case "9":
+            guard !targetIds.isEmpty else { return false }
             setColor(.blue); push("颜色标签：蓝", "tag")
         case "f":
             toggleFilterBar()
