@@ -684,6 +684,86 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testSourcePriorityReordersRealCatalogFolders() throws {
+        let defaults = UserDefaults.standard
+        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
+        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
+        let previousPriorities = defaults.object(forKey: "pc_sourcePriorities")
+        defer {
+            if let previousCatalogURL {
+                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
+            } else {
+                defaults.removeObject(forKey: "pc_catalogURL")
+            }
+            if let previousRecent {
+                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
+            } else {
+                defaults.removeObject(forKey: "pc_recentCatalogs")
+            }
+            if let previousPriorities {
+                defaults.set(previousPriorities, forKey: "pc_sourcePriorities")
+            } else {
+                defaults.removeObject(forKey: "pc_sourcePriorities")
+            }
+        }
+        defaults.removeObject(forKey: "pc_sourcePriorities")
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-source-priority-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        let firstRoot = dir.appendingPathComponent("First")
+        let secondRoot = dir.appendingPathComponent("Second")
+        try FileManager.default.createDirectory(at: firstRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "first", displayName: "First", path: firstRoot.path, bookmark: nil)
+        try store.addSourceRoot(id: "second", displayName: "Second", path: secondRoot.path, bookmark: nil)
+        func realAsset(_ base: Asset, folderId: String, folderName: String, root: URL) -> Asset {
+            Asset(id: base.id, pid: base.pid, ori: base.ori, thumb: base.thumb, preview: base.preview,
+                  filename: base.filename, type: base.type, isRaw: base.isRaw, folderId: folderId,
+                  folderName: folderName, date: base.date, width: base.width, height: base.height,
+                  orientation: base.orientation, camera: base.camera, lens: base.lens, focal: base.focal,
+                  aperture: base.aperture, shutter: base.shutter, iso: base.iso,
+                  colorSpace: base.colorSpace, hasICCProfile: base.hasICCProfile, fileMB: base.fileMB,
+                  fileModifiedAt: base.fileModifiedAt, fileCreatedAt: base.fileCreatedAt,
+                  rating: base.rating, flag: base.flag, colorLabel: base.colorLabel,
+                  keywords: base.keywords, title: base.title, caption: base.caption,
+                  author: base.author, copyright: base.copyright, makerNotes: base.makerNotes,
+                  project: base.project, client: base.client, location: base.location, gps: base.gps,
+                  gpsAltitude: base.gpsAltitude, status: base.status, importedAt: base.importedAt,
+                  deleted: base.deleted, localPath: root.appendingPathComponent(base.filename).path,
+                  captureDateSource: base.captureDateSource, contentHash: base.contentHash,
+                  quickHash: base.quickHash, isDemo: false, faces: base.faces,
+                  perceptualHash: base.perceptualHash)
+        }
+        let firstAsset = realAsset(DemoData.assets[0], folderId: "first", folderName: "First", root: firstRoot)
+        let secondAsset = realAsset(DemoData.assets[1], folderId: "second", folderName: "Second", root: secondRoot)
+        try store.upsert([firstAsset, secondAsset])
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        XCTAssertEqual(app.orderedFolders.map(\.id), ["first", "second"])
+
+        app.select(Selection(type: .folder, id: "second", name: "Second"))
+        XCTAssertTrue(app.canPromoteSelectedSource)
+        app.promoteSelectedSource()
+        XCTAssertEqual(app.orderedFolders.map(\.id), ["second", "first"])
+
+        let restored = AppState()
+        restored.onboarded = true
+        XCTAssertTrue(restored.openCatalog(at: package))
+        XCTAssertEqual(restored.orderedFolders.map(\.id), ["second", "first"])
+
+        restored.select(Selection(type: .folder, id: "second", name: "Second"))
+        XCTAssertFalse(restored.canPromoteSelectedSource)
+        XCTAssertTrue(restored.canDemoteSelectedSource)
+        restored.demoteSelectedSource()
+        XCTAssertEqual(restored.orderedFolders.map(\.id), ["first", "second"])
+    }
+
+    @MainActor
     func testStaleDuplicateRecomputeResultIsIgnored() async throws {
         let app = AppState()
         app.onboarded = true
