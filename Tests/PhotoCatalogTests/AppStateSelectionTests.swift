@@ -654,6 +654,36 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testOriginalFileOperationsHandleConflictsAndUnavailableSources() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-file-ops-\(UUID().uuidString)")
+        let sourceDir = dir.appendingPathComponent("Source")
+        let destination = dir.appendingPathComponent("Dest")
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let source = sourceDir.appendingPathComponent("photo.jpg")
+        try Data("original".utf8).write(to: source)
+        try Data("existing".utf8).write(to: destination.appendingPathComponent("photo.jpg"))
+
+        var copied = DemoData.assets[0]
+        copied.localPath = source.path
+        var skipped = DemoData.assets[1]
+        skipped.localPath = nil
+        var missing = DemoData.assets[2]
+        missing.localPath = sourceDir.appendingPathComponent("missing.jpg").path
+
+        let report = OriginalFileOperationService.perform(.copy, assets: [copied, skipped, missing],
+                                                          destination: destination)
+
+        XCTAssertEqual(report.copied, 1)
+        XCTAssertEqual(report.skipped, 1)
+        XCTAssertEqual(report.failed, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.appendingPathComponent("photo (1).jpg").path))
+    }
+
+    @MainActor
     func testStaleDuplicateRecomputeResultIsIgnored() async throws {
         let app = AppState()
         app.onboarded = true
