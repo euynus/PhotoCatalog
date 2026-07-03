@@ -183,7 +183,7 @@ struct InspectorView: View {
             if !a.makerNotes.isEmpty {
                 InsGroup([.init("MakerNotes", a.makerNotes)])
             }
-            mapView(a)
+            gpsPanel(a)
         }
     }
 
@@ -199,6 +199,22 @@ struct InspectorView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.r))
     }
 
+    @ViewBuilder
+    private func gpsPanel(_ a: Asset) -> some View {
+        if hasGPS(a.gps) {
+            mapView(a)
+        } else {
+            HStack(spacing: 8) {
+                Icon("location", size: 16).foregroundStyle(Theme.text4)
+                Text("无 GPS 信息").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.text3)
+            }
+            .frame(maxWidth: .infinity).frame(height: 116)
+            .background(Color.black.opacity(0.2))
+            .overlay(RoundedRectangle(cornerRadius: Theme.r).strokeBorder(Theme.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.r))
+        }
+    }
+
     private func mapView(_ a: Asset) -> some View {
         ZStack {
             LinearGradient(colors: [Color(hex: "#1e2a33"), Color(hex: "#20302a")],
@@ -209,7 +225,7 @@ struct InspectorView: View {
             VStack {
                 Spacer()
                 HStack {
-                    Text(gpsLabel(a))
+                    Text(formatGPSLabel(a.gps, altitude: a.gpsAltitude))
                         .font(Theme.mono).foregroundStyle(Theme.text2)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.black.opacity(0.4)).clipShape(RoundedRectangle(cornerRadius: 4))
@@ -239,11 +255,6 @@ struct InspectorView: View {
         ])
     }
 
-    private func gpsLabel(_ asset: Asset) -> String {
-        let coordinate = String(format: "%.4f, %.4f", asset.gps.0, asset.gps.1)
-        guard let altitude = asset.gpsAltitude else { return coordinate }
-        return coordinate + " · \(formatAltitude(altitude))"
-    }
 }
 
 func formatAperture(_ v: Double) -> String {
@@ -282,6 +293,17 @@ func exposureSummary(_ asset: Asset, separator: String = " · ") -> String {
 
 func formatAltitude(_ value: Double) -> String {
     value == value.rounded() ? "\(Int(value.rounded())) m" : String(format: "%.1f m", value)
+}
+
+func hasGPS(_ gps: (Double, Double)) -> Bool {
+    !(gps.0 == 0 && gps.1 == 0)
+}
+
+func formatGPSLabel(_ gps: (Double, Double), altitude: Double?) -> String {
+    guard hasGPS(gps) else { return "无 GPS" }
+    let coordinate = String(format: "%.4f, %.4f", gps.0, gps.1)
+    guard let altitude else { return coordinate }
+    return coordinate + " · \(formatAltitude(altitude))"
 }
 
 private struct InsTabButton: View {

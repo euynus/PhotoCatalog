@@ -92,6 +92,15 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(formatISO(400), "ISO400")
     }
 
+    func testGPSFormattingHidesMissingCoordinates() {
+        XCTAssertFalse(hasGPS((0, 0)))
+        XCTAssertEqual(formatGPSLabel((0, 0), altitude: nil), "无 GPS")
+
+        XCTAssertTrue(hasGPS((31.2345, 121.4567)))
+        XCTAssertEqual(formatGPSLabel((31.2345, 121.4567), altitude: 88.5),
+                       "31.2345, 121.4567 · 88.5 m")
+    }
+
     @MainActor
     func testSelectionMutationRefreshesCachedListAndPrimary() throws {
         let app = AppState()
