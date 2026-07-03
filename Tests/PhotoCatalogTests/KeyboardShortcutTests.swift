@@ -11,4 +11,12 @@ final class KeyboardShortcutTests: XCTestCase {
         XCTAssertFalse(KeyCatcher.shouldPassThroughGlobalShortcut([.command, .shift]))
         XCTAssertFalse(KeyCatcher.shouldPassThroughGlobalShortcut([]))
     }
+
+    func testMenuBackedCommandShortcutsPassThroughKeyCatcher() {
+        XCTAssertTrue(KeyCatcher.shouldPassThroughMenuCommand("b", hasCommand: true))
+        XCTAssertTrue(KeyCatcher.shouldPassThroughMenuCommand("r", hasCommand: true))
+        XCTAssertTrue(KeyCatcher.shouldPassThroughMenuCommand("delete", hasCommand: true))
+        XCTAssertFalse(KeyCatcher.shouldPassThroughMenuCommand("a", hasCommand: true))
+        XCTAssertFalse(KeyCatcher.shouldPassThroughMenuCommand("b", hasCommand: false))
+    }
 }

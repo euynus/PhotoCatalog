@@ -67,6 +67,14 @@ struct KeyCatcher: NSViewRepresentable {
         !flags.intersection([.option, .control]).isEmpty
     }
 
+    nonisolated static func shouldPassThroughMenuCommand(_ key: String, hasCommand: Bool) -> Bool {
+        guard hasCommand else { return false }
+        return [
+            "n", "o", "i", ",", "e", "delete", "backspace",
+            "f", "=", "+", "-", "0", "r", "b", "s",
+        ].contains(key)
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator(app: app) }
     func makeNSView(context: Context) -> NSView {
         context.coordinator.install()
@@ -107,6 +115,7 @@ struct KeyCatcher: NSViewRepresentable {
             let app = app
 
             if isEditingText() { return event }
+            if KeyCatcher.shouldPassThroughMenuCommand(key, hasCommand: cmd) { return event }
 
             let handled = MainActor.assumeIsolated {
                 app.handleKey(key, hasCommand: cmd, hasShift: shift)
