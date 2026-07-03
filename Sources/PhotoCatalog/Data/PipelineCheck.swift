@@ -40,6 +40,10 @@ enum PipelineCheck {
         }
         try? fm.copyItem(at: src.appendingPathComponent("IMG_0000.jpg"),
                          to: src.appendingPathComponent("IMG_0000_copy.jpg"))
+        let nestedCatalog = src.appendingPathComponent("Nested.photolibrary")
+        try? fm.createDirectory(at: nestedCatalog, withIntermediateDirectories: true)
+        writeTestImage(to: nestedCatalog.appendingPathComponent("SHOULD_SKIP.jpg"),
+                       width: 320, height: 240, seed: 88)
         // a non-image file that must be ignored
         try? "not an image".data(using: .utf8)?.write(to: src.appendingPathComponent("notes.txt"))
         let fixedModifiedAt = Date(timeIntervalSince1970: 1_700_000_000)
@@ -51,7 +55,7 @@ enum PipelineCheck {
 
         // 2. scanner
         let scanned = FileScanner.scan(src)
-        check(scanned.count == 7, "scanner found 7 images (ignored notes.txt) — got \(scanned.count)")
+        check(scanned.count == 7, "scanner found 7 images (ignored notes.txt and nested catalog) — got \(scanned.count)")
 
         // 3. import pipeline (metadata + thumbnails + hashes)
         guard let store = try? CatalogStore(packageURL: tmp.appendingPathComponent("Lib.photolibrary")) else {

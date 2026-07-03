@@ -20,6 +20,9 @@ enum FileScanner {
     private static let skipNames: Set<String> = [
         ".photolibrary", ".lrdata", ".lrcat", ".Trash",
     ]
+    private static let skipExtensions: Set<String> = [
+        "photolibrary", "lrdata", "lrcat",
+    ]
 
     static func isSupported(_ url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
@@ -40,12 +43,13 @@ enum FileScanner {
         var results: [URL] = []
         for case let url as URL in en {
             let name = url.lastPathComponent
-            if skipNames.contains(name) {
-                en.skipDescendants()
+            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            if isDir {
+                if skipNames.contains(name) || skipExtensions.contains(url.pathExtension.lowercased()) {
+                    en.skipDescendants()
+                }
                 continue
             }
-            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
-            if isDir { continue }
             if isSupported(url) {
                 results.append(url)
                 onProgress?(results.count)
