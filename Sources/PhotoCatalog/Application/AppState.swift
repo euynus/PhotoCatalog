@@ -1851,6 +1851,7 @@ final class AppState {
     }
 
     private func closeCurrentCatalog() {
+        cancelBackfill()
         watcher?.stop()
         watcher = nil
         for url in securityScopedRoots {
