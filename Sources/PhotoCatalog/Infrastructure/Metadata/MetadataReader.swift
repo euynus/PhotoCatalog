@@ -72,7 +72,8 @@ enum MetadataReader {
         if let f = (exif[kCGImagePropertyExifFocalLength] as? NSNumber)?.doubleValue { m.focal = Int(f.rounded()) }
         m.aperture = (exif[kCGImagePropertyExifFNumber] as? NSNumber)?.doubleValue ?? 0
         if let exp = (exif[kCGImagePropertyExifExposureTime] as? NSNumber)?.doubleValue { m.shutter = shutterString(exp) }
-        if let isos = exif[kCGImagePropertyExifISOSpeedRatings] as? [Int], let first = isos.first { m.iso = first }
+        let isoValue = exif[kCGImagePropertyExifISOSpeedRatings] ?? exif["PhotographicSensitivity" as CFString]
+        if let iso = isoSpeed(from: isoValue) { m.iso = iso }
         m.author = stringValue(iptc[kCGImagePropertyIPTCByline])
         m.copyright = stringValue(iptc[kCGImagePropertyIPTCCopyrightNotice])
         m.makerNotes = makerNotesSummary(from: props)
@@ -106,6 +107,23 @@ enum MetadataReader {
         guard exp > 0 else { return "" }
         if exp >= 1 { return String(format: "%.1f", exp) }
         return "1/\(Int((1 / exp).rounded()))"
+    }
+
+    static func isoSpeed(from value: Any?) -> Int? {
+        switch value {
+        case let values as [Int]:
+            return values.first
+        case let values as [NSNumber]:
+            return values.first?.intValue
+        case let values as [Any]:
+            return values.lazy.compactMap { ($0 as? NSNumber)?.intValue ?? $0 as? Int }.first
+        case let value as NSNumber:
+            return value.intValue
+        case let value as Int:
+            return value
+        default:
+            return nil
+        }
     }
 
     private static func stringValue(_ value: Any?) -> String {

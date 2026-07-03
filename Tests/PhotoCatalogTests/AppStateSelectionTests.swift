@@ -101,6 +101,13 @@ final class AppStateSelectionTests: XCTestCase {
                        "31.2345, 121.4567 · 88.5 m")
     }
 
+    func testMetadataReaderAcceptsImageIOISOTypes() {
+        XCTAssertEqual(MetadataReader.isoSpeed(from: [NSNumber(value: 640)]), 640)
+        XCTAssertEqual(MetadataReader.isoSpeed(from: NSNumber(value: 800)), 800)
+        XCTAssertEqual(MetadataReader.isoSpeed(from: [100]), 100)
+        XCTAssertNil(MetadataReader.isoSpeed(from: nil))
+    }
+
     @MainActor
     func testSelectionMutationRefreshesCachedListAndPrimary() throws {
         let app = AppState()
