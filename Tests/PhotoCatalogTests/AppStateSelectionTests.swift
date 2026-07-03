@@ -336,6 +336,24 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testProjectAndClientSelectionsFilterExpectedAssets() throws {
+        let app = AppState()
+        app.onboarded = true
+        let project = try XCTUnwrap(app.projectList.first)
+        let client = try XCTUnwrap(app.clientList.first)
+
+        app.select(Selection(type: .project, id: project.name, name: project.name))
+        XCTAssertEqual(app.list.count, project.count)
+        XCTAssertTrue(app.list.allSatisfy { $0.project == project.name })
+        XCTAssertEqual(app.primaryId, app.list.first?.id)
+
+        app.select(Selection(type: .client, id: client.name, name: client.name))
+        XCTAssertEqual(app.list.count, client.count)
+        XCTAssertTrue(app.list.allSatisfy { $0.client == client.name })
+        XCTAssertEqual(app.primaryId, app.list.first?.id)
+    }
+
+    @MainActor
     func testRemovingDemoAssetDropsDuplicateGhosts() throws {
         let app = AppState()
         app.onboarded = true
