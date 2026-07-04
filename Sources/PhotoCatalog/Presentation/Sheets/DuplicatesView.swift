@@ -3,6 +3,12 @@
 // ============================================================
 import SwiftUI
 
+func duplicateReclaimMegabytes(_ groups: [DuplicateGroup]) -> Double {
+    groups.reduce(0) { total, group in
+        total + group.items.dropFirst().reduce(0) { $0 + $1.fileMB }
+    }
+}
+
 struct DuplicatesView: View {
     @Environment(AppState.self) var app
 
@@ -11,7 +17,7 @@ struct DuplicatesView: View {
     @State private var resolved: [String: String] = [:]
 
     private var fileCount: Int { groups.reduce(0) { $0 + $1.items.count } }
-    private var reclaim: Double { groups.reduce(0) { $0 + ($1.items.first?.fileMB ?? 0) } }
+    private var reclaim: Double { duplicateReclaimMegabytes(groups) }
 
     var body: some View {
         ScrollView {

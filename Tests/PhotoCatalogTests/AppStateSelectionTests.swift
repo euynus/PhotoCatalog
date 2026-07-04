@@ -1076,6 +1076,19 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertTrue(assets.allSatisfy { !$0.deleted })
     }
 
+    func testDuplicateReclaimEstimateSkipsKeptAsset() {
+        var first = DemoData.assets[0]
+        var second = DemoData.assets[1]
+        var third = DemoData.assets[2]
+        first.fileMB = 10
+        second.fileMB = 2.5
+        third.fileMB = 3.5
+        let group = DuplicateGroup(id: "dg-reclaim", method: "contentHash", score: 1,
+                                   items: [first, second, third])
+
+        XCTAssertEqual(duplicateReclaimMegabytes([group]), 6)
+    }
+
     @MainActor
     func testDuplicateTrashResolutionRequiresConfirmation() throws {
         let dir = FileManager.default.temporaryDirectory
