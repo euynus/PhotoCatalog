@@ -340,13 +340,14 @@ final class CatalogStore: @unchecked Sendable {
 
     // ---------- source roots ----------
     func addSourceRoot(id: String, displayName: String, path: String, bookmark: Data?,
+                       mode: ImportMode = .referenced,
                        volumeIdentifier: String? = nil) throws {
         try db.run("""
         INSERT OR REPLACE INTO source_roots(
           id, display_name, path_hint, bookmark_data, management_mode, status, created_at, volume_identifier)
         VALUES(?,?,?,?,?,?,?,?);
         """, [.text(id), .text(displayName), .text(path),
-              bookmark.map { SQLValue.blob($0) } ?? .null, .text("referenced"),
+              bookmark.map { SQLValue.blob($0) } ?? .null, .text(mode.rawValue),
               .text("online"), .text(ISO8601DateFormatter().string(from: Date())),
               volumeIdentifier.map { SQLValue.text($0) } ?? .null])
     }

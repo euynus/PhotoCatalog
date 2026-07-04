@@ -242,7 +242,7 @@ struct InspectorView: View {
     private func histTab(_ a: Asset) -> some View {
         InsGroup([
             .init("导入时间", DateFmt.long(a.importedAt)),
-            .init("管理方式", "引用式 (Referenced)"),
+            .init("管理方式", app.managementDisplayText(for: a)),
             .init("内容哈希",
                   a.contentHash.map { "sha256:\($0.prefix(12))…" } ?? "sha256:\(String(a.id.dropFirst()))e7b…",
                   mono: true),

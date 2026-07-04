@@ -14,7 +14,7 @@ struct StatusBar: View {
             }
             Text("\(app.statusAssetCount) 张资产")
             sep
-            Text("引用式管理 · 原件只读").foregroundStyle(Theme.text3)
+            Text(app.catalogManagementText).foregroundStyle(Theme.text3)
             Spacer()
             if let run = app.importRun, run.phase.isActive {
                 Button { app.sheet = "import" } label: {

@@ -228,6 +228,7 @@ final class AppState {
             listInputsVersion &+= 1
         }
     }
+    private var sourceManagementModesById: [String: String] = [:]
     @ObservationIgnored private var volumeMonitor: VolumeMonitor?
     @ObservationIgnored private var lastImportSessionPersistedCount = 0
     @ObservationIgnored private var importControl: ImportControl?
@@ -351,6 +352,14 @@ final class AppState {
 
     var statusAssetCount: Int { libraryCounts.all }
 
+    var catalogManagementText: String {
+        let real = assets.filter { !$0.deleted && !$0.isDemo }
+        let modes = Set(real.map { managementMode(for: $0) })
+        if modes == Set([ImportMode.managed]) { return "托管式管理 · 原件在目录库" }
+        if modes.contains(.managed) { return "混合管理 · 原件只读" }
+        return "引用式管理 · 原件只读"
+    }
+
     var statusCacheText: String {
         guard let cacheBytes = statusMetrics.cacheBytes else { return "缓存 --" }
         if cacheBytes == 0 { return "缓存 0 KB" }
@@ -454,6 +463,7 @@ final class AppState {
                 try? store.updateSourceRootStatus(id: root.id, status: resolved.status)
             }
 
+            sourceManagementModesById[root.id] = root.managementMode
             sourceRootPathsById[root.id] = resolved.url?.path ?? root.pathHint
             if let index = folders.firstIndex(where: { $0.id == root.id }) {
                 folders[index].status = resolved.status
@@ -860,12 +870,14 @@ final class AppState {
             rootId = fid
             if persistSourceRoot && (!fresh.isEmpty || skipped > 0) {
                 try? store.addSourceRoot(id: fid, displayName: folder.lastPathComponent,
-                                         path: folder.path, bookmark: bookmark,
+                                         path: folder.path, bookmark: bookmark, mode: mode,
                                          volumeIdentifier: VolumeMonitor.volumeIdentifier(for: folder))
             }
+            sourceManagementModesById[fid] = mode.rawValue
             if fresh.isEmpty && skipped == 0 {
                 folders.removeAll { $0.id == fid }
                 sourceRootPathsById.removeValue(forKey: fid)
+                sourceManagementModesById.removeValue(forKey: fid)
             } else {
                 setSourceFolder(id: fid, name: folder.lastPathComponent, path: folder.path, status: "online")
                 select(Selection(type: .folder, id: fid, name: folder.lastPathComponent))
@@ -1990,6 +2002,7 @@ final class AppState {
         securityScopedRoots = []
         watchedRoots = []
         sourceRootPathsById = [:]
+        sourceManagementModesById = [:]
         importControl = nil
         activeImportJobId = nil
         importing = false
@@ -2005,6 +2018,7 @@ final class AppState {
         smartAlbums = DemoData.initialSmartAlbums(a)
         folders = DemoData.folders
         sourceRootPathsById = [:]
+        sourceManagementModesById = [:]
         duplicateGroupsCache = DemoData.duplicateGroups
         selection = Selection(type: .lib, id: "all", name: "全部照片")
         primaryId = list.first?.id
@@ -2278,6 +2292,17 @@ final class AppState {
 
     func countForFolderTreeItem(_ item: FolderTreeItem) -> Int {
         folderTreeCounts[item.id] ?? 0
+    }
+
+    func managementDisplayText(for asset: Asset) -> String {
+        switch managementMode(for: asset) {
+        case .managed: return "托管式 (Managed)"
+        case .referenced: return "引用式 (Referenced)"
+        }
+    }
+
+    private func managementMode(for asset: Asset) -> ImportMode {
+        ImportMode(rawValue: sourceManagementModesById[asset.folderId] ?? "") ?? .referenced
     }
 
     var canPromoteSelectedSource: Bool {

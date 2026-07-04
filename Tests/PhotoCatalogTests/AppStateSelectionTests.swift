@@ -769,6 +769,65 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testManagedSourceModeRestoresIntoCatalogAndInspectorText() throws {
+        let defaults = UserDefaults.standard
+        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
+        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
+        defer {
+            if let previousCatalogURL {
+                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
+            } else {
+                defaults.removeObject(forKey: "pc_catalogURL")
+            }
+            if let previousRecent {
+                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
+            } else {
+                defaults.removeObject(forKey: "pc_recentCatalogs")
+            }
+        }
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-managed-mode-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let original = source.appendingPathComponent("managed.jpg")
+        try Data("photo".utf8).write(to: original)
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path,
+                                bookmark: nil, mode: .managed)
+        let base = DemoData.assets[0]
+        let asset = Asset(id: base.id, pid: base.pid, ori: base.ori, thumb: base.thumb, preview: base.preview,
+                          filename: original.lastPathComponent, type: base.type, isRaw: base.isRaw,
+                          folderId: "source-1", folderName: "Source",
+                          date: base.date, width: base.width, height: base.height,
+                          orientation: base.orientation, camera: base.camera, lens: base.lens,
+                          focal: base.focal, aperture: base.aperture, shutter: base.shutter, iso: base.iso,
+                          colorSpace: base.colorSpace, hasICCProfile: base.hasICCProfile,
+                          fileMB: base.fileMB, fileModifiedAt: base.fileModifiedAt,
+                          fileCreatedAt: base.fileCreatedAt, rating: base.rating, flag: base.flag,
+                          colorLabel: base.colorLabel, keywords: base.keywords, title: base.title,
+                          caption: base.caption, author: base.author, copyright: base.copyright,
+                          makerNotes: base.makerNotes, project: base.project, client: base.client,
+                          location: base.location, gps: base.gps, gpsAltitude: base.gpsAltitude,
+                          status: .ready, importedAt: base.importedAt, deleted: base.deleted,
+                          localPath: original.path, captureDateSource: base.captureDateSource,
+                          contentHash: base.contentHash, quickHash: base.quickHash, isDemo: false,
+                          faces: base.faces, perceptualHash: base.perceptualHash)
+        try store.upsert([asset])
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        let restored = try XCTUnwrap(app.assets.first { $0.id == asset.id })
+
+        XCTAssertEqual(try store.loadSourceRoots().first?.managementMode, ImportMode.managed.rawValue)
+        XCTAssertEqual(app.catalogManagementText, "托管式管理 · 原件在目录库")
+        XCTAssertEqual(app.managementDisplayText(for: restored), "托管式 (Managed)")
+    }
+
+    @MainActor
     func testVisibleImageSourceRepairsBlackRawPreviewCache() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-raw-visible-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
