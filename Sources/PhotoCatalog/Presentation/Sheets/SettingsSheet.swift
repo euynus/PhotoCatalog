@@ -154,7 +154,8 @@ struct SettingsSheet: View {
                     Spacer()
                 }
                 HStack(spacing: 9) {
-                    ghostButton("eye", "导出选中预览图", small: true) { app.exportSelectionPreviews() }
+                    ghostButton("eye", "导出选中预览图", small: true,
+                                disabled: !app.canExportPreviewSelection) { app.exportSelectionPreviews() }
                     Spacer()
                 }
             }

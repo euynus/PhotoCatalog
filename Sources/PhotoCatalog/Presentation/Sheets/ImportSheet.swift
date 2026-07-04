@@ -317,8 +317,9 @@ func sheetClose(_ action: @escaping () -> Void) -> some View {
 
 @MainActor
 func ghostButton(_ icon: String?, _ label: String, danger: Bool = false, small: Bool = false,
+                 disabled: Bool = false,
                  action: @escaping () -> Void) -> some View {
-    GhostButton(icon: icon, label: label, danger: danger, small: small, action: action)
+    GhostButton(icon: icon, label: label, danger: danger, small: small, disabled: disabled, action: action)
 }
 
 private struct SheetCloseButton: View {
@@ -342,6 +343,7 @@ private struct GhostButton: View {
     let label: String
     let danger: Bool
     let small: Bool
+    let disabled: Bool
     let action: () -> Void
     @State private var hover = false
 
@@ -351,11 +353,16 @@ private struct GhostButton: View {
                 if let icon { Icon(icon, size: small ? 13 : 14) }
                 Text(label).font(.system(size: small ? 12 : 12.5))
             }
-            .foregroundStyle(danger ? Theme.redSoft : Theme.text)
+            .foregroundStyle(disabled ? Theme.text4 : (danger ? Theme.redSoft : Theme.text))
             .padding(.horizontal, small ? 10 : 15).padding(.vertical, small ? 5 : 8)
-            .background(danger ? Theme.red.opacity(hover ? 0.26 : 0.16)
-                               : (hover ? Theme.surfaceHi : Theme.surface))
+            .background(disabled ? Theme.surface
+                        : (danger ? Theme.red.opacity(hover ? 0.26 : 0.16)
+                                  : (hover ? Theme.surfaceHi : Theme.surface)))
             .clipShape(RoundedRectangle(cornerRadius: 7))
-        }.buttonStyle(.plain).onHover { hover = $0 }
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.45 : 1)
+        .onHover { hover = disabled ? false : $0 }
     }
 }

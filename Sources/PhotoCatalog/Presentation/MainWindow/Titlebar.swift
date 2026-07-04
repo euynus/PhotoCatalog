@@ -107,7 +107,7 @@ struct Titlebar: View {
                            action: { app.removeSelectionFromCurrentAlbum() })
             }
             ToolButton(icon: "export", label: "导出选中原件",
-                       disabled: !app.canExportSelection,
+                       disabled: !app.canExportOriginalSelection,
                        action: { app.exportSelection() })
             ToolButton(icon: "gear", label: "设置", action: { app.sheet = "settings" })
             ToolButton(icon: "inspector", label: "显示简介 (⌘I)", active: app.showInspector,

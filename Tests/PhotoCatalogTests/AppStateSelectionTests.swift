@@ -210,14 +210,38 @@ final class AppStateSelectionTests: XCTestCase {
         let app = AppState()
         app.onboarded = true
 
-        XCTAssertTrue(app.canExportSelection)
+        XCTAssertFalse(app.canExportOriginalSelection)
+        XCTAssertFalse(app.canExportPreviewSelection)
 
         app.setSearch("NO_SUCH_PHOTO_123")
-        XCTAssertFalse(app.canExportSelection)
+        XCTAssertFalse(app.canExportOriginalSelection)
+        XCTAssertFalse(app.canExportPreviewSelection)
 
         app.exportSelection()
 
         XCTAssertEqual(app.toastCenter.toasts.last?.message, "请先选择照片")
+    }
+
+    @MainActor
+    func testExportActionsRequireLocalOriginals() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-export-actions-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let original = dir.appendingPathComponent("original.jpg")
+        try Data("image".utf8).write(to: original)
+
+        let app = AppState()
+        app.onboarded = true
+        var asset = try XCTUnwrap(app.assets.first)
+        asset.filename = original.lastPathComponent
+        asset.localPath = original.path
+        asset.isDemo = false
+        app.assets = [asset]
+        app.primaryId = asset.id
+        app.selectedIds = [asset.id]
+
+        XCTAssertTrue(app.canExportOriginalSelection)
+        XCTAssertTrue(app.canExportPreviewSelection)
     }
 
     @MainActor
