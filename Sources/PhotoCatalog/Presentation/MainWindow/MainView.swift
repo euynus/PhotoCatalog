@@ -7,8 +7,20 @@ struct MainView: View {
     @Environment(AppState.self) var app
 
     var body: some View {
+        ZStack {
+            mainChrome
+                .disabled(app.sheet != nil)
+                .accessibilityHidden(app.sheet != nil)
+            ZStack { sheets }
+                .animation(.easeOut(duration: 0.18), value: app.sheet)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.bgContent)
+    }
+
+    private var mainChrome: some View {
         let assetRevision = app.assetRenderVersion
-        VStack(spacing: 0) {
+        return VStack(spacing: 0) {
             Titlebar()
             if app.filterOpen { FilterBar() }
             HStack(spacing: 0) {
@@ -22,12 +34,6 @@ struct MainView: View {
             StatusBar()
         }
         .background(Theme.bgContent)
-        .overlay {
-            // the animation makes SheetBackdrop's .transition(.opacity) real —
-            // app.sheet is never set inside withAnimation, so sheets popped in
-            ZStack { sheets }
-                .animation(.easeOut(duration: 0.18), value: app.sheet)
-        }
     }
 
     @ViewBuilder private var sheets: some View {
