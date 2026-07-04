@@ -1482,6 +1482,42 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testRemovingSourceStopsWatchingRootWithoutLiveAssets() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-watch-remove-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let original = source.appendingPathComponent("deleted.jpg")
+        try writeTestJPEG(to: original, black: false)
+
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+        var asset = DemoData.assets[0]
+        asset.filename = original.lastPathComponent
+        asset.folderId = "source-1"
+        asset.folderName = "Source"
+        asset.localPath = original.path
+        asset.isDemo = false
+        asset.deleted = true
+        try store.upsert([asset])
+
+        let app = AppState()
+        app.onboarded = true
+        app.confirmDestructiveAction = { _, _, _ in true }
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.select(Selection(type: .folder, id: "source-1", name: "Source"))
+
+        app.removeSelectedSource()
+
+        XCTAssertTrue(try store.loadSourceRoots().isEmpty)
+        XCTAssertFalse(app.folders.contains { $0.id == "source-1" })
+        app.rescanCurrentSource()
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "当前没有可重新扫描的源")
+    }
+
+    @MainActor
     func testRecoveredEmptyImportDoesNotWatchSourceRoot() async throws {
         let defaults = UserDefaults.standard
         let previousOnboarded = defaults.object(forKey: "pc_onboarded")

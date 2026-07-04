@@ -2950,14 +2950,13 @@ final class AppState {
         let indexed = assets.filter { !$0.deleted && !$0.isDemo && $0.folderId == folderId }
         guard !indexed.isEmpty || folders.contains(where: { $0.id == folderId }) else { return }
 
-        let alert = NSAlert()
-        alert.messageText = "移除源文件夹？"
-        alert.informativeText = "将从目录库移除「\(folderName)」的索引记录，磁盘上的原件不会被删除。"
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "移除索引")
-        alert.addButton(withTitle: "取消")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard confirmDestructiveAction(
+            "移除源文件夹？",
+            "将从目录库移除「\(folderName)」的索引记录，磁盘上的原件不会被删除。",
+            "移除索引"
+        ) else { return }
 
+        let sourceRootPath = sourceRootPathsById[folderId]
         let ids = Set(indexed.map(\.id))
         if !ids.isEmpty {
             mutate(ids) { $0.deleted = true }
@@ -2968,8 +2967,16 @@ final class AppState {
         sourceRootPathsById.removeValue(forKey: folderId)
         sourcePriorities.removeValue(forKey: folderId)
         saveSourcePriorities()
-        watchedRoots.removeAll { root in
-            indexed.contains { $0.localPath?.hasPrefix(root.path + "/") == true }
+        if let sourceRootPath {
+            let removedPath = URL(fileURLWithPath: sourceRootPath).standardizedFileURL.path
+            watchedRoots.removeAll { $0.standardizedFileURL.path == removedPath }
+        } else {
+            watchedRoots.removeAll { root in
+                let rootPath = root.standardizedFileURL.path
+                return indexed.contains {
+                    $0.localPath.map { Self.path(URL(fileURLWithPath: $0).standardizedFileURL.path, isIn: rootPath) } ?? false
+                }
+            }
         }
         refreshWatcher()
         selection = Selection(type: .lib, id: "all", name: "全部照片")
