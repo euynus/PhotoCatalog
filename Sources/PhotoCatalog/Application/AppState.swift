@@ -1741,7 +1741,7 @@ final class AppState {
     }
 
     var thumbnailMaintenanceAssets: [Asset] {
-        assets.filter { !$0.deleted && !$0.isDemo && $0.localPath != nil }
+        assets.filter { hasExistingOriginal($0) }
     }
 
     /// Privacy: delete catalog log files (§17.6).

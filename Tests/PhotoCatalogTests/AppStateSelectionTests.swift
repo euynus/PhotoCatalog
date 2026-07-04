@@ -1054,16 +1054,27 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testThumbnailMaintenanceSkipsSoftDeletedAssets() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-thumbnail-maintenance-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let livePath = dir.appendingPathComponent("live.jpg")
+        try Data("image".utf8).write(to: livePath)
+
         let app = AppState()
         var live = try XCTUnwrap(app.assets.first)
         var deleted = try XCTUnwrap(app.assets.dropFirst().first)
+        var missing = try XCTUnwrap(app.assets.dropFirst(2).first)
         live.isDemo = false
-        live.localPath = "/tmp/live.jpg"
+        live.localPath = livePath.path
         live.deleted = false
         deleted.isDemo = false
         deleted.localPath = "/tmp/deleted.jpg"
         deleted.deleted = true
-        app.assets = [live, deleted]
+        missing.isDemo = false
+        missing.localPath = dir.appendingPathComponent("missing.jpg").path
+        missing.deleted = false
+        app.assets = [live, deleted, missing]
 
         XCTAssertEqual(app.thumbnailMaintenanceAssets.map(\.id), [live.id])
     }
