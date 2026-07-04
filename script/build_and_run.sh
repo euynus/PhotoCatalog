@@ -67,8 +67,17 @@ case "$MODE" in
     ;;
   --verify|verify)
     open_app
-    sleep 1
-    pgrep -x "$APP_NAME" >/dev/null
+    for _ in {1..20}; do
+      if pgrep -x "$APP_NAME" >/dev/null; then
+        WINDOW_COUNT="$(osascript -e "tell application \"System Events\" to tell process \"$APP_NAME\" to count of windows" 2>/dev/null || echo 0)"
+        if [[ "$WINDOW_COUNT" -gt 0 ]]; then
+          exit 0
+        fi
+      fi
+      sleep 0.25
+    done
+    echo "$APP_NAME launched but no window became visible" >&2
+    exit 1
     ;;
   *)
     echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
