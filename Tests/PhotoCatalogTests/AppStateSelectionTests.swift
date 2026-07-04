@@ -1151,10 +1151,11 @@ final class AppStateSelectionTests: XCTestCase {
 
         let app = AppState()
         app.onboarded = true
+        app.confirmDestructiveAction = { _, _, _ in true }
         XCTAssertTrue(app.openCatalog(at: package))
         XCTAssertEqual(app.folders.first { $0.id == "source-1" }?.status, "online")
 
-        app.clearSecurityBookmarks()
+        app.confirmClearSecurityBookmarks()
 
         let root = try XCTUnwrap(try store.loadSourceRoots().first { $0.id == "source-1" })
         XCTAssertNil(root.bookmarkData)
@@ -1577,22 +1578,58 @@ final class AppStateSelectionTests: XCTestCase {
 
         let app = AppState()
         app.onboarded = true
+        app.confirmDestructiveAction = { _, _, _ in true }
         XCTAssertTrue(app.openCatalog(at: package))
 
         XCTAssertTrue(app.recentCatalogs.contains { $0.path == package.path })
-        app.clearRecentCatalogs()
+        app.confirmClearRecentCatalogs()
         XCTAssertTrue(app.recentCatalogs.isEmpty)
 
-        app.clearLogs()
+        app.confirmClearLogs()
         XCTAssertFalse(FileManager.default.fileExists(atPath: logFile.path))
 
-        app.clearCache()
+        app.confirmClearCache()
         XCTAssertFalse(FileManager.default.fileExists(atPath: cacheFile.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: store.thumb256URL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: store.preview2048URL.path))
 
         app.runBackup()
         XCTAssertEqual(BackupService.listBackups(store).count, 1)
+    }
+
+    @MainActor
+    func testDestructiveMaintenanceCancelKeepsLocalState() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-maintenance-cancel-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        let bookmark = try XCTUnwrap(FileAccessService.createBookmark(for: source))
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path,
+                                bookmark: bookmark, volumeIdentifier: nil)
+        let logFile = store.logsURL.appendingPathComponent("import.log")
+        let cacheFile = store.thumb256URL.appendingPathComponent("stale.jpg")
+        try Data("log".utf8).write(to: logFile)
+        try Data("cache".utf8).write(to: cacheFile)
+
+        let app = AppState()
+        app.onboarded = true
+        app.confirmDestructiveAction = { _, _, _ in false }
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        app.confirmClearRecentCatalogs()
+        app.confirmClearLogs()
+        app.confirmClearCache()
+        app.confirmClearSecurityBookmarks()
+
+        XCTAssertTrue(app.recentCatalogs.contains { $0.path == package.path })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: logFile.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cacheFile.path))
+        let root = try XCTUnwrap(try store.loadSourceRoots().first { $0.id == "source-1" })
+        XCTAssertNotNil(root.bookmarkData)
+        XCTAssertEqual(root.status, "online")
     }
 
     @MainActor

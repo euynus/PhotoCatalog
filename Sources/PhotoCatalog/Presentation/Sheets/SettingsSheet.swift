@@ -187,7 +187,7 @@ struct SettingsSheet: View {
                 }
                 HStack(spacing: 9) {
                     ghostButton("refresh", "重建缩略图", small: true) { app.rebuildThumbnails() }
-                    ghostButton("trash", "清理缓存", small: true) { app.clearCache() }
+                    ghostButton("trash", "清理缓存", small: true) { app.confirmClearCache() }
                     ghostButton("check", "应用上限", small: true) { app.pruneCacheToLimit() }
                 }
             }
@@ -289,7 +289,7 @@ struct SettingsSheet: View {
                     ghostButton("plus", "新建目录库", small: true) { app.createCatalog() }
                     ghostButton("folder", "打开目录库", small: true) { app.openCatalog() }
                     ghostButton("close", "关闭目录库", small: true) { app.closeCatalog() }
-                    ghostButton("trash", "清除最近", small: true) { app.clearRecentCatalogs() }
+                    ghostButton("trash", "清除最近", small: true) { app.confirmClearRecentCatalogs() }
                 }
                 Text(app.catalogPath)
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.text2)
@@ -300,8 +300,8 @@ struct SettingsSheet: View {
                 Text("本地优先 · 仅访问授权的文件夹。可清除以下本地数据。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 HStack(spacing: 9) {
-                    ghostButton("trash", "清除日志", small: true) { app.clearLogs() }
-                    ghostButton("trash", "清除安全书签", small: true) { app.clearSecurityBookmarks() }
+                    ghostButton("trash", "清除日志", small: true) { app.confirmClearLogs() }
+                    ghostButton("trash", "清除安全书签", small: true) { app.confirmClearSecurityBookmarks() }
                 }
             }
         }

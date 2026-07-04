@@ -234,6 +234,7 @@ final class AppState {
     @ObservationIgnored private var importControl: ImportControl?
     @ObservationIgnored private var activeImportJobId: String?
     @ObservationIgnored private var launchCatalogHandled = false
+    @ObservationIgnored var confirmDestructiveAction = AppState.confirmDestructiveAction
     private static let catalogURLKey = "pc_catalogURL"
     private static let recentCatalogsKey = "pc_recentCatalogs"
     private static let lastAutoBackupKey = "pc_lastAutoBackupAt"
@@ -742,6 +743,11 @@ final class AppState {
         recentCatalogPaths = []
         UserDefaults.standard.set(recentCatalogPaths, forKey: Self.recentCatalogsKey)
         push("已清除最近目录库", "trash")
+    }
+
+    func confirmClearRecentCatalogs() {
+        guard confirmDestructiveAction("清除最近目录库？", "只会清除本机最近打开列表，不会删除目录库文件。", "清除") else { return }
+        clearRecentCatalogs()
     }
 
     private func catalogOpenFailureMessage(_ error: Error?, fallback: String = "打开目录库失败") -> String {
@@ -1745,6 +1751,11 @@ final class AppState {
     }
 
     /// Privacy: delete catalog log files (§17.6).
+    func confirmClearLogs() {
+        guard confirmDestructiveAction("清除日志？", "将删除当前目录库中的本地日志文件。", "清除") else { return }
+        clearLogs()
+    }
+
     func clearLogs() {
         guard let store else { push("无目录库", "warning"); return }
         let fm = FileManager.default
@@ -1754,6 +1765,11 @@ final class AppState {
     }
 
     /// Privacy: drop stored security-scoped bookmarks; sources need re-authorization (§17.6).
+    func confirmClearSecurityBookmarks() {
+        guard confirmDestructiveAction("清除安全书签？", "当前目录库的源文件夹下次访问时需要重新授权。", "清除") else { return }
+        clearSecurityBookmarks()
+    }
+
     func clearSecurityBookmarks() {
         guard let store else { push("无目录库", "warning"); return }
         do {
@@ -1775,6 +1791,11 @@ final class AppState {
         push("已清除安全书签，下次访问需重新授权", "trash")
     }
 
+    func confirmClearCache() {
+        guard confirmDestructiveAction("清理缓存？", "将删除当前目录库的缩略图和预览缓存，可稍后重新生成。", "清理") else { return }
+        clearCache()
+    }
+
     func clearCache() {
         guard let store else { push("无目录库", "warning"); return }
         let fm = FileManager.default
@@ -1784,6 +1805,16 @@ final class AppState {
         }
         refreshStatusMetrics()
         push("已清理缩略图缓存", "trash")
+    }
+
+    private static func confirmDestructiveAction(title: String, message: String, confirmTitle: String) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: confirmTitle)
+        alert.addButton(withTitle: "取消")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     func visibleImageSource(for asset: Asset, requestedSource: String,
