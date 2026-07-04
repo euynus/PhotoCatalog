@@ -247,6 +247,41 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testPreviewExportAllowsCachedPreviewWithoutOriginal() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-preview-export-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let preview = dir.appendingPathComponent("preview.jpg")
+        try Data("preview".utf8).write(to: preview)
+
+        let app = AppState()
+        app.onboarded = true
+        let base = try XCTUnwrap(app.assets.first)
+        let asset = Asset(id: base.id, pid: base.pid, ori: base.ori, thumb: base.thumb, preview: preview.path,
+                          filename: base.filename, type: base.type, isRaw: base.isRaw, folderId: base.folderId,
+                          folderName: base.folderName, date: base.date, width: base.width, height: base.height,
+                          orientation: base.orientation, camera: base.camera, lens: base.lens, focal: base.focal,
+                          aperture: base.aperture, shutter: base.shutter, iso: base.iso,
+                          colorSpace: base.colorSpace, hasICCProfile: base.hasICCProfile, fileMB: base.fileMB,
+                          fileModifiedAt: base.fileModifiedAt, fileCreatedAt: base.fileCreatedAt,
+                          rating: base.rating, flag: base.flag, colorLabel: base.colorLabel,
+                          keywords: base.keywords, title: base.title, caption: base.caption,
+                          author: base.author, copyright: base.copyright, makerNotes: base.makerNotes,
+                          project: base.project, client: base.client, location: base.location, gps: base.gps,
+                          gpsAltitude: base.gpsAltitude, status: .offline, importedAt: base.importedAt,
+                          deleted: base.deleted, localPath: nil, captureDateSource: base.captureDateSource,
+                          contentHash: base.contentHash, quickHash: base.quickHash, isDemo: false,
+                          faces: base.faces, perceptualHash: base.perceptualHash)
+        app.assets = [asset]
+        app.primaryId = asset.id
+        app.selectedIds = [asset.id]
+
+        XCTAssertFalse(app.canOperateOnSelectedOriginals)
+        XCTAssertFalse(app.canExportOriginalSelection)
+        XCTAssertTrue(app.canExportPreviewSelection)
+    }
+
+    @MainActor
     func testNavigationAndSheetKeyboardGuards() throws {
         let app = AppState()
         app.onboarded = true

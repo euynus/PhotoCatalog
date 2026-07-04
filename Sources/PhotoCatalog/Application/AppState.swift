@@ -1556,6 +1556,19 @@ final class AppState {
         return assets.filter { ids.contains($0.id) && !$0.deleted && !$0.isDemo && $0.localPath != nil }
     }
 
+    private func selectedAssetsWithExportablePreviews() -> [Asset] {
+        let ids = targetIds
+        let fm = FileManager.default
+        return assets.filter { asset in
+            guard ids.contains(asset.id), !asset.deleted, !asset.isDemo else { return false }
+            for path in [asset.preview, asset.thumb] where !path.isEmpty && !path.hasPrefix("http") {
+                if fm.fileExists(atPath: path) { return true }
+            }
+            if let path = asset.localPath, fm.fileExists(atPath: path) { return true }
+            return false
+        }
+    }
+
     private func confirmOriginalFileOperation(_ operation: OriginalFileOperation, count: Int) -> Bool {
         let alert = NSAlert()
         alert.alertStyle = operation == .move ? .warning : .informational
@@ -1934,10 +1947,9 @@ final class AppState {
     }
 
     func exportSelectionPreviews() {
-        let ids = targetIds
-        let selected = assets.filter { ids.contains($0.id) && !$0.deleted }
+        let selected = selectedAssetsWithExportablePreviews()
         guard !selected.isEmpty else {
-            push("请先选择照片", "warning")
+            push(targetIds.isEmpty ? "请先选择照片" : "没有可导出的预览图", "warning")
             return
         }
         let panel = NSOpenPanel()
@@ -2821,7 +2833,7 @@ final class AppState {
     var hasSelection: Bool { onboarded && !targetIds.isEmpty }
     var canApplySelectionToAlbum: Bool { hasSelection }
     var canExportOriginalSelection: Bool { canOperateOnSelectedOriginals }
-    var canExportPreviewSelection: Bool { canOperateOnSelectedOriginals }
+    var canExportPreviewSelection: Bool { !selectedAssetsWithExportablePreviews().isEmpty }
     var canRemoveSelectionFromCurrentAlbum: Bool { selection.type == .album && hasSelection }
     var canRemoveSelectedSource: Bool { selectedFolderIsCatalogSource }
     var canReauthorizeSelectedSource: Bool { selectedFolderIsCatalogSource }
