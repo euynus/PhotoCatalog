@@ -50,7 +50,7 @@ struct CompareView: View {
                 ForEach(app.list.filter { !app.compareIds.contains($0.id) }.prefix(24)) { a in
                     Hover { hover in
                         Button {
-                            app.compareIds = Array((app.compareIds + [a.id]).prefix(4))
+                            app.addToCompare(a.id)
                             trayOpen = false
                         } label: {
                             Thumb(asset: a, radius: 3)
@@ -118,7 +118,7 @@ struct ComparePanel: View {
                 VStack { HStack {
                     Spacer()
                     Hover { btnHover in
-                        Button { app.compareIds.removeAll { $0 == asset.id } } label: {
+                        Button { app.removeFromCompare(asset.id) } label: {
                             Icon("close", size: 13, weight: .bold)
                                 .foregroundStyle(btnHover ? Theme.text : Theme.text2)
                                 .frame(width: 24, height: 24)

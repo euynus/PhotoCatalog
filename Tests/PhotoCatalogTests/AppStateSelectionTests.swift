@@ -73,6 +73,28 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testCompareMembershipKeepsKeyboardSelectionAligned() throws {
+        let app = AppState()
+        app.onboarded = true
+        app.switchView(.compare)
+        let removed = try XCTUnwrap(app.compareIds.first)
+        let replacement = try XCTUnwrap(app.list.first { !app.compareIds.contains($0.id) }?.id)
+        app.winner = removed
+
+        app.removeFromCompare(removed)
+
+        XCTAssertFalse(app.compareIds.contains(removed))
+        XCTAssertEqual(app.selectedIds, Set(app.compareIds))
+        XCTAssertFalse(app.selectedIds.contains(removed))
+        XCTAssertNil(app.winner)
+
+        app.addToCompare(replacement)
+
+        XCTAssertTrue(app.compareIds.contains(replacement))
+        XCTAssertEqual(app.selectedIds, Set(app.compareIds))
+    }
+
+    @MainActor
     func testMetadataKeyboardShortcutsApplyToCurrentSelection() throws {
         let app = AppState()
         app.onboarded = true

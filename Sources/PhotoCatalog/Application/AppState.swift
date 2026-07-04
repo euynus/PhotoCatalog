@@ -3285,11 +3285,34 @@ final class AppState {
         compareIds = Array(ids.prefix(4))
         // align the grid selection with the compared panels so rating/flag/color shortcuts
         // act on what's on screen rather than a now-hidden grid selection
-        selectedIds = Set(compareIds)
-        if primaryId == nil || !compareIds.contains(primaryId!) { primaryId = compareIds.first }
-        anchorId = primaryId
+        syncCompareSelection()
         winner = nil
         view = .compare
+    }
+
+    func addToCompare(_ id: String) {
+        guard compareIds.count < 4,
+              !compareIds.contains(id),
+              list.contains(where: { $0.id == id }) else { return }
+        compareIds.append(id)
+        syncCompareSelection()
+    }
+
+    func removeFromCompare(_ id: String) {
+        compareIds.removeAll { $0 == id }
+        syncCompareSelection()
+    }
+
+    private func syncCompareSelection() {
+        let ids = Set(compareIds)
+        selectedIds = ids
+        if let winner, !ids.contains(winner) { self.winner = nil }
+        if let primaryId, ids.contains(primaryId) {
+            anchorId = primaryId
+            return
+        }
+        primaryId = compareIds.first
+        anchorId = primaryId
     }
 
     func switchView(_ v: ViewMode) {
