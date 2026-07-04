@@ -99,7 +99,12 @@ final class Database: @unchecked Sendable {
         let cols = Int(sqlite3_column_count(stmt))
         // column names are stable for the statement — read them once, not per row
         let names = (0..<cols).map { String(cString: sqlite3_column_name(stmt, Int32($0))) }
-        while sqlite3_step(stmt) == SQLITE_ROW {
+        while true {
+            let rc = sqlite3_step(stmt)
+            if rc == SQLITE_DONE { return rows }
+            guard rc == SQLITE_ROW else {
+                throw DBError.step(String(cString: sqlite3_errmsg(db)))
+            }
             var row = Row(minimumCapacity: cols)
             for c in 0..<cols {
                 let i = Int32(c)
@@ -117,17 +122,20 @@ final class Database: @unchecked Sendable {
             }
             rows.append(row)
         }
-        return rows
     }
 
     func transaction(_ body: () throws -> Void) throws {
         guard exec("BEGIN;") else { throw DBError.step(String(cString: sqlite3_errmsg(db))) }
         do {
             try body()
-            exec("COMMIT;")
         } catch {
             exec("ROLLBACK;")
             throw error
+        }
+        guard exec("COMMIT;") else {
+            let message = String(cString: sqlite3_errmsg(db))
+            exec("ROLLBACK;")
+            throw DBError.step(message)
         }
     }
 
