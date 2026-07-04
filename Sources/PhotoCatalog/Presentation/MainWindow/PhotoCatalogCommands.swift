@@ -66,7 +66,7 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.hasSelection)
             Button("将原件移到废纸篓…") { app.trashSelectedOriginals() }
                 .keyboardShortcut(.delete, modifiers: .command)
-                .disabled(app.sheet != nil || !app.hasSelection)
+                .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals)
         }
 
         CommandMenu("视图") {

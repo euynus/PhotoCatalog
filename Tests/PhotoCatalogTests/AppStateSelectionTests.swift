@@ -210,6 +210,7 @@ final class AppStateSelectionTests: XCTestCase {
         let app = AppState()
         app.onboarded = true
 
+        XCTAssertFalse(app.canOperateOnSelectedOriginals)
         XCTAssertFalse(app.canExportOriginalSelection)
         XCTAssertFalse(app.canExportPreviewSelection)
 
@@ -240,6 +241,7 @@ final class AppStateSelectionTests: XCTestCase {
         app.primaryId = asset.id
         app.selectedIds = [asset.id]
 
+        XCTAssertTrue(app.canOperateOnSelectedOriginals)
         XCTAssertTrue(app.canExportOriginalSelection)
         XCTAssertTrue(app.canExportPreviewSelection)
     }
@@ -1485,6 +1487,7 @@ final class AppStateSelectionTests: XCTestCase {
         let app = AppState()
         app.onboarded = true
 
+        XCTAssertFalse(app.canOperateOnSelectedOriginals)
         app.exportSelection()
 
         XCTAssertEqual(app.toastCenter.toasts.last?.message, "演示照片没有本地原件可导出")
