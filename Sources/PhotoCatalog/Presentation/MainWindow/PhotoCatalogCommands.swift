@@ -22,7 +22,9 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.importing || app.sheet != nil)
             Button("关闭目录库") { app.closeCatalog() }
                 .disabled(app.importing || app.sheet != nil || !app.hasOpenCatalog)
-            Button("导入照片文件夹…") { app.addFolder() }
+            Button("导入照片文件夹…") {
+                if app.onboarded { app.addFolder() } else { app.enterApp("import") }
+            }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(app.sheet != nil)
             Divider()
@@ -71,33 +73,33 @@ struct PhotoCatalogCommands: Commands {
 
         CommandMenu("视图") {
             Button("网格视图") { app.switchView(.grid) }
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.onboarded)
             Button("单张查看") { app.switchView(.loupe) }
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.onboarded)
             Button("比较视图") { app.enterCompare() }
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.onboarded)
             Divider()
             Button("搜索") { app.focusSearch() }
                 .keyboardShortcut("f", modifiers: .command)
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.onboarded)
             Button("显示/隐藏筛选栏") { app.toggleFilterBar() }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.onboarded)
             Button("显示/隐藏 Inspector") { app.showInspector.toggle() }
                 .keyboardShortcut("i", modifiers: .command)
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.onboarded)
             Button("显示/隐藏缩略图信息") { app.toggleGridInfo() }
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.onboarded)
             Divider()
             Button("放大缩略图") { app.adjustThumbnailSize(by: 16) }
                 .keyboardShortcut("=", modifiers: .command)
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.onboarded)
             Button("缩小缩略图") { app.adjustThumbnailSize(by: -16) }
                 .keyboardShortcut("-", modifiers: .command)
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.onboarded)
             Button("重置缩略图大小") { app.resetThumbnailSize() }
                 .keyboardShortcut("0", modifiers: .command)
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.onboarded)
         }
 
         CommandMenu("维护") {

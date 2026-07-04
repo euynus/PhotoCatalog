@@ -3271,6 +3271,19 @@ final class AppState {
             return false
         }
         if hasCommand {
+            if !onboarded {
+                switch key {
+                case "n":
+                    createCatalog()
+                case "o":
+                    openCatalog()
+                case ",":
+                    showSettings()
+                default:
+                    return false
+                }
+                return true
+            }
             switch key {
             case "n":
                 createCatalog()

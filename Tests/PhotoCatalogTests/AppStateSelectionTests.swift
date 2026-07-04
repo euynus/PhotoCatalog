@@ -338,6 +338,20 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testWelcomeCommandShortcutsDoNotMutateMainViewState() {
+        let app = AppState()
+        app.onboarded = false
+        app.thumbSize = 220
+
+        XCTAssertFalse(app.handleKey("f", hasCommand: true))
+        XCTAssertFalse(app.filterOpen)
+        XCTAssertFalse(app.handleKey("i", hasCommand: true))
+        XCTAssertTrue(app.showInspector)
+        XCTAssertFalse(app.handleKey("0", hasCommand: true))
+        XCTAssertEqual(app.thumbSize, 220)
+    }
+
+    @MainActor
     func testClosingCatalogIsBlockedDuringImport() {
         let app = AppState()
         app.onboarded = true
