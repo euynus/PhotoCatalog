@@ -181,6 +181,7 @@ final class AppStateSelectionTests: XCTestCase {
         app.setSearch("NO_SUCH_PHOTO_123")
         XCTAssertNil(app.primaryId)
         XCTAssertTrue(app.selectedIds.isEmpty)
+        XCTAssertFalse(app.hasSelection)
 
         XCTAssertFalse(app.handleKey("5", hasCommand: false))
         XCTAssertFalse(app.handleKey("p", hasCommand: false))

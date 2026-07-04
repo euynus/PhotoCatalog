@@ -32,17 +32,17 @@ struct PhotoCatalogCommands: Commands {
         CommandMenu("照片") {
             Section("评分") {
                 Button("设置 1 星") { app.applyRatingShortcut(1) }
-                    .disabled(app.sheet != nil)
+                    .disabled(app.sheet != nil || !app.hasSelection)
                 Button("设置 2 星") { app.applyRatingShortcut(2) }
-                    .disabled(app.sheet != nil)
+                    .disabled(app.sheet != nil || !app.hasSelection)
                 Button("设置 3 星") { app.applyRatingShortcut(3) }
-                    .disabled(app.sheet != nil)
+                    .disabled(app.sheet != nil || !app.hasSelection)
                 Button("设置 4 星") { app.applyRatingShortcut(4) }
-                    .disabled(app.sheet != nil)
+                    .disabled(app.sheet != nil || !app.hasSelection)
                 Button("设置 5 星") { app.applyRatingShortcut(5) }
-                    .disabled(app.sheet != nil)
+                    .disabled(app.sheet != nil || !app.hasSelection)
                 Button("清除评分") { app.applyRatingShortcut(0) }
-                    .disabled(app.sheet != nil)
+                    .disabled(app.sheet != nil || !app.hasSelection)
             }
             Divider()
             Button("导出选中原件…") { app.exportSelection() }
@@ -61,10 +61,10 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.canSaveCurrentFilter)
             Divider()
             Button("从目录库移除…") { app.confirmDeleteSelected() }
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.hasSelection)
             Button("将原件移到废纸篓…") { app.trashSelectedOriginals() }
                 .keyboardShortcut(.delete, modifiers: .command)
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.hasSelection)
         }
 
         CommandMenu("视图") {

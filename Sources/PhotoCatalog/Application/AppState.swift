@@ -2719,9 +2719,10 @@ final class AppState {
         return []
     }
 
-    var canApplySelectionToAlbum: Bool { !targetIds.isEmpty }
-    var canExportSelection: Bool { !targetIds.isEmpty }
-    var canRemoveSelectionFromCurrentAlbum: Bool { selection.type == .album && !targetIds.isEmpty }
+    var hasSelection: Bool { !targetIds.isEmpty }
+    var canApplySelectionToAlbum: Bool { hasSelection }
+    var canExportSelection: Bool { hasSelection }
+    var canRemoveSelectionFromCurrentAlbum: Bool { selection.type == .album && hasSelection }
     var canRemoveSelectedSource: Bool { selectedFolderIsCatalogSource }
     var canReauthorizeSelectedSource: Bool { selectedFolderIsCatalogSource }
 
