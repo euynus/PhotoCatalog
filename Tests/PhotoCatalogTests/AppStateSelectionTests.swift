@@ -966,6 +966,21 @@ final class AppStateSelectionTests: XCTestCase {
         }
     }
 
+    private func makeCatalogWithOneAsset(at package: URL, assetIndex: Int) throws -> CatalogStore {
+        let source = package.deletingLastPathComponent().appendingPathComponent("Source-\(assetIndex)")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        let store = try CatalogStore(packageURL: package)
+        var asset = DemoData.assets[assetIndex]
+        let original = source.appendingPathComponent(asset.filename)
+        try Data("image \(assetIndex)".utf8).write(to: original)
+        asset.localPath = original.path
+        asset.status = .ready
+        asset.isDemo = false
+        asset.deleted = false
+        try store.upsert([asset])
+        return store
+    }
+
     @MainActor
     func testSettingsPersistAcrossAppStateInstances() throws {
         let keys = [
@@ -1614,6 +1629,45 @@ final class AppStateSelectionTests: XCTestCase {
 
         XCTAssertTrue(BackupService.listBackups(store).isEmpty)
         XCTAssertEqual(app.toastCenter.toasts.last?.message, "备份失败")
+    }
+
+    @MainActor
+    func testAutomaticBackupIsTrackedPerCatalog() throws {
+        let defaults = UserDefaults.standard
+        let keys = [
+            "pc_catalogURL", "pc_openLast", "pc_onboarded",
+            "pc_autoBackupFrequency", "pc_lastAutoBackupAt",
+        ]
+        let saved = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
+        let savedBackupKeys = defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("pc_lastAutoBackupAt.") }
+        let savedBackupValues = Dictionary(uniqueKeysWithValues: savedBackupKeys.map { ($0, defaults.object(forKey: $0)) })
+        defer {
+            for key in keys + savedBackupKeys { defaults.removeObject(forKey: key) }
+            for (key, value) in saved { if let value { defaults.set(value, forKey: key) } }
+            for (key, value) in savedBackupValues { if let value { defaults.set(value, forKey: key) } }
+        }
+        for key in keys + savedBackupKeys { defaults.removeObject(forKey: key) }
+        defaults.set(true, forKey: "pc_openLast")
+        defaults.set("1", forKey: "pc_onboarded")
+        defaults.set("daily", forKey: "pc_autoBackupFrequency")
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-auto-backup-\(UUID().uuidString)")
+        let firstPackage = dir.appendingPathComponent("First.photolibrary")
+        let secondPackage = dir.appendingPathComponent("Second.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let firstStore = try makeCatalogWithOneAsset(at: firstPackage, assetIndex: 0)
+        let secondStore = try makeCatalogWithOneAsset(at: secondPackage, assetIndex: 1)
+
+        defaults.set(firstPackage, forKey: "pc_catalogURL")
+        let firstApp = AppState()
+        XCTAssertTrue(firstApp.hasOpenCatalog)
+        XCTAssertEqual(BackupService.listBackups(firstStore).count, 1)
+
+        defaults.set(secondPackage, forKey: "pc_catalogURL")
+        let secondApp = AppState()
+        XCTAssertTrue(secondApp.hasOpenCatalog)
+
+        XCTAssertEqual(BackupService.listBackups(secondStore).count, 1)
     }
 
     @MainActor

@@ -2023,7 +2023,8 @@ final class AppState {
             return
         }
 
-        let last = UserDefaults.standard.object(forKey: Self.lastAutoBackupKey) as? Date
+        let backupKey = Self.lastAutoBackupKey(for: store.packageURL)
+        let last = UserDefaults.standard.object(forKey: backupKey) as? Date
         if let last, now.timeIntervalSince(last) < interval {
             return
         }
@@ -2031,12 +2032,16 @@ final class AppState {
         do {
             try store.upsert(assets.filter { !$0.isDemo })
             let url = try BackupService.backup(store, at: now)
-            UserDefaults.standard.set(now, forKey: Self.lastAutoBackupKey)
+            UserDefaults.standard.set(now, forKey: backupKey)
             refreshStatusMetrics()
             push("已自动备份目录库 · \(url.lastPathComponent)", "check")
         } catch {
             push("自动备份失败", "warning")
         }
+    }
+
+    private static func lastAutoBackupKey(for packageURL: URL) -> String {
+        lastAutoBackupKey + "." + packageURL.standardizedFileURL.path
     }
 
     func restoreBackup() {
