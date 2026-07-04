@@ -322,7 +322,7 @@ final class AppState {
         assets = a
         albums = DemoData.initialAlbums(a)
         smartAlbums = DemoData.initialSmartAlbums(a)
-        if openLastCatalogOnLaunch, let error = loadExistingCatalog() {
+        if onboarded && openLastCatalogOnLaunch, let error = loadExistingCatalog() {
             push(catalogOpenFailureMessage(error), "warning")
         }
         startVolumeMonitor()
@@ -343,7 +343,7 @@ final class AppState {
     var hasOpenCatalog: Bool { store != nil }
 
     var catalogPath: String {
-        (store?.packageURL ?? configuredCatalogURL).path
+        store?.packageURL.path ?? "未打开目录库"
     }
 
     var recentCatalogs: [RecentCatalog] {
@@ -666,7 +666,7 @@ final class AppState {
         sheet = nil
         resetToDemoCatalog()
         UserDefaults.standard.removeObject(forKey: Self.catalogURLKey)
-        UserDefaults.standard.removeObject(forKey: "pc_onboarded")
+        UserDefaults.standard.set("0", forKey: "pc_onboarded")
         onboarded = false
         push("已关闭目录库", "check")
     }

@@ -276,9 +276,29 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertFalse(app.filterOpen)
         XCTAssertEqual(app.search, "")
         XCTAssertEqual(app.view, .grid)
-        XCTAssertEqual(app.catalogPath, CatalogStore.defaultURL.path)
+        XCTAssertEqual(app.catalogPath, "未打开目录库")
         XCTAssertTrue(app.recentCatalogs.contains { $0.path == package.path })
         XCTAssertEqual(app.toastCenter.toasts.last?.message, "已关闭目录库")
+    }
+
+    @MainActor
+    func testClosedCatalogDoesNotAutoReopenDefaultOnNextLaunch() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-closed-launch-\(UUID().uuidString)")
+        let package = root.appendingPathComponent("Closed.photolibrary")
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try CatalogStore(packageURL: package)
+
+        let defaults = UserDefaults.standard
+        defaults.set(true, forKey: "pc_openLast")
+        defaults.set(package, forKey: "pc_catalogURL")
+        defaults.set("0", forKey: "pc_onboarded")
+
+        let app = AppState()
+
+        XCTAssertFalse(app.hasOpenCatalog)
+        XCTAssertFalse(app.onboarded)
+        XCTAssertEqual(app.catalogPath, "未打开目录库")
     }
 
     @MainActor
