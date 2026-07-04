@@ -23,8 +23,8 @@ struct Asset: Identifiable, Equatable, Sendable {
     var filename: String
     let type: String         // ARW / CR3 / NEF / RAF / DNG / HEIC
     let isRaw: Bool
-    let folderId: String
-    let folderName: String
+    var folderId: String
+    var folderName: String
     var date: Date           // capture date (mutable for batch time shift, §4.2)
     let width: Int
     let height: Int

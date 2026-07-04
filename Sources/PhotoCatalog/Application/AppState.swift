@@ -421,7 +421,10 @@ final class AppState {
 
         // missing/offline detection (§6.4 ORG-003/007)
         let sourceRootsById = sourceRootRecordsById(from: s)
-        let checked = real.map { resolveAssetAccess($0, sourceRootsById: sourceRootsById) }
+        var checked = real.map { resolveAssetAccess($0, sourceRootsById: sourceRootsById) }
+        let repaired = repairSourceRootOwnership(checked, sourceRootsById: sourceRootsById)
+        checked = repaired.assets
+        if !repaired.changed.isEmpty { try? s.upsert(repaired.changed) }
         assets = checked
         for (fid, items) in Dictionary(grouping: checked, by: { $0.folderId }) where
             !folders.contains(where: { $0.id == fid }) {
@@ -523,6 +526,36 @@ final class AppState {
     private func sourceRootRecordsById(from store: CatalogStore) -> [String: SourceRootRecord] {
         let roots = (try? store.loadSourceRoots()) ?? []
         return Dictionary(uniqueKeysWithValues: roots.map { ($0.id, $0) })
+    }
+
+    private func repairSourceRootOwnership(_ loaded: [Asset],
+                                           sourceRootsById: [String: SourceRootRecord])
+    -> (assets: [Asset], changed: [Asset]) {
+        let validSourceIds = Set(sourceRootsById.keys)
+        guard !validSourceIds.isEmpty else { return (loaded, []) }
+
+        let roots = sourceRootsById.values.map { root in
+            (id: root.id,
+             name: root.displayName,
+             path: URL(fileURLWithPath: sourceRootPathsById[root.id] ?? root.pathHint).standardizedFileURL.path)
+        }.sorted { $0.path.count > $1.path.count }
+
+        var updated = loaded
+        var changed: [Asset] = []
+        for index in updated.indices where !updated[index].isDemo && !validSourceIds.contains(updated[index].folderId) {
+            guard let localPath = updated[index].localPath else { continue }
+            let assetPath = URL(fileURLWithPath: localPath).standardizedFileURL.path
+            guard let root = roots.first(where: { Self.path(assetPath, isIn: $0.path) }) else { continue }
+            updated[index].folderId = root.id
+            updated[index].folderName = root.name
+            changed.append(updated[index])
+        }
+        return (updated, changed)
+    }
+
+    private static func path(_ path: String, isIn root: String) -> Bool {
+        let root = root.hasSuffix("/") && root.count > 1 ? String(root.dropLast()) : root
+        return path == root || path.hasPrefix(root + "/")
     }
 
     private func setSourceFolder(id: String, name: String, path: String, status: String) {

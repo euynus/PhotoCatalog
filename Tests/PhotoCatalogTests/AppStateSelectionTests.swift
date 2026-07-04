@@ -1004,6 +1004,59 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testOpeningCatalogRepairsOrphanedSourceFolderIds() throws {
+        let defaults = UserDefaults.standard
+        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
+        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
+        defer {
+            if let previousCatalogURL {
+                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
+            } else {
+                defaults.removeObject(forKey: "pc_catalogURL")
+            }
+            if let previousRecent {
+                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
+            } else {
+                defaults.removeObject(forKey: "pc_recentCatalogs")
+            }
+        }
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-repair-source-id-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let photo = source.appendingPathComponent("orphaned.jpg")
+        try writeTestJPEG(to: photo, black: false)
+
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+
+        var asset = DemoData.assets[0]
+        asset.filename = photo.lastPathComponent
+        asset.folderId = "src-orphan"
+        asset.folderName = "Source"
+        asset.localPath = photo.path
+        asset.status = .ready
+        asset.isDemo = false
+        asset.deleted = false
+        try store.upsert([asset])
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        let repaired = try XCTUnwrap(app.assets.first { $0.filename == photo.lastPathComponent })
+        XCTAssertEqual(repaired.folderId, "source-1")
+        XCTAssertFalse(app.folderTree.contains { $0.id == "src-orphan" })
+        let sourceItem = try XCTUnwrap(app.folderTree.first { $0.id == "source-1" })
+        XCTAssertEqual(app.countForFolderTreeItem(sourceItem), 1)
+        let persisted = try XCTUnwrap(try store.loadAssets().first { $0.filename == photo.lastPathComponent })
+        XCTAssertEqual(persisted.folderId, "source-1")
+    }
+
+    @MainActor
     func testMaintenanceActionsCleanLocalCatalogState() throws {
         let defaults = UserDefaults.standard
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
