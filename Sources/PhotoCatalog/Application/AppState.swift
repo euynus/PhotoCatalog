@@ -2814,7 +2814,7 @@ final class AppState {
         return []
     }
 
-    var hasSelection: Bool { !targetIds.isEmpty }
+    var hasSelection: Bool { onboarded && !targetIds.isEmpty }
     var canApplySelectionToAlbum: Bool { hasSelection }
     var canExportOriginalSelection: Bool { canOperateOnSelectedOriginals }
     var canExportPreviewSelection: Bool { canOperateOnSelectedOriginals }

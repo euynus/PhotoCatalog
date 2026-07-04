@@ -328,6 +328,16 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testWelcomeStateDoesNotExposeHiddenDemoSelection() {
+        let app = AppState()
+        app.onboarded = false
+
+        XCTAssertFalse(app.hasSelection)
+        XCTAssertFalse(app.canApplySelectionToAlbum)
+        XCTAssertFalse(app.canRemoveSelectionFromCurrentAlbum)
+    }
+
+    @MainActor
     func testClosingCatalogIsBlockedDuringImport() {
         let app = AppState()
         app.onboarded = true
