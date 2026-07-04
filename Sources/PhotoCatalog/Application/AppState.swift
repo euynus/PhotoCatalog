@@ -2001,11 +2001,12 @@ final class AppState {
     func runBackup() {
         guard !importing else { push("导入中无法备份目录库", "warning"); return }
         guard let store else { push("无目录库可备份", "warning"); return }
-        try? store.upsert(assets.filter { !$0.isDemo })
-        if let url = try? BackupService.backup(store) {
+        do {
+            try store.upsert(assets.filter { !$0.isDemo })
+            let url = try BackupService.backup(store)
             refreshStatusMetrics()
             push("已备份目录库 · \(url.lastPathComponent)", "check")
-        } else {
+        } catch {
             push("备份失败", "warning")
         }
     }

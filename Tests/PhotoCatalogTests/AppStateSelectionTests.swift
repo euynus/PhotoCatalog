@@ -1581,6 +1581,42 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testRunBackupStopsWhenSavingCatalogFails() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-backup-failure-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        var asset = DemoData.assets[0]
+        let original = source.appendingPathComponent(asset.filename)
+        try Data("image".utf8).write(to: original)
+        asset.localPath = original.path
+        asset.status = .ready
+        asset.isDemo = false
+        asset.deleted = false
+        try store.upsert([asset])
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
+        try db.execChecked("""
+        CREATE TRIGGER fail_backup_upsert BEFORE UPDATE ON assets
+        BEGIN
+          SELECT RAISE(ABORT, 'forced backup save failure');
+        END;
+        """)
+
+        app.runBackup()
+
+        XCTAssertTrue(BackupService.listBackups(store).isEmpty)
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "备份失败")
+    }
+
+    @MainActor
     func testStatusCacheTextUsesNumericZero() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-cache-zero-\(UUID().uuidString)")
         let package = dir.appendingPathComponent("Library.photolibrary")
