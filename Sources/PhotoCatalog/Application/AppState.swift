@@ -1249,7 +1249,15 @@ final class AppState {
         let vision = visionEnabled
         let previewSize = previewMaxPixel
         let readXMP = readXMPSidecar
-        Task { [weak self, coordinator, store, roots, liveAssets, vision, previewSize, readXMP] in
+        let folderNamesById = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0.name) })
+        var sourceInfoByPath: [String: (id: String, name: String)] = [:]
+        for (id, path) in sourceRootPathsById {
+            let name = folderNamesById[id] ?? URL(fileURLWithPath: path).lastPathComponent
+            for alias in PathIdentity.aliases(forPath: path) {
+                sourceInfoByPath[alias] = (id, name)
+            }
+        }
+        Task { [weak self, coordinator, store, roots, liveAssets, vision, previewSize, readXMP, sourceInfoByPath] in
             let delta = await Task.detached(priority: .utility) {
                 // build the path index off the main thread (resolvingSymlinksInPath stats each asset)
                 var knownAssetsByPath: [String: Asset] = [:]
@@ -1264,16 +1272,21 @@ final class AppState {
                 var fresh: [Asset] = []
                 var changed: [Asset] = []
                 for root in roots {
+                    let sourceInfo = PathIdentity.aliases(for: root).lazy.compactMap { sourceInfoByPath[$0] }.first
                     fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
                                                                  mode: .referenced, autoTag: vision,
                                                                  readSidecar: readXMP,
-                                                                 previewMaxPixel: previewSize))
+                                                                 previewMaxPixel: previewSize,
+                                                                 sourceRootId: sourceInfo?.id,
+                                                                 folderName: sourceInfo?.name))
                     changed.append(contentsOf: coordinator.scanChanged(in: root,
                                                                        knownAssetsByPath: knownAssetsByPath,
                                                                        mode: .referenced,
                                                                        autoTag: vision,
                                                                        readSidecar: readXMP,
-                                                                       previewMaxPixel: previewSize))
+                                                                       previewMaxPixel: previewSize,
+                                                                       sourceRootId: sourceInfo?.id,
+                                                                       folderName: sourceInfo?.name))
                 }
                 return (fresh: fresh, changed: changed)
             }.value

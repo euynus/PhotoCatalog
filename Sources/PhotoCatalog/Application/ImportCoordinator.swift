@@ -68,7 +68,8 @@ final class ImportCoordinator: @unchecked Sendable {
 
     /// Incremental: only files not already imported by path (for FSEvents rescans, §12.8).
     func scanNew(in folder: URL, knownPaths: Set<String>, mode: ImportMode = .referenced,
-                 autoTag: Bool = false, readSidecar: Bool = true, previewMaxPixel: Int = 2048) -> [Asset] {
+                 autoTag: Bool = false, readSidecar: Bool = true, previewMaxPixel: Int = 2048,
+                 sourceRootId: String? = nil, folderName: String? = nil) -> [Asset] {
         var knownAliases = knownPaths
         for path in knownPaths {
             knownAliases.formUnion(PathIdentity.aliases(forPath: path))
@@ -77,12 +78,14 @@ final class ImportCoordinator: @unchecked Sendable {
             PathIdentity.aliases(for: $0).isDisjoint(with: knownAliases)
         }
         return process(files, folder: folder, mode: mode, autoTag: autoTag, readSidecar: readSidecar,
-                       previewMaxPixel: previewMaxPixel, control: nil, progress: nil)
+                       previewMaxPixel: previewMaxPixel, control: nil, sourceRootId: sourceRootId,
+                       folderName: folderName, progress: nil)
     }
 
     /// Incremental: reprocess known originals whose quick hash changed so metadata and caches stay fresh.
     func scanChanged(in folder: URL, knownAssetsByPath: [String: Asset], mode: ImportMode = .referenced,
-                     autoTag: Bool = false, readSidecar: Bool = true, previewMaxPixel: Int = 2048) -> [Asset] {
+                     autoTag: Bool = false, readSidecar: Bool = true, previewMaxPixel: Int = 2048,
+                     sourceRootId: String? = nil, folderName: String? = nil) -> [Asset] {
         let files = FileScanner.scan(folder).filter { url in
             let known = PathIdentity.aliases(for: url).lazy.compactMap { knownAssetsByPath[$0] }.first
             guard let known else { return false }
@@ -98,16 +101,18 @@ final class ImportCoordinator: @unchecked Sendable {
             return sizeChanged || modifiedChanged || quickHashChanged
         }
         return process(files, folder: folder, mode: mode, autoTag: autoTag, readSidecar: readSidecar,
-                       previewMaxPixel: previewMaxPixel, control: nil, progress: nil)
+                       previewMaxPixel: previewMaxPixel, control: nil, sourceRootId: sourceRootId,
+                       folderName: folderName, progress: nil)
     }
 
     private func process(_ files: [URL], folder: URL, mode: ImportMode, autoTag: Bool,
                          archiveRule: ManagedArchiveRule = .date, readSidecar: Bool = true,
                          previewMaxPixel: Int, control: ImportControl?,
                          knownAssetsById: [String: Asset] = [:],
+                         sourceRootId: String? = nil, folderName: String? = nil,
                          progress: ((ImportProgress) -> Void)?) -> [Asset] {
-        let folderId = sourceId(forFolder: folder)
-        let folderName = folder.lastPathComponent
+        let folderId = sourceRootId ?? sourceId(forFolder: folder)
+        let folderName = folderName ?? folder.lastPathComponent
         var assets: [Asset] = []
         var prog = ImportProgress(total: files.count, processed: 0, failed: 0)
         for url in files {

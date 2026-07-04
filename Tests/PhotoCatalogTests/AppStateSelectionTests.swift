@@ -957,6 +957,53 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testRescanUsesExistingSourceRootIdentityForNewAssets() async throws {
+        let defaults = UserDefaults.standard
+        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
+        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
+        defer {
+            if let previousCatalogURL {
+                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
+            } else {
+                defaults.removeObject(forKey: "pc_catalogURL")
+            }
+            if let previousRecent {
+                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
+            } else {
+                defaults.removeObject(forKey: "pc_recentCatalogs")
+            }
+        }
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rescan-source-id-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        let photo = source.appendingPathComponent("new-photo.jpg")
+        try writeTestJPEG(to: photo, black: false)
+        app.rescanCurrentSource()
+
+        for _ in 0..<30 where app.assets.allSatisfy({ $0.filename != photo.lastPathComponent }) {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+
+        let imported = try XCTUnwrap(app.assets.first { $0.filename == photo.lastPathComponent })
+        XCTAssertEqual(imported.folderId, "source-1")
+        let sourceItem = try XCTUnwrap(app.folderTree.first { $0.id == "source-1" })
+        XCTAssertEqual(app.countForFolderTreeItem(sourceItem), 1)
+        let persisted = try XCTUnwrap(try store.loadAssets().first { $0.filename == photo.lastPathComponent })
+        XCTAssertEqual(persisted.folderId, "source-1")
+    }
+
+    @MainActor
     func testMaintenanceActionsCleanLocalCatalogState() throws {
         let defaults = UserDefaults.standard
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
