@@ -430,6 +430,32 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testRecentCatalogsHideInvalidPackages() throws {
+        let defaults = UserDefaults.standard
+        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
+        defer {
+            if let previousRecent {
+                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
+            } else {
+                defaults.removeObject(forKey: "pc_recentCatalogs")
+            }
+        }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-recent-catalog-\(UUID().uuidString)")
+        let valid = root.appendingPathComponent("Valid.photolibrary")
+        let invalid = root.appendingPathComponent("Invalid.photolibrary")
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try CatalogStore(packageURL: valid)
+        try FileManager.default.createDirectory(at: invalid, withIntermediateDirectories: true)
+        defaults.set([invalid.path, valid.path], forKey: "pc_recentCatalogs")
+
+        let app = AppState()
+
+        XCTAssertEqual(app.recentCatalogs.map(\.path), [valid.path])
+    }
+
+    @MainActor
     func testClosedCatalogDoesNotAutoReopenDefaultOnNextLaunch() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-closed-launch-\(UUID().uuidString)")

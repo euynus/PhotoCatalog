@@ -353,7 +353,7 @@ final class AppState {
 
     var recentCatalogs: [RecentCatalog] {
         recentCatalogPaths
-            .filter { FileManager.default.fileExists(atPath: $0) }
+            .filter { Self.isValidCatalogSelection(URL(fileURLWithPath: $0)) }
             .map { RecentCatalog(path: $0) }
     }
 
