@@ -325,6 +325,10 @@ final class AppState {
         if onboarded && openLastCatalogOnLaunch, let error = loadExistingCatalog() {
             push(catalogOpenFailureMessage(error), "warning")
         }
+        if onboarded && store == nil {
+            UserDefaults.standard.set("0", forKey: "pc_onboarded")
+            onboarded = false
+        }
         startVolumeMonitor()
         runAutomaticBackupIfNeeded()
         // seed the initial primary/selection from the first visible photo

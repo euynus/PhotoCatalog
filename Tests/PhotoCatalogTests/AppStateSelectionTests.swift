@@ -328,6 +328,23 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testMissingLaunchCatalogReturnsToWelcome() {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-missing-launch-\(UUID().uuidString)")
+            .appendingPathComponent("Missing.photolibrary")
+        let defaults = UserDefaults.standard
+        defaults.set(true, forKey: "pc_openLast")
+        defaults.set(missing, forKey: "pc_catalogURL")
+        defaults.set("1", forKey: "pc_onboarded")
+
+        let app = AppState()
+
+        XCTAssertFalse(app.hasOpenCatalog)
+        XCTAssertFalse(app.onboarded)
+        XCTAssertEqual(app.catalogPath, "未打开目录库")
+    }
+
+    @MainActor
     func testWelcomeStateDoesNotExposeHiddenDemoSelection() {
         let app = AppState()
         app.onboarded = false
