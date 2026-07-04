@@ -1553,7 +1553,12 @@ final class AppState {
 
     private func selectedRealAssetsWithOriginals() -> [Asset] {
         let ids = targetIds
-        return assets.filter { ids.contains($0.id) && !$0.deleted && !$0.isDemo && $0.localPath != nil }
+        let fm = FileManager.default
+        return assets.filter { asset in
+            guard ids.contains(asset.id), !asset.deleted, !asset.isDemo,
+                  let path = asset.localPath else { return false }
+            return fm.fileExists(atPath: path)
+        }
     }
 
     private func selectedAssetsWithExportablePreviews() -> [Asset] {
@@ -1912,9 +1917,9 @@ final class AppState {
             return
         }
         let selected = assets.filter { ids.contains($0.id) && !$0.deleted }
-        let real = selected.filter { !$0.isDemo && $0.localPath != nil }
+        let real = selectedRealAssetsWithOriginals()
         guard !real.isEmpty else {
-            push("演示照片没有本地原件可导出", "warning")
+            push(selected.allSatisfy(\.isDemo) ? "演示照片没有本地原件可导出" : "没有可导出的本地原件", "warning")
             return
         }
         let panel = NSOpenPanel()

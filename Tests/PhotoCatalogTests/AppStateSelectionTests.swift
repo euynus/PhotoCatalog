@@ -282,6 +282,30 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testOriginalActionsRequireExistingLocalFile() throws {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-missing-original-\(UUID().uuidString).jpg")
+
+        let app = AppState()
+        app.onboarded = true
+        var asset = try XCTUnwrap(app.assets.first)
+        asset.localPath = missing.path
+        asset.status = .missing
+        asset.isDemo = false
+        app.assets = [asset]
+        app.primaryId = asset.id
+        app.selectedIds = [asset.id]
+
+        XCTAssertFalse(app.canOperateOnSelectedOriginals)
+        XCTAssertFalse(app.canExportOriginalSelection)
+        XCTAssertFalse(app.canExportPreviewSelection)
+
+        app.exportSelection()
+
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "没有可导出的本地原件")
+    }
+
+    @MainActor
     func testNavigationAndSheetKeyboardGuards() throws {
         let app = AppState()
         app.onboarded = true
