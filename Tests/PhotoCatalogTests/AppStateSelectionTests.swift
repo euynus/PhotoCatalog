@@ -1306,6 +1306,51 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertFalse(imageIsUniformBlack(at: previewURL))
     }
 
+    func testPreviewExportRepairsBlackRawPreviewCache() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-raw-export-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        let export = dir.appendingPathComponent("Export")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let original = source.appendingPathComponent("CANON.CR3")
+        try writeTestJPEG(to: original, black: false)
+
+        let store = try CatalogStore(packageURL: package)
+        let thumbnails = ThumbnailService(store: store)
+        let assetId = "raw-export-test"
+        let previewURL = thumbnails.cachePath(assetId: assetId, kind: .preview2048)
+        try writeTestJPEG(to: previewURL, black: true)
+
+        let base = DemoData.assets[0]
+        let asset = Asset(id: assetId, pid: base.pid, ori: base.ori, thumb: base.thumb, preview: previewURL.path,
+                          filename: original.lastPathComponent, type: "CR3", isRaw: true, folderId: "source-1",
+                          folderName: "Source", date: base.date, width: base.width, height: base.height,
+                          orientation: base.orientation, camera: base.camera, lens: base.lens, focal: base.focal,
+                          aperture: base.aperture, shutter: base.shutter, iso: base.iso,
+                          colorSpace: base.colorSpace, hasICCProfile: base.hasICCProfile, fileMB: base.fileMB,
+                          fileModifiedAt: base.fileModifiedAt, fileCreatedAt: base.fileCreatedAt,
+                          rating: base.rating, flag: base.flag, colorLabel: base.colorLabel,
+                          keywords: base.keywords, title: base.title, caption: base.caption,
+                          author: base.author, copyright: base.copyright, makerNotes: base.makerNotes,
+                          project: base.project, client: base.client, location: base.location, gps: base.gps,
+                          gpsAltitude: base.gpsAltitude, status: .ready, importedAt: base.importedAt,
+                          deleted: base.deleted, localPath: original.path,
+                          captureDateSource: base.captureDateSource, contentHash: base.contentHash,
+                          quickHash: base.quickHash, isDemo: false, faces: base.faces,
+                          perceptualHash: base.perceptualHash)
+
+        XCTAssertTrue(imageIsUniformBlack(at: previewURL))
+        let report = ExportService.exportPreviews([asset], to: export, thumbnails: thumbnails)
+        let exported = export.appendingPathComponent("CANON-preview.jpg")
+
+        XCTAssertEqual(report.copied, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: exported.path))
+        XCTAssertFalse(imageIsUniformBlack(at: previewURL))
+        XCTAssertFalse(imageIsUniformBlack(at: exported))
+    }
+
     @MainActor
     func testReplacingWatchedSourceRootStopsScanningOldFolder() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-watch-replace-\(UUID().uuidString)")

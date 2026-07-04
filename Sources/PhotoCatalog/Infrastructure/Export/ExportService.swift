@@ -236,12 +236,26 @@ enum ExportService {
     private static func previewSource(for asset: Asset, fm: FileManager,
                                       thumbnails: ThumbnailService?,
                                       previewMaxPixel: Int) -> URL? {
+        let original = asset.localPath.map(URL.init(fileURLWithPath:))
+        let originalExists = original.map { fm.fileExists(atPath: $0.path) } ?? false
+        let previewKind = ThumbnailService.previewKind(forCachePath: asset.preview,
+                                                       fallbackMaxPixel: previewMaxPixel)
+
         for path in [asset.preview, asset.thumb] where !path.isEmpty && !path.hasPrefix("http") {
-            if fm.fileExists(atPath: path) { return URL(fileURLWithPath: path) }
+            let cached = URL(fileURLWithPath: path)
+            guard fm.fileExists(atPath: cached.path) else { continue }
+            guard let thumbnails, let original, originalExists,
+                  thumbnails.cachedRepresentationNeedsRegeneration(at: cached,
+                                                                    original: original,
+                                                                    kind: previewKind) else {
+                return cached
+            }
+            if let repaired = thumbnails.ensureCached(from: original, assetId: asset.id, kind: previewKind) {
+                return repaired
+            }
         }
-        guard let thumbnails, let path = asset.localPath, fm.fileExists(atPath: path) else { return nil }
-        let kind = ThumbnailService.previewKind(forCachePath: asset.preview, fallbackMaxPixel: previewMaxPixel)
-        return thumbnails.ensureCached(from: URL(fileURLWithPath: path), assetId: asset.id, kind: kind)
+        guard let thumbnails, let original, originalExists else { return nil }
+        return thumbnails.ensureCached(from: original, assetId: asset.id, kind: previewKind)
     }
 
     private static func jsonDate(_ date: Date?, formatter: ISO8601DateFormatter) -> Any {
