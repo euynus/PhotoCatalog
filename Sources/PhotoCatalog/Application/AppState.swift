@@ -341,6 +341,7 @@ final class AppState {
 
     // ---------- catalog open / load ----------
     var hasOpenCatalog: Bool { store != nil }
+    var canRunCatalogMaintenance: Bool { hasOpenCatalog && !importing }
 
     var catalogPath: String {
         store?.packageURL.path ?? "未打开目录库"
@@ -1379,6 +1380,7 @@ final class AppState {
 
     /// User-invokable rescan of the watched source roots (Cmd+R, §15 / §6.3 IMP-002).
     func rescanCurrentSource() {
+        guard !importing else { push("导入中无法重新扫描", "warning"); return }
         guard coordinator != nil else { push("无已导入的源文件夹", "warning"); return }
         guard !watchedRoots.isEmpty else { push("当前没有可重新扫描的源", "warning"); return }
         push("正在重新扫描…", "refresh")
@@ -1591,7 +1593,7 @@ final class AppState {
 
     // ---------- catalog health / cache (§6.1, §17.3) ----------
     func runHealthCheck() {
-        openOrCreateCatalog()
+        guard !importing else { push("导入中无法运行健康检查", "warning"); return }
         guard let store else { push("无目录库", "warning"); return }
         let report = CatalogHealth.check(store, assets: assets)
         healthReport = report
@@ -1972,7 +1974,7 @@ final class AppState {
 
     // ---------- backup (§6.12) ----------
     func runBackup() {
-        openOrCreateCatalog()
+        guard !importing else { push("导入中无法备份目录库", "warning"); return }
         guard let store else { push("无目录库可备份", "warning"); return }
         try? store.upsert(assets.filter { !$0.isDemo })
         if let url = try? BackupService.backup(store) {
@@ -2014,7 +2016,6 @@ final class AppState {
     func restoreBackup() {
         // never replace the catalog file while an import task still holds the live connection
         guard !importing else { push("导入中无法恢复备份", "warning"); return }
-        openOrCreateCatalog()
         guard let packageURL = store?.packageURL else {
             push("无目录库可恢复", "warning")
             return

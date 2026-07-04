@@ -38,7 +38,7 @@ struct StatusBar: View {
                     Text(app.statusBackupText)
                 }.foregroundStyle(Theme.text3)
             }
-            .buttonStyle(.plain).help("立即备份目录库")
+            .buttonStyle(.plain).disabled(!app.canRunCatalogMaintenance).help("立即备份目录库")
             Text(app.statusCacheText).foregroundStyle(Theme.text3)
         }
         .font(.system(size: 11))

@@ -103,15 +103,15 @@ struct PhotoCatalogCommands: Commands {
         CommandMenu("维护") {
             Button("重新扫描当前源") { app.rescanCurrentSource() }
                 .keyboardShortcut("r", modifiers: .command)
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.canRunCatalogMaintenance)
             Button("立即备份目录库") { app.runBackup() }
                 .keyboardShortcut("b", modifiers: .command)
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.canRunCatalogMaintenance)
             Button("恢复备份…") { app.restoreBackup() }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.canRunCatalogMaintenance)
             Button("运行健康检查") { app.runHealthCheck() }
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.canRunCatalogMaintenance)
         }
     }
 }

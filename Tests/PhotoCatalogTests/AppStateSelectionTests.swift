@@ -340,6 +340,37 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testMaintenanceActionsDoNotReopenClosedCatalog() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-closed-maintenance-\(UUID().uuidString)")
+        let package = root.appendingPathComponent("ClosedMaintenance.photolibrary")
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try CatalogStore(packageURL: package)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        XCTAssertTrue(app.canRunCatalogMaintenance)
+
+        app.closeCatalog()
+
+        XCTAssertFalse(app.hasOpenCatalog)
+        XCTAssertFalse(app.canRunCatalogMaintenance)
+
+        app.runBackup()
+        XCTAssertFalse(app.hasOpenCatalog)
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "无目录库可备份")
+
+        app.runHealthCheck()
+        XCTAssertFalse(app.hasOpenCatalog)
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "无目录库")
+
+        app.restoreBackup()
+        XCTAssertFalse(app.hasOpenCatalog)
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "无目录库可恢复")
+    }
+
+    @MainActor
     func testOpenCatalogPanelFiltersPhotoLibraryPackages() throws {
         let app = AppState()
         let panel = NSOpenPanel()
