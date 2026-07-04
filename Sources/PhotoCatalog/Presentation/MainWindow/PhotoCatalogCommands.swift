@@ -30,7 +30,7 @@ struct PhotoCatalogCommands: Commands {
             Divider()
             Button("设置…") { app.showSettings() }
                 .keyboardShortcut(",", modifiers: .command)
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.onboarded)
         }
 
         CommandMenu("照片") {

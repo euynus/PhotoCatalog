@@ -3277,8 +3277,6 @@ final class AppState {
                     createCatalog()
                 case "o":
                     openCatalog()
-                case ",":
-                    showSettings()
                 default:
                     return false
                 }

@@ -349,6 +349,8 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertTrue(app.showInspector)
         XCTAssertFalse(app.handleKey("0", hasCommand: true))
         XCTAssertEqual(app.thumbSize, 220)
+        XCTAssertFalse(app.handleKey(",", hasCommand: true))
+        XCTAssertNil(app.sheet)
     }
 
     @MainActor
