@@ -949,7 +949,7 @@ final class AppState {
                 select(Selection(type: .folder, id: fid, name: folder.lastPathComponent))
             }
         }
-        if mode == .referenced, !watchedRoots.contains(folder) {
+        if mode == .referenced, (!fresh.isEmpty || skipped > 0), !watchedRoots.contains(folder) {
             watchedRoots.append(folder)
             refreshWatcher()
         }
