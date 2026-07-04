@@ -2614,7 +2614,8 @@ final class AppState {
             push("没有可保存的筛选条件", "warning")
             return
         }
-        guard let name = promptAlbumName(defaultName: defaultFilterSmartAlbumName()) else { return }
+        guard let name = promptAlbumName(defaultName: defaultFilterSmartAlbumName(),
+                                         messageText: "新建智能相册") else { return }
 
         let rule = SmartRule(match: "all", conditions: conditions)
         let count = SmartMatcher.count(assets.filter { !$0.deleted }, rule)
@@ -2969,11 +2970,11 @@ final class AppState {
         }
     }
 
-    private func promptAlbumName(defaultName: String) -> String? {
+    private func promptAlbumName(defaultName: String, messageText: String = "新建相册") -> String? {
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
         field.stringValue = defaultName
         let alert = NSAlert()
-        alert.messageText = "新建相册"
+        alert.messageText = messageText
         alert.accessoryView = field
         alert.addButton(withTitle: "创建")
         alert.addButton(withTitle: "取消")
