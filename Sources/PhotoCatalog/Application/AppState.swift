@@ -1808,6 +1808,10 @@ final class AppState {
     // ---------- export originals (§6.11) ----------
     func exportSelection() {
         let ids = targetIds
+        guard !ids.isEmpty else {
+            push("请先选择照片", "warning")
+            return
+        }
         let selected = assets.filter { ids.contains($0.id) && !$0.deleted }
         let real = selected.filter { !$0.isDemo && $0.localPath != nil }
         guard !real.isEmpty else {
@@ -2716,6 +2720,7 @@ final class AppState {
     }
 
     var canApplySelectionToAlbum: Bool { !targetIds.isEmpty }
+    var canExportSelection: Bool { !targetIds.isEmpty }
     var canRemoveSelectionFromCurrentAlbum: Bool { selection.type == .album && !targetIds.isEmpty }
     var canRemoveSelectedSource: Bool { selectedFolderIsCatalogSource }
     var canReauthorizeSelectedSource: Bool { selectedFolderIsCatalogSource }

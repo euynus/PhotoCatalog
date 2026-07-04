@@ -191,6 +191,21 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testExportSelectionRequiresASelection() {
+        let app = AppState()
+        app.onboarded = true
+
+        XCTAssertTrue(app.canExportSelection)
+
+        app.setSearch("NO_SUCH_PHOTO_123")
+        XCTAssertFalse(app.canExportSelection)
+
+        app.exportSelection()
+
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "请先选择照片")
+    }
+
+    @MainActor
     func testNavigationAndSheetKeyboardGuards() throws {
         let app = AppState()
         app.onboarded = true

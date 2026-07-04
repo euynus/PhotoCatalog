@@ -47,10 +47,10 @@ struct PhotoCatalogCommands: Commands {
             Divider()
             Button("导出选中原件…") { app.exportSelection() }
                 .keyboardShortcut("e", modifiers: .command)
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.canExportSelection)
             Button("导出选中预览图…") { app.exportSelectionPreviews() }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
-                .disabled(app.sheet != nil)
+                .disabled(app.sheet != nil || !app.canExportSelection)
             Divider()
             Button("加入相册…") { app.addSelectionToAlbum() }
                 .disabled(app.sheet != nil || !app.canApplySelectionToAlbum)
