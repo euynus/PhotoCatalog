@@ -135,7 +135,8 @@ struct InspectorView: View {
                     .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line, lineWidth: 1))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 HStack(spacing: 6) {
-                    pathButton("folder", "在访达中显示", warn: false, disabled: a.localPath == nil) {
+                    let canReveal = a.localPath.map { FileManager.default.fileExists(atPath: $0) } ?? false
+                    pathButton("folder", "在访达中显示", warn: false, disabled: !canReveal) {
                         app.revealInFinder(a.id)
                     }
                     if a.status == .missing {
