@@ -604,6 +604,80 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testLargeLibrarySearchAndSortSmoke() {
+        let app = AppState()
+        app.onboarded = true
+        app.assets = Self.largeAssetFixture(count: 100_000)
+        app.albums = []
+        app.smartAlbums = []
+        app.folders = [Folder(id: "perf", name: "Performance")]
+        app.duplicateGroupsCache = []
+        app.filters.minRating = 4
+        app.setSearch("needle")
+        var sort = Sort()
+        sort.field = .name
+        sort.descending = false
+        app.setSort(sort)
+
+        let start = ContinuousClock.now
+        let matches = app.list
+        let elapsed = start.duration(to: .now)
+
+        XCTAssertEqual(matches.count, 1_000)
+        XCTAssertTrue(matches.allSatisfy { $0.rating >= 4 && $0.title.contains("needle") })
+        XCTAssertLessThan(Self.seconds(elapsed), 2.0)
+    }
+
+    private static func seconds(_ duration: Duration) -> Double {
+        let c = duration.components
+        return Double(c.seconds) + Double(c.attoseconds) / 1_000_000_000_000_000_000
+    }
+
+    private static func largeAssetFixture(count: Int) -> [Asset] {
+        let templates = DemoData.assets
+        return (0..<count).map { i in
+            let t = templates[i % templates.count]
+            let hit = i % 100 == 0
+            return Asset(
+                id: "perf-\(i)",
+                pid: t.pid + i,
+                ori: t.ori,
+                thumb: t.thumb,
+                preview: t.preview,
+                filename: String(format: "IMG_%06d.%@", i, t.type),
+                type: t.type,
+                isRaw: t.isRaw,
+                folderId: "perf",
+                folderName: "Performance",
+                date: t.date.addingTimeInterval(Double(i)),
+                width: t.width,
+                height: t.height,
+                orientation: t.orientation,
+                camera: t.camera,
+                lens: t.lens,
+                focal: t.focal,
+                aperture: t.aperture,
+                shutter: t.shutter,
+                iso: t.iso,
+                colorSpace: t.colorSpace,
+                fileMB: t.fileMB,
+                rating: hit ? 4 : i % 4,
+                flag: t.flag,
+                colorLabel: t.colorLabel,
+                keywords: hit ? ["needle"] : t.keywords,
+                title: hit ? "needle \(i)" : "",
+                caption: t.caption,
+                project: t.project,
+                client: t.client,
+                location: t.location,
+                gps: t.gps,
+                status: .ready,
+                importedAt: t.importedAt.addingTimeInterval(Double(i))
+            )
+        }
+    }
+
+    @MainActor
     func testSettingsPersistAcrossAppStateInstances() throws {
         let keys = [
             "pc_importMode", "pc_managedArchive", "pc_importDuplicateStrategy",
