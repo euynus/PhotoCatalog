@@ -47,22 +47,23 @@ final class ThumbLoader: ObservableObject {
         return c
     }()
     private var task: Task<Void, Never>?
-    private var loadedURL: String?
+    private var loadedKey: String?
 
     deinit {
         task?.cancel()
     }
 
     func load(_ source: String, maxPixel: Int) {
+        let key = "\(source)|\(maxPixel)"
         // already showing / fetching this exact source
-        if source == loadedURL { return }
-        loadedURL = source
+        if key == loadedKey { return }
+        loadedKey = key
         task?.cancel()
         task = nil
         failed = false
 
         if source.isEmpty { image = nil; failed = true; return }
-        if let cached = Self.cache.object(forKey: source as NSString) {
+        if let cached = Self.cache.object(forKey: key as NSString) {
             image = cached
             return
         }
@@ -82,14 +83,15 @@ final class ThumbLoader: ObservableObject {
             guard !Task.isCancelled else { return }
             let decoded = await Self.decodeImage(data, maxPixel: maxPixel)
             guard !Task.isCancelled else { return }
-            self?.finish(source, decoded)
+            self?.finish(key, decoded)
         }
     }
 
     /// Warm the shared cache (e.g. loupe neighbors) without touching any
     /// loader's published state — a failed warm-up stays silent.
     static func prefetch(_ source: String, maxPixel: Int) async {
-        guard !source.isEmpty, cache.object(forKey: source as NSString) == nil else { return }
+        let key = "\(source)|\(maxPixel)"
+        guard !source.isEmpty, cache.object(forKey: key as NSString) == nil else { return }
         let data: Data?
         if source.hasPrefix("http") {
             guard let url = URL(string: source) else { return }
@@ -98,7 +100,7 @@ final class ThumbLoader: ObservableObject {
             data = await readImageData(at: source)
         }
         guard let img = await decodeImage(data, maxPixel: maxPixel) else { return }
-        cache.setObject(img, forKey: source as NSString, cost: cost(of: img))
+        cache.setObject(img, forKey: key as NSString, cost: cost(of: img))
     }
 
     /// Decode + downsample to the display pixel budget off the main thread;
@@ -118,10 +120,10 @@ final class ThumbLoader: ObservableObject {
         }.value
     }
 
-    private func finish(_ source: String, _ img: NSImage?) {
-        guard loadedURL == source else { return }
+    private func finish(_ key: String, _ img: NSImage?) {
+        guard loadedKey == key else { return }
         if let img {
-            Self.cache.setObject(img, forKey: source as NSString, cost: Self.cost(of: img))
+            Self.cache.setObject(img, forKey: key as NSString, cost: Self.cost(of: img))
             withAnimation(.easeOut(duration: 0.3)) { image = img }
         } else {
             failed = true
