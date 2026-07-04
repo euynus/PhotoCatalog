@@ -340,6 +340,8 @@ final class AppState {
     }
 
     // ---------- catalog open / load ----------
+    var hasOpenCatalog: Bool { store != nil }
+
     var catalogPath: String {
         (store?.packageURL ?? configuredCatalogURL).path
     }
@@ -647,6 +649,26 @@ final class AppState {
         panel.delegate = panelDelegate
         guard panel.runModal() == .OK, let selected = panel.url else { return }
         openCatalog(at: selected)
+    }
+
+    func closeCatalog() {
+        guard !importing else {
+            push("导入中无法关闭目录库", "warning")
+            return
+        }
+        guard hasOpenCatalog else { return }
+
+        closeCurrentCatalog()
+        search = ""
+        filters = Filters()
+        filterOpen = false
+        view = .grid
+        sheet = nil
+        resetToDemoCatalog()
+        UserDefaults.standard.removeObject(forKey: Self.catalogURLKey)
+        UserDefaults.standard.removeObject(forKey: "pc_onboarded")
+        onboarded = false
+        push("已关闭目录库", "check")
     }
 
     func configureCatalogOpenPanel(_ panel: NSOpenPanel) {

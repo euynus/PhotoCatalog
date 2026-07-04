@@ -13,11 +13,15 @@ private actor ObservationFlag {
 
 final class AppStateSelectionTests: XCTestCase {
     private var previousOpenLast: Any?
+    private var previousCatalogURL: Any?
+    private var previousOnboarded: Any?
     private var previousPinnedSidebarItems: Any?
 
     override func setUp() {
         super.setUp()
         previousOpenLast = UserDefaults.standard.object(forKey: "pc_openLast")
+        previousCatalogURL = UserDefaults.standard.object(forKey: "pc_catalogURL")
+        previousOnboarded = UserDefaults.standard.object(forKey: "pc_onboarded")
         previousPinnedSidebarItems = UserDefaults.standard.object(forKey: "pc_pinnedSidebarItems")
         UserDefaults.standard.set(false, forKey: "pc_openLast")
         UserDefaults.standard.removeObject(forKey: "pc_pinnedSidebarItems")
@@ -28,6 +32,16 @@ final class AppStateSelectionTests: XCTestCase {
             UserDefaults.standard.set(previousOpenLast, forKey: "pc_openLast")
         } else {
             UserDefaults.standard.removeObject(forKey: "pc_openLast")
+        }
+        if let previousCatalogURL {
+            UserDefaults.standard.set(previousCatalogURL, forKey: "pc_catalogURL")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "pc_catalogURL")
+        }
+        if let previousOnboarded {
+            UserDefaults.standard.set(previousOnboarded, forKey: "pc_onboarded")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "pc_onboarded")
         }
         if let previousPinnedSidebarItems {
             UserDefaults.standard.set(previousPinnedSidebarItems, forKey: "pc_pinnedSidebarItems")
@@ -234,6 +248,48 @@ final class AppStateSelectionTests: XCTestCase {
         app.openCatalog()
 
         XCTAssertEqual(app.toastCenter.toasts.last?.message, "导入中无法切换目录库")
+        XCTAssertEqual(app.toastCenter.toasts.last?.icon, "warning")
+    }
+
+    @MainActor
+    func testCloseCatalogReturnsToWelcomeAndKeepsRecentEntry() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-close-catalog-\(UUID().uuidString)")
+        let package = root.appendingPathComponent("CloseMe.photolibrary")
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try CatalogStore(packageURL: package)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        XCTAssertTrue(app.hasOpenCatalog)
+
+        app.sheet = "settings"
+        app.filterOpen = true
+        app.search = "charlie"
+        app.view = .loupe
+        app.closeCatalog()
+
+        XCTAssertFalse(app.hasOpenCatalog)
+        XCTAssertFalse(app.onboarded)
+        XCTAssertNil(app.sheet)
+        XCTAssertFalse(app.filterOpen)
+        XCTAssertEqual(app.search, "")
+        XCTAssertEqual(app.view, .grid)
+        XCTAssertEqual(app.catalogPath, CatalogStore.defaultURL.path)
+        XCTAssertTrue(app.recentCatalogs.contains { $0.path == package.path })
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "已关闭目录库")
+    }
+
+    @MainActor
+    func testClosingCatalogIsBlockedDuringImport() {
+        let app = AppState()
+        app.onboarded = true
+        app.importing = true
+
+        app.closeCatalog()
+
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "导入中无法关闭目录库")
         XCTAssertEqual(app.toastCenter.toasts.last?.icon, "warning")
     }
 

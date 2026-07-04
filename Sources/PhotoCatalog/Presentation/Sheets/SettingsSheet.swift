@@ -281,6 +281,7 @@ struct SettingsSheet: View {
                 HStack(spacing: 9) {
                     ghostButton("plus", "新建目录库", small: true) { app.createCatalog() }
                     ghostButton("folder", "打开目录库", small: true) { app.openCatalog() }
+                    ghostButton("close", "关闭目录库", small: true) { app.closeCatalog() }
                     ghostButton("trash", "清除最近", small: true) { app.clearRecentCatalogs() }
                 }
                 Text(app.catalogPath)

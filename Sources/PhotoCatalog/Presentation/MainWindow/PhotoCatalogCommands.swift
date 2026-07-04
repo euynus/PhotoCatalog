@@ -20,6 +20,8 @@ struct PhotoCatalogCommands: Commands {
             Button("打开目录库…") { app.openCatalog() }
                 .keyboardShortcut("o", modifiers: .command)
                 .disabled(app.importing || app.sheet != nil)
+            Button("关闭目录库") { app.closeCatalog() }
+                .disabled(app.importing || app.sheet != nil || !app.hasOpenCatalog)
             Button("导入照片文件夹…") { app.addFolder() }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(app.sheet != nil)
