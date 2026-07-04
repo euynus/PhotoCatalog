@@ -1481,11 +1481,13 @@ final class AppState {
 
     // ---------- XMP sidecar write (§6.5 META-007) ----------
     func writeXMPForSelection() {
-        let real = assets.filter { targetIds.contains($0.id) && !$0.isDemo && $0.localPath != nil }
+        let ids = targetIds
+        let real = assets.filter { ids.contains($0.id) && hasExistingOriginal($0) }
         guard !real.isEmpty else { push("仅可为已导入照片写入 XMP", "warning"); return }
         var count = 0
         for a in real {
-            let url = XMPSidecar.sidecarURL(for: URL(fileURLWithPath: a.localPath!))
+            guard let path = a.localPath else { continue }
+            let url = XMPSidecar.sidecarURL(for: URL(fileURLWithPath: path))
             if XMPSidecar.write(a, to: url) { count += 1 }
         }
         let failures = real.count - count
@@ -1553,12 +1555,14 @@ final class AppState {
 
     private func selectedRealAssetsWithOriginals() -> [Asset] {
         let ids = targetIds
-        let fm = FileManager.default
         return assets.filter { asset in
-            guard ids.contains(asset.id), !asset.deleted, !asset.isDemo,
-                  let path = asset.localPath else { return false }
-            return fm.fileExists(atPath: path)
+            ids.contains(asset.id) && hasExistingOriginal(asset)
         }
+    }
+
+    private func hasExistingOriginal(_ asset: Asset) -> Bool {
+        guard !asset.deleted, !asset.isDemo, let path = asset.localPath else { return false }
+        return FileManager.default.fileExists(atPath: path)
     }
 
     private func selectedAssetsWithExportablePreviews() -> [Asset] {
@@ -2195,8 +2199,9 @@ final class AppState {
         // mirror user-metadata edits to XMP sidecars when enabled (§17.4 META-007)
         if autoWriteXMPSidecar {
             var sidecarFailures = 0
-            for a in changed where a.localPath != nil {
-                if !XMPSidecar.write(a, to: XMPSidecar.sidecarURL(for: URL(fileURLWithPath: a.localPath!))) {
+            for a in changed where hasExistingOriginal(a) {
+                guard let path = a.localPath else { continue }
+                if !XMPSidecar.write(a, to: XMPSidecar.sidecarURL(for: URL(fileURLWithPath: path))) {
                     sidecarFailures += 1
                 }
             }

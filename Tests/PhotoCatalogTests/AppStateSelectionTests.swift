@@ -306,6 +306,69 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testXMPWritesRequireExistingLocalFile() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-missing-xmp-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let missing = dir.appendingPathComponent("missing.jpg")
+        let sidecar = XMPSidecar.sidecarURL(for: missing)
+
+        let app = AppState()
+        app.onboarded = true
+        var asset = try XCTUnwrap(app.assets.first)
+        asset.localPath = missing.path
+        asset.status = .missing
+        asset.isDemo = false
+        app.assets = [asset]
+        app.primaryId = asset.id
+        app.selectedIds = [asset.id]
+
+        app.writeXMPForSelection()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sidecar.path))
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "仅可为已导入照片写入 XMP")
+    }
+
+    @MainActor
+    func testAutoXMPWritesSkipMissingOriginals() throws {
+        let defaults = UserDefaults.standard
+        let previousAutoWrite = defaults.object(forKey: "pc_autoWriteXMP")
+        defer {
+            if let previousAutoWrite {
+                defaults.set(previousAutoWrite, forKey: "pc_autoWriteXMP")
+            } else {
+                defaults.removeObject(forKey: "pc_autoWriteXMP")
+            }
+        }
+
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-auto-missing-xmp-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        let missing = dir.appendingPathComponent("missing.jpg")
+        let sidecar = XMPSidecar.sidecarURL(for: missing)
+        let store = try CatalogStore(packageURL: package)
+        var asset = try XCTUnwrap(DemoData.assets.first)
+        asset.localPath = missing.path
+        asset.status = .missing
+        asset.isDemo = false
+        asset.deleted = false
+        try store.upsert([asset])
+
+        let app = AppState()
+        app.onboarded = true
+        app.autoWriteXMPSidecar = true
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        app.mutateAsset(asset.id) { $0.rating = 5 }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sidecar.path))
+    }
+
+    @MainActor
     func testNavigationAndSheetKeyboardGuards() throws {
         let app = AppState()
         app.onboarded = true
