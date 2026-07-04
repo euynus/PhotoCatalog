@@ -711,6 +711,27 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testBatchRenameRequiresExistingLocalFile() throws {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-missing-rename-\(UUID().uuidString).jpg")
+
+        let app = AppState()
+        app.onboarded = true
+        var asset = try XCTUnwrap(app.assets.first)
+        asset.localPath = missing.path
+        asset.status = .missing
+        asset.isDemo = false
+        app.assets = [asset]
+        app.primaryId = asset.id
+        app.selectedIds = [asset.id]
+
+        app.batchRename(template: "RENAMED")
+
+        XCTAssertEqual(app.assets.first?.localPath, missing.path)
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "仅可重命名已导入照片")
+    }
+
+    @MainActor
     func testKeywordActionsExpandDedupeAndFilterSelection() throws {
         let app = AppState()
         app.onboarded = true
