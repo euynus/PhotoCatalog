@@ -1077,6 +1077,47 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testDuplicateTrashResolutionRequiresConfirmation() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-duplicate-trash-confirm-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        var assets = Array(DemoData.assets.prefix(2))
+        for index in assets.indices {
+            let file = dir.appendingPathComponent("duplicate-\(index).jpg")
+            try Data("duplicate-\(index)".utf8).write(to: file)
+            assets[index].isDemo = false
+            assets[index].deleted = false
+            assets[index].localPath = file.path
+            assets[index].contentHash = "same-content"
+        }
+
+        let app = AppState()
+        app.onboarded = true
+        app.assets = assets
+        let group = DuplicateGroup(id: "dg-confirm-trash", method: "contentHash", score: 1, items: assets)
+        app.duplicateGroupsCache = [group]
+
+        var prompts: [(String, String, String)] = []
+        app.confirmDestructiveAction = { title, message, confirmTitle in
+            prompts.append((title, message, confirmTitle))
+            return false
+        }
+
+        XCTAssertFalse(app.resolveDuplicateGroup(group, keepId: assets[0].id, action: .moveToTrash))
+        XCTAssertEqual(prompts.count, 1)
+        XCTAssertEqual(prompts[0].0, "移到废纸篓？")
+        XCTAssertTrue(prompts[0].1.contains("1 个重复照片"))
+        XCTAssertEqual(prompts[0].2, "移到废纸篓")
+        XCTAssertTrue(app.assets.allSatisfy { !$0.deleted })
+        XCTAssertEqual(app.duplicateGroups.count, 1)
+        for asset in assets {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: asset.localPath ?? ""))
+        }
+    }
+
+    @MainActor
     func testAlbumCountsIgnoreSoftDeletedAssets() throws {
         let app = AppState()
         app.onboarded = true

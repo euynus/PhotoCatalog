@@ -2196,13 +2196,26 @@ final class AppState {
     @discardableResult
     func resolveDuplicateGroup(_ group: DuplicateGroup, keepId: String?,
                                action: DuplicateResolutionAction) -> Bool {
+        let resolvedKeepId = keepId ?? group.items.first?.id
+        guard let resolvedKeepId, group.items.contains(where: { $0.id == resolvedKeepId }) else {
+            push("重复文件处理失败", "warning")
+            return false
+        }
         guard group.items.contains(where: { !$0.isDemo }) else {
             push("演示重复组不可处理", "warning")
             return false
         }
+        if action == .moveToTrash {
+            let count = group.items.filter { $0.id != resolvedKeepId && !$0.isDemo }.count
+            guard confirmDestructiveAction(
+                "移到废纸篓？",
+                "将把 \(count) 个重复照片的磁盘原件移到废纸篓，并从目录库移除对应记录。",
+                "移到废纸篓"
+            ) else { return false }
+        }
 
         var updated = assets
-        let report = DuplicateResolutionService.resolve(group, keepId: keepId, in: &updated, action: action)
+        let report = DuplicateResolutionService.resolve(group, keepId: resolvedKeepId, in: &updated, action: action)
         guard !report.removedIds.isEmpty else {
             push(report.failedCount > 0 ? "重复文件处理失败" : "没有可处理的重复文件", "warning")
             return false
