@@ -1720,6 +1720,73 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testRecoveredImportDoesNotPublishUnsavedAssetsWhenCatalogSaveFails() async throws {
+        let defaults = UserDefaults.standard
+        let previousOnboarded = defaults.object(forKey: "pc_onboarded")
+        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
+        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
+        defer {
+            if let previousOnboarded {
+                defaults.set(previousOnboarded, forKey: "pc_onboarded")
+            } else {
+                defaults.removeObject(forKey: "pc_onboarded")
+            }
+            if let previousCatalogURL {
+                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
+            } else {
+                defaults.removeObject(forKey: "pc_catalogURL")
+            }
+            if let previousRecent {
+                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
+            } else {
+                defaults.removeObject(forKey: "pc_recentCatalogs")
+            }
+        }
+        defaults.removeObject(forKey: "pc_onboarded")
+        defaults.removeObject(forKey: "pc_catalogURL")
+        defaults.removeObject(forKey: "pc_recentCatalogs")
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-import-save-failure-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let photo = source.appendingPathComponent("new-photo.jpg")
+        try writeTestJPEG(to: photo, black: false)
+
+        let store = try CatalogStore(packageURL: package)
+        let sessionId = UUID().uuidString
+        try store.startImportSession(id: sessionId)
+        try store.startImportJob(id: "job-failing-import", sessionId: sessionId, sourcePath: source.path,
+                                 mode: .referenced, autoTag: false, archiveRule: .date,
+                                 readSidecar: true, previewMaxPixel: 2048)
+        let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
+        try db.execChecked("""
+        CREATE TRIGGER fail_import_insert BEFORE INSERT ON assets
+        BEGIN
+          SELECT RAISE(ABORT, 'forced import save failure');
+        END;
+        """)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        try await waitUntil("Timed out waiting for import save failure", timeout: 2) {
+            app.importRun?.errorMessage?.contains("写入目录库失败") == true
+        }
+        XCTAssertEqual(app.importRun?.phase, .failed)
+        XCTAssertFalse(app.importing)
+        XCTAssertFalse(app.assets.contains { $0.filename == photo.lastPathComponent })
+        XCTAssertTrue(try store.loadAssets().isEmpty)
+        XCTAssertTrue(try store.loadSourceRoots().isEmpty)
+
+        app.rescanCurrentSource()
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "当前没有可重新扫描的源")
+    }
+
+    @MainActor
     func testRescanDoesNotReimportCanonicalPathAliases() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rescan-alias-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")

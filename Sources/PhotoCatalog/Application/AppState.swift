@@ -921,42 +921,46 @@ final class AppState {
             strategy: importDuplicateStrategy)
         let fresh = applyPostImportMetadata(to: dedup.fresh)
         let skipped = dedup.skipped
-        if !fresh.isEmpty {
-            replaceAssetsForMutation(assets + fresh)
-        }
-        // fresh is already in the in-memory `assets`; if the catalog write fails the photos
-        // would silently vanish on the next load, so track it and report honestly below.
         var persistFailed = false
         do {
             try store.upsert(fresh)
         } catch {
             persistFailed = true
         }
+        if !fresh.isEmpty && !persistFailed {
+            replaceAssetsForMutation(assets + fresh)
+        }
         var rootId: String?
         if let fid = fresh.first?.folderId ?? imported.first?.folderId ?? sourceId {
             rootId = fid
-            if persistSourceRoot && (!fresh.isEmpty || skipped > 0) {
-                try? store.addSourceRoot(id: fid, displayName: folder.lastPathComponent,
-                                         path: folder.path, bookmark: bookmark, mode: mode,
-                                         volumeIdentifier: VolumeMonitor.volumeIdentifier(for: folder))
-            }
-            sourceManagementModesById[fid] = mode.rawValue
-            if fresh.isEmpty && skipped == 0 {
+            if persistFailed && skipped == 0 {
                 folders.removeAll { $0.id == fid }
                 sourceRootPathsById.removeValue(forKey: fid)
                 sourceManagementModesById.removeValue(forKey: fid)
             } else {
-                setSourceFolder(id: fid, name: folder.lastPathComponent, path: folder.path, status: "online")
-                select(Selection(type: .folder, id: fid, name: folder.lastPathComponent))
+                if persistSourceRoot && (!fresh.isEmpty || skipped > 0) {
+                    try? store.addSourceRoot(id: fid, displayName: folder.lastPathComponent,
+                                             path: folder.path, bookmark: bookmark, mode: mode,
+                                             volumeIdentifier: VolumeMonitor.volumeIdentifier(for: folder))
+                }
+                sourceManagementModesById[fid] = mode.rawValue
+                if fresh.isEmpty && skipped == 0 {
+                    folders.removeAll { $0.id == fid }
+                    sourceRootPathsById.removeValue(forKey: fid)
+                    sourceManagementModesById.removeValue(forKey: fid)
+                } else {
+                    setSourceFolder(id: fid, name: folder.lastPathComponent, path: folder.path, status: "online")
+                    select(Selection(type: .folder, id: fid, name: folder.lastPathComponent))
+                }
             }
         }
-        if mode == .referenced, (!fresh.isEmpty || skipped > 0), !watchedRoots.contains(folder) {
+        if !persistFailed, mode == .referenced, (!fresh.isEmpty || skipped > 0), !watchedRoots.contains(folder) {
             watchedRoots.append(folder)
             refreshWatcher()
         }
 
         if var run = importRun, run.id == runId {
-            run.phase = .complete
+            run.phase = persistFailed ? .failed : .complete
             run.total = max(run.total, imported.count + run.failed)
             run.processed = imported.count
             run.skipped = skipped
@@ -982,7 +986,9 @@ final class AppState {
                                  lockedAt: nil, lastError: importRun?.errorMessage)
             self.activeImportJobId = nil
         }
-        applyPostImportAlbum(assetIds: fresh.map(\.id))
+        if !persistFailed {
+            applyPostImportAlbum(assetIds: fresh.map(\.id))
+        }
         recomputeDuplicates()
         enforceCacheLimitIfNeeded()
         backfillThumbnails()
