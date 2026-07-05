@@ -377,6 +377,28 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testExportFinishRequiresSameCatalog() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-export-guard-\(UUID().uuidString)")
+        let firstPackage = dir.appendingPathComponent("First.photolibrary")
+        let secondPackage = dir.appendingPathComponent("Second.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try makeCatalogWithOneAsset(at: firstPackage, assetIndex: 0)
+        _ = try makeCatalogWithOneAsset(at: secondPackage, assetIndex: 1)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: firstPackage))
+        let toastCount = app.toastCenter.toasts.count
+
+        XCTAssertFalse(app.finishOriginalExport((ExportReport(copied: 1), true),
+                                                xmp: false,
+                                                expectedCatalogURL: secondPackage))
+        XCTAssertFalse(app.finishPreviewExport(ExportReport(copied: 1),
+                                               expectedCatalogURL: secondPackage))
+        XCTAssertEqual(app.toastCenter.toasts.count, toastCount)
+    }
+
+    @MainActor
     func testOriginalActionsRequireExistingLocalFile() throws {
         let missing = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-missing-original-\(UUID().uuidString).jpg")

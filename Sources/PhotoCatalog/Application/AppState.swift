@@ -2108,7 +2108,9 @@ final class AppState {
         let directoryStructure = exportDirectoryStructure
         let albumNamesByAssetId = exportAlbumNamesByAssetId()
         let sourceRootPathsByFolderId = exportSourceRootPathsByFolderId()
-        Task { [weak self, real, dest, xmp, directoryStructure, albumNamesByAssetId, sourceRootPathsByFolderId] in
+        let exportCatalogURL = store?.packageURL
+        Task { [weak self, real, dest, xmp, directoryStructure,
+                 albumNamesByAssetId, sourceRootPathsByFolderId, exportCatalogURL] in
             let result = await Task.detached(priority: .userInitiated) {
                 let report = ExportService.copyOriginals(real, to: dest, xmp: xmp,
                                                          directoryStructure: directoryStructure,
@@ -2118,14 +2120,23 @@ final class AppState {
                 let csvOK = ExportService.exportMetadataCSV(real, to: dest.appendingPathComponent("metadata.csv"))
                 return (report: report, metadataOK: jsonOK && csvOK)
             }.value
-            let xmpNote = xmp
-                ? (result.report.xmpFailed > 0 ? " · \(result.report.xmpFailed) 个 XMP 失败" : " · 含 XMP")
-                : ""
-            self?.push("已导出 \(result.report.copied) 张原件"
-                       + (result.report.failed > 0 ? " · \(result.report.failed) 失败" : "")
-                       + xmpNote
-                       + (result.metadataOK ? " · 含元数据" : " · 元数据失败"), "export")
+            self?.finishOriginalExport(result, xmp: xmp, expectedCatalogURL: exportCatalogURL)
         }
+    }
+
+    @discardableResult
+    func finishOriginalExport(_ result: (report: ExportReport, metadataOK: Bool),
+                              xmp: Bool,
+                              expectedCatalogURL: URL? = nil) -> Bool {
+        if let expectedCatalogURL, store?.packageURL != expectedCatalogURL { return false }
+        let xmpNote = xmp
+            ? (result.report.xmpFailed > 0 ? " · \(result.report.xmpFailed) 个 XMP 失败" : " · 含 XMP")
+            : ""
+        push("已导出 \(result.report.copied) 张原件"
+             + (result.report.failed > 0 ? " · \(result.report.failed) 失败" : "")
+             + xmpNote
+             + (result.metadataOK ? " · 含元数据" : " · 元数据失败"), "export")
+        return true
     }
 
     func exportSelectionPreviews() {
@@ -2142,17 +2153,25 @@ final class AppState {
 
         let thumbnails = coordinator?.thumbnails
         let previewSize = previewMaxPixel
-        Task { [weak self, selected, dest, thumbnails, previewSize] in
+        let exportCatalogURL = store?.packageURL
+        Task { [weak self, selected, dest, thumbnails, previewSize, exportCatalogURL] in
             let report = await Task.detached(priority: .userInitiated) {
                 ExportService.exportPreviews(selected, to: dest,
                                              thumbnails: thumbnails,
                                              previewMaxPixel: previewSize)
             }.value
-            self?.push("已导出 \(report.copied) 张预览图"
-                       + (report.failed > 0 ? " · \(report.failed) 失败" : "")
-                       + (report.skipped > 0 ? " · \(report.skipped) 跳过" : ""),
-                       report.failed > 0 ? "warning" : "export")
+            self?.finishPreviewExport(report, expectedCatalogURL: exportCatalogURL)
         }
+    }
+
+    @discardableResult
+    func finishPreviewExport(_ report: ExportReport, expectedCatalogURL: URL? = nil) -> Bool {
+        if let expectedCatalogURL, store?.packageURL != expectedCatalogURL { return false }
+        push("已导出 \(report.copied) 张预览图"
+             + (report.failed > 0 ? " · \(report.failed) 失败" : "")
+             + (report.skipped > 0 ? " · \(report.skipped) 跳过" : ""),
+             report.failed > 0 ? "warning" : "export")
+        return true
     }
 
     private func exportAlbumNamesByAssetId() -> [String: String] {
