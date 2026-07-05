@@ -138,6 +138,40 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(app.assets.first { $0.id == id }?.colorLabel, .blue)
     }
 
+    @MainActor
+    func testRatingShortcutDoesNotPublishUnsavedChanges() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-rating-save-failure-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        var asset = try XCTUnwrap(DemoData.assets.first)
+        asset.isDemo = false
+        asset.deleted = false
+        asset.rating = 0
+        try store.upsert([asset])
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.primaryId = asset.id
+        app.selectedIds = [asset.id]
+
+        let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
+        try db.execChecked("""
+        CREATE TRIGGER fail_rating_update BEFORE UPDATE ON assets
+        BEGIN
+          SELECT RAISE(ABORT, 'forced rating save failure');
+        END;
+        """)
+
+        XCTAssertFalse(app.handleKey("5", hasCommand: false))
+        XCTAssertEqual(app.assets.first { $0.id == asset.id }?.rating, 0)
+        XCTAssertEqual(try store.loadAssets().first { $0.id == asset.id }?.rating, 0)
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "保存失败，更改未写入目录库")
+    }
+
     func testExposureFormattingHidesUnknownValues() {
         XCTAssertEqual(formatFocalLength(0), "—")
         XCTAssertEqual(formatApertureValue(0), "—")

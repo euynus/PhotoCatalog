@@ -1480,10 +1480,10 @@ final class AppState {
         guard totalMinutes != 0 else { return }
         let ids = targetIds
         guard !ids.isEmpty else { return }
-        mutate(ids) {
+        guard mutate(ids, {
             $0.date = $0.date.addingTimeInterval(Double(totalMinutes) * 60)
             $0.captureDateSource = "手动调整"
-        }
+        }) else { return }
         let absT = abs(totalMinutes)
         push("已调整 \(ids.count) 张拍摄时间 \(totalMinutes > 0 ? "+" : "-")\(absT / 60)时\(absT % 60)分", "clock")
     }
@@ -1492,10 +1492,10 @@ final class AppState {
     func setCaptureDate(_ date: Date) {
         let ids = targetIds
         guard !ids.isEmpty else { return }
-        mutate(ids) {
+        guard mutate(ids, {
             $0.date = date
             $0.captureDateSource = "手动设置"
-        }
+        }) else { return }
         push("已将 \(ids.count) 张拍摄时间设为指定时间", "clock")
     }
 
@@ -1533,11 +1533,15 @@ final class AppState {
             push("重命名失败", "warning")
             return
         }
+        var saved = 0
         for (id, url) in map {
-            mutateAsset(id) { $0.filename = url.lastPathComponent; $0.localPath = url.path }
+            if mutateAsset(id, { $0.filename = url.lastPathComponent; $0.localPath = url.path }) {
+                saved += 1
+            }
         }
-        push("已重命名 \(map.count) 张照片" + (map.count < real.count ? " · \(real.count - map.count) 失败" : ""),
-             map.count < real.count ? "warning" : "check")
+        guard saved > 0 else { return }
+        push("已重命名 \(saved) 张照片" + (saved < real.count ? " · \(real.count - saved) 失败" : ""),
+             saved < real.count ? "warning" : "check")
     }
 
     var canOperateOnSelectedOriginals: Bool {
@@ -1571,10 +1575,12 @@ final class AppState {
             let report = await Task.detached(priority: .userInitiated) {
                 OriginalFileOperationService.perform(operation, assets: real, destination: destination)
             }.value
-            if operation == .move {
-                self?.applyMovedOriginalLocations(report.updatedLocations)
-            }
-            self?.pushOriginalFileOperationReport(report, operation: operation)
+            let locationsSaved = operation != .move
+                || report.moved == 0
+                || (self?.applyMovedOriginalLocations(report.updatedLocations) ?? true)
+            let persistenceFailed = !locationsSaved
+            self?.pushOriginalFileOperationReport(report, operation: operation,
+                                                  persistenceFailed: persistenceFailed)
         }
     }
 
@@ -1615,8 +1621,9 @@ final class AppState {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    private func applyMovedOriginalLocations(_ locations: [String: URL]) {
-        guard !locations.isEmpty else { return }
+    @discardableResult
+    private func applyMovedOriginalLocations(_ locations: [String: URL]) -> Bool {
+        guard !locations.isEmpty else { return true }
         let ids = Set(locations.keys)
         var updated = assets
         for index in updated.indices {
@@ -1628,18 +1635,21 @@ final class AppState {
             updated[index].fileCreatedAt = attrs?[.creationDate] as? Date
             updated[index].status = .ready
         }
+        guard persist(ids, in: updated) else { return false }
         replaceAssetsForMutation(updated)
-        persist(ids)
+        return true
     }
 
     private func pushOriginalFileOperationReport(_ report: OriginalFileOperationReport,
-                                                 operation: OriginalFileOperation) {
+                                                 operation: OriginalFileOperation,
+                                                 persistenceFailed: Bool = false) {
         let completed = operation == .move ? report.moved : report.copied
         let verb = operation == .move ? "移动" : "复制"
         push("已\(verb) \(completed) 个原件"
              + (report.failed > 0 ? " · \(report.failed) 失败" : "")
-             + (report.skipped > 0 ? " · \(report.skipped) 跳过" : ""),
-             report.failed > 0 ? "warning" : "check")
+             + (report.skipped > 0 ? " · \(report.skipped) 跳过" : "")
+             + (persistenceFailed ? " · 目录库保存失败" : ""),
+             report.failed > 0 || persistenceFailed ? "warning" : "check")
     }
 
     // ---------- catalog health / cache (§6.1, §17.3) ----------
@@ -2292,8 +2302,8 @@ final class AppState {
             return false
         }
 
+        guard persist(report.removedIds, in: updated) else { return false }
         replaceAssetsForMutation(updated)
-        persist(report.removedIds)
         purgeCacheFiles(forAssetIds: report.removedIds)
         duplicateGroupsCache.removeAll { $0.id == group.id }
         recomputeDuplicates()
@@ -2305,9 +2315,11 @@ final class AppState {
         return report.failedCount == 0
     }
 
-    private func persist(_ ids: Set<String>) {
-        guard let store else { return }
-        let changed = assets.filter { ids.contains($0.id) && !$0.isDemo }
+    @discardableResult
+    private func persist(_ ids: Set<String>, in sourceAssets: [Asset]? = nil) -> Bool {
+        let snapshot = sourceAssets ?? assets
+        let changed = snapshot.filter { ids.contains($0.id) && !$0.isDemo }
+        guard let store else { return true }
         if !changed.isEmpty {
             // this is the single funnel for every metadata edit and the soft-delete-on-trash;
             // a swallowed failure here desyncs the catalog from disk, so surface it (§16.2).
@@ -2315,6 +2327,7 @@ final class AppState {
                 try store.upsert(changed)
             } catch {
                 push("保存失败，更改未写入目录库", "warning")
+                return false
             }
         }
         // mirror user-metadata edits to XMP sidecars when enabled (§17.4 META-007)
@@ -2330,6 +2343,7 @@ final class AppState {
                 push("\(sidecarFailures) 个 XMP sidecar 写入失败", "warning")
             }
         }
+        return true
     }
 
     // ---------- toasts ----------
@@ -2968,35 +2982,42 @@ final class AppState {
     }
 
     /// Apply an in-place edit to the current selection (or an explicit set).
-    func mutate(_ ids: Set<String>? = nil, _ transform: (inout Asset) -> Void) {
+    @discardableResult
+    func mutate(_ ids: Set<String>? = nil, _ transform: (inout Asset) -> Void) -> Bool {
         let target = ids ?? targetIds
-        guard !target.isEmpty else { return }
+        guard !target.isEmpty else { return false }
         var updated = assets
         for i in updated.indices where target.contains(updated[i].id) {
             transform(&updated[i])
         }
+        guard persist(target, in: updated) else { return false }
         replaceAssetsForMutation(updated)
-        persist(target)
         ensurePrimaryValid()
+        return true
     }
 
-    func mutateAsset(_ id: String, _ transform: (inout Asset) -> Void) {
-        guard let i = assetIndex[id] else { return }
+    @discardableResult
+    func mutateAsset(_ id: String, _ transform: (inout Asset) -> Void) -> Bool {
+        guard let i = assetIndex[id] else { return false }
         var updated = assets
         transform(&updated[i])
+        guard persist([id], in: updated) else { return false }
         replaceAssetsForMutation(updated)
-        persist([id])
         ensurePrimaryValid()
+        return true
     }
 
-    func setRating(_ n: Int) { mutate { $0.rating = n } }
-    func setFlag(_ f: Flag) { mutate { $0.flag = f } }
-    func setColor(_ c: ColorLabel?) { mutate { $0.colorLabel = c } }
+    @discardableResult
+    func setRating(_ n: Int) -> Bool { mutate { $0.rating = n } }
+    @discardableResult
+    func setFlag(_ f: Flag) -> Bool { mutate { $0.flag = f } }
+    @discardableResult
+    func setColor(_ c: ColorLabel?) -> Bool { mutate { $0.colorLabel = c } }
 
     @discardableResult
     func applyRatingShortcut(_ rating: Int) -> Bool {
         guard (0...5).contains(rating), !targetIds.isEmpty else { return false }
-        setRating(rating)
+        guard setRating(rating) else { return false }
         if rating == 0 {
             push("已清除评分")
         } else {
@@ -3021,7 +3042,7 @@ final class AppState {
         let sourceRootPath = sourceRootPathsById[folderId]
         let ids = Set(indexed.map(\.id))
         if !ids.isEmpty {
-            mutate(ids) { $0.deleted = true }
+            guard mutate(ids, { $0.deleted = true }) else { return }
             purgeCacheFiles(forAssetIds: ids)
         }
         try? store?.removeSourceRoot(id: folderId)
@@ -3103,8 +3124,8 @@ final class AppState {
             changedIds.insert(updated[index].id)
         }
         guard !changedIds.isEmpty else { return }
+        guard persist(changedIds, in: updated) else { return }
         replaceAssetsForMutation(updated)
-        persist(changedIds)
     }
 
     func createAlbumFromSelection() {
@@ -3234,7 +3255,7 @@ final class AppState {
         let attrs = try? FileManager.default.attributesOfItem(atPath: replacement.path)
         let size = (attrs?[.size] as? Int64) ?? 0
         let meta = MetadataReader.read(replacement)
-        mutateAsset(id) {
+        guard mutateAsset(id, {
             $0.localPath = replacement.path
             $0.filename = replacement.lastPathComponent
             $0.fileMB = Double(size) / (1024 * 1024)
@@ -3245,7 +3266,7 @@ final class AppState {
             $0.quickHash = HashService.quickHash(replacement, fileSize: size)
             $0.contentHash = HashService.contentHash(replacement)
             $0.status = .ready
-        }
+        }) else { return }
         recomputeDuplicates()
         push("已重新定位原件", "link")
     }
@@ -3266,7 +3287,7 @@ final class AppState {
     func removeSelected() {
         let ids = targetIds
         guard !ids.isEmpty else { return }
-        mutate(ids) { $0.deleted = true }
+        guard mutate(ids, { $0.deleted = true }) else { return }
         purgeCacheFiles(forAssetIds: ids)
         push("已从目录库移除 \(ids.count) 张（原件保留）", "trash")
         selectedIds = []
@@ -3334,11 +3355,18 @@ final class AppState {
             }.value
 
             if !result.trashed.isEmpty {
-                self?.mutate(result.trashed) { $0.deleted = true }
-                self?.purgeCacheFiles(forAssetIds: result.trashed)
-                self?.selectedIds.subtract(result.trashed)
-                self?.ensurePrimaryValid()
-                self?.recomputeDuplicates()
+                let saved = self?.mutate(result.trashed, { $0.deleted = true }) ?? false
+                if saved {
+                    self?.purgeCacheFiles(forAssetIds: result.trashed)
+                    self?.selectedIds.subtract(result.trashed)
+                    self?.ensurePrimaryValid()
+                    self?.recomputeDuplicates()
+                }
+                self?.push("已移到废纸篓 \(result.trashed.count) 张"
+                           + (result.failed > 0 ? " · \(result.failed) 失败" : "")
+                           + (!saved ? " · 目录库保存失败" : ""),
+                           result.failed > 0 || !saved ? "warning" : "check")
+                return
             }
             self?.push("已移到废纸篓 \(result.trashed.count) 张"
                        + (result.failed > 0 ? " · \(result.failed) 失败" : ""),
@@ -3521,25 +3549,32 @@ final class AppState {
             guard applyRatingShortcut(0) else { return false }
         case "p":
             guard !targetIds.isEmpty else { return false }
-            setFlag(.pick); push("标记为精选", "flag")
+            guard setFlag(.pick) else { return false }
+            push("标记为精选", "flag")
         case "x":
             guard !targetIds.isEmpty else { return false }
-            setFlag(.reject); push("标记为拒绝", "reject")
+            guard setFlag(.reject) else { return false }
+            push("标记为拒绝", "reject")
         case "u":
             guard !targetIds.isEmpty else { return false }
-            setFlag(.none); push("已清除旗标")
+            guard setFlag(.none) else { return false }
+            push("已清除旗标")
         case "6":
             guard !targetIds.isEmpty else { return false }
-            setColor(.red); push("颜色标签：红", "tag")
+            guard setColor(.red) else { return false }
+            push("颜色标签：红", "tag")
         case "7":
             guard !targetIds.isEmpty else { return false }
-            setColor(.yellow); push("颜色标签：黄", "tag")
+            guard setColor(.yellow) else { return false }
+            push("颜色标签：黄", "tag")
         case "8":
             guard !targetIds.isEmpty else { return false }
-            setColor(.green); push("颜色标签：绿", "tag")
+            guard setColor(.green) else { return false }
+            push("颜色标签：绿", "tag")
         case "9":
             guard !targetIds.isEmpty else { return false }
-            setColor(.blue); push("颜色标签：蓝", "tag")
+            guard setColor(.blue) else { return false }
+            push("颜色标签：蓝", "tag")
         case "f":
             toggleFilterBar()
         case "g":
