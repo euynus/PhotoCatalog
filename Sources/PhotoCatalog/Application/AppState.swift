@@ -1755,12 +1755,12 @@ final class AppState {
     }
 
     func rebuildThumbnails() {
-        guard let coordinator else { push("无已导入照片", "warning"); return }
+        guard let coordinator, let packageURL = store?.packageURL else { push("无已导入照片", "warning"); return }
         let real = thumbnailMaintenanceAssets
         guard !real.isEmpty else { push("无已导入照片", "warning"); return }
         push("正在重建缩略图…", "refresh")
         let previewSize = previewMaxPixel
-        Task { [weak self, coordinator, real, previewSize] in
+        Task { [weak self, coordinator, real, previewSize, packageURL] in
             await Task.detached(priority: .utility) {
                 for a in real {
                     if let path = a.localPath {
@@ -1775,10 +1775,17 @@ final class AppState {
                     }
                 }
             }.value
-            self?.invalidateThumbnailCache()
-            self?.enforceCacheLimitIfNeeded()
-            self?.push("缩略图已重建", "check")
+            self?.finishThumbnailRebuild(expectedCatalogURL: packageURL)
         }
+    }
+
+    @discardableResult
+    func finishThumbnailRebuild(expectedCatalogURL: URL? = nil) -> Bool {
+        if let expectedCatalogURL, store?.packageURL != expectedCatalogURL { return false }
+        invalidateThumbnailCache()
+        enforceCacheLimitIfNeeded()
+        push("缩略图已重建", "check")
+        return true
     }
 
     @ObservationIgnored private var isBackfilling = false

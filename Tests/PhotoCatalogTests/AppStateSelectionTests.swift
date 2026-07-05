@@ -1428,6 +1428,27 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testThumbnailRebuildFinishRequiresSameCatalog() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-thumbnail-rebuild-guard-\(UUID().uuidString)")
+        let firstPackage = dir.appendingPathComponent("First.photolibrary")
+        let secondPackage = dir.appendingPathComponent("Second.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try makeCatalogWithOneAsset(at: firstPackage, assetIndex: 0)
+        _ = try makeCatalogWithOneAsset(at: secondPackage, assetIndex: 1)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: firstPackage))
+        let generation = app.thumbnailCacheGeneration
+        let toastCount = app.toastCenter.toasts.count
+
+        XCTAssertFalse(app.finishThumbnailRebuild(expectedCatalogURL: secondPackage))
+        XCTAssertEqual(app.thumbnailCacheGeneration, generation)
+        XCTAssertEqual(app.toastCenter.toasts.count, toastCount)
+    }
+
+    @MainActor
     func testClearingSecurityBookmarksRequiresSourceReauthorization() throws {
         let defaults = UserDefaults.standard
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
