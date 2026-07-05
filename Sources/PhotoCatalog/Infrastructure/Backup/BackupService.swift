@@ -3,8 +3,9 @@
 // ============================================================
 import Foundation
 
-enum BackupError: Error {
+enum BackupError: Error, Equatable {
     case backupNotFound
+    case invalidBackup
 }
 
 enum BackupService {
@@ -41,6 +42,12 @@ enum BackupService {
         let temp = packageURL.appendingPathComponent("catalog.restore.tmp")
         try? fm.removeItem(at: temp)
         try fm.copyItem(at: backup, to: temp)
+        defer {
+            for path in [temp.path, temp.path + "-wal", temp.path + "-shm"] {
+                try? fm.removeItem(atPath: path)
+            }
+        }
+        guard isValidBackupDatabase(temp) else { throw BackupError.invalidBackup }
         if fm.fileExists(atPath: live.path) {
             _ = try fm.replaceItemAt(live, withItemAt: temp, backupItemName: nil)
         } else {
@@ -49,6 +56,19 @@ enum BackupService {
         // drop stale WAL/SHM sidecars only after the live DB replacement succeeds
         for sidecar in ["catalog.sqlite-wal", "catalog.sqlite-shm"] {
             try? fm.removeItem(at: packageURL.appendingPathComponent(sidecar))
+        }
+    }
+
+    private static func isValidBackupDatabase(_ url: URL) -> Bool {
+        do {
+            let db = try Database(path: url.path)
+            let rows = try db.query("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name IN ('assets', 'schema_migrations');
+            """)
+            return Set(rows.compactMap { $0.text("name") }) == ["assets", "schema_migrations"]
+        } catch {
+            return false
         }
     }
 }
