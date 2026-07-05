@@ -3432,19 +3432,18 @@ final class AppState {
 
     /// Move the given originals to the Trash and remove their catalog records (no extra prompt).
     private func performTrashOriginals(_ real: [Asset]) {
-        Task { [weak self, real] in
+        guard let trashCatalogURL = store?.packageURL else {
+            push("无目录库", "warning")
+            return
+        }
+        Task { [weak self, real, trashCatalogURL] in
             let result = await Task.detached(priority: .userInitiated) {
                 OriginalFileOperationService.trashOriginals(real)
             }.value
 
-            if !result.trashedIds.isEmpty {
-                let saved = self?.mutate(result.trashedIds, { $0.deleted = true }) ?? false
-                if saved {
-                    self?.purgeCacheFiles(forAssetIds: result.trashedIds)
-                    self?.selectedIds.subtract(result.trashedIds)
-                    self?.ensurePrimaryValid()
-                    self?.recomputeDuplicates()
-                } else {
+            guard let self,
+                  self.applyTrashedOriginals(result, expectedCatalogURL: trashCatalogURL) else {
+                if !result.trashedIds.isEmpty {
                     let rolledBack = await Task.detached(priority: .userInitiated) {
                         OriginalFileOperationService.rollBackTrash(result.locations)
                     }.value
@@ -3452,17 +3451,30 @@ final class AppState {
                                + (rolledBack > 0 ? " · 已回滚 \(rolledBack) 个原件" : " · 回滚失败")
                                + " · 目录库保存失败",
                                "warning")
-                    return
                 }
-                self?.push("已移到废纸篓 \(result.trashedIds.count) 张"
-                           + (result.failed > 0 ? " · \(result.failed) 失败" : ""),
-                           result.failed > 0 ? "warning" : "check")
                 return
             }
-            self?.push("已移到废纸篓 \(result.trashedIds.count) 张"
-                       + (result.failed > 0 ? " · \(result.failed) 失败" : ""),
-                       result.failed > 0 ? "warning" : "check")
         }
+    }
+
+    @discardableResult
+    func applyTrashedOriginals(_ result: OriginalTrashReport, expectedCatalogURL: URL? = nil) -> Bool {
+        guard !result.trashedIds.isEmpty else {
+            push("已移到废纸篓 0 张"
+                 + (result.failed > 0 ? " · \(result.failed) 失败" : ""),
+                 result.failed > 0 ? "warning" : "check")
+            return true
+        }
+        if let expectedCatalogURL, store?.packageURL != expectedCatalogURL { return false }
+        guard mutate(result.trashedIds, { $0.deleted = true }) else { return false }
+        purgeCacheFiles(forAssetIds: result.trashedIds)
+        selectedIds.subtract(result.trashedIds)
+        ensurePrimaryValid()
+        recomputeDuplicates()
+        push("已移到废纸篓 \(result.trashedIds.count) 张"
+             + (result.failed > 0 ? " · \(result.failed) 失败" : ""),
+             result.failed > 0 ? "warning" : "check")
+        return true
     }
 
     // ---------- compare ----------

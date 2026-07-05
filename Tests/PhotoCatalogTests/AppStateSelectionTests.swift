@@ -2644,6 +2644,28 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testTrashedOriginalWriteRequiresSameCatalog() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-trash-catalog-guard-\(UUID().uuidString)")
+        let firstPackage = dir.appendingPathComponent("First.photolibrary")
+        let secondPackage = dir.appendingPathComponent("Second.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let firstStore = try makeCatalogWithOneAsset(at: firstPackage, assetIndex: 0)
+        _ = try makeCatalogWithOneAsset(at: secondPackage, assetIndex: 1)
+        let asset = try XCTUnwrap(try firstStore.loadAssets().first)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: firstPackage))
+
+        var report = OriginalTrashReport()
+        report.trashedIds = [asset.id]
+        XCTAssertFalse(app.applyTrashedOriginals(report, expectedCatalogURL: secondPackage))
+        XCTAssertFalse(app.assets.first { $0.id == asset.id }?.deleted ?? true)
+        XCTAssertFalse(try firstStore.loadAssets().first { $0.id == asset.id }?.deleted ?? true)
+    }
+
+    @MainActor
     func testSourcePriorityReordersRealCatalogFolders() throws {
         let defaults = UserDefaults.standard
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
