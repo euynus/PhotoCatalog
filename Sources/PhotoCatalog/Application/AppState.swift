@@ -1874,9 +1874,16 @@ final class AppState {
     func clearCache() {
         guard let store else { push("无目录库", "warning"); return }
         let fm = FileManager.default
-        try? fm.removeItem(at: store.cacheURL)
-        for dir in [store.thumb256URL, store.thumb512URL, store.preview1600URL, store.preview2048URL] {
-            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        do {
+            if fm.fileExists(atPath: store.cacheURL.path) {
+                try fm.removeItem(at: store.cacheURL)
+            }
+            for dir in [store.thumb256URL, store.thumb512URL, store.preview1600URL, store.preview2048URL] {
+                try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            }
+        } catch {
+            push("清理缓存失败", "warning")
+            return
         }
         invalidateThumbnailCache()
         refreshStatusMetrics()

@@ -2293,6 +2293,33 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testClearCacheReportsRemovalFailure() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-cache-clear-failure-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer {
+            try? setUserImmutableFlag(package.appendingPathComponent("Cache"), enabled: false)
+            try? FileManager.default.removeItem(at: dir)
+        }
+
+        let store = try CatalogStore(packageURL: package)
+        let cacheFile = store.thumb256URL.appendingPathComponent("stale.jpg")
+        try Data("cache".utf8).write(to: cacheFile)
+        try setUserImmutableFlag(store.cacheURL, enabled: true)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        let generation = app.thumbnailCacheGeneration
+
+        app.clearCache()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cacheFile.path))
+        XCTAssertEqual(app.thumbnailCacheGeneration, generation)
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "清理缓存失败")
+        XCTAssertEqual(app.toastCenter.toasts.last?.icon, "warning")
+    }
+
+    @MainActor
     func testDestructiveMaintenanceCancelKeepsLocalState() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-maintenance-cancel-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
@@ -2835,5 +2862,16 @@ final class AppStateSelectionTests: XCTestCase {
             index += bytesPerPixel
         }
         return true
+    }
+
+    private func setUserImmutableFlag(_ url: URL, enabled: Bool) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/chflags")
+        process.arguments = [enabled ? "uchg" : "nouchg", url.path]
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            throw NSError(domain: "PhotoCatalogTests.chflags", code: Int(process.terminationStatus))
+        }
     }
 }
