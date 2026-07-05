@@ -41,11 +41,11 @@ enum DBError: Error, CustomStringConvertible {
     }
 }
 
-// @unchecked Sendable: the system SQLite library is built in serialized threading
-// mode, and in this app all db access is funnelled through the main thread anyway.
+// @unchecked Sendable: access to the SQLite handle and statement cache is serialized below.
 final class Database: @unchecked Sendable {
     private var db: OpaquePointer?
-    // prepared-statement cache (keyed by SQL); db access is single-threaded so this is safe.
+    private let lock = NSRecursiveLock()
+    // prepared-statement cache (keyed by SQL); db access is serialized so this is safe.
     // prepare_v2 statements auto-reprepare on schema change, so cached statements survive migrations.
     private var statementCache: [String: OpaquePointer] = [:]
     let path: String
@@ -63,13 +63,17 @@ final class Database: @unchecked Sendable {
     }
 
     deinit {
+        lock.lock()
+        defer { lock.unlock() }
         for stmt in statementCache.values { sqlite3_finalize(stmt) }
         sqlite3_close(db)
     }
 
     @discardableResult
     func exec(_ sql: String) -> Bool {
-        sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK
+        locked {
+            sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK
+        }
     }
 
     func execChecked(_ sql: String) throws {
@@ -80,62 +84,70 @@ final class Database: @unchecked Sendable {
     /// the WAL was fully flushed. Unlike `PRAGMA wal_checkpoint`, this reports busy/partial
     /// checkpoints (which would otherwise leave recent commits only in the -wal sidecar).
     func walCheckpointTruncate() -> Bool {
-        sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil) == SQLITE_OK
+        locked {
+            sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil) == SQLITE_OK
+        }
     }
 
     func run(_ sql: String, _ params: [SQLValue] = []) throws {
-        let stmt = try preparedStatement(sql, params)
-        defer { sqlite3_reset(stmt); sqlite3_clear_bindings(stmt) }
-        let rc = sqlite3_step(stmt)
-        guard rc == SQLITE_DONE || rc == SQLITE_ROW else {
-            throw DBError.step(String(cString: sqlite3_errmsg(db)))
+        try locked {
+            let stmt = try preparedStatement(sql, params)
+            defer { sqlite3_reset(stmt); sqlite3_clear_bindings(stmt) }
+            let rc = sqlite3_step(stmt)
+            guard rc == SQLITE_DONE || rc == SQLITE_ROW else {
+                throw DBError.step(String(cString: sqlite3_errmsg(db)))
+            }
         }
     }
 
     func query(_ sql: String, _ params: [SQLValue] = []) throws -> [Row] {
-        let stmt = try preparedStatement(sql, params)
-        defer { sqlite3_reset(stmt); sqlite3_clear_bindings(stmt) }
-        var rows: [Row] = []
-        let cols = Int(sqlite3_column_count(stmt))
-        // column names are stable for the statement — read them once, not per row
-        let names = (0..<cols).map { String(cString: sqlite3_column_name(stmt, Int32($0))) }
-        while true {
-            let rc = sqlite3_step(stmt)
-            if rc == SQLITE_DONE { return rows }
-            guard rc == SQLITE_ROW else {
-                throw DBError.step(String(cString: sqlite3_errmsg(db)))
-            }
-            var row = Row(minimumCapacity: cols)
-            for c in 0..<cols {
-                let i = Int32(c)
-                let name = names[c]
-                switch sqlite3_column_type(stmt, i) {
-                case SQLITE_INTEGER: row[name] = .int(Int(sqlite3_column_int64(stmt, i)))
-                case SQLITE_FLOAT: row[name] = .double(sqlite3_column_double(stmt, i))
-                case SQLITE_TEXT: row[name] = .text(String(cString: sqlite3_column_text(stmt, i)))
-                case SQLITE_BLOB:
-                    if let bytes = sqlite3_column_blob(stmt, i) {
-                        row[name] = .blob(Data(bytes: bytes, count: Int(sqlite3_column_bytes(stmt, i))))
-                    } else { row[name] = .null }
-                default: row[name] = .null
+        try locked {
+            let stmt = try preparedStatement(sql, params)
+            defer { sqlite3_reset(stmt); sqlite3_clear_bindings(stmt) }
+            var rows: [Row] = []
+            let cols = Int(sqlite3_column_count(stmt))
+            // column names are stable for the statement — read them once, not per row
+            let names = (0..<cols).map { String(cString: sqlite3_column_name(stmt, Int32($0))) }
+            while true {
+                let rc = sqlite3_step(stmt)
+                if rc == SQLITE_DONE { return rows }
+                guard rc == SQLITE_ROW else {
+                    throw DBError.step(String(cString: sqlite3_errmsg(db)))
                 }
+                var row = Row(minimumCapacity: cols)
+                for c in 0..<cols {
+                    let i = Int32(c)
+                    let name = names[c]
+                    switch sqlite3_column_type(stmt, i) {
+                    case SQLITE_INTEGER: row[name] = .int(Int(sqlite3_column_int64(stmt, i)))
+                    case SQLITE_FLOAT: row[name] = .double(sqlite3_column_double(stmt, i))
+                    case SQLITE_TEXT: row[name] = .text(String(cString: sqlite3_column_text(stmt, i)))
+                    case SQLITE_BLOB:
+                        if let bytes = sqlite3_column_blob(stmt, i) {
+                            row[name] = .blob(Data(bytes: bytes, count: Int(sqlite3_column_bytes(stmt, i))))
+                        } else { row[name] = .null }
+                    default: row[name] = .null
+                    }
+                }
+                rows.append(row)
             }
-            rows.append(row)
         }
     }
 
     func transaction(_ body: () throws -> Void) throws {
-        guard exec("BEGIN;") else { throw DBError.step(String(cString: sqlite3_errmsg(db))) }
-        do {
-            try body()
-        } catch {
-            exec("ROLLBACK;")
-            throw error
-        }
-        guard exec("COMMIT;") else {
-            let message = String(cString: sqlite3_errmsg(db))
-            exec("ROLLBACK;")
-            throw DBError.step(message)
+        try locked {
+            guard exec("BEGIN;") else { throw DBError.step(String(cString: sqlite3_errmsg(db))) }
+            do {
+                try body()
+            } catch {
+                exec("ROLLBACK;")
+                throw error
+            }
+            guard exec("COMMIT;") else {
+                let message = String(cString: sqlite3_errmsg(db))
+                exec("ROLLBACK;")
+                throw DBError.step(message)
+            }
         }
     }
 
@@ -177,5 +189,11 @@ final class Database: @unchecked Sendable {
             }
         }
         return stmt
+    }
+
+    private func locked<T>(_ body: () throws -> T) rethrows -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
     }
 }
