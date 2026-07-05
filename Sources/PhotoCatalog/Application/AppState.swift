@@ -1627,12 +1627,23 @@ final class AppState {
     func runHealthCheck() {
         guard !importing else { push("导入中无法运行健康检查", "warning"); return }
         guard let store else { push("无目录库", "warning"); return }
-        let report = CatalogHealth.check(store, assets: assets)
+        let packageURL = store.packageURL
+        let snapshot = assets
+        Task { [weak self, store, packageURL, snapshot] in
+            let report = await Task.detached(priority: .utility) {
+                CatalogHealth.check(store, assets: snapshot)
+            }.value
+            guard let self, self.store?.packageURL == packageURL else { return }
+            self.applyHealthReport(report)
+            self.push(report.summary, report.isHealthy ? "check" : "warning")
+        }
+    }
+
+    private func applyHealthReport(_ report: HealthReport) {
         healthReport = report
         statusMetrics = StatusMetrics(cacheBytes: report.cacheBytes,
                                       lastBackupDate: statusMetrics.lastBackupDate,
                                       backupCount: report.backupCount)
-        push(report.summary, report.isHealthy ? "check" : "warning")
     }
 
     private func refreshStatusMetrics() {
@@ -1872,13 +1883,22 @@ final class AppState {
 
     func pruneCacheToLimit() {
         guard let store else { push("无目录库", "warning"); return }
-        let report = CacheService.prune(store.cacheURL, maxBytes: cacheLimitBytes)
-        healthReport = CatalogHealth.check(store, assets: assets)
-        refreshStatusMetrics()
-        if report.removedFiles == 0 {
-            push("缓存已在 \(cacheLimitMB) MB 上限内", "check")
-        } else {
-            push("已清理缓存 \(formatCacheMB(report.removedBytes)) · \(report.removedFiles) 个文件", "trash")
+        let packageURL = store.packageURL
+        let snapshot = assets
+        let maxBytes = cacheLimitBytes
+        let limitMB = cacheLimitMB
+        Task { [weak self, store, packageURL, snapshot, maxBytes, limitMB] in
+            let result = await Task.detached(priority: .utility) {
+                let report = CacheService.prune(store.cacheURL, maxBytes: maxBytes)
+                return (report, CatalogHealth.check(store, assets: snapshot))
+            }.value
+            guard let self, self.store?.packageURL == packageURL else { return }
+            self.applyHealthReport(result.1)
+            if result.0.removedFiles == 0 {
+                self.push("缓存已在 \(limitMB) MB 上限内", "check")
+            } else {
+                self.push("已清理缓存 \(self.formatCacheMB(result.0.removedBytes)) · \(result.0.removedFiles) 个文件", "trash")
+            }
         }
     }
 
@@ -1888,10 +1908,16 @@ final class AppState {
 
     private func enforceCacheLimitIfNeeded() {
         guard let store else { return }
-        let report = CacheService.prune(store.cacheURL, maxBytes: cacheLimitBytes)
-        if report.removedFiles > 0 {
-            healthReport = CatalogHealth.check(store, assets: assets)
-            refreshStatusMetrics()
+        let packageURL = store.packageURL
+        let snapshot = assets
+        let maxBytes = cacheLimitBytes
+        Task { [weak self, store, packageURL, snapshot, maxBytes] in
+            let result = await Task.detached(priority: .utility) {
+                let report = CacheService.prune(store.cacheURL, maxBytes: maxBytes)
+                return report.removedFiles > 0 ? CatalogHealth.check(store, assets: snapshot) : nil
+            }.value
+            guard let self, let report = result, self.store?.packageURL == packageURL else { return }
+            self.applyHealthReport(report)
         }
     }
 

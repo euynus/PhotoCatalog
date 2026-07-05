@@ -52,6 +52,19 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    private func waitUntil(_ message: String, timeout: TimeInterval = 1,
+                           condition: @MainActor () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTFail(message)
+        throw NSError(domain: "PhotoCatalogTests.Wait", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    @MainActor
     func testCompareSelectionTracksSearchResults() {
         let app = AppState()
         app.onboarded = true
@@ -1874,7 +1887,7 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
-    func testStatusCacheTextUsesNumericZero() throws {
+    func testStatusCacheTextUsesNumericZero() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-cache-zero-\(UUID().uuidString)")
         let package = dir.appendingPathComponent("Library.photolibrary")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -1886,7 +1899,43 @@ final class AppStateSelectionTests: XCTestCase {
 
         app.runHealthCheck()
 
+        try await waitUntil("Timed out waiting for health check status") {
+            app.statusCacheText == "缓存 0 KB"
+        }
         XCTAssertEqual(app.statusCacheText, "缓存 0 KB")
+    }
+
+    @MainActor
+    func testPruneCacheToLimitUpdatesStatusAsynchronously() async throws {
+        let defaults = UserDefaults.standard
+        let previousLimit = defaults.object(forKey: "pc_cacheLimitMB")
+        defer {
+            if let previousLimit {
+                defaults.set(previousLimit, forKey: "pc_cacheLimitMB")
+            } else {
+                defaults.removeObject(forKey: "pc_cacheLimitMB")
+            }
+        }
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-cache-prune-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try CatalogStore(packageURL: package)
+        let cacheFile = store.thumb256URL.appendingPathComponent("oversize.jpg")
+        try Data(repeating: 1, count: 2 * 1024 * 1024).write(to: cacheFile)
+
+        let app = AppState()
+        app.onboarded = true
+        app.cacheLimitMB = 1
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        app.pruneCacheToLimit()
+
+        try await waitUntil("Timed out waiting for cache pruning") {
+            app.statusCacheText == "缓存 0 KB"
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cacheFile.path))
+        XCTAssertEqual(app.toastCenter.toasts.last?.icon, "trash")
     }
 
     @MainActor

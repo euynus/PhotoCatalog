@@ -3,7 +3,7 @@
 // ============================================================
 import Foundation
 
-struct HealthReport {
+struct HealthReport: Sendable {
     var dbIntegrityOK = true
     var assetCount = 0
     var missingOriginals = 0
