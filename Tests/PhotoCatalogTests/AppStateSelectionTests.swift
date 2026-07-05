@@ -1966,10 +1966,12 @@ final class AppStateSelectionTests: XCTestCase {
         app.confirmClearLogs()
         XCTAssertFalse(FileManager.default.fileExists(atPath: logFile.path))
 
+        let cacheGeneration = app.thumbnailCacheGeneration
         app.confirmClearCache()
         XCTAssertFalse(FileManager.default.fileExists(atPath: cacheFile.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: store.thumb256URL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: store.preview2048URL.path))
+        XCTAssertGreaterThan(app.thumbnailCacheGeneration, cacheGeneration)
 
         app.runBackup()
         try await waitUntil("Timed out waiting for backup") {

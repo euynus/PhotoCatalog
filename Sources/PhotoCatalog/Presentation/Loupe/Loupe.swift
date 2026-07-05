@@ -21,15 +21,17 @@ struct Loupe: View {
                 filmstrip(list)
             }
             .background(Color(hex: "#0e0e0f"))
-            .task(id: asset.id) {
+            .task(id: "\(asset.id)|\(app.thumbnailCacheGeneration)") {
                 // warm the neighbors so arrow-key navigation lands on a cache hit
+                let cacheGeneration = app.thumbnailCacheGeneration
                 for neighbor in [idx - 1, idx + 1] where neighbor >= 0 && neighbor < list.count {
                     let a = list[neighbor]
                     guard !a.preview.isEmpty else { continue }
                     let resolved = await app.visibleImageSource(for: a, requestedSource: a.preview,
                                                                 kind: .preview2048)
                     guard !Task.isCancelled else { return }
-                    await ThumbLoader.prefetch(resolved, maxPixel: ThumbnailService.Kind.preview2048.maxPixel)
+                    await ThumbLoader.prefetch(resolved, maxPixel: ThumbnailService.Kind.preview2048.maxPixel,
+                                               cacheGeneration: cacheGeneration)
                 }
             }
         }

@@ -115,6 +115,7 @@ final class AppState {
     /// source roots/priorities/duplicate groups); the small value inputs are compared directly.
     private var listInputsVersion = 0   // tracked: cached getters read it so cache HITS register deps
     var assetRenderVersion = 0
+    var thumbnailCacheGeneration = 0
     @ObservationIgnored private var listCache: (signature: ListSignature, value: [Asset])?
     private struct ListSignature: Equatable {
         let inputsVersion: Int
@@ -1693,6 +1694,7 @@ final class AppState {
                     }
                 }
             }.value
+            self?.invalidateThumbnailCache()
             self?.enforceCacheLimitIfNeeded()
             self?.push("缩略图已重建", "check")
         }
@@ -1819,8 +1821,14 @@ final class AppState {
         for dir in [store.thumb256URL, store.thumb512URL, store.preview1600URL, store.preview2048URL] {
             try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
+        invalidateThumbnailCache()
         refreshStatusMetrics()
         push("已清理缩略图缓存", "trash")
+    }
+
+    private func invalidateThumbnailCache() {
+        ThumbLoader.clearCache()
+        thumbnailCacheGeneration &+= 1
     }
 
     private static func confirmDestructiveAction(title: String, message: String, confirmTitle: String) -> Bool {

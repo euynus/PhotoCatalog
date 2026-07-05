@@ -53,8 +53,12 @@ final class ThumbLoader: ObservableObject {
         task?.cancel()
     }
 
-    func load(_ source: String, maxPixel: Int) {
-        let key = "\(source)|\(maxPixel)"
+    static func clearCache() {
+        cache.removeAllObjects()
+    }
+
+    func load(_ source: String, maxPixel: Int, cacheGeneration: Int = 0) {
+        let key = "\(source)|\(maxPixel)|\(cacheGeneration)"
         // already showing / fetching this exact source
         if key == loadedKey { return }
         loadedKey = key
@@ -89,8 +93,8 @@ final class ThumbLoader: ObservableObject {
 
     /// Warm the shared cache (e.g. loupe neighbors) without touching any
     /// loader's published state — a failed warm-up stays silent.
-    static func prefetch(_ source: String, maxPixel: Int) async {
-        let key = "\(source)|\(maxPixel)"
+    static func prefetch(_ source: String, maxPixel: Int, cacheGeneration: Int = 0) async {
+        let key = "\(source)|\(maxPixel)|\(cacheGeneration)"
         guard !source.isEmpty, cache.object(forKey: key as NSString) == nil else { return }
         let data: Data?
         if source.hasPrefix("http") {
@@ -164,7 +168,9 @@ struct Thumb: View {
     private var cacheKind: ThumbnailService.Kind {
         kind ?? (urlString == nil || urlString == asset.thumb ? .thumb512 : .preview2048)
     }
-    private var loadKey: String { "\(asset.id)|\(source)|\(cacheKind.maxPixel)|\(app.previewMaxPixel)" }
+    private var loadKey: String {
+        "\(asset.id)|\(source)|\(cacheKind.maxPixel)|\(app.previewMaxPixel)|\(app.thumbnailCacheGeneration)"
+    }
 
     var body: some View {
         ZStack {
@@ -185,7 +191,8 @@ struct Thumb: View {
         .task(id: loadKey) {
             let resolved = await app.visibleImageSource(for: asset, requestedSource: source, kind: cacheKind)
             guard !Task.isCancelled else { return }
-            loader.load(resolved, maxPixel: cacheKind.maxPixel)
+            loader.load(resolved, maxPixel: cacheKind.maxPixel,
+                        cacheGeneration: app.thumbnailCacheGeneration)
         }
     }
 }
