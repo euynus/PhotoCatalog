@@ -1700,6 +1700,51 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testRemovingSourceRollsBackWhenSourceRootDeleteFails() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-source-remove-failure-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let original = source.appendingPathComponent("live.jpg")
+        try writeTestJPEG(to: original, black: false)
+
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+        var asset = DemoData.assets[0]
+        asset.filename = original.lastPathComponent
+        asset.folderId = "source-1"
+        asset.folderName = "Source"
+        asset.localPath = original.path
+        asset.isDemo = false
+        asset.deleted = false
+        try store.upsert([asset])
+
+        let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
+        try db.execChecked("""
+        CREATE TRIGGER fail_source_root_delete BEFORE DELETE ON source_roots
+        BEGIN
+          SELECT RAISE(ABORT, 'forced source root delete failure');
+        END;
+        """)
+
+        let app = AppState()
+        app.onboarded = true
+        app.confirmDestructiveAction = { _, _, _ in true }
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.select(Selection(type: .folder, id: "source-1", name: "Source"))
+
+        app.removeSelectedSource()
+
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "源移除失败")
+        XCTAssertTrue(app.folders.contains { $0.id == "source-1" })
+        XCTAssertFalse(app.assets.first { $0.id == asset.id }?.deleted ?? true)
+        XCTAssertFalse(try XCTUnwrap(store.loadAssets().first { $0.id == asset.id }).deleted)
+        XCTAssertFalse(try store.loadSourceRoots().isEmpty)
+    }
+
+    @MainActor
     func testRecoveredEmptyImportDoesNotWatchSourceRoot() async throws {
         let defaults = UserDefaults.standard
         let previousOnboarded = defaults.object(forKey: "pc_onboarded")

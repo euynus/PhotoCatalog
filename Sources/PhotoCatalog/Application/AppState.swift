@@ -3041,11 +3041,21 @@ final class AppState {
 
         let sourceRootPath = sourceRootPathsById[folderId]
         let ids = Set(indexed.map(\.id))
+        do {
+            try store?.removeSourceRootAndSoftDeleteAssets(id: folderId)
+        } catch {
+            push("源移除失败", "warning")
+            return
+        }
         if !ids.isEmpty {
-            guard mutate(ids, { $0.deleted = true }) else { return }
+            var updated = assets
+            for index in updated.indices where ids.contains(updated[index].id) {
+                updated[index].deleted = true
+            }
+            replaceAssetsForMutation(updated)
+            ensurePrimaryValid()
             purgeCacheFiles(forAssetIds: ids)
         }
-        try? store?.removeSourceRoot(id: folderId)
         folders.removeAll { $0.id == folderId }
         sourceRootPathsById.removeValue(forKey: folderId)
         sourcePriorities.removeValue(forKey: folderId)

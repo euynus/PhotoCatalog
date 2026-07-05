@@ -401,6 +401,17 @@ final class CatalogStore: @unchecked Sendable {
         try db.run("DELETE FROM source_roots WHERE id=?;", [.text(id)])
     }
 
+    func removeSourceRootAndSoftDeleteAssets(id: String) throws {
+        try db.transaction {
+            try db.run("""
+            UPDATE assets
+            SET deleted=1
+            WHERE folder_id=? AND is_demo=0;
+            """, [.text(id)])
+            try db.run("DELETE FROM source_roots WHERE id=?;", [.text(id)])
+        }
+    }
+
     // ---------- albums (§6.8 / §10.2) ----------
     func loadAlbums() throws -> [Album] {
         let rows = try db.query("""
