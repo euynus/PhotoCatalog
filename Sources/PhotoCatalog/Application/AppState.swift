@@ -2718,9 +2718,6 @@ final class AppState {
     }
 
     private func computeList() -> [Asset] {
-        let calendar = Calendar.current
-        let now = Date.now
-        let currentDate = calendar.dateComponents([.year, .month], from: now)
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
         let cameraQuery = filters.camera.trimmingCharacters(in: .whitespacesAndNewlines)
         let lensQuery = filters.lens.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2735,12 +2732,7 @@ final class AppState {
             if !cameraQuery.isEmpty && !a.camera.localizedStandardContains(cameraQuery) { return false }
             if !lensQuery.isEmpty && !a.lens.localizedStandardContains(lensQuery) { return false }
             if filters.date != "any" {
-                let assetDate = Calendar.captureWallClock.dateComponents([.year, .month], from: a.date)
-                if filters.date == "thisYear" && assetDate.year != currentDate.year { return false }
-                if filters.date == "thisMonth" &&
-                    (assetDate.year != currentDate.year || assetDate.month != currentDate.month) {
-                    return false
-                }
+                if !SmartMatcher.matchesDatePreset(a.date, filters.date) { return false }
             }
             let hasGPS = !(a.gps.0 == 0 && a.gps.1 == 0)
             if filters.gps == "yes" && !hasGPS { return false }

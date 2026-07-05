@@ -52,6 +52,16 @@ enum SmartFields {
 }
 
 enum SmartMatcher {
+    static func matchesDatePreset(_ assetDate: Date, _ preset: String, now: Date = .now) -> Bool {
+        let current = Calendar.captureWallClock.dateComponents([.year, .month], from: now)
+        let assetDate = Calendar.captureWallClock.dateComponents([.year, .month], from: assetDate)
+        if preset == "thisYear" { return assetDate.year == current.year }
+        if preset == "thisMonth" {
+            return assetDate.year == current.year && assetDate.month == current.month
+        }
+        return true
+    }
+
     static func eval(_ a: Asset, _ c: SmartCondition) -> Bool {
         switch c.field {
         case "rating":
@@ -81,13 +91,7 @@ enum SmartMatcher {
             if c.op == "<=" { return y <= v }
             return y == v
         case "datePreset":
-            let current = Calendar.current.dateComponents([.year, .month], from: .now)
-            let assetDate = Calendar.captureWallClock.dateComponents([.year, .month], from: a.date)
-            if c.value == "thisYear" { return assetDate.year == current.year }
-            if c.value == "thisMonth" {
-                return assetDate.year == current.year && assetDate.month == current.month
-            }
-            return true
+            return matchesDatePreset(a.date, c.value)
         case "gps":
             let hasGPS = !(a.gps.0 == 0 && a.gps.1 == 0)
             return c.value == "yes" ? hasGPS : !hasGPS
