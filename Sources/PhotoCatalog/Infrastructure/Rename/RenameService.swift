@@ -61,11 +61,12 @@ enum RenameService {
             let src = URL(fileURLWithPath: path)
             guard fm.fileExists(atPath: src.path) else { continue }
             let ext = src.pathExtension
+            let suffix = ext.isEmpty ? "" : ".\(ext)"
             let dir = src.deletingLastPathComponent()
-            var dest = dir.appendingPathComponent("\(prefix)_\(String(format: "%04d", seq)).\(ext)")
+            var dest = dir.appendingPathComponent("\(prefix)_\(String(format: "%04d", seq))\(suffix)")
             var k = 1
             while fm.fileExists(atPath: dest.path) && dest.path != src.path {
-                dest = dir.appendingPathComponent("\(prefix)_\(String(format: "%04d", seq))_\(k).\(ext)")
+                dest = dir.appendingPathComponent("\(prefix)_\(String(format: "%04d", seq))_\(k)\(suffix)")
                 k += 1
             }
             if dest.path == src.path { result[a.id] = src; seq += 1; continue }

@@ -792,6 +792,23 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(app.toastCenter.toasts.last?.message, "仅可重命名已导入照片")
     }
 
+    func testPrefixRenameDoesNotAddTrailingDotForExtensionlessFiles() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-extensionless-rename-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let original = dir.appendingPathComponent("original")
+        try Data("image".utf8).write(to: original)
+
+        var asset = DemoData.assets[0]
+        asset.localPath = original.path
+        asset.isDemo = false
+
+        let renamed = try XCTUnwrap(RenameService.rename([asset], prefix: "RENAMED")[asset.id])
+        XCTAssertEqual(renamed.lastPathComponent, "RENAMED_0001")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: renamed.path))
+    }
+
     @MainActor
     func testKeywordActionsExpandDedupeAndFilterSelection() throws {
         let app = AppState()
