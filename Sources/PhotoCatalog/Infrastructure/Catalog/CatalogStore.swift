@@ -212,7 +212,12 @@ final class CatalogStore: @unchecked Sendable {
         let match = q.split(separator: " ")
             .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"*" }
             .joined(separator: " ")
-        let rows = (try? db.query("SELECT asset_id FROM asset_search WHERE asset_search MATCH ?;", [.text(match)])) ?? []
+        let rows = (try? db.query("""
+        SELECT asset_search.asset_id
+        FROM asset_search
+        JOIN assets ON assets.id = asset_search.asset_id
+        WHERE assets.deleted=0 AND asset_search MATCH ?;
+        """, [.text(match)])) ?? []
         return rows.compactMap { $0.text("asset_id") }
     }
 

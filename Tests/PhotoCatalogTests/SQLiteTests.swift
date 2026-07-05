@@ -2,6 +2,25 @@ import XCTest
 @testable import PhotoCatalog
 
 final class SQLiteTests: XCTestCase {
+    func testSearchSkipsSoftDeletedAssets() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-search-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: dir.appendingPathComponent("Library.photolibrary"))
+        var live = DemoData.assets[0]
+        var deleted = DemoData.assets[1]
+        live.title = "needlefts"
+        deleted.title = "needlefts"
+        deleted.deleted = true
+        try store.upsert([live, deleted])
+
+        let matches = Set(store.search("needlefts"))
+        XCTAssertTrue(matches.contains(live.id))
+        XCTAssertFalse(matches.contains(deleted.id))
+    }
+
     func testTransactionThrowsWhenCommitFails() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-sqlite-\(UUID().uuidString)")
