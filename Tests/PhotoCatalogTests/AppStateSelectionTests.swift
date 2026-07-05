@@ -1360,6 +1360,36 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testDuplicateCatalogRemovalRequiresConfirmation() throws {
+        var assets = Array(DemoData.assets.prefix(2))
+        for index in assets.indices {
+            assets[index].isDemo = false
+            assets[index].deleted = false
+            assets[index].contentHash = "same-content"
+        }
+
+        let app = AppState()
+        app.onboarded = true
+        app.assets = assets
+        let group = DuplicateGroup(id: "dg-confirm-remove", method: "contentHash", score: 1, items: assets)
+        app.duplicateGroupsCache = [group]
+
+        var prompts: [(String, String, String)] = []
+        app.confirmDestructiveAction = { title, message, confirmTitle in
+            prompts.append((title, message, confirmTitle))
+            return false
+        }
+
+        XCTAssertFalse(app.resolveDuplicateGroup(group, keepId: assets[0].id, action: .removeFromCatalog))
+        XCTAssertEqual(prompts.count, 1)
+        XCTAssertEqual(prompts[0].0, "从目录库移除？")
+        XCTAssertTrue(prompts[0].1.contains("1 个重复照片记录"))
+        XCTAssertEqual(prompts[0].2, "移除")
+        XCTAssertTrue(app.assets.allSatisfy { !$0.deleted })
+        XCTAssertEqual(app.duplicateGroups.count, 1)
+    }
+
+    @MainActor
     func testDuplicateTrashResolutionRollsBackWhenCatalogSaveFails() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-duplicate-trash-rollback-\(UUID().uuidString)")

@@ -2389,8 +2389,15 @@ final class AppState {
             push("演示重复组不可处理", "warning")
             return false
         }
-        if action == .moveToTrash {
-            let count = group.items.filter { $0.id != resolvedKeepId && !$0.isDemo }.count
+        let count = group.items.filter { $0.id != resolvedKeepId && !$0.isDemo }.count
+        switch action {
+        case .removeFromCatalog:
+            guard confirmDestructiveAction(
+                "从目录库移除？",
+                "将从目录库移除 \(count) 个重复照片记录，磁盘原件会保留。",
+                "移除"
+            ) else { return false }
+        case .moveToTrash:
             guard confirmDestructiveAction(
                 "移到废纸篓？",
                 "将把 \(count) 个重复照片的磁盘原件移到废纸篓，并从目录库移除对应记录。",
