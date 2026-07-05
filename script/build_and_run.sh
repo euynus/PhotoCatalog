@@ -50,6 +50,30 @@ open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
 }
 
+visible_window_count() {
+  /usr/bin/swift -e '
+import CoreGraphics
+import Foundation
+
+let app = CommandLine.arguments.dropFirst().first ?? ""
+let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+
+func number(_ value: Any?) -> Double {
+    (value as? NSNumber)?.doubleValue ?? 0
+}
+
+let count = windows.filter { window in
+    guard (window[kCGWindowOwnerName as String] as? String) == app else { return false }
+    guard number(window[kCGWindowLayer as String]) == 0 else { return false }
+    guard number(window[kCGWindowAlpha as String]) > 0 else { return false }
+    guard let bounds = window[kCGWindowBounds as String] as? [String: Any] else { return false }
+    return number(bounds["Width"]) >= 100 && number(bounds["Height"]) >= 100
+}.count
+
+print(count)
+' "$APP_NAME" 2>/dev/null || echo 0
+}
+
 case "$MODE" in
   run)
     open_app
@@ -69,7 +93,7 @@ case "$MODE" in
     open_app
     for _ in {1..20}; do
       if pgrep -x "$APP_NAME" >/dev/null; then
-        WINDOW_COUNT="$(osascript -e "tell application \"System Events\" to tell process \"$APP_NAME\" to count of windows" 2>/dev/null || echo 0)"
+        WINDOW_COUNT="$(visible_window_count)"
         if [[ "$WINDOW_COUNT" -gt 0 ]]; then
           exit 0
         fi
