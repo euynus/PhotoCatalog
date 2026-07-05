@@ -71,7 +71,16 @@ struct Asset: Identifiable, Equatable, Sendable {
     var perceptualHash: UInt64? = nil           // cached dHash for similar-photo grouping (§6.10)
 
     var megapixels: Double { Double(width * height) / 1_000_000 }
-    var hasGPS: Bool { !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !(gps.0 == 0 && gps.1 == 0) }
+    var hasGPS: Bool { Self.hasGPSCoordinates(gps, location: location) }
+
+    static func hasGPSCoordinates(_ gps: (Double, Double), location: String) -> Bool {
+        if !(gps.0 == 0 && gps.1 == 0) { return true }
+        let parts = location.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard parts.count == 2,
+              let latitude = Double(parts[0]),
+              let longitude = Double(parts[1]) else { return false }
+        return (-90...90).contains(latitude) && (-180...180).contains(longitude)
+    }
 
     static func == (lhs: Asset, rhs: Asset) -> Bool { lhs.id == rhs.id }
 }

@@ -194,6 +194,12 @@ final class AppStateSelectionTests: XCTestCase {
                        "31.2345, 121.4567 · 88.5 m")
     }
 
+    func testLocationTextAloneDoesNotCountAsGPS() {
+        XCTAssertFalse(Asset.hasGPSCoordinates((0, 0), location: "Lab"))
+        XCTAssertTrue(Asset.hasGPSCoordinates((0, 0), location: "0.000, 0.000"))
+        XCTAssertTrue(Asset.hasGPSCoordinates((31.2345, 121.4567), location: "Shanghai"))
+    }
+
     func testImportPreservesZeroCoordinateGPS() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-zero-gps-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
