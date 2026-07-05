@@ -2864,6 +2864,40 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testClosingCatalogInvalidatesDuplicateRecomputeResult() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-close-duplicates-\(UUID().uuidString)")
+        let package = root.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try CatalogStore(packageURL: package)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        let realDuplicates = DemoData.assets.prefix(2).map { asset -> Asset in
+            var copy = asset
+            copy.isDemo = false
+            copy.deleted = false
+            copy.fileMB = 1
+            copy.contentHash = "same-content"
+            return copy
+        }
+        XCTAssertEqual(realDuplicates.count, 2)
+
+        app.assets = realDuplicates
+        app.duplicateGroupsCache = []
+        app.recomputeDuplicates()
+        app.closeCatalog()
+
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertFalse(app.duplicateGroups.contains { group in
+            group.items.contains { !$0.isDemo }
+        })
+    }
+
+    @MainActor
     func testExportingDemoOriginalsShowsAccurateMessage() {
         let app = AppState()
         app.onboarded = true

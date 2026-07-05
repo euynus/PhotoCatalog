@@ -2326,6 +2326,7 @@ final class AppState {
     }
 
     private func resetToDemoCatalog() {
+        duplicateRecomputeGeneration &+= 1
         let a = DemoData.assets
         assets = a
         albums = DemoData.initialAlbums(a)
