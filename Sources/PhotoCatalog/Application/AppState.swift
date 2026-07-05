@@ -2316,7 +2316,16 @@ final class AppState {
             return false
         }
 
-        guard persist(report.removedIds, in: updated) else { return false }
+        guard persist(report.removedIds, in: updated) else {
+            if action == .moveToTrash {
+                let rolledBack = OriginalFileOperationService.rollBackTrash(report.trashedLocations)
+                push("重复文件处理未完成"
+                     + (rolledBack > 0 ? " · 已回滚 \(rolledBack) 个原件" : " · 回滚失败")
+                     + " · 目录库保存失败",
+                     "warning")
+            }
+            return false
+        }
         replaceAssetsForMutation(updated)
         purgeCacheFiles(forAssetIds: report.removedIds)
         duplicateGroupsCache.removeAll { $0.id == group.id }
@@ -3362,37 +3371,33 @@ final class AppState {
     /// Move the given originals to the Trash and remove their catalog records (no extra prompt).
     private func performTrashOriginals(_ real: [Asset]) {
         Task { [weak self, real] in
-            let result = await Task.detached(priority: .userInitiated) { () -> (trashed: Set<String>, failed: Int) in
-                var trashed = Set<String>()
-                var failed = 0
-                let fm = FileManager.default
-                for asset in real {
-                    guard let path = asset.localPath else { failed += 1; continue }
-                    do {
-                        try fm.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil)
-                        trashed.insert(asset.id)
-                    } catch {
-                        failed += 1
-                    }
-                }
-                return (trashed, failed)
+            let result = await Task.detached(priority: .userInitiated) {
+                OriginalFileOperationService.trashOriginals(real)
             }.value
 
-            if !result.trashed.isEmpty {
-                let saved = self?.mutate(result.trashed, { $0.deleted = true }) ?? false
+            if !result.trashedIds.isEmpty {
+                let saved = self?.mutate(result.trashedIds, { $0.deleted = true }) ?? false
                 if saved {
-                    self?.purgeCacheFiles(forAssetIds: result.trashed)
-                    self?.selectedIds.subtract(result.trashed)
+                    self?.purgeCacheFiles(forAssetIds: result.trashedIds)
+                    self?.selectedIds.subtract(result.trashedIds)
                     self?.ensurePrimaryValid()
                     self?.recomputeDuplicates()
+                } else {
+                    let rolledBack = await Task.detached(priority: .userInitiated) {
+                        OriginalFileOperationService.rollBackTrash(result.locations)
+                    }.value
+                    self?.push("移到废纸篓未完成"
+                               + (rolledBack > 0 ? " · 已回滚 \(rolledBack) 个原件" : " · 回滚失败")
+                               + " · 目录库保存失败",
+                               "warning")
+                    return
                 }
-                self?.push("已移到废纸篓 \(result.trashed.count) 张"
-                           + (result.failed > 0 ? " · \(result.failed) 失败" : "")
-                           + (!saved ? " · 目录库保存失败" : ""),
-                           result.failed > 0 || !saved ? "warning" : "check")
+                self?.push("已移到废纸篓 \(result.trashedIds.count) 张"
+                           + (result.failed > 0 ? " · \(result.failed) 失败" : ""),
+                           result.failed > 0 ? "warning" : "check")
                 return
             }
-            self?.push("已移到废纸篓 \(result.trashed.count) 张"
+            self?.push("已移到废纸篓 \(result.trashedIds.count) 张"
                        + (result.failed > 0 ? " · \(result.failed) 失败" : ""),
                        result.failed > 0 ? "warning" : "check")
         }

@@ -9,12 +9,28 @@ enum OriginalFileOperation: Equatable, Sendable {
     case move
 }
 
+enum OriginalFileOperationError: Error {
+    case missingPath
+    case missingFile
+}
+
 struct OriginalFileOperationReport: Sendable {
     var copied = 0
     var moved = 0
     var skipped = 0
     var failed = 0
     var updatedLocations: [String: URL] = [:]
+}
+
+struct OriginalTrashLocation: Sendable {
+    let original: URL
+    let trashed: URL
+}
+
+struct OriginalTrashReport: Sendable {
+    var trashedIds: Set<String> = []
+    var locations: [String: OriginalTrashLocation] = [:]
+    var failed = 0
 }
 
 enum OriginalFileOperationService {
@@ -68,6 +84,45 @@ enum OriginalFileOperationService {
                   !fm.fileExists(atPath: original.path) else { continue }
             do {
                 try fm.moveItem(at: moved, to: original)
+                rolledBack += 1
+            } catch {}
+        }
+        return rolledBack
+    }
+
+    static func trashOriginals(_ assets: [Asset]) -> OriginalTrashReport {
+        var report = OriginalTrashReport()
+        for asset in assets {
+            do {
+                let location = try trashOriginal(asset)
+                report.trashedIds.insert(asset.id)
+                report.locations[asset.id] = location
+            } catch {
+                report.failed += 1
+            }
+        }
+        return report
+    }
+
+    static func trashOriginal(_ asset: Asset) throws -> OriginalTrashLocation {
+        guard let path = asset.localPath else { throw OriginalFileOperationError.missingPath }
+        let original = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: original.path) else {
+            throw OriginalFileOperationError.missingFile
+        }
+        var trashedURL: NSURL?
+        try FileManager.default.trashItem(at: original, resultingItemURL: &trashedURL)
+        return OriginalTrashLocation(original: original, trashed: (trashedURL as URL?) ?? original)
+    }
+
+    static func rollBackTrash(_ locations: [String: OriginalTrashLocation]) -> Int {
+        let fm = FileManager.default
+        var rolledBack = 0
+        for location in locations.values {
+            guard fm.fileExists(atPath: location.trashed.path),
+                  !fm.fileExists(atPath: location.original.path) else { continue }
+            do {
+                try fm.moveItem(at: location.trashed, to: location.original)
                 rolledBack += 1
             } catch {}
         }

@@ -8,6 +8,7 @@ struct DuplicateResolutionReport {
     let keptId: String?
     var removedIds: Set<String> = []
     var trashedCount = 0
+    var trashedLocations: [String: OriginalTrashLocation] = [:]
     var failedCount = 0
     var skippedCount = 0
 
@@ -36,17 +37,12 @@ enum DuplicateResolutionService {
             }
 
             if action == .moveToTrash {
-                guard let path = assets[index].localPath, !assets[index].isDemo else {
-                    report.failedCount += 1
-                    continue
-                }
-                let url = URL(fileURLWithPath: path)
-                guard FileManager.default.fileExists(atPath: url.path) else {
+                guard !assets[index].isDemo else {
                     report.failedCount += 1
                     continue
                 }
                 do {
-                    try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+                    report.trashedLocations[id] = try OriginalFileOperationService.trashOriginal(assets[index])
                     report.trashedCount += 1
                 } catch {
                     report.failedCount += 1

@@ -1272,6 +1272,52 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testDuplicateTrashResolutionRollsBackWhenCatalogSaveFails() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-duplicate-trash-rollback-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        let sourceDir = dir.appendingPathComponent("Source")
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        var assets = Array(DemoData.assets.prefix(2))
+        for index in assets.indices {
+            let file = sourceDir.appendingPathComponent("duplicate-\(index).jpg")
+            try Data("duplicate-\(index)".utf8).write(to: file)
+            assets[index].isDemo = false
+            assets[index].deleted = false
+            assets[index].localPath = file.path
+            assets[index].contentHash = "same-content"
+        }
+        try store.upsert(assets)
+
+        let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
+        try db.execChecked("""
+        CREATE TRIGGER fail_duplicate_delete BEFORE UPDATE OF deleted ON assets
+        WHEN NEW.deleted = 1
+        BEGIN
+          SELECT RAISE(ABORT, 'forced duplicate delete failure');
+        END;
+        """)
+
+        let app = AppState()
+        app.onboarded = true
+        app.confirmDestructiveAction = { _, _, _ in true }
+        XCTAssertTrue(app.openCatalog(at: package))
+        let group = DuplicateGroup(id: "dg-trash-rollback", method: "contentHash", score: 1, items: assets)
+        app.duplicateGroupsCache = [group]
+
+        XCTAssertFalse(app.resolveDuplicateGroup(group, keepId: assets[0].id, action: .moveToTrash))
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: assets[1].localPath ?? ""))
+        XCTAssertFalse(app.assets.first { $0.id == assets[1].id }?.deleted ?? true)
+        XCTAssertFalse(try store.loadAssets().first { $0.id == assets[1].id }?.deleted ?? true)
+        XCTAssertEqual(app.toastCenter.toasts.last?.message,
+                       "重复文件处理未完成 · 已回滚 1 个原件 · 目录库保存失败")
+    }
+
+    @MainActor
     func testAlbumCountsIgnoreSoftDeletedAssets() throws {
         let app = AppState()
         app.onboarded = true
@@ -2376,6 +2422,22 @@ final class AppStateSelectionTests: XCTestCase {
                                                                   originals: [moved]), 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: moveSource.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: movedURL.path))
+
+        let trashSource = sourceDir.appendingPathComponent("trash.jpg")
+        try Data("trash".utf8).write(to: trashSource)
+        var trashed = DemoData.assets[4]
+        trashed.localPath = trashSource.path
+
+        let trashReport = OriginalFileOperationService.trashOriginals([trashed])
+        let trashLocation = try XCTUnwrap(trashReport.locations[trashed.id])
+        XCTAssertEqual(trashReport.trashedIds, [trashed.id])
+        XCTAssertEqual(trashReport.failed, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: trashSource.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: trashLocation.trashed.path))
+
+        XCTAssertEqual(OriginalFileOperationService.rollBackTrash(trashReport.locations), 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: trashSource.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: trashLocation.trashed.path))
     }
 
     @MainActor
