@@ -207,9 +207,15 @@ final class AppState {
     }() {
         didSet { UserDefaults.standard.set(previewMaxPixel, forKey: Self.previewMaxPixelKey) }
     }
-    var automaticBackupFrequency =
-        UserDefaults.standard.string(forKey: "pc_autoBackupFrequency") ?? "weekly" {
-        didSet { UserDefaults.standard.set(automaticBackupFrequency, forKey: "pc_autoBackupFrequency") }
+    private var automaticBackupFrequencyStorage = AppState.normalizedAutomaticBackupFrequency(
+        UserDefaults.standard.string(forKey: "pc_autoBackupFrequency") ?? "weekly"
+    )
+    var automaticBackupFrequency: String {
+        get { automaticBackupFrequencyStorage }
+        set {
+            automaticBackupFrequencyStorage = Self.normalizedAutomaticBackupFrequency(newValue)
+            UserDefaults.standard.set(automaticBackupFrequencyStorage, forKey: "pc_autoBackupFrequency")
+        }
     }
     var healthReport: HealthReport?
     private var statusMetrics = StatusMetrics()
@@ -242,6 +248,10 @@ final class AppState {
     private static let pinnedSidebarItemsKey = "pc_pinnedSidebarItems"
     private static let sourcePrioritiesKey = "pc_sourcePriorities"
     private static let previewMaxPixelKey = "pc_previewMaxPixel"
+
+    private static func normalizedAutomaticBackupFrequency(_ value: String) -> String {
+        ["off", "daily", "weekly"].contains(value) ? value : "weekly"
+    }
 
     // ----- selection / view -----
     var selection = Selection(type: .lib, id: "all", name: "全部照片")

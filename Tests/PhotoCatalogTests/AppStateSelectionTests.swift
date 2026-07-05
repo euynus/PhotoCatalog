@@ -1233,6 +1233,27 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testAutomaticBackupFrequencyRejectsInvalidDefaults() {
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: "pc_autoBackupFrequency")
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: "pc_autoBackupFrequency")
+            } else {
+                defaults.removeObject(forKey: "pc_autoBackupFrequency")
+            }
+        }
+
+        defaults.set("sometimes", forKey: "pc_autoBackupFrequency")
+        let app = AppState()
+        XCTAssertEqual(app.automaticBackupFrequency, "weekly")
+
+        app.automaticBackupFrequency = "hourly"
+        XCTAssertEqual(app.automaticBackupFrequency, "weekly")
+        XCTAssertEqual(defaults.string(forKey: "pc_autoBackupFrequency"), "weekly")
+    }
+
+    @MainActor
     func testRemovingDemoAssetDropsDuplicateGhosts() throws {
         let app = AppState()
         app.onboarded = true
