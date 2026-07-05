@@ -1444,9 +1444,18 @@ final class AppState {
                 changed = true
             }
         }
-        if changed { replaceAssetsForMutation(updated) }
+        if changed {
+            if let store {
+                do {
+                    try store.upsert(updated.filter { !$0.isDemo })
+                } catch {
+                    push("缺失状态保存失败", "warning")
+                    return
+                }
+            }
+            replaceAssetsForMutation(updated)
+        }
         updateFolderStatusesFromAssets()
-        if changed, let store { try? store.upsert(assets.filter { !$0.isDemo }) }
     }
 
     private func updateFolderStatusesFromAssets() {

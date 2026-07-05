@@ -2080,6 +2080,47 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testMissingDetectionDoesNotPublishUnsavedStatus() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-missing-save-fail-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        let source = dir.appendingPathComponent("Source")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let original = source.appendingPathComponent("photo.jpg")
+        try Data("image".utf8).write(to: original)
+        let store = try CatalogStore(packageURL: package)
+        var asset = DemoData.assets[0]
+        asset.filename = original.lastPathComponent
+        asset.localPath = original.path
+        asset.status = .ready
+        asset.isDemo = false
+        asset.deleted = false
+        try store.upsert([asset])
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
+        try db.execChecked("""
+        CREATE TRIGGER fail_status_update BEFORE UPDATE OF status ON assets
+        WHEN NEW.status != OLD.status
+        BEGIN
+          SELECT RAISE(ABORT, 'forced status save failure');
+        END;
+        """)
+        try FileManager.default.removeItem(at: original)
+
+        app.detectMissingRealAssets()
+
+        XCTAssertEqual(app.assets.first?.status, .ready)
+        XCTAssertEqual(try store.loadAssets().first?.status, .ready)
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "缺失状态保存失败")
+    }
+
+    @MainActor
     func testIncrementalRescanPreservesCatalogMetadataForChangedOriginal() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rescan-preserve-metadata-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
