@@ -245,9 +245,10 @@ enum ExportService {
             let cached = URL(fileURLWithPath: path)
             guard fm.fileExists(atPath: cached.path) else { continue }
             guard let thumbnails, let original, originalExists,
-                  thumbnails.cachedRepresentationNeedsRegeneration(at: cached,
-                                                                    original: original,
-                                                                    kind: previewKind) else {
+                  ThumbnailService.cacheIsStale(cache: cached, original: original)
+                    || thumbnails.cachedRepresentationNeedsRegeneration(at: cached,
+                                                                        original: original,
+                                                                        kind: previewKind) else {
                 return cached
             }
             if let repaired = thumbnails.ensureCached(from: original, assetId: asset.id, kind: previewKind) {

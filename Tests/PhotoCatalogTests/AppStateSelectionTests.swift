@@ -1492,6 +1492,33 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertFalse(imageIsUniformBlack(at: exported))
     }
 
+    func testPreviewExportRefreshesStaleBitmapCache() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-stale-export-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        let export = dir.appendingPathComponent("Export")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let original = source.appendingPathComponent("photo.jpg")
+        try writeTestJPEG(to: original, black: false)
+        let store = try CatalogStore(packageURL: package)
+        let coordinator = ImportCoordinator(store: store)
+        let asset = try XCTUnwrap(coordinator.importFolder(source).first)
+        let previewURL = URL(fileURLWithPath: asset.preview)
+        try writeTestJPEG(to: previewURL, black: true)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1)],
+                                              ofItemAtPath: previewURL.path)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 2)],
+                                              ofItemAtPath: original.path)
+
+        XCTAssertTrue(imageIsUniformBlack(at: previewURL))
+        let report = ExportService.exportPreviews([asset], to: export, thumbnails: coordinator.thumbnails)
+
+        XCTAssertEqual(report.copied, 1)
+        XCTAssertFalse(imageIsUniformBlack(at: previewURL))
+    }
+
     @MainActor
     func testReplacingWatchedSourceRootStopsScanningOldFolder() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-watch-replace-\(UUID().uuidString)")
