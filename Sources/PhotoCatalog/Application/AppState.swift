@@ -1843,10 +1843,6 @@ final class AppState {
                     localPath.map { fm.fileExists(atPath: $0) } ?? false,
                     !preview.isEmpty && fm.fileExists(atPath: preview))
         }.value
-        if requestedExists && !asset.isRaw {
-            return requestedSource
-        }
-
         guard let coordinator,
               let localPath = asset.localPath else {
             return requestedSource
@@ -1866,7 +1862,8 @@ final class AppState {
         if requestedExists {
             let cached = URL(fileURLWithPath: requestedSource)
             let needsRegeneration = await Task.detached(priority: .userInitiated) {
-                thumbnails.cachedRepresentationNeedsRegeneration(at: cached, original: original, kind: resolvedKind)
+                ThumbnailService.cacheIsStale(cache: cached, original: original)
+                    || thumbnails.cachedRepresentationNeedsRegeneration(at: cached, original: original, kind: resolvedKind)
             }.value
             if !needsRegeneration {
                 return requestedSource

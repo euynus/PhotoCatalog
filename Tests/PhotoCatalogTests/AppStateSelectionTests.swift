@@ -1411,6 +1411,42 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertFalse(imageIsUniformBlack(at: previewURL))
     }
 
+    @MainActor
+    func testVisibleImageSourceRefreshesStaleBitmapPreviewCache() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-stale-visible-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let original = source.appendingPathComponent("photo.jpg")
+        try writeTestJPEG(to: original, black: false)
+        let store = try CatalogStore(packageURL: package)
+        let coordinator = ImportCoordinator(store: store)
+        let asset = try XCTUnwrap(coordinator.importFolder(source).first)
+        try store.upsert([asset])
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.cancelBackfill()
+
+        let previewURL = URL(fileURLWithPath: asset.preview)
+        try writeTestJPEG(to: previewURL, black: true)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1)],
+                                              ofItemAtPath: previewURL.path)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 2)],
+                                              ofItemAtPath: original.path)
+
+        XCTAssertTrue(imageIsUniformBlack(at: previewURL))
+        let resolved = await app.visibleImageSource(for: asset,
+                                                    requestedSource: previewURL.path,
+                                                    kind: .preview2048)
+
+        XCTAssertEqual(resolved, previewURL.path)
+        XCTAssertFalse(imageIsUniformBlack(at: previewURL))
+    }
+
     func testPreviewExportRepairsBlackRawPreviewCache() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-raw-export-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
