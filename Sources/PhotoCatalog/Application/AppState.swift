@@ -1592,6 +1592,10 @@ final class AppState {
             push("仅可处理已导入照片的原件", "warning")
             return
         }
+        guard let operationCatalogURL = store?.packageURL else {
+            push("无目录库", "warning")
+            return
+        }
         guard confirmOriginalFileOperation(operation, count: real.count) else { return }
 
         let panel = NSOpenPanel()
@@ -1601,22 +1605,31 @@ final class AppState {
         panel.prompt = operation == .move ? "移动到此处" : "复制到此处"
         guard panel.runModal() == .OK, let destination = panel.url else { return }
 
-        Task { [weak self, operation, real, destination] in
+        Task { [weak self, operation, real, destination, operationCatalogURL] in
             let report = await Task.detached(priority: .userInitiated) {
                 OriginalFileOperationService.perform(operation, assets: real, destination: destination)
             }.value
+            guard let self else {
+                if operation == .move {
+                    _ = await Task.detached(priority: .userInitiated) {
+                        OriginalFileOperationService.rollBackMoves(report.updatedLocations, originals: real)
+                    }.value
+                }
+                return
+            }
             let locationsSaved = operation != .move
                 || report.moved == 0
-                || (self?.applyMovedOriginalLocations(report.updatedLocations) ?? true)
+                || self.applyMovedOriginalLocations(report.updatedLocations,
+                                                    expectedCatalogURL: operationCatalogURL)
             let persistenceFailed = !locationsSaved
             let rolledBack = persistenceFailed && operation == .move
                 ? await Task.detached(priority: .userInitiated) {
                     OriginalFileOperationService.rollBackMoves(report.updatedLocations, originals: real)
                 }.value
                 : 0
-            self?.pushOriginalFileOperationReport(report, operation: operation,
-                                                  persistenceFailed: persistenceFailed,
-                                                  rolledBack: rolledBack)
+            self.pushOriginalFileOperationReport(report, operation: operation,
+                                                 persistenceFailed: persistenceFailed,
+                                                 rolledBack: rolledBack)
         }
     }
 
@@ -1658,8 +1671,9 @@ final class AppState {
     }
 
     @discardableResult
-    private func applyMovedOriginalLocations(_ locations: [String: URL]) -> Bool {
+    func applyMovedOriginalLocations(_ locations: [String: URL], expectedCatalogURL: URL? = nil) -> Bool {
         guard !locations.isEmpty else { return true }
+        if let expectedCatalogURL, store?.packageURL != expectedCatalogURL { return false }
         let ids = Set(locations.keys)
         var updated = assets
         for index in updated.indices {

@@ -2621,6 +2621,29 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testMovedOriginalLocationWriteRequiresSameCatalog() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-move-catalog-guard-\(UUID().uuidString)")
+        let firstPackage = dir.appendingPathComponent("First.photolibrary")
+        let secondPackage = dir.appendingPathComponent("Second.photolibrary")
+        let movedURL = dir.appendingPathComponent("Moved").appendingPathComponent("photo.jpg")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let firstStore = try makeCatalogWithOneAsset(at: firstPackage, assetIndex: 0)
+        _ = try makeCatalogWithOneAsset(at: secondPackage, assetIndex: 1)
+        let asset = try XCTUnwrap(try firstStore.loadAssets().first)
+        try FileManager.default.createDirectory(at: movedURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("moved".utf8).write(to: movedURL)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: firstPackage))
+
+        XCTAssertFalse(app.applyMovedOriginalLocations([asset.id: movedURL], expectedCatalogURL: secondPackage))
+        XCTAssertEqual(app.assets.first { $0.id == asset.id }?.localPath, asset.localPath)
+        XCTAssertEqual(try firstStore.loadAssets().first { $0.id == asset.id }?.localPath, asset.localPath)
+    }
+
+    @MainActor
     func testSourcePriorityReordersRealCatalogFolders() throws {
         let defaults = UserDefaults.standard
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
