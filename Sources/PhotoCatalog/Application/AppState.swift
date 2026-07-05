@@ -1515,10 +1515,15 @@ final class AppState {
         let real = list.filter { ids.contains($0.id) && hasExistingOriginal($0) }
         guard !real.isEmpty else { push("仅可重命名已导入照片", "warning"); return }
         let map = RenameService.renameWithTemplate(real, template: template)
+        guard !map.isEmpty else {
+            push("重命名失败", "warning")
+            return
+        }
         for (id, url) in map {
             mutateAsset(id) { $0.filename = url.lastPathComponent; $0.localPath = url.path }
         }
-        push("已重命名 \(map.count) 张照片", "check")
+        push("已重命名 \(map.count) 张照片" + (map.count < real.count ? " · \(real.count - map.count) 失败" : ""),
+             map.count < real.count ? "warning" : "check")
     }
 
     var canOperateOnSelectedOriginals: Bool {

@@ -818,6 +818,35 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(app.toastCenter.toasts.last?.message, "仅可重命名已导入照片")
     }
 
+    @MainActor
+    func testBatchRenameReportsRenameFailures() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rename-fail-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+            try? FileManager.default.removeItem(at: dir)
+        }
+        let original = dir.appendingPathComponent("original.jpg")
+        try Data("image".utf8).write(to: original)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
+
+        let app = AppState()
+        app.onboarded = true
+        var asset = try XCTUnwrap(app.assets.first)
+        asset.filename = original.lastPathComponent
+        asset.localPath = original.path
+        asset.isDemo = false
+        app.assets = [asset]
+        app.primaryId = asset.id
+        app.selectedIds = [asset.id]
+
+        app.batchRename(template: "RENAMED")
+
+        XCTAssertEqual(app.assets.first?.localPath, original.path)
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "重命名失败")
+        XCTAssertEqual(app.toastCenter.toasts.last?.icon, "warning")
+    }
+
     func testPrefixRenameDoesNotAddTrailingDotForExtensionlessFiles() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-extensionless-rename-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
