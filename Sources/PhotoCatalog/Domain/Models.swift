@@ -58,7 +58,7 @@ struct Asset: Identifiable, Equatable, Sendable {
     let gps: (Double, Double)
     var gpsAltitude: Double? = nil
     var status: AssetStatus
-    let importedAt: Date
+    var importedAt: Date
     var deleted: Bool = false
 
     // ---- real-pipeline fields (defaults keep demo data source-compatible) ----

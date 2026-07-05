@@ -1737,6 +1737,70 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testIncrementalRescanPreservesCatalogMetadataForChangedOriginal() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rescan-preserve-metadata-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let photo = source.appendingPathComponent("changed.jpg")
+        try writeTestJPEG(to: photo, black: false)
+
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.rescanCurrentSource()
+
+        try await waitUntil("initial import finished") {
+            app.assets.contains { $0.filename == photo.lastPathComponent }
+        }
+
+        let imported = try XCTUnwrap(app.assets.first { $0.filename == photo.lastPathComponent })
+        let originalImportedAt = imported.importedAt
+        let originalQuickHash = try XCTUnwrap(imported.quickHash)
+        app.mutateAsset(imported.id) {
+            $0.rating = 5
+            $0.flag = .pick
+            $0.colorLabel = .green
+            $0.keywords = ["客户", "精选"]
+            $0.title = "Keep title"
+            $0.caption = "Keep caption"
+            $0.project = "Graduation"
+            $0.client = "Chen"
+            $0.faces = 2
+        }
+
+        try writeTestJPEG(to: photo, black: true)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_900_000_000)],
+                                              ofItemAtPath: photo.path)
+        app.rescanCurrentSource()
+
+        try await waitUntil("changed original was refreshed") {
+            app.assets.first { $0.id == imported.id }?.quickHash != originalQuickHash
+        }
+
+        let refreshed = try XCTUnwrap(app.assets.first { $0.id == imported.id })
+        XCTAssertEqual(refreshed.rating, 5)
+        XCTAssertEqual(refreshed.flag, .pick)
+        XCTAssertEqual(refreshed.colorLabel, .green)
+        XCTAssertEqual(refreshed.keywords, ["客户", "精选"])
+        XCTAssertEqual(refreshed.title, "Keep title")
+        XCTAssertEqual(refreshed.caption, "Keep caption")
+        XCTAssertEqual(refreshed.project, "Graduation")
+        XCTAssertEqual(refreshed.client, "Chen")
+        XCTAssertEqual(refreshed.faces, 2)
+        XCTAssertEqual(refreshed.importedAt, originalImportedAt)
+        let persisted = try XCTUnwrap(try store.loadAssets().first { $0.id == imported.id })
+        XCTAssertEqual(persisted.rating, 5)
+        XCTAssertEqual(persisted.title, "Keep title")
+        XCTAssertLessThan(abs(persisted.importedAt.timeIntervalSince(originalImportedAt)), 0.001)
+    }
+
+    @MainActor
     func testOpeningCatalogRepairsOrphanedSourceFolderIds() throws {
         let defaults = UserDefaults.standard
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")

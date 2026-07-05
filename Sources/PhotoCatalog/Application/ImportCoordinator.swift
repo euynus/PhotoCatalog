@@ -100,9 +100,26 @@ final class ImportCoordinator: @unchecked Sendable {
             let quickHashChanged = HashService.quickHash(url, fileSize: size) != known.quickHash
             return sizeChanged || modifiedChanged || quickHashChanged
         }
-        return process(files, folder: folder, mode: mode, autoTag: autoTag, readSidecar: readSidecar,
-                       previewMaxPixel: previewMaxPixel, control: nil, sourceRootId: sourceRootId,
-                       folderName: folderName, progress: nil)
+        let refreshed = process(files, folder: folder, mode: mode, autoTag: autoTag, readSidecar: readSidecar,
+                                previewMaxPixel: previewMaxPixel, control: nil, sourceRootId: sourceRootId,
+                                folderName: folderName, progress: nil)
+        var knownById: [String: Asset] = [:]
+        for asset in knownAssetsByPath.values where knownById[asset.id] == nil {
+            knownById[asset.id] = asset
+        }
+        var hasSidecarById: [String: Bool] = [:]
+        if readSidecar {
+            for url in files {
+                hasSidecarById[assetId(forPath: url.path)] =
+                    FileManager.default.fileExists(atPath: XMPSidecar.sidecarURL(for: url).path)
+            }
+        }
+        return refreshed.map { asset in
+            guard let known = knownById[asset.id] else { return asset }
+            return preservingCatalogMetadata(from: known, in: asset,
+                                             hasSidecar: hasSidecarById[asset.id] == true,
+                                             autoTag: autoTag)
+        }
     }
 
     private func process(_ files: [URL], folder: URL, mode: ImportMode, autoTag: Bool,
@@ -247,6 +264,26 @@ final class ImportCoordinator: @unchecked Sendable {
             i += 1
         }
         do { try FileManager.default.copyItem(at: url, to: dest); return dest } catch { return nil }
+    }
+
+    private func preservingCatalogMetadata(from known: Asset, in refreshed: Asset,
+                                           hasSidecar: Bool, autoTag: Bool) -> Asset {
+        var asset = refreshed
+        asset.importedAt = known.importedAt
+        asset.flag = known.flag
+        asset.project = known.project
+        asset.client = known.client
+        if !hasSidecar {
+            asset.rating = known.rating
+            asset.colorLabel = known.colorLabel
+            asset.keywords = known.keywords
+            asset.title = known.title
+            asset.caption = known.caption
+        }
+        if !autoTag {
+            asset.faces = known.faces
+        }
+        return asset
     }
 
     private func gpsLabel(_ gps: (Double, Double)) -> String {
