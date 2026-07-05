@@ -387,7 +387,7 @@ final class AppState {
 
     var statusBackupText: String {
         guard let date = statusMetrics.lastBackupDate else { return "尚未备份" }
-        let time = date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute())
+        let time = date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
         if Calendar.current.isDateInToday(date) {
             return "上次备份 今天 \(time)"
         }

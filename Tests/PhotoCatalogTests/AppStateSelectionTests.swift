@@ -2440,6 +2440,27 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testStatusBackupTextPadsMinute() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-backup-status-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try makeCatalogWithOneAsset(at: package, assetIndex: 0)
+        let backupDate = try XCTUnwrap(Calendar.current.date(bySettingHour: 9, minute: 5, second: 0, of: Date()))
+        let backup = try BackupService.backup(store, at: backupDate)
+        try FileManager.default.setAttributes([.modificationDate: backupDate], ofItemAtPath: backup.path)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        try await waitUntil("Timed out waiting for backup status") {
+            app.statusBackupText != "尚未备份"
+        }
+        XCTAssertTrue(app.statusBackupText.contains("09:05"), app.statusBackupText)
+    }
+
+    @MainActor
     func testAutomaticBackupIsTrackedPerCatalog() async throws {
         let defaults = UserDefaults.standard
         let keys = [
