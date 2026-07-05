@@ -881,6 +881,51 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(app.toastCenter.toasts.last?.icon, "warning")
     }
 
+    @MainActor
+    func testBatchRenameRollsBackWhenCatalogSaveFails() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rename-rollback-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        let sourceDir = dir.appendingPathComponent("Source")
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let original = sourceDir.appendingPathComponent("original.jpg")
+        try Data("image".utf8).write(to: original)
+
+        let store = try CatalogStore(packageURL: package)
+        var asset = try XCTUnwrap(DemoData.assets.first)
+        asset.filename = original.lastPathComponent
+        asset.localPath = original.path
+        asset.isDemo = false
+        asset.deleted = false
+        try store.upsert([asset])
+
+        let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
+        try db.execChecked("""
+        CREATE TRIGGER fail_rename_update BEFORE UPDATE OF filename ON assets
+        WHEN NEW.filename != OLD.filename
+        BEGIN
+          SELECT RAISE(ABORT, 'forced rename save failure');
+        END;
+        """)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.primaryId = asset.id
+        app.selectedIds = [asset.id]
+
+        app.batchRename(template: "RENAMED")
+
+        let renamed = sourceDir.appendingPathComponent("RENAMED_0001.jpg")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: original.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: renamed.path))
+        XCTAssertEqual(app.assets.first?.localPath, original.path)
+        XCTAssertEqual(try store.loadAssets().first?.localPath, original.path)
+        XCTAssertEqual(app.toastCenter.toasts.last?.message,
+                       "重命名未完成 · 已回滚 1 张照片 · 目录库保存失败")
+    }
+
     func testPrefixRenameDoesNotAddTrailingDotForExtensionlessFiles() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-extensionless-rename-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

@@ -1533,13 +1533,24 @@ final class AppState {
             push("重命名失败", "warning")
             return
         }
-        var saved = 0
-        for (id, url) in map {
-            if mutateAsset(id, { $0.filename = url.lastPathComponent; $0.localPath = url.path }) {
-                saved += 1
-            }
+
+        let changedIds = Set(map.keys)
+        var updated = assets
+        for index in updated.indices {
+            guard let url = map[updated[index].id] else { continue }
+            updated[index].filename = url.lastPathComponent
+            updated[index].localPath = url.path
         }
-        guard saved > 0 else { return }
+        guard persist(changedIds, in: updated) else {
+            let rolledBack = OriginalFileOperationService.rollBackMoves(map, originals: real)
+            push("重命名未完成"
+                 + (rolledBack > 0 ? " · 已回滚 \(rolledBack) 张照片" : " · 回滚失败")
+                 + " · 目录库保存失败",
+                 "warning")
+            return
+        }
+        replaceAssetsForMutation(updated)
+        let saved = map.count
         push("已重命名 \(saved) 张照片" + (saved < real.count ? " · \(real.count - saved) 失败" : ""),
              saved < real.count ? "warning" : "check")
     }
