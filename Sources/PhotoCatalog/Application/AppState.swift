@@ -2058,13 +2058,24 @@ final class AppState {
     func runBackup() {
         guard !importing else { push("导入中无法备份目录库", "warning"); return }
         guard let store else { push("无目录库可备份", "warning"); return }
-        do {
-            try store.upsert(assets.filter { !$0.isDemo })
-            let url = try BackupService.backup(store)
-            refreshStatusMetrics()
-            push("已备份目录库 · \(url.lastPathComponent)", "check")
-        } catch {
-            push("备份失败", "warning")
+        let packageURL = store.packageURL
+        let snapshot = assets.filter { !$0.isDemo }
+        Task { [weak self, store, packageURL, snapshot] in
+            let url = await Task.detached(priority: .utility) { () -> URL? in
+                do {
+                    try store.upsert(snapshot)
+                    return try BackupService.backup(store)
+                } catch {
+                    return nil
+                }
+            }.value
+            guard let self, self.store?.packageURL == packageURL else { return }
+            if let url {
+                self.refreshStatusMetrics()
+                self.push("已备份目录库 · \(url.lastPathComponent)", "check")
+            } else {
+                self.push("备份失败", "warning")
+            }
         }
     }
 
@@ -2086,14 +2097,25 @@ final class AppState {
             return
         }
 
-        do {
-            try store.upsert(assets.filter { !$0.isDemo })
-            let url = try BackupService.backup(store, at: now)
-            UserDefaults.standard.set(now, forKey: backupKey)
-            refreshStatusMetrics()
-            push("已自动备份目录库 · \(url.lastPathComponent)", "check")
-        } catch {
-            push("自动备份失败", "warning")
+        let packageURL = store.packageURL
+        let snapshot = assets.filter { !$0.isDemo }
+        Task { [weak self, store, packageURL, snapshot, backupKey, now] in
+            let url = await Task.detached(priority: .utility) { () -> URL? in
+                do {
+                    try store.upsert(snapshot)
+                    return try BackupService.backup(store, at: now)
+                } catch {
+                    return nil
+                }
+            }.value
+            guard let self, self.store?.packageURL == packageURL else { return }
+            if let url {
+                UserDefaults.standard.set(now, forKey: backupKey)
+                self.refreshStatusMetrics()
+                self.push("已自动备份目录库 · \(url.lastPathComponent)", "check")
+            } else {
+                self.push("自动备份失败", "warning")
+            }
         }
     }
 

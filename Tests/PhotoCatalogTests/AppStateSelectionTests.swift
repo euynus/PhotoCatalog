@@ -1727,7 +1727,7 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
-    func testMaintenanceActionsCleanLocalCatalogState() throws {
+    func testMaintenanceActionsCleanLocalCatalogState() async throws {
         let defaults = UserDefaults.standard
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
         let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
@@ -1773,6 +1773,9 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: store.preview2048URL.path))
 
         app.runBackup()
+        try await waitUntil("Timed out waiting for backup") {
+            BackupService.listBackups(store).count == 1
+        }
         XCTAssertEqual(BackupService.listBackups(store).count, 1)
     }
 
@@ -1812,7 +1815,7 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
-    func testRunBackupStopsWhenSavingCatalogFails() throws {
+    func testRunBackupStopsWhenSavingCatalogFails() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-backup-failure-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
         let package = dir.appendingPathComponent("Library.photolibrary")
@@ -1843,12 +1846,15 @@ final class AppStateSelectionTests: XCTestCase {
 
         app.runBackup()
 
+        try await waitUntil("Timed out waiting for backup failure") {
+            app.toastCenter.toasts.last?.message == "备份失败"
+        }
         XCTAssertTrue(BackupService.listBackups(store).isEmpty)
         XCTAssertEqual(app.toastCenter.toasts.last?.message, "备份失败")
     }
 
     @MainActor
-    func testAutomaticBackupIsTrackedPerCatalog() throws {
+    func testAutomaticBackupIsTrackedPerCatalog() async throws {
         let defaults = UserDefaults.standard
         let keys = [
             "pc_catalogURL", "pc_openLast", "pc_onboarded",
@@ -1877,12 +1883,18 @@ final class AppStateSelectionTests: XCTestCase {
         defaults.set(firstPackage, forKey: "pc_catalogURL")
         let firstApp = AppState()
         XCTAssertTrue(firstApp.hasOpenCatalog)
+        try await waitUntil("Timed out waiting for first automatic backup") {
+            BackupService.listBackups(firstStore).count == 1
+        }
         XCTAssertEqual(BackupService.listBackups(firstStore).count, 1)
 
         defaults.set(secondPackage, forKey: "pc_catalogURL")
         let secondApp = AppState()
         XCTAssertTrue(secondApp.hasOpenCatalog)
 
+        try await waitUntil("Timed out waiting for second automatic backup") {
+            BackupService.listBackups(secondStore).count == 1
+        }
         XCTAssertEqual(BackupService.listBackups(secondStore).count, 1)
     }
 
