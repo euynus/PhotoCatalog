@@ -75,6 +75,28 @@ struct KeyCatcher: NSViewRepresentable {
         ].contains(key)
     }
 
+    @MainActor
+    static func isEditingText() -> Bool {
+        if let responder = NSApp.keyWindow?.firstResponder, responder is NSTextView { return true }
+        return false
+    }
+
+    nonisolated static func keyString(keyCode: UInt16, charactersIgnoringModifiers: String?) -> String {
+        switch keyCode {
+        case 0: return "a"
+        case 123: return "left"
+        case 124: return "right"
+        case 125: return "down"
+        case 126: return "up"
+        case 36, 76: return "return"
+        case 53: return "escape"
+        case 51: return "backspace"
+        case 117: return "delete"
+        case 49: return " "
+        default: return (charactersIgnoringModifiers ?? "").lowercased()
+        }
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator(app: app) }
     func makeNSView(context: Context) -> NSView {
         context.coordinator.install()
@@ -101,17 +123,15 @@ struct KeyCatcher: NSViewRepresentable {
         }
 
         private func isEditingText() -> Bool {
-            MainActor.assumeIsolated {
-                if let responder = NSApp.keyWindow?.firstResponder, responder is NSTextView { return true }
-                return false
-            }
+            MainActor.assumeIsolated { KeyCatcher.isEditingText() }
         }
 
         private func handle(_ event: NSEvent) -> NSEvent? {
             let cmd = event.modifierFlags.contains(.command)
             let shift = event.modifierFlags.contains(.shift)
             if KeyCatcher.shouldPassThroughGlobalShortcut(event.modifierFlags) { return event }
-            let key = Self.keyString(event)
+            let key = KeyCatcher.keyString(keyCode: event.keyCode,
+                                           charactersIgnoringModifiers: event.charactersIgnoringModifiers)
             let app = app
 
             if isEditingText() { return event }
@@ -123,19 +143,5 @@ struct KeyCatcher: NSViewRepresentable {
             return handled ? nil : event
         }
 
-        private static func keyString(_ event: NSEvent) -> String {
-            switch event.keyCode {
-            case 123: return "left"
-            case 124: return "right"
-            case 125: return "down"
-            case 126: return "up"
-            case 36, 76: return "return"
-            case 53: return "escape"
-            case 51: return "backspace"
-            case 117: return "delete"
-            case 49: return " "
-            default: return (event.charactersIgnoringModifiers ?? "").lowercased()
-            }
-        }
     }
 }

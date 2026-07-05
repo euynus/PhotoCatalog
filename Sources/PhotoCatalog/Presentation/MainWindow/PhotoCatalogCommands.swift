@@ -1,6 +1,7 @@
 // ============================================================
 //  App command menus and system keyboard shortcuts
 // ============================================================
+import AppKit
 import SwiftUI
 
 @MainActor
@@ -34,6 +35,13 @@ struct PhotoCatalogCommands: Commands {
         }
 
         CommandMenu("照片") {
+            Button("全选当前列表") { selectAllCurrentList() }
+                .keyboardShortcut("a", modifiers: .command)
+                .disabled(app.sheet != nil || !app.onboarded)
+            Button("反选当前列表") { invertCurrentList() }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
+                .disabled(app.sheet != nil || !app.onboarded)
+            Divider()
             Section("评分") {
                 Button("设置 1 星") { app.applyRatingShortcut(1) }
                     .disabled(app.sheet != nil || !app.hasSelection)
@@ -115,5 +123,19 @@ struct PhotoCatalogCommands: Commands {
             Button("运行健康检查") { app.runHealthCheck() }
                 .disabled(app.sheet != nil || !app.canRunCatalogMaintenance)
         }
+    }
+
+    private func selectAllCurrentList() {
+        if KeyCatcher.isEditingText() {
+            NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+            return
+        }
+        guard app.selectAllVisible() else { return }
+        app.push("已全选当前列表")
+    }
+
+    private func invertCurrentList() {
+        guard app.invertVisibleSelection() else { return }
+        app.push("已反选当前列表")
     }
 }

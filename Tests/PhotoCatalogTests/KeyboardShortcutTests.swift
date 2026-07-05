@@ -19,4 +19,9 @@ final class KeyboardShortcutTests: XCTestCase {
         XCTAssertFalse(KeyCatcher.shouldPassThroughMenuCommand("a", hasCommand: true))
         XCTAssertFalse(KeyCatcher.shouldPassThroughMenuCommand("b", hasCommand: false))
     }
+
+    func testKeyCatcherRecognizesAByHardwareKeyCode() {
+        XCTAssertEqual(KeyCatcher.keyString(keyCode: 0, charactersIgnoringModifiers: nil), "a")
+        XCTAssertEqual(KeyCatcher.keyString(keyCode: 0, charactersIgnoringModifiers: "A"), "a")
+    }
 }
