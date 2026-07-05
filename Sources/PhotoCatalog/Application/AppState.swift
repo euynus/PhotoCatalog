@@ -1359,11 +1359,24 @@ final class AppState {
             }.value
             guard let self else { return }
             guard self.incrementalRescanGeneration == generation else { return }
+            defer {
+                self.isIncrementalRescanning = false
+                if self.needsIncrementalRescan {
+                    self.needsIncrementalRescan = false
+                    self.incrementalRescan()
+                }
+            }
             var indexById = [String: Int](minimumCapacity: self.assets.count)
             for (i, a) in self.assets.enumerated() { indexById[a.id] = i }
             let trulyNew = delta.fresh.filter { indexById[$0.id] == nil }
             let changedAssets = delta.changed.filter { indexById[$0.id] != nil }
             if !trulyNew.isEmpty || !changedAssets.isEmpty {
+                do {
+                    try store.upsert(trulyNew + changedAssets)
+                } catch {
+                    self.push("重新扫描保存失败", "warning")
+                    return
+                }
                 var updated = self.assets
                 // appending leaves existing indices valid, so indexById stays correct for replacements
                 updated.append(contentsOf: trulyNew)
@@ -1371,7 +1384,6 @@ final class AppState {
                     if let index = indexById[asset.id] { updated[index] = asset }
                 }
                 self.replaceAssetsForMutation(updated)
-                try? store.upsert(trulyNew + changedAssets)
                 self.recomputeDuplicates()
                 if !trulyNew.isEmpty {
                     self.push("检测到 \(trulyNew.count) 张新照片", "importIcon")
@@ -1381,11 +1393,6 @@ final class AppState {
                 }
             }
             self.detectMissingRealAssets()
-            self.isIncrementalRescanning = false
-            if self.needsIncrementalRescan {
-                self.needsIncrementalRescan = false
-                self.incrementalRescan()
-            }
         }
     }
 

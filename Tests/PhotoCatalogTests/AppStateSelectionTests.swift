@@ -1809,6 +1809,40 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testIncrementalRescanReportsSaveFailure() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rescan-save-failure-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
+        try db.execChecked("""
+        CREATE TRIGGER fail_rescan_insert BEFORE INSERT ON assets
+        BEGIN
+          SELECT RAISE(ABORT, 'forced rescan save failure');
+        END;
+        """)
+
+        let photo = source.appendingPathComponent("new-photo.jpg")
+        try writeTestJPEG(to: photo, black: false)
+        app.rescanCurrentSource()
+
+        try await waitUntil("Timed out waiting for rescan save failure") {
+            app.toastCenter.toasts.last?.message == "重新扫描保存失败"
+        }
+        XCTAssertFalse(app.assets.contains { $0.filename == photo.lastPathComponent })
+        XCTAssertFalse(try store.loadAssets().contains { $0.filename == photo.lastPathComponent })
+    }
+
+    @MainActor
     func testIncrementalRescanPreservesCatalogMetadataForChangedOriginal() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rescan-preserve-metadata-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
