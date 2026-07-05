@@ -21,6 +21,7 @@ struct ScannedMetadata {
     var captureDate = Date()
     var captureDateSource = "文件修改时间"
     var gps: (Double, Double) = (0, 0)
+    var hasGPS = false
     var gpsAltitude: Double?
     var author = ""
     var copyright = ""
@@ -84,6 +85,7 @@ enum MetadataReader {
             let latRef = (gps[kCGImagePropertyGPSLatitudeRef] as? String) ?? "N"
             let lonRef = (gps[kCGImagePropertyGPSLongitudeRef] as? String) ?? "E"
             m.gps = (latRef == "S" ? -lat : lat, lonRef == "W" ? -lon : lon)
+            m.hasGPS = true
         }
         if let altitude = (gps[kCGImagePropertyGPSAltitude] as? NSNumber)?.doubleValue {
             let ref = (gps[kCGImagePropertyGPSAltitudeRef] as? NSNumber)?.intValue ?? 0

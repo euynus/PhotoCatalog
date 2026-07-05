@@ -93,8 +93,7 @@ enum SmartMatcher {
         case "datePreset":
             return matchesDatePreset(a.date, c.value)
         case "gps":
-            let hasGPS = !(a.gps.0 == 0 && a.gps.1 == 0)
-            return c.value == "yes" ? hasGPS : !hasGPS
+            return c.value == "yes" ? a.hasGPS : !a.hasGPS
         case "status":
             return a.status.rawValue == c.value
         case "search":

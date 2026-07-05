@@ -11,7 +11,7 @@ struct PlacesMapView: View {
     @State private var cameraDistance: Double = 10_000_000
 
     private var located: [Asset] {
-        app.list.filter { !($0.gps.0 == 0 && $0.gps.1 == 0) }
+        app.list.filter(\.hasGPS)
     }
 
     private struct Cluster: Identifiable {

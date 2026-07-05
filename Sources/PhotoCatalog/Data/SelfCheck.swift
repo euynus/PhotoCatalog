@@ -58,7 +58,7 @@ enum SelfCheck {
         let expectedIds = Set(ready.filter { asset in
             asset.rating >= 3
                 && asset.status == .missing
-                && !(asset.gps.0 == 0 && asset.gps.1 == 0)
+                && asset.hasGPS
                 && Calendar.captureWallClock.component(.year, from: asset.date) == Calendar.current.component(.year, from: .now)
                 && [asset.filename, asset.camera, asset.lens, asset.title, asset.caption, asset.location]
                     .joined(separator: " ")

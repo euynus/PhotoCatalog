@@ -2380,7 +2380,7 @@ final class AppState {
             if a.flag == .pick { counts.picks += 1 }
             if a.flag == .reject { counts.rejected += 1 }
             if a.status == .missing || a.status == .offline { counts.missingOffline += 1 }
-            if !(a.gps.0 == 0 && a.gps.1 == 0) { counts.places += 1 }
+            if a.hasGPS { counts.places += 1 }
             if a.faces > 0 { counts.people += 1 }
         }
         libraryCountsCache = counts
@@ -2694,7 +2694,7 @@ final class AppState {
             case "missing":
                 return live.filter { $0.status == .missing || $0.status == .offline }
             case "places":
-                return live.filter { !($0.gps.0 == 0 && $0.gps.1 == 0) }
+                return live.filter(\.hasGPS)
             case "people":
                 return live.filter { $0.faces > 0 }
             default:
@@ -2731,9 +2731,8 @@ final class AppState {
             if filters.date != "any" {
                 if !SmartMatcher.matchesDatePreset(a.date, filters.date) { return false }
             }
-            let hasGPS = !(a.gps.0 == 0 && a.gps.1 == 0)
-            if filters.gps == "yes" && !hasGPS { return false }
-            if filters.gps == "no" && hasGPS { return false }
+            if filters.gps == "yes" && !a.hasGPS { return false }
+            if filters.gps == "no" && a.hasGPS { return false }
             if filters.status != "any" && a.status.rawValue != filters.status { return false }
             if !q.isEmpty {
                 let haystack = ([a.filename, a.camera, a.lens, a.title, a.caption, a.location,

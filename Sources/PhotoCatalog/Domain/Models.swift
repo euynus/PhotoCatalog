@@ -71,6 +71,7 @@ struct Asset: Identifiable, Equatable, Sendable {
     var perceptualHash: UInt64? = nil           // cached dHash for similar-photo grouping (§6.10)
 
     var megapixels: Double { Double(width * height) / 1_000_000 }
+    var hasGPS: Bool { !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !(gps.0 == 0 && gps.1 == 0) }
 
     static func == (lhs: Asset, rhs: Asset) -> Bool { lhs.id == rhs.id }
 }

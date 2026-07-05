@@ -202,7 +202,7 @@ final class ImportCoordinator: @unchecked Sendable {
             fileModifiedAt: meta.fileModifiedAt, fileCreatedAt: meta.fileCreatedAt,
             rating: 0, flag: .none, colorLabel: nil, keywords: [], title: "", caption: "",
             author: meta.author, copyright: meta.copyright, makerNotes: meta.makerNotes,
-            location: gpsLabel(meta.gps), gps: meta.gps, gpsAltitude: meta.gpsAltitude,
+            location: gpsLabel(meta.gps, hasGPS: meta.hasGPS), gps: meta.gps, gpsAltitude: meta.gpsAltitude,
             status: .ready, importedAt: Date(), deleted: false,
             localPath: finalURL.path, captureDateSource: meta.captureDateSource,
             contentHash: content, quickHash: quick, isDemo: false)
@@ -286,8 +286,8 @@ final class ImportCoordinator: @unchecked Sendable {
         return asset
     }
 
-    private func gpsLabel(_ gps: (Double, Double)) -> String {
-        (gps.0 == 0 && gps.1 == 0) ? "" : String(format: "%.3f, %.3f", gps.0, gps.1)
+    private func gpsLabel(_ gps: (Double, Double), hasGPS: Bool) -> String {
+        hasGPS ? String(format: "%.3f, %.3f", gps.0, gps.1) : ""
     }
 
     private func sanitizeFolderName(_ name: String) -> String {

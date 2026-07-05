@@ -202,7 +202,7 @@ struct InspectorView: View {
 
     @ViewBuilder
     private func gpsPanel(_ a: Asset) -> some View {
-        if hasGPS(a.gps) {
+        if a.hasGPS {
             mapView(a)
         } else {
             HStack(spacing: 8) {
@@ -226,7 +226,7 @@ struct InspectorView: View {
             VStack {
                 Spacer()
                 HStack {
-                    Text(formatGPSLabel(a.gps, altitude: a.gpsAltitude))
+                    Text(formatGPSLabel(a.gps, altitude: a.gpsAltitude, isPresent: a.hasGPS))
                         .font(Theme.mono).foregroundStyle(Theme.text2)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.black.opacity(0.4)).clipShape(RoundedRectangle(cornerRadius: 4))
@@ -300,8 +300,8 @@ func hasGPS(_ gps: (Double, Double)) -> Bool {
     !(gps.0 == 0 && gps.1 == 0)
 }
 
-func formatGPSLabel(_ gps: (Double, Double), altitude: Double?) -> String {
-    guard hasGPS(gps) else { return "无 GPS" }
+func formatGPSLabel(_ gps: (Double, Double), altitude: Double?, isPresent: Bool? = nil) -> String {
+    guard isPresent ?? hasGPS(gps) else { return "无 GPS" }
     let coordinate = String(format: "%.4f, %.4f", gps.0, gps.1)
     guard let altitude else { return coordinate }
     return coordinate + " · \(formatAltitude(altitude))"

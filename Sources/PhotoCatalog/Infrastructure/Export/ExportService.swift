@@ -277,7 +277,7 @@ enum ExportService {
     }
 
     private static func hasGPS(_ asset: Asset) -> Bool {
-        !(asset.gps.0 == 0 && asset.gps.1 == 0)
+        asset.hasGPS
     }
 
     private static func csvField(_ value: String) -> String {

@@ -153,10 +153,36 @@ final class AppStateSelectionTests: XCTestCase {
     func testGPSFormattingHidesMissingCoordinates() {
         XCTAssertFalse(hasGPS((0, 0)))
         XCTAssertEqual(formatGPSLabel((0, 0), altitude: nil), "无 GPS")
+        XCTAssertEqual(formatGPSLabel((0, 0), altitude: nil, isPresent: true), "0.0000, 0.0000")
 
         XCTAssertTrue(hasGPS((31.2345, 121.4567)))
         XCTAssertEqual(formatGPSLabel((31.2345, 121.4567), altitude: 88.5),
                        "31.2345, 121.4567 · 88.5 m")
+    }
+
+    func testImportPreservesZeroCoordinateGPS() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-zero-gps-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let photo = source.appendingPathComponent("zero-gps.jpg")
+        try writeTestJPEG(to: photo, black: false, gps: [
+            kCGImagePropertyGPSLatitude: 0,
+            kCGImagePropertyGPSLatitudeRef: "N",
+            kCGImagePropertyGPSLongitude: 0,
+            kCGImagePropertyGPSLongitudeRef: "E",
+        ])
+
+        let store = try CatalogStore(packageURL: package)
+        let asset = try XCTUnwrap(ImportCoordinator(store: store).importFolder(source).first)
+
+        XCTAssertTrue(asset.hasGPS)
+        XCTAssertEqual(asset.gps.0, 0)
+        XCTAssertEqual(asset.gps.1, 0)
+        XCTAssertEqual(asset.location, "0.000, 0.000")
+        XCTAssertTrue(SmartMatcher.eval(asset, SmartCondition(field: "gps", op: "=", value: "yes")))
     }
 
     func testMetadataReaderAcceptsImageIOISOTypes() {
@@ -902,7 +928,7 @@ final class AppStateSelectionTests: XCTestCase {
         filters.gps = "yes"
         app.setFilters(filters)
         XCTAssertFalse(app.list.isEmpty)
-        XCTAssertTrue(app.list.allSatisfy { !($0.gps.0 == 0 && $0.gps.1 == 0) })
+        XCTAssertTrue(app.list.allSatisfy(\.hasGPS))
 
         filters = Filters()
         filters.status = AssetStatus.missing.rawValue
@@ -2365,7 +2391,7 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertTrue(app.selectedIds.isEmpty)
     }
 
-    private func writeTestJPEG(to url: URL, black: Bool) throws {
+    private func writeTestJPEG(to url: URL, black: Bool, gps: [CFString: Any]? = nil) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -2391,7 +2417,9 @@ final class AppStateSelectionTests: XCTestCase {
                                                                 nil) else {
             throw NSError(domain: "PhotoCatalogTests", code: 2)
         }
-        CGImageDestinationAddImage(destination, image, nil)
+        var properties: [CFString: Any] = [:]
+        if let gps { properties[kCGImagePropertyGPSDictionary] = gps }
+        CGImageDestinationAddImage(destination, image, properties.isEmpty ? nil : properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else {
             throw NSError(domain: "PhotoCatalogTests", code: 3)
         }
