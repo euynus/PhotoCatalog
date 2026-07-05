@@ -41,14 +41,14 @@ enum BackupService {
         let temp = packageURL.appendingPathComponent("catalog.restore.tmp")
         try? fm.removeItem(at: temp)
         try fm.copyItem(at: backup, to: temp)
-        // drop stale WAL/SHM sidecars so the restored DB is authoritative
-        for sidecar in ["catalog.sqlite-wal", "catalog.sqlite-shm"] {
-            try? fm.removeItem(at: packageURL.appendingPathComponent(sidecar))
-        }
         if fm.fileExists(atPath: live.path) {
             _ = try fm.replaceItemAt(live, withItemAt: temp, backupItemName: nil)
         } else {
             try fm.moveItem(at: temp, to: live)
+        }
+        // drop stale WAL/SHM sidecars only after the live DB replacement succeeds
+        for sidecar in ["catalog.sqlite-wal", "catalog.sqlite-shm"] {
+            try? fm.removeItem(at: packageURL.appendingPathComponent(sidecar))
         }
     }
 }
