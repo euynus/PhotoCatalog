@@ -1579,8 +1579,14 @@ final class AppState {
                 || report.moved == 0
                 || (self?.applyMovedOriginalLocations(report.updatedLocations) ?? true)
             let persistenceFailed = !locationsSaved
+            let rolledBack = persistenceFailed && operation == .move
+                ? await Task.detached(priority: .userInitiated) {
+                    OriginalFileOperationService.rollBackMoves(report.updatedLocations, originals: real)
+                }.value
+                : 0
             self?.pushOriginalFileOperationReport(report, operation: operation,
-                                                  persistenceFailed: persistenceFailed)
+                                                  persistenceFailed: persistenceFailed,
+                                                  rolledBack: rolledBack)
         }
     }
 
@@ -1642,7 +1648,15 @@ final class AppState {
 
     private func pushOriginalFileOperationReport(_ report: OriginalFileOperationReport,
                                                  operation: OriginalFileOperation,
-                                                 persistenceFailed: Bool = false) {
+                                                 persistenceFailed: Bool = false,
+                                                 rolledBack: Int = 0) {
+        if operation == .move, persistenceFailed {
+            push("移动未完成"
+                 + (rolledBack > 0 ? " · 已回滚 \(rolledBack) 个原件" : " · 回滚失败")
+                 + " · 目录库保存失败",
+                 "warning")
+            return
+        }
         let completed = operation == .move ? report.moved : report.copied
         let verb = operation == .move ? "移动" : "复制"
         push("已\(verb) \(completed) 个原件"

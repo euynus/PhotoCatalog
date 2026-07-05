@@ -55,6 +55,25 @@ enum OriginalFileOperationService {
         return report
     }
 
+    static func rollBackMoves(_ movedLocations: [String: URL], originals: [Asset]) -> Int {
+        let fm = FileManager.default
+        let originalsById = Dictionary(uniqueKeysWithValues: originals.compactMap { asset -> (String, URL)? in
+            guard let path = asset.localPath else { return nil }
+            return (asset.id, URL(fileURLWithPath: path))
+        })
+        var rolledBack = 0
+        for (id, moved) in movedLocations {
+            guard let original = originalsById[id],
+                  fm.fileExists(atPath: moved.path),
+                  !fm.fileExists(atPath: original.path) else { continue }
+            do {
+                try fm.moveItem(at: moved, to: original)
+                rolledBack += 1
+            } catch {}
+        }
+        return rolledBack
+    }
+
     private static func resolvedTarget(for source: URL, in destination: URL, fm: FileManager) -> URL? {
         let initial = destination.appendingPathComponent(source.lastPathComponent)
         guard fm.fileExists(atPath: initial.path) else { return initial }

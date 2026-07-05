@@ -2359,6 +2359,23 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(report.failed, 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: destination.appendingPathComponent("photo (1).jpg").path))
+
+        let moveSource = sourceDir.appendingPathComponent("move.jpg")
+        try Data("move".utf8).write(to: moveSource)
+        var moved = DemoData.assets[3]
+        moved.localPath = moveSource.path
+
+        let moveReport = OriginalFileOperationService.perform(.move, assets: [moved],
+                                                              destination: destination)
+        let movedURL = try XCTUnwrap(moveReport.updatedLocations[moved.id])
+        XCTAssertEqual(moveReport.moved, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: moveSource.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: movedURL.path))
+
+        XCTAssertEqual(OriginalFileOperationService.rollBackMoves(moveReport.updatedLocations,
+                                                                  originals: [moved]), 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: moveSource.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: movedURL.path))
     }
 
     @MainActor
