@@ -1835,7 +1835,18 @@ final class AppState {
         guard let store else { push("无目录库", "warning"); return }
         let fm = FileManager.default
         let logs = (try? fm.contentsOfDirectory(at: store.logsURL, includingPropertiesForKeys: nil)) ?? []
-        for url in logs { try? fm.removeItem(at: url) }
+        var failed = 0
+        for url in logs {
+            do {
+                try fm.removeItem(at: url)
+            } catch {
+                failed += 1
+            }
+        }
+        guard failed == 0 else {
+            push("清除日志失败", "warning")
+            return
+        }
         push("已清除日志", "trash")
     }
 

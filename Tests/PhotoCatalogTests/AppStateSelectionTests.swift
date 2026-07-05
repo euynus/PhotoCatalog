@@ -2293,6 +2293,31 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testClearLogsReportsRemovalFailure() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-log-clear-failure-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer {
+            try? setUserImmutableFlag(package.appendingPathComponent("Logs/import.log"), enabled: false)
+            try? FileManager.default.removeItem(at: dir)
+        }
+
+        let store = try CatalogStore(packageURL: package)
+        let logFile = store.logsURL.appendingPathComponent("import.log")
+        try Data("log".utf8).write(to: logFile)
+        try setUserImmutableFlag(logFile, enabled: true)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        app.clearLogs()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: logFile.path))
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "清除日志失败")
+        XCTAssertEqual(app.toastCenter.toasts.last?.icon, "warning")
+    }
+
+    @MainActor
     func testClearCacheReportsRemovalFailure() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-cache-clear-failure-\(UUID().uuidString)")
         let package = dir.appendingPathComponent("Library.photolibrary")
