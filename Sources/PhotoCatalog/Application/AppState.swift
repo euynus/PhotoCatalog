@@ -1834,9 +1834,12 @@ final class AppState {
                         guard let path = a.localPath,
                               FileManager.default.fileExists(atPath: path) else { continue }
                         let original = URL(fileURLWithPath: path)
-                        _ = coordinator.thumbnails.ensureCached(from: original, assetId: a.id, kind: .thumb512)
                         _ = coordinator.thumbnails.ensureCached(
-                            from: original, assetId: a.id,
+                            from: original, fallbackPreview: nil,
+                            catalogModificationDate: a.fileModifiedAt, assetId: a.id, kind: .thumb512)
+                        _ = coordinator.thumbnails.ensureCached(
+                            from: original, fallbackPreview: nil,
+                            catalogModificationDate: a.fileModifiedAt, assetId: a.id,
                             kind: ThumbnailService.previewKind(forCachePath: a.preview, fallbackMaxPixel: previewSize))
                     }
                 }.value
@@ -1953,15 +1956,6 @@ final class AppState {
             return requestedSource
         }
 
-        // Stat off the main actor: a referenced original on a stalled network
-        // volume can block for seconds, and this runs once per appearing cell.
-        let (requestedExists, originalExists, previewExists) = await Task.detached(priority: .userInitiated) {
-            [requestedSource, localPath = asset.localPath, preview = asset.preview] in
-            let fm = FileManager.default
-            return (!requestedSource.isEmpty && fm.fileExists(atPath: requestedSource),
-                    localPath.map { fm.fileExists(atPath: $0) } ?? false,
-                    !preview.isEmpty && fm.fileExists(atPath: preview))
-        }.value
         guard let coordinator,
               let localPath = asset.localPath else {
             return requestedSource
@@ -1969,28 +1963,39 @@ final class AppState {
 
         let original = URL(fileURLWithPath: localPath)
         let fallbackPreview = asset.preview.isEmpty ? nil : URL(fileURLWithPath: asset.preview)
-        guard originalExists || previewExists else {
-            return requestedSource
-        }
 
         let assetId = asset.id
         let thumbnails = coordinator.thumbnails
         let resolvedKind = kind.isPreview
             ? ThumbnailService.previewKind(forCachePath: requestedSource, fallbackMaxPixel: previewMaxPixel)
             : kind
+        let requestedExists = await Task.detached(priority: .userInitiated) {
+            !requestedSource.isEmpty && FileManager.default.fileExists(atPath: requestedSource)
+        }.value
         if requestedExists {
             let cached = URL(fileURLWithPath: requestedSource)
             let needsRegeneration = await Task.detached(priority: .userInitiated) {
-                ThumbnailService.cacheIsStale(cache: cached, original: original)
+                ThumbnailService.cacheIsStale(cache: cached, originalModificationDate: asset.fileModifiedAt)
                     || thumbnails.cachedRepresentationNeedsRegeneration(at: cached, original: original, kind: resolvedKind)
             }.value
             if !needsRegeneration {
                 return requestedSource
             }
         }
+        // Only touch a referenced original after the local cache is missing, stale, or damaged.
+        let (originalExists, previewExists) = await Task.detached(priority: .userInitiated) {
+            [localPath, preview = asset.preview] in
+            let fm = FileManager.default
+            return (fm.fileExists(atPath: localPath),
+                    !preview.isEmpty && fm.fileExists(atPath: preview))
+        }.value
+        guard originalExists || previewExists else {
+            return requestedSource
+        }
         let restored = await Task.detached(priority: .userInitiated) {
             thumbnails.ensureCached(from: original,
                                     fallbackPreview: fallbackPreview,
+                                    catalogModificationDate: asset.fileModifiedAt,
                                     assetId: assetId,
                                     kind: resolvedKind)
         }.value

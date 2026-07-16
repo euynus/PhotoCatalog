@@ -1744,6 +1744,23 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertFalse(imageIsUniformBlack(at: previewURL))
     }
 
+    func testCatalogModificationDateControlsCacheFreshness() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-cache-freshness-\(UUID().uuidString)")
+        let cache = dir.appendingPathComponent("cache.jpg")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data().write(to: cache)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 200)],
+                                              ofItemAtPath: cache.path)
+
+        XCTAssertFalse(ThumbnailService.cacheIsStale(cache: cache, originalModificationDate: nil))
+        XCTAssertFalse(ThumbnailService.cacheIsStale(
+            cache: cache, originalModificationDate: Date(timeIntervalSince1970: 100)))
+        XCTAssertTrue(ThumbnailService.cacheIsStale(
+            cache: cache, originalModificationDate: Date(timeIntervalSince1970: 300)))
+    }
+
     func testPreviewExportRepairsBlackRawPreviewCache() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-raw-export-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")

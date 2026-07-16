@@ -93,13 +93,30 @@ final class ThumbnailService: @unchecked Sendable {
         ensureCached(from: original, fallbackPreview: nil, assetId: assetId, kind: kind)
     }
 
+    /// Use the modification time already stored in the catalog so displaying a valid cache
+    /// never needs to stat an original on a slow or disconnected external volume.
+    @discardableResult
+    func ensureCached(from original: URL, fallbackPreview: URL?,
+                      catalogModificationDate: Date?, assetId: String, kind: Kind) -> URL? {
+        ensureCached(from: original, fallbackPreview: fallbackPreview, assetId: assetId, kind: kind) {
+            Self.cacheIsStale(cache: $0, originalModificationDate: catalogModificationDate)
+        }
+    }
+
     /// Return an existing cached representation or regenerate it, using an existing preview
     /// first when repairing broken RAW thumbnails and the original may be unavailable.
     @discardableResult
     func ensureCached(from original: URL, fallbackPreview: URL?, assetId: String, kind: Kind) -> URL? {
+        ensureCached(from: original, fallbackPreview: fallbackPreview, assetId: assetId, kind: kind) {
+            Self.cacheIsStale(cache: $0, original: original)
+        }
+    }
+
+    private func ensureCached(from original: URL, fallbackPreview: URL?, assetId: String, kind: Kind,
+                              cacheIsStale: (URL) -> Bool) -> URL? {
         let out = cachePath(assetId: assetId, kind: kind)
         if FileManager.default.fileExists(atPath: out.path),
-           !Self.cacheIsStale(cache: out, original: original),
+           !cacheIsStale(out),
            !cachedRepresentationNeedsRegeneration(at: out, original: original, kind: kind) {
             return out
         }
@@ -127,11 +144,15 @@ final class ThumbnailService: @unchecked Sendable {
     /// A cached thumbnail is stale once the original is modified after it was generated
     /// (e.g. an in-place edit). Compares file modification times (THM-004).
     static func cacheIsStale(cache: URL, original: URL) -> Bool {
-        let fm = FileManager.default
-        guard let cacheAttrs = try? fm.attributesOfItem(atPath: cache.path),
-              let originalAttrs = try? fm.attributesOfItem(atPath: original.path),
-              let cacheDate = cacheAttrs[.modificationDate] as? Date,
-              let originalDate = originalAttrs[.modificationDate] as? Date else { return false }
+        let originalDate = try? original.resourceValues(forKeys: [.contentModificationDateKey])
+            .contentModificationDate
+        return cacheIsStale(cache: cache, originalModificationDate: originalDate)
+    }
+
+    static func cacheIsStale(cache: URL, originalModificationDate: Date?) -> Bool {
+        guard let originalDate = originalModificationDate,
+              let cacheDate = try? cache.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate else { return false }
         return originalDate > cacheDate
     }
 
