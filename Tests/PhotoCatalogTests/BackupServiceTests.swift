@@ -2,6 +2,26 @@ import XCTest
 @testable import PhotoCatalog
 
 final class BackupServiceTests: XCTestCase {
+    func testListBackupsSortsByModificationDate() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("pc-backup-order-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        defer { try? fm.removeItem(at: dir) }
+
+        let older = store.backupsURL.appendingPathComponent("catalog-pre-migration-v99.sqlite")
+        let newer = store.backupsURL.appendingPathComponent("catalog-2026-07-05-121125.sqlite")
+        try Data().write(to: older)
+        try Data().write(to: newer)
+        try fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: 100)],
+                             ofItemAtPath: older.path)
+        try fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: 200)],
+                             ofItemAtPath: newer.path)
+
+        XCTAssertEqual(BackupService.listBackups(store).map(\.lastPathComponent),
+                       [newer.lastPathComponent, older.lastPathComponent])
+    }
+
     func testFailedRestoreKeepsLiveSidecars() throws {
         let fm = FileManager.default
         let dir = fm.temporaryDirectory.appendingPathComponent("pc-restore-failure-\(UUID().uuidString)")

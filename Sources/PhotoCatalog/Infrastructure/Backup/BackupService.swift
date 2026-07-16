@@ -25,7 +25,12 @@ enum BackupService {
         ((try? FileManager.default.contentsOfDirectory(at: store.backupsURL,
             includingPropertiesForKeys: [.contentModificationDateKey])) ?? [])
             .filter { $0.pathExtension == "sqlite" }
-            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+            .sorted {
+                let lhsDate = try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+                let rhsDate = try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+                if lhsDate != rhsDate { return (lhsDate ?? .distantPast) > (rhsDate ?? .distantPast) }
+                return $0.lastPathComponent > $1.lastPathComponent
+            }
     }
 
     /// Replace the live catalog DB with a backup (caller must reopen the store after).
