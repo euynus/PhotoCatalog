@@ -22,7 +22,7 @@ struct Titlebar: View {
 
             HStack(spacing: 7) {
                 Icon("aperture", size: 14).foregroundStyle(Theme.accent)
-                Text("PhotoCatalog Library")
+                Text(app.catalogDisplayName)
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(Theme.text2)
                     .lineLimit(1)

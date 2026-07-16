@@ -735,6 +735,7 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertNil(app.primaryId)
         XCTAssertTrue(app.selectedIds.isEmpty)
         XCTAssertEqual(app.libraryCounts.all, 0)
+        XCTAssertEqual(app.catalogDisplayName, "Empty")
     }
 
     @MainActor

@@ -363,6 +363,10 @@ final class AppState {
         store?.packageURL.path ?? "未打开目录库"
     }
 
+    var catalogDisplayName: String {
+        store?.packageURL.deletingPathExtension().lastPathComponent ?? "PhotoCatalog"
+    }
+
     var recentCatalogs: [RecentCatalog] {
         recentCatalogPaths
             .filter { Self.isValidCatalogSelection(URL(fileURLWithPath: $0)) }
