@@ -718,6 +718,26 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testOpeningEmptyCatalogDoesNotExposeDemoAssets() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-empty-catalog-\(UUID().uuidString)")
+        let package = root.appendingPathComponent("Empty.photolibrary")
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try CatalogStore(packageURL: package)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        XCTAssertTrue(app.assets.isEmpty)
+        XCTAssertTrue(app.list.isEmpty)
+        XCTAssertTrue(app.duplicateGroups.isEmpty)
+        XCTAssertNil(app.primaryId)
+        XCTAssertTrue(app.selectedIds.isEmpty)
+        XCTAssertEqual(app.libraryCounts.all, 0)
+    }
+
+    @MainActor
     func testSafeCommandKeyboardShortcuts() {
         let app = AppState()
         app.onboarded = true

@@ -419,16 +419,17 @@ final class AppState {
         let real = ((try? s.loadAssets()) ?? []).filter { !$0.isDemo && !$0.deleted }
         let hasInterruptedImport = (try? s.loadJobs(type: "scan", states: ["running", "paused"]).isEmpty) == false
         guard !real.isEmpty else {
-            if hasInterruptedImport {
-                assets = []
-                albums = []
-                smartAlbums = []
-                folders = []
-            }
+            assets = []
+            albums = []
+            smartAlbums = []
+            folders = []
+            duplicateGroupsCache = []
             restoreSourceRoots(from: s)
+            restoreAlbums(from: s, assets: [])
             if hasInterruptedImport {
                 recoverInterruptedImportJobs(existingAssets: [])
             }
+            ensurePrimaryValid()
             return nil
         }
 
