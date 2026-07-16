@@ -2040,10 +2040,16 @@ final class AppState {
         Task { [weak self, store, packageURL, snapshot, maxBytes] in
             let result = await Task.detached(priority: .utility) {
                 let report = CacheService.prune(store.cacheURL, maxBytes: maxBytes)
-                return report.removedFiles > 0 ? CatalogHealth.check(store, assets: snapshot) : nil
+                let health = report.removedFiles > 0 ? CatalogHealth.check(store, assets: snapshot) : nil
+                let cacheBytes = health?.cacheBytes ?? CatalogHealth.directorySize(store.cacheURL)
+                return (health, cacheBytes)
             }.value
-            guard let self, let report = result, self.store?.packageURL == packageURL else { return }
-            self.applyHealthReport(report)
+            guard let self, self.store?.packageURL == packageURL else { return }
+            if let report = result.0 {
+                self.applyHealthReport(report)
+            } else {
+                self.statusMetrics.cacheBytes = result.1
+            }
         }
     }
 

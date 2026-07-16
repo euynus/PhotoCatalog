@@ -1528,6 +1528,30 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testThumbnailRebuildRefreshesCacheStatus() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-thumbnail-status-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try CatalogStore(packageURL: package)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        try await waitUntil("Timed out waiting for initial cache status") {
+            app.statusCacheText == "缓存 0 KB"
+        }
+
+        let cacheFile = store.thumb256URL.appendingPathComponent("generated.jpg")
+        try Data(repeating: 1, count: 1_024).write(to: cacheFile)
+        XCTAssertTrue(app.finishThumbnailRebuild(expectedCatalogURL: URL(fileURLWithPath: app.catalogPath)))
+
+        try await waitUntil("Timed out waiting for refreshed cache status") {
+            app.statusCacheText != "缓存 0 KB"
+        }
+    }
+
+    @MainActor
     func testClearingSecurityBookmarksRequiresSourceReauthorization() throws {
         let defaults = UserDefaults.standard
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
