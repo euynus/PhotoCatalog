@@ -2208,6 +2208,34 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testRescanRefreshesCacheStatusAfterGeneratingThumbnails() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rescan-cache-status-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        try await waitUntil("Timed out waiting for initial cache status") {
+            app.statusCacheText == "缓存 0 KB"
+        }
+
+        let photo = source.appendingPathComponent("new-photo.jpg")
+        try writeTestJPEG(to: photo, black: false)
+        app.rescanCurrentSource()
+
+        try await waitUntil("Timed out waiting for generated thumbnail status") {
+            app.assets.contains { $0.filename == photo.lastPathComponent }
+                && app.statusCacheText != "缓存 0 KB"
+        }
+    }
+
+    @MainActor
     func testIncrementalRescanReportsSaveFailure() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rescan-save-failure-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")

@@ -1406,6 +1406,7 @@ final class AppState {
                 }
                 self.replaceAssetsForMutation(updated)
                 self.recomputeDuplicates()
+                self.enforceCacheLimitIfNeeded()
                 if !trulyNew.isEmpty {
                     self.push("检测到 \(trulyNew.count) 张新照片", "importIcon")
                 }
