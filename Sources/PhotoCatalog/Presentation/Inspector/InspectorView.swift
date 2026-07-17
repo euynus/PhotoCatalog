@@ -84,7 +84,7 @@ struct InspectorView: View {
                 TypeBadge(asset: asset, small: true)
                 Text("\(asset.width) × \(asset.height)")
                 Text("·")
-                Text(String(format: "%.1f MP", asset.megapixels))
+                Text(megapixelText(asset.megapixels))
             }
             .font(.system(size: 11.5)).monospacedDigit().foregroundStyle(Theme.text3)
         }
@@ -109,7 +109,7 @@ struct InspectorView: View {
             InsGroup([
                 .init("文件名", a.filename, mono: true),
                 .init("类型", a.isRaw ? "RAW · \(a.type)" : a.type),
-                .init("大小", String(format: "%.1f MB", a.fileMB)),
+                .init("大小", fileSizeText(megabytes: a.fileMB)),
                 .init("尺寸", "\(a.width) × \(a.height)", mono: true),
                 .init("色彩空间", a.colorSpace),
                 .init("ICC", a.hasICCProfile ? "有" : "无"),

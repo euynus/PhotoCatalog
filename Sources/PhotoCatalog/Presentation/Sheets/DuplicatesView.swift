@@ -9,11 +9,6 @@ func duplicateReclaimMegabytes(_ groups: [DuplicateGroup]) -> Double {
     }
 }
 
-func duplicateByteSizeText(megabytes: Double) -> String {
-    let bytes = Int64((max(0, megabytes) * 1_024 * 1_024).rounded())
-    return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
-}
-
 struct DuplicatesView: View {
     @Environment(AppState.self) var app
 
@@ -53,7 +48,7 @@ struct DuplicatesView: View {
                 summaryItem("\(fileCount)", "个文件", accent: false)
                 HStack(spacing: 4) {
                     Text("可释放 ≈").font(.system(size: 12.5)).foregroundStyle(Theme.text2)
-                    Text(duplicateByteSizeText(megabytes: reclaim))
+                    Text(fileSizeText(megabytes: reclaim))
                         .font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.accent)
                 }
             }
@@ -140,7 +135,7 @@ struct DuplicatesView: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(it.filename).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
-                Text("\(duplicateByteSizeText(megabytes: it.fileMB)) · \(it.width)×\(it.height) · \(it.folderName)")
+                Text("\(fileSizeText(megabytes: it.fileMB)) · \(it.width)×\(it.height) · \(it.folderName)")
                     .font(.system(size: 11)).foregroundStyle(Theme.text3)
                     .lineLimit(1)
                 Text("\(DateFmt.shortCapture(it.date)) · \(it.camera)")

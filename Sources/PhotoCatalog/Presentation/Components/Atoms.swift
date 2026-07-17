@@ -260,6 +260,17 @@ extension View {
     }
 }
 
+// ---------- Media size helpers ----------
+func fileSizeText(megabytes: Double) -> String {
+    let bytes = Int64((max(0, megabytes) * 1_024 * 1_024).rounded())
+    return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+}
+
+func megapixelText(_ megapixels: Double) -> String {
+    guard megapixels > 0 else { return "0 MP" }
+    return megapixels < 0.1 ? "<0.1 MP" : String(format: "%.1f MP", megapixels)
+}
+
 // ---------- Date helpers ----------
 enum DateFmt {
     private static let weekdays = ["日", "一", "二", "三", "四", "五", "六"]
