@@ -1832,6 +1832,46 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testManagedSourceDoesNotRequireOriginalFolderAuthorization() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-managed-offline-source-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        let managedOriginal = store.originalsURL.appendingPathComponent("managed.jpg")
+        try Data("managed photo".utf8).write(to: managedOriginal)
+        try store.addSourceRoot(
+            id: "managed-source",
+            displayName: "Disconnected Camera Card",
+            path: dir.appendingPathComponent("Missing Source").path,
+            bookmark: Data([0]),
+            mode: .managed
+        )
+
+        var asset = try XCTUnwrap(DemoData.assets.first)
+        asset.folderId = "managed-source"
+        asset.folderName = "Disconnected Camera Card"
+        asset.localPath = managedOriginal.path
+        asset.status = .ready
+        asset.isDemo = false
+        try store.upsert([asset])
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.selection = Selection(
+            type: .folder,
+            id: "managed-source",
+            name: "Disconnected Camera Card"
+        )
+
+        XCTAssertEqual(app.folders.first { $0.id == "managed-source" }?.status, "online")
+        XCTAssertFalse(app.canReauthorizeSelectedSource)
+        XCTAssertEqual(app.assets.first?.status, .ready)
+    }
+
+    @MainActor
     func testVisibleImageSourceRepairsBlackRawPreviewCache() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-raw-visible-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")

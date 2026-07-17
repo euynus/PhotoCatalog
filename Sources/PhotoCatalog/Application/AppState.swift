@@ -524,6 +524,9 @@ final class AppState {
     }
 
     private func resolveSourceRoot(_ root: SourceRootRecord) -> (url: URL?, status: String) {
+        if root.managementMode == ImportMode.managed.rawValue {
+            return (nil, "online")
+        }
         if let bookmark = root.bookmarkData {
             guard let resolved = FileAccessService.resolveBookmark(bookmark) else {
                 return fallbackSourceRoot(root, preferredStatus: "permissionLost")
@@ -3168,7 +3171,10 @@ final class AppState {
     var canExportPreviewSelection: Bool { !selectedAssetsWithExportablePreviews().isEmpty }
     var canRemoveSelectionFromCurrentAlbum: Bool { selection.type == .album && hasSelection }
     var canRemoveSelectedSource: Bool { selectedFolderIsCatalogSource }
-    var canReauthorizeSelectedSource: Bool { selectedFolderIsCatalogSource }
+    var canReauthorizeSelectedSource: Bool {
+        selectedFolderIsCatalogSource
+            && sourceManagementModesById[selection.id] != ImportMode.managed.rawValue
+    }
 
     private var selectedFolderIsCatalogSource: Bool {
         selection.type == .folder
