@@ -6,12 +6,20 @@ import SwiftUI
 struct SmartAlbumBuilder: View {
     @Environment(AppState.self) var app
 
-    @State private var name = "五星精选 · 旅行"
-    @State private var match = "all"
-    @State private var conditions: [SmartCondition] = [
-        SmartCondition(field: "rating", op: ">=", value: "4"),
-        SmartCondition(field: "keywords", op: "包含", value: "旅行"),
-    ]
+    private let album: SmartAlbum?
+    @State private var name: String
+    @State private var match: String
+    @State private var conditions: [SmartCondition]
+
+    init(album: SmartAlbum? = nil) {
+        self.album = album
+        _name = State(initialValue: album?.name ?? "五星精选 · 旅行")
+        _match = State(initialValue: album?.rule.match ?? "all")
+        _conditions = State(initialValue: album?.rule.conditions ?? [
+            SmartCondition(field: "rating", op: ">=", value: "4"),
+            SmartCondition(field: "keywords", op: "包含", value: "旅行"),
+        ])
+    }
 
     private var rule: SmartRule { SmartRule(match: match, conditions: conditions) }
     // exclude trashed assets so the preview count matches the sidebar/grid (all other
@@ -38,10 +46,11 @@ struct SmartAlbumBuilder: View {
         HStack {
             HStack(spacing: 9) {
                 Icon("sparkles", size: 17).foregroundStyle(Theme.accent)
-                Text("智能相册").font(.system(size: 14.5, weight: .semibold))
+                Text(album == nil ? "智能相册" : "编辑智能相册")
+                    .font(.system(size: 14.5, weight: .semibold))
             }
             Spacer()
-            sheetClose { app.sheet = nil }
+            sheetClose { app.dismissSmartAlbumBuilder() }
         }
         .padding(.horizontal, 18).padding(.vertical, 15)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
@@ -185,13 +194,15 @@ struct SmartAlbumBuilder: View {
             Text("动态集合 · 新导入照片若符合规则会自动加入")
                 .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            ghostButton(nil, "取消") { app.sheet = nil }
+            ghostButton(nil, "取消") { app.dismissSmartAlbumBuilder() }
             Button { app.saveSmart(name: name, rule: rule, count: matchedCount) } label: {
-                Text("创建智能相册").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.onAccent)
+                Text(album == nil ? "创建智能相册" : "保存更改")
+                    .font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.onAccent)
                     .padding(.horizontal, 17).padding(.vertical, 8)
                     .background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 7))
             }.buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || conditions.isEmpty)
         }
         .padding(.horizontal, 18).padding(.vertical, 13)
         .background(Color.black.opacity(0.18))

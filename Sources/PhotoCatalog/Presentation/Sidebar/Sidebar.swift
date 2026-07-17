@@ -94,10 +94,18 @@ struct Sidebar: View {
 
     private var smartSection: some View {
         SidebarSection(title: "智能相册", action: {
-            SBAddButton(help: "新建智能相册") { app.sheet = "smart" }
+            SBAddButton(help: "新建智能相册") { app.showNewSmartAlbumBuilder() }
         }) {
             ForEach(app.smartAlbums) { sa in
                 row("sparkles", Theme.accent, sa.name, "\(app.countForSmartAlbum(sa))", .smart, sa.id, sa.name)
+                    .contextMenu {
+                        Button { app.editSmartAlbum(sa.id) } label: {
+                            Label("编辑智能相册…", systemImage: "slider.horizontal.3")
+                        }
+                        Button(role: .destructive) { app.deleteSmartAlbum(sa.id) } label: {
+                            Label("删除智能相册…", systemImage: "trash")
+                        }
+                    }
             }
         }
     }

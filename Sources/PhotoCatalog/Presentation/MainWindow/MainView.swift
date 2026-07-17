@@ -40,7 +40,11 @@ struct MainView: View {
         if app.sheet == "import" {
             SheetBackdrop { ImportSheet() }
         } else if app.sheet == "smart" {
-            SheetBackdrop { SmartAlbumBuilder() }
+            SheetBackdrop {
+                SmartAlbumBuilder(album: app.smartAlbumEditingID.flatMap { id in
+                    app.smartAlbums.first { $0.id == id }
+                })
+            }
         } else if app.sheet == "settings" {
             SheetBackdrop { SettingsSheet() }
         }

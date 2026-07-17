@@ -509,6 +509,10 @@ final class CatalogStore: @unchecked Sendable {
         }
     }
 
+    func deleteSmartAlbum(id: String) throws {
+        try db.run("DELETE FROM albums WHERE id=? AND type='smart';", [.text(id)])
+    }
+
     // ---------- import sessions (§10.2 / §12.2) ----------
     func startImportSession(id: String, startedAt: Date = .now) throws {
         try db.run("""

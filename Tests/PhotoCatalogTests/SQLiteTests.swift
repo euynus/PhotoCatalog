@@ -58,4 +58,30 @@ final class SQLiteTests: XCTestCase {
         XCTAssertTrue(try store.loadAlbums().isEmpty)
         XCTAssertEqual(store.assetCount(), 1)
     }
+
+    func testSmartAlbumUpdateAndDeletePreserveAssets() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-smart-album-crud-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try CatalogStore(packageURL: dir.appendingPathComponent("Library.photolibrary"))
+        var asset = DemoData.assets[0]
+        asset.isDemo = false
+        try store.upsert([asset])
+        let initialRule = SmartRule(match: "all", conditions: [
+            SmartCondition(field: "rating", op: ">=", value: "4"),
+        ])
+        try store.saveSmartAlbum(SmartAlbum(id: "smart-1", name: "Before", rule: initialRule, count: 0))
+
+        let updatedRule = SmartRule(match: "all", conditions: [
+            SmartCondition(field: "type", op: "是", value: asset.type),
+        ])
+        try store.saveSmartAlbum(SmartAlbum(id: "smart-1", name: "After", rule: updatedRule, count: 1))
+        let loaded = try XCTUnwrap(store.loadSmartAlbums().first)
+        XCTAssertEqual(loaded.name, "After")
+        XCTAssertEqual(loaded.rule, updatedRule)
+
+        try store.deleteSmartAlbum(id: "smart-1")
+        XCTAssertTrue(try store.loadSmartAlbums().isEmpty)
+        XCTAssertEqual(store.assetCount(), 1)
+    }
 }

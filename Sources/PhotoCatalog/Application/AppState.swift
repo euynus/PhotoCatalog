@@ -281,7 +281,12 @@ final class AppState {
     var winner: String?
 
     // ----- sheets / toasts -----
-    var sheet: String?
+    var sheet: String? {
+        didSet {
+            if sheet != "smart" { smartAlbumEditingID = nil }
+        }
+    }
+    var smartAlbumEditingID: String?
     let toastCenter = ToastCenter()
 
     // ----- search focus signal (Cmd+F) -----
@@ -291,6 +296,11 @@ final class AppState {
     func blurSearch() { searchBlurToken += 1 }
 
     func showSettings() { sheet = "settings" }
+
+    func showNewSmartAlbumBuilder() {
+        smartAlbumEditingID = nil
+        sheet = "smart"
+    }
 
     func toggleFilterBar() {
         filterOpen.toggle()
@@ -316,6 +326,7 @@ final class AppState {
     func dismissTransientUI() -> Bool {
         if sheet != nil {
             sheet = nil
+            smartAlbumEditingID = nil
             return true
         }
         if filterOpen {
@@ -3389,6 +3400,44 @@ final class AppState {
         push("已删除相册「\(album.name)」", "trash")
     }
 
+    func editSmartAlbum(_ id: String) {
+        guard smartAlbums.contains(where: { $0.id == id }) else { return }
+        smartAlbumEditingID = id
+        sheet = "smart"
+    }
+
+    func dismissSmartAlbumBuilder() {
+        smartAlbumEditingID = nil
+        sheet = nil
+    }
+
+    func deleteSmartAlbum(_ id: String) {
+        guard let index = smartAlbums.firstIndex(where: { $0.id == id }) else { return }
+        let album = smartAlbums[index]
+        guard confirmDestructiveAction(
+            "删除智能相册？",
+            "只会删除智能相册「\(album.name)」及其规则，不会删除任何照片或原件。",
+            "删除智能相册"
+        ) else { return }
+        do {
+            try store?.deleteSmartAlbum(id: id)
+        } catch {
+            push("智能相册删除失败", "warning")
+            return
+        }
+        smartAlbums.remove(at: index)
+        pinnedSidebarItems.removeAll { $0.type == .smart && $0.selectionId == id }
+        savePinnedSidebarItems()
+        if smartAlbumEditingID == id {
+            dismissSmartAlbumBuilder()
+        }
+        if selection.type == .smart, selection.id == id {
+            selection = Selection(type: .lib, id: "all", name: "全部照片")
+            ensurePrimaryValid()
+        }
+        push("已删除智能相册「\(album.name)」", "trash")
+    }
+
     private func orderedTargetAssetIds() -> [String] {
         let ids = targetIds
         return list.map(\.id).filter { ids.contains($0) }
@@ -3637,6 +3686,33 @@ final class AppState {
     }
 
     func saveSmart(name: String, rule: SmartRule, count: Int) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !rule.conditions.isEmpty else {
+            push("智能相册需要名称和至少一个条件", "warning")
+            return
+        }
+        if let id = smartAlbumEditingID {
+            guard let index = smartAlbums.firstIndex(where: { $0.id == id }) else {
+                push("智能相册不存在", "warning")
+                return
+            }
+            let previous = smartAlbums[index]
+            let album = SmartAlbum(id: id, name: name, rule: rule, count: count)
+            if let store {
+                do {
+                    try store.saveSmartAlbum(album, sortOrder: index)
+                } catch {
+                    push("智能相册保存失败", "warning")
+                    return
+                }
+            }
+            smartAlbums[index] = album
+            dismissSmartAlbumBuilder()
+            selection = Selection(type: .smart, id: id, name: name)
+            ensurePrimaryValid()
+            push("已更新智能相册「\(previous.name)」", "sparkles")
+            return
+        }
         let id = "sm-" + UUID().uuidString.prefix(5)
         let album = SmartAlbum(id: id, name: name, rule: rule, count: count)
         if let store {
@@ -3648,7 +3724,7 @@ final class AppState {
             }
         }
         smartAlbums.append(album)
-        sheet = nil
+        dismissSmartAlbumBuilder()
         selection = Selection(type: .smart, id: id, name: name)
         ensurePrimaryValid()
         push("已创建智能相册「\(name)」", "sparkles")

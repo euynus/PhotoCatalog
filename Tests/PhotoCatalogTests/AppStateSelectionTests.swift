@@ -3085,6 +3085,24 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testSmartAlbumBuilderStateDoesNotLeakIntoNewAlbums() throws {
+        let app = AppState()
+        app.onboarded = true
+        let album = try XCTUnwrap(app.smartAlbums.first)
+
+        app.editSmartAlbum(album.id)
+        XCTAssertEqual(app.smartAlbumEditingID, album.id)
+
+        app.sheet = nil
+        XCTAssertNil(app.smartAlbumEditingID)
+
+        app.editSmartAlbum(album.id)
+        app.showNewSmartAlbumBuilder()
+        XCTAssertEqual(app.sheet, "smart")
+        XCTAssertNil(app.smartAlbumEditingID)
+    }
+
+    @MainActor
     func testRemovingFromManualAlbumKeepsSelectionVisible() throws {
         let app = AppState()
         app.onboarded = true
@@ -3142,6 +3160,59 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(app.selection, Selection(type: .lib, id: "all", name: "全部照片"))
         XCTAssertEqual(app.assets.map(\.id), [asset.id])
         XCTAssertTrue(try store.loadAlbums().isEmpty)
+        XCTAssertEqual(store.assetCount(), 1)
+    }
+
+    @MainActor
+    func testEditingAndDeletingSmartAlbumKeepsPhotos() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-smart-album-appstate-crud-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try CatalogStore(packageURL: package)
+        var asset = DemoData.assets[0]
+        asset.isDemo = false
+        asset.rating = 5
+        try store.upsert([asset])
+        let initialRule = SmartRule(match: "all", conditions: [
+            SmartCondition(field: "rating", op: ">=", value: "4"),
+        ])
+        try store.saveSmartAlbum(SmartAlbum(id: "smart-1", name: "Before", rule: initialRule, count: 1))
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.select(Selection(type: .smart, id: "smart-1", name: "Before"))
+        app.editSmartAlbum("smart-1")
+
+        XCTAssertEqual(app.sheet, "smart")
+        XCTAssertEqual(app.smartAlbumEditingID, "smart-1")
+
+        let updatedRule = SmartRule(match: "all", conditions: [
+            SmartCondition(field: "search", op: "包含", value: asset.filename),
+        ])
+        app.saveSmart(name: "After", rule: updatedRule, count: 1)
+
+        XCTAssertNil(app.sheet)
+        XCTAssertNil(app.smartAlbumEditingID)
+        XCTAssertEqual(app.smartAlbums.count, 1)
+        XCTAssertEqual(app.smartAlbums.first?.name, "After")
+        XCTAssertEqual(app.smartAlbums.first?.rule, updatedRule)
+        XCTAssertEqual(app.selection, Selection(type: .smart, id: "smart-1", name: "After"))
+        XCTAssertEqual(try store.loadSmartAlbums().first?.name, "After")
+
+        app.confirmDestructiveAction = { title, message, confirmTitle in
+            XCTAssertEqual(title, "删除智能相册？")
+            XCTAssertTrue(message.contains("不会删除任何照片或原件"))
+            XCTAssertEqual(confirmTitle, "删除智能相册")
+            return true
+        }
+        app.deleteSmartAlbum("smart-1")
+
+        XCTAssertTrue(app.smartAlbums.isEmpty)
+        XCTAssertEqual(app.selection, Selection(type: .lib, id: "all", name: "全部照片"))
+        XCTAssertEqual(app.assets.map(\.id), [asset.id])
+        XCTAssertTrue(try store.loadSmartAlbums().isEmpty)
         XCTAssertEqual(store.assetCount(), 1)
     }
 
