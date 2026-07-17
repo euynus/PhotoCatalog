@@ -3109,6 +3109,42 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertTrue(app.selectedIds.isEmpty)
     }
 
+    @MainActor
+    func testRenamingAndDeletingManualAlbumKeepsPhotos() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-album-appstate-crud-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try CatalogStore(packageURL: package)
+        var asset = DemoData.assets[0]
+        asset.isDemo = false
+        try store.upsert([asset])
+        try store.saveAlbum(Album(id: "album-1", name: "Before", assetIds: [asset.id]))
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.select(Selection(type: .album, id: "album-1", name: "Before"))
+
+        XCTAssertTrue(app.renameAlbum("album-1", to: "After"))
+        XCTAssertEqual(app.selection.name, "After")
+        XCTAssertEqual(try store.loadAlbums().first?.name, "After")
+
+        app.confirmDestructiveAction = { title, message, confirmTitle in
+            XCTAssertEqual(title, "删除相册？")
+            XCTAssertTrue(message.contains("不会删除任何照片或原件"))
+            XCTAssertEqual(confirmTitle, "删除相册")
+            return true
+        }
+        app.deleteAlbum("album-1")
+
+        XCTAssertTrue(app.albums.isEmpty)
+        XCTAssertEqual(app.selection, Selection(type: .lib, id: "all", name: "全部照片"))
+        XCTAssertEqual(app.assets.map(\.id), [asset.id])
+        XCTAssertTrue(try store.loadAlbums().isEmpty)
+        XCTAssertEqual(store.assetCount(), 1)
+    }
+
     private func writeTestJPEG(to url: URL, black: Bool, gps: [CFString: Any]? = nil) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)

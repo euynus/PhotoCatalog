@@ -3336,6 +3336,59 @@ final class AppState {
         push("已从「\(album.name)」移除 \(removed) 张照片", "album")
     }
 
+    func renameAlbum(_ id: String) {
+        guard let album = albums.first(where: { $0.id == id }),
+              let name = promptAlbumName(defaultName: album.name,
+                                         messageText: "重命名相册",
+                                         confirmTitle: "保存") else { return }
+        _ = renameAlbum(id, to: name)
+    }
+
+    @discardableResult
+    func renameAlbum(_ id: String, to name: String) -> Bool {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty,
+              let index = albums.firstIndex(where: { $0.id == id }) else { return false }
+        guard albums[index].name != name else { return true }
+        do {
+            try store?.renameAlbum(id: id, name: name)
+        } catch {
+            push("相册重命名失败", "warning")
+            return false
+        }
+        let previous = albums[index]
+        albums[index] = Album(id: previous.id, name: name, assetIds: previous.assetIds)
+        if selection.type == .album, selection.id == id {
+            selection = Selection(type: .album, id: id, name: name)
+        }
+        push("已将相册「\(previous.name)」重命名为「\(name)」", "album")
+        return true
+    }
+
+    func deleteAlbum(_ id: String) {
+        guard let index = albums.firstIndex(where: { $0.id == id }) else { return }
+        let album = albums[index]
+        guard confirmDestructiveAction(
+            "删除相册？",
+            "只会删除相册「\(album.name)」及其目录库关系，不会删除任何照片或原件。",
+            "删除相册"
+        ) else { return }
+        do {
+            try store?.deleteAlbum(id: id)
+        } catch {
+            push("相册删除失败", "warning")
+            return
+        }
+        albums.remove(at: index)
+        pinnedSidebarItems.removeAll { $0.type == .album && $0.selectionId == id }
+        savePinnedSidebarItems()
+        if selection.type == .album, selection.id == id {
+            selection = Selection(type: .lib, id: "all", name: "全部照片")
+            ensurePrimaryValid()
+        }
+        push("已删除相册「\(album.name)」", "trash")
+    }
+
     private func orderedTargetAssetIds() -> [String] {
         let ids = targetIds
         return list.map(\.id).filter { ids.contains($0) }
@@ -3352,13 +3405,14 @@ final class AppState {
         }
     }
 
-    private func promptAlbumName(defaultName: String, messageText: String = "新建相册") -> String? {
+    private func promptAlbumName(defaultName: String, messageText: String = "新建相册",
+                                 confirmTitle: String = "创建") -> String? {
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
         field.stringValue = defaultName
         let alert = NSAlert()
         alert.messageText = messageText
         alert.accessoryView = field
-        alert.addButton(withTitle: "创建")
+        alert.addButton(withTitle: confirmTitle)
         alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
         let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)

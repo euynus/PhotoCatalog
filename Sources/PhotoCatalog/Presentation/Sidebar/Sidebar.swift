@@ -80,6 +80,14 @@ struct Sidebar: View {
         }) {
             ForEach(app.albums) { al in
                 row("album", Theme.albumBlue, al.name, "\(app.countForAlbum(al))", .album, al.id, al.name)
+                    .contextMenu {
+                        Button { app.renameAlbum(al.id) } label: {
+                            Label("重命名相册…", systemImage: "pencil")
+                        }
+                        Button(role: .destructive) { app.deleteAlbum(al.id) } label: {
+                            Label("删除相册…", systemImage: "trash")
+                        }
+                    }
             }
         }
     }

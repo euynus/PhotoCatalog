@@ -453,6 +453,18 @@ final class CatalogStore: @unchecked Sendable {
         }
     }
 
+    func renameAlbum(id: String, name: String, updatedAt: Date = .now) throws {
+        try db.run("""
+        UPDATE albums
+        SET name=?, updated_at=?
+        WHERE id=? AND type='album';
+        """, [.text(name), .text(Self.iso(updatedAt)), .text(id)])
+    }
+
+    func deleteAlbum(id: String) throws {
+        try db.run("DELETE FROM albums WHERE id=? AND type='album';", [.text(id)])
+    }
+
     func loadSmartAlbums() throws -> [SmartAlbum] {
         let decoder = JSONDecoder()
         return try db.query("""

@@ -40,4 +40,22 @@ final class SQLiteTests: XCTestCase {
         })
         XCTAssertEqual(try db.query("SELECT COUNT(*) AS count FROM child;").first?.int("count"), 0)
     }
+
+    func testManualAlbumRenameAndDeletePreserveAssets() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-album-crud-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try CatalogStore(packageURL: dir.appendingPathComponent("Library.photolibrary"))
+        var asset = DemoData.assets[0]
+        asset.isDemo = false
+        try store.upsert([asset])
+        try store.saveAlbum(Album(id: "album-1", name: "Before", assetIds: [asset.id]))
+
+        try store.renameAlbum(id: "album-1", name: "After")
+        XCTAssertEqual(try store.loadAlbums(), [Album(id: "album-1", name: "After", assetIds: [asset.id])])
+
+        try store.deleteAlbum(id: "album-1")
+        XCTAssertTrue(try store.loadAlbums().isEmpty)
+        XCTAssertEqual(store.assetCount(), 1)
+    }
 }
