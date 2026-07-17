@@ -785,6 +785,29 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testEmptyCatalogManagementTextUsesConfiguredImportMode() {
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: "pc_importMode")
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: "pc_importMode")
+            } else {
+                defaults.removeObject(forKey: "pc_importMode")
+            }
+        }
+
+        let app = AppState()
+        app.onboarded = true
+        app.assets = []
+
+        app.importMode = .managed
+        XCTAssertEqual(app.catalogManagementText, "托管式管理 · 原件在目录库")
+
+        app.importMode = .referenced
+        XCTAssertEqual(app.catalogManagementText, "引用式管理 · 原件只读")
+    }
+
+    @MainActor
     func testSafeCommandKeyboardShortcuts() {
         let app = AppState()
         app.onboarded = true

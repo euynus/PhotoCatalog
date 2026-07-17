@@ -388,6 +388,11 @@ final class AppState {
 
     var catalogManagementText: String {
         let real = assets.filter { !$0.deleted && !$0.isDemo }
+        if real.isEmpty {
+            return importMode == .managed
+                ? "托管式管理 · 原件在目录库"
+                : "引用式管理 · 原件只读"
+        }
         let modes = Set(real.map { managementMode(for: $0) })
         if modes == Set([ImportMode.managed]) { return "托管式管理 · 原件在目录库" }
         if modes.contains(.managed) { return "混合管理 · 原件只读" }
