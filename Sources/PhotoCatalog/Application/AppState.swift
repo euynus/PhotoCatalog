@@ -666,6 +666,10 @@ final class AppState {
             return false
         }
         let url = Self.catalogPackageURL(for: selected)
+        guard !FileManager.default.fileExists(atPath: url.path) else {
+            push("目录库已存在，请选择其他名称", "warning")
+            return false
+        }
 
         do {
             closeCurrentCatalog()

@@ -785,6 +785,29 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testCreatingCatalogRefusesToReuseExistingPackage() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-existing-catalog-\(UUID().uuidString)")
+        let package = root.appendingPathComponent("Existing.photolibrary")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = try CatalogStore(packageURL: package)
+        var existing = try XCTUnwrap(DemoData.assets.first)
+        existing.isDemo = false
+        try store.upsert([existing])
+
+        let app = AppState()
+        app.onboarded = true
+        let visibleBefore = app.assets
+
+        XCTAssertFalse(app.createCatalog(at: package))
+
+        XCTAssertEqual(app.assets, visibleBefore)
+        XCTAssertEqual(try store.loadAssets().map(\.id), [existing.id])
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "目录库已存在，请选择其他名称")
+    }
+
+    @MainActor
     func testEmptyCatalogManagementTextUsesConfiguredImportMode() {
         let defaults = UserDefaults.standard
         let previous = defaults.object(forKey: "pc_importMode")
