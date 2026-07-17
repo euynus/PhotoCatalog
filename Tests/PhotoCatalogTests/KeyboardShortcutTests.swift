@@ -24,4 +24,9 @@ final class KeyboardShortcutTests: XCTestCase {
         XCTAssertEqual(KeyCatcher.keyString(keyCode: 0, charactersIgnoringModifiers: nil), "a")
         XCTAssertEqual(KeyCatcher.keyString(keyCode: 0, charactersIgnoringModifiers: "A"), "a")
     }
+
+    func testInspectorToggleLabelDescribesAvailableAction() {
+        XCTAssertEqual(inspectorToggleLabel(isVisible: true), "隐藏简介 (⌘I)")
+        XCTAssertEqual(inspectorToggleLabel(isVisible: false), "显示简介 (⌘I)")
+    }
 }

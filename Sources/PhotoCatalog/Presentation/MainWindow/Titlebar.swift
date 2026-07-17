@@ -3,6 +3,10 @@
 // ============================================================
 import SwiftUI
 
+func inspectorToggleLabel(isVisible: Bool) -> String {
+    isVisible ? "隐藏简介 (⌘I)" : "显示简介 (⌘I)"
+}
+
 struct Titlebar: View {
     @Environment(AppState.self) var app
     @FocusState private var searchFocused: Bool
@@ -110,7 +114,8 @@ struct Titlebar: View {
                        disabled: !app.canExportOriginalSelection,
                        action: { app.exportSelection() })
             ToolButton(icon: "gear", label: "设置", action: { app.sheet = "settings" })
-            ToolButton(icon: "inspector", label: "显示简介 (⌘I)", active: app.showInspector,
+            ToolButton(icon: "inspector", label: inspectorToggleLabel(isVisible: app.showInspector),
+                       active: app.showInspector,
                        action: { app.showInspector.toggle() })
         }
     }
