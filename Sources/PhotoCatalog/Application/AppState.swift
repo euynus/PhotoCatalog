@@ -471,6 +471,12 @@ final class AppState {
             folders.append(Folder(id: fid, name: items.first?.folderName ?? fid,
                                   status: folderStatus(for: fid, in: checked)))
         }
+        for index in folders.indices where
+            sourceManagementModesById[folders[index].id] == ImportMode.managed.rawValue {
+            let status = folderStatus(for: folders[index].id, in: checked)
+            folders[index].status = status
+            try? s.updateSourceRootStatus(id: folders[index].id, status: status)
+        }
         recomputeDuplicates()
         restoreAlbums(from: s, assets: checked)
         recoverInterruptedImportJobs(existingAssets: checked)

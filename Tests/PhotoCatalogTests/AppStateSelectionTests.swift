@@ -1869,6 +1869,15 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(app.folders.first { $0.id == "managed-source" }?.status, "online")
         XCTAssertFalse(app.canReauthorizeSelectedSource)
         XCTAssertEqual(app.assets.first?.status, .ready)
+
+        try FileManager.default.removeItem(at: managedOriginal)
+        let reopened = AppState()
+        reopened.onboarded = true
+        XCTAssertTrue(reopened.openCatalog(at: package))
+
+        XCTAssertEqual(reopened.assets.first?.status, .missing)
+        XCTAssertEqual(reopened.folders.first { $0.id == "managed-source" }?.status, "missing")
+        XCTAssertFalse(reopened.canReauthorizeSelectedSource)
     }
 
     @MainActor
