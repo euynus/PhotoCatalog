@@ -1766,8 +1766,13 @@ final class AppState {
                                      lastBackupDate: lastBackupDate,
                                      backupCount: backups.count)
             }.value
-            guard self?.store?.packageURL == packageURL else { return }
-            self?.statusMetrics = metrics
+            guard let self, self.store?.packageURL == packageURL else { return }
+            self.statusMetrics = metrics
+            if var report = self.healthReport {
+                report.cacheBytes = metrics.cacheBytes ?? report.cacheBytes
+                report.backupCount = metrics.backupCount
+                self.healthReport = report
+            }
         }
     }
 

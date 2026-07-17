@@ -2630,6 +2630,31 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testBackupRefreshesVisibleHealthReport() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-backup-health-refresh-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try makeCatalogWithOneAsset(at: package, assetIndex: 0)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.runHealthCheck()
+
+        try await waitUntil("Timed out waiting for initial health report") {
+            app.healthReport?.backupCount == 0
+        }
+
+        app.runBackup()
+
+        try await waitUntil("Timed out waiting for health backup count") {
+            app.healthReport?.backupCount == 1
+        }
+        XCTAssertEqual(app.healthReport?.backupCount, 1)
+    }
+
+    @MainActor
     func testAutomaticBackupIsTrackedPerCatalog() async throws {
         let defaults = UserDefaults.standard
         let keys = [
