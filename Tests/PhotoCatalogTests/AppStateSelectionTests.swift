@@ -890,6 +890,7 @@ final class AppStateSelectionTests: XCTestCase {
         app.assets = [asset]
         app.primaryId = asset.id
         app.selectedIds = []
+        app.confirmDestructiveAction = { _, _, _ in true }
 
         app.batchRename(template: "RENAMED")
 
@@ -921,6 +922,38 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testBatchRenameRequiresConfirmation() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-rename-confirm-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let original = dir.appendingPathComponent("original.jpg")
+        try Data("image".utf8).write(to: original)
+
+        let app = AppState()
+        app.onboarded = true
+        var asset = try XCTUnwrap(app.assets.first)
+        asset.filename = original.lastPathComponent
+        asset.localPath = original.path
+        asset.isDemo = false
+        app.assets = [asset]
+        app.primaryId = asset.id
+        app.selectedIds = [asset.id]
+        app.confirmDestructiveAction = { title, message, confirmTitle in
+            XCTAssertEqual(title, "重命名原件？")
+            XCTAssertEqual(message, "将重命名 1 个磁盘原件，并更新目录库中的文件路径。")
+            XCTAssertEqual(confirmTitle, "重命名")
+            return false
+        }
+
+        app.batchRename(template: "RENAMED")
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: original.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("RENAMED_0001.jpg").path))
+        XCTAssertEqual(app.assets.first?.localPath, original.path)
+    }
+
+    @MainActor
     func testBatchRenameReportsRenameFailures() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rename-fail-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -941,6 +974,7 @@ final class AppStateSelectionTests: XCTestCase {
         app.assets = [asset]
         app.primaryId = asset.id
         app.selectedIds = [asset.id]
+        app.confirmDestructiveAction = { _, _, _ in true }
 
         app.batchRename(template: "RENAMED")
 
@@ -982,6 +1016,7 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertTrue(app.openCatalog(at: package))
         app.primaryId = asset.id
         app.selectedIds = [asset.id]
+        app.confirmDestructiveAction = { _, _, _ in true }
 
         app.batchRename(template: "RENAMED")
 

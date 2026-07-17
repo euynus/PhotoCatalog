@@ -1564,6 +1564,11 @@ final class AppState {
         let ids = targetIds
         let real = list.filter { ids.contains($0.id) && hasExistingOriginal($0) }
         guard !real.isEmpty else { push("仅可重命名已导入照片", "warning"); return }
+        guard confirmDestructiveAction(
+            "重命名原件？",
+            "将重命名 \(real.count) 个磁盘原件，并更新目录库中的文件路径。",
+            "重命名"
+        ) else { return }
         let map = RenameService.renameWithTemplate(real, template: template)
         guard !map.isEmpty else {
             push("重命名失败", "warning")
