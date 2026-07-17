@@ -699,6 +699,25 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(panel.allowedContentTypes, [libraryType])
     }
 
+    @MainActor
+    func testSourceReauthorizationPanelStartsAtCurrentRoot() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-source-reauthorization-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let app = AppState()
+        let panel = NSOpenPanel()
+        app.configureSourceReauthorizationPanel(panel, currentPath: root.path)
+
+        XCTAssertTrue(panel.canChooseDirectories)
+        XCTAssertFalse(panel.canChooseFiles)
+        XCTAssertFalse(panel.allowsMultipleSelection)
+        XCTAssertEqual(panel.prompt, "重新授权")
+        XCTAssertEqual(panel.message, "选择源文件夹以恢复访问权限")
+        XCTAssertEqual(panel.directoryURL?.standardizedFileURL.path, root.standardizedFileURL.path)
+    }
+
     func testCatalogSelectionRequiresCatalogDatabase() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-catalog-selection-\(UUID().uuidString)")

@@ -3243,11 +3243,7 @@ final class AppState {
         let oldRootPath = sourceRootPathsById[folderId]
 
         let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "重新授权"
-        panel.message = "选择源文件夹以恢复访问权限"
+        configureSourceReauthorizationPanel(panel, currentPath: oldRootPath)
         guard panel.runModal() == .OK, let folder = panel.url else { return }
 
         let bookmark = FileAccessService.createBookmark(for: folder)
@@ -3270,6 +3266,19 @@ final class AppState {
         replaceWatchedSourceRoot(oldRootPath: oldRootPath, newRoot: folder)
         detectMissingRealAssets()
         push("已恢复源文件夹访问", "check")
+    }
+
+    func configureSourceReauthorizationPanel(_ panel: NSOpenPanel, currentPath: String?) {
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "重新授权"
+        panel.message = "选择源文件夹以恢复访问权限"
+        guard let currentPath else { return }
+        let currentURL = URL(fileURLWithPath: currentPath, isDirectory: true).standardizedFileURL
+        if FileManager.default.fileExists(atPath: currentURL.path) {
+            panel.directoryURL = currentURL
+        }
     }
 
     func rebaseSourceRootAssetPaths(folderId: String, oldRoot: String, newRoot: String) {
