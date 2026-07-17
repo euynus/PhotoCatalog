@@ -651,11 +651,20 @@ final class AppState {
             panel.allowedContentTypes = [libraryType]
         }
         guard panel.runModal() == .OK, let selected = panel.url else { return }
+        createCatalog(at: selected)
+    }
+
+    @discardableResult
+    func createCatalog(at selected: URL) -> Bool {
+        guard !importing else {
+            push("导入中无法切换目录库", "warning")
+            return false
+        }
         let url = Self.catalogPackageURL(for: selected)
 
         do {
             closeCurrentCatalog()
-            resetToDemoCatalog()
+            resetToEmptyCatalog()
             let nextStore = try CatalogStore(packageURL: url)
             store = nextStore
             coordinator = ImportCoordinator(store: nextStore)
@@ -664,10 +673,12 @@ final class AppState {
             UserDefaults.standard.set("1", forKey: "pc_onboarded")
             onboarded = true
             push("已创建目录库 · \(url.lastPathComponent)", "check")
+            return true
         } catch {
             resetToDemoCatalog()
             loadExistingCatalog()
             push(catalogOpenFailureMessage(error, fallback: "创建目录库失败"), "warning")
+            return false
         }
     }
 
@@ -2377,6 +2388,25 @@ final class AppState {
         primaryId = list.first?.id
         selectedIds = primaryId.map { Set([$0]) } ?? []
         anchorId = primaryId
+        compareIds = []
+        winner = nil
+        importRun = nil
+        healthReport = nil
+    }
+
+    private func resetToEmptyCatalog() {
+        duplicateRecomputeGeneration &+= 1
+        assets = []
+        albums = []
+        smartAlbums = []
+        folders = []
+        sourceRootPathsById = [:]
+        sourceManagementModesById = [:]
+        duplicateGroupsCache = []
+        selection = Selection(type: .lib, id: "all", name: "全部照片")
+        primaryId = nil
+        selectedIds = []
+        anchorId = nil
         compareIds = []
         winner = nil
         importRun = nil

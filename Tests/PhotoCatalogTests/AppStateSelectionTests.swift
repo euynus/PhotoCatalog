@@ -758,6 +758,33 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testCreatingCatalogStartsWithEmptyLibraryState() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-new-catalog-\(UUID().uuidString)")
+        let package = root.appendingPathComponent("New Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertFalse(app.assets.isEmpty)
+
+        XCTAssertTrue(app.createCatalog(at: package))
+
+        XCTAssertTrue(app.assets.isEmpty)
+        XCTAssertTrue(app.albums.isEmpty)
+        XCTAssertTrue(app.smartAlbums.isEmpty)
+        XCTAssertTrue(app.folders.isEmpty)
+        XCTAssertTrue(app.duplicateGroups.isEmpty)
+        XCTAssertNil(app.primaryId)
+        XCTAssertTrue(app.selectedIds.isEmpty)
+        XCTAssertEqual(app.libraryCounts.all, 0)
+        XCTAssertEqual(app.catalogDisplayName, "New Library")
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: package.appendingPathComponent("catalog.sqlite").path
+        ))
+    }
+
+    @MainActor
     func testSafeCommandKeyboardShortcuts() {
         let app = AppState()
         app.onboarded = true
