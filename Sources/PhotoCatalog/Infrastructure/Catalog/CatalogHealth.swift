@@ -15,7 +15,6 @@ struct HealthReport: Sendable {
     var cacheBytes: Int64 = 0
     var backupCount = 0
 
-    var cacheMB: Double { Double(cacheBytes) / (1024 * 1024) }
     var isHealthy: Bool {
         dbIntegrityOK
             && missingOriginals == 0
@@ -26,10 +25,11 @@ struct HealthReport: Sendable {
     }
 
     var summary: String {
-        "数据库\(dbIntegrityOK ? "完好" : "异常") · \(assetCount) 张资产 · "
-            + "缺失原件 \(missingOriginals) · 缩略图 \(missingThumbnails) · 预览 \(missingPreviews) · "
+        let cacheText = ByteCountFormatter.string(fromByteCount: cacheBytes, countStyle: .file)
+        return "数据库\(dbIntegrityOK ? "完好" : "异常") · \(assetCount) 张资产 · "
+            + "缺失原件 \(missingOriginals) · 缺失缩略图 \(missingThumbnails) · 缺失预览 \(missingPreviews) · "
             + "源异常 \(unavailableSourceRoots) · 任务 \(activeJobs)/\(failedJobs) · "
-            + String(format: "缓存 %.0f MB", cacheMB) + " · 备份 \(backupCount)"
+            + "缓存 \(cacheText) · 备份 \(backupCount)"
     }
 }
 
