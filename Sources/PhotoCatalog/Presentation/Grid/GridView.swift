@@ -127,7 +127,8 @@ struct GridCell: View {
     }
 
     private var frame: some View {
-        Thumb(asset: asset, radius: 3, dim: asset.status == .missing)
+        Thumb(asset: asset, radius: 3, dim: asset.status == .missing,
+              maxDecodePixel: Int((size * 2).rounded(.up)))
             .frame(height: frameHeight)
             .overlay(alignment: .topLeading) {
                 HStack(spacing: 4) {

@@ -87,7 +87,7 @@ struct PlacesMapView: View {
     }
 
     private func pin(_ c: Cluster) -> some View {
-        Thumb(asset: c.representative, radius: 5)
+        Thumb(asset: c.representative, radius: 5, maxDecodePixel: 80)
             .frame(width: 40, height: 30)
             .overlay(RoundedRectangle(cornerRadius: 5)
                 .strokeBorder(c.count == 1 && c.representative.id == app.primaryId ? Theme.accent : .white,

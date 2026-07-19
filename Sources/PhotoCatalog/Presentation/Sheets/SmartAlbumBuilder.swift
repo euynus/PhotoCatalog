@@ -103,7 +103,7 @@ struct SmartAlbumBuilder: View {
                 } else {
                     FlowRow(spacing: 5, lineSpacing: 5) {
                         ForEach(matched.prefix(14)) { a in
-                            Thumb(asset: a, radius: 3).frame(width: 60, height: 42)
+                            Thumb(asset: a, radius: 3, maxDecodePixel: 120).frame(width: 60, height: 42)
                                 .clipShape(RoundedRectangle(cornerRadius: 4))
                         }
                     }

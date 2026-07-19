@@ -165,7 +165,7 @@ struct ImportSheet: View {
             } else {
                 FlowRow(spacing: 4, lineSpacing: 4) {
                     ForEach(run.recentAssets) { a in
-                        Thumb(asset: a, radius: 3).frame(width: 56, height: 38)
+                        Thumb(asset: a, radius: 3, maxDecodePixel: 112).frame(width: 56, height: 38)
                             .clipShape(RoundedRectangle(cornerRadius: 3))
                             .transition(.scale(scale: 0.6).combined(with: .opacity))
                     }

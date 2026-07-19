@@ -44,6 +44,27 @@ final class ThumbLoaderTests: XCTestCase {
         XCTAssertGreaterThan(pixelWidth(large), pixelWidth(small))
     }
 
+    func testCancelAndReleaseDropsImageAndAllowsReload() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-thumb-loader-release-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("image.jpg")
+        try writeJPEG(to: url)
+
+        let loader = ThumbLoader()
+        loader.load(url.path, maxPixel: 96)
+        _ = try await image(from: loader, minPixels: 80)
+
+        loader.cancelAndRelease()
+        XCTAssertNil(loader.image)
+        XCTAssertFalse(loader.failed)
+
+        loader.load(url.path, maxPixel: 96)
+        let reloaded = try await image(from: loader, minPixels: 80)
+        XCTAssertGreaterThanOrEqual(pixelWidth(reloaded), 80)
+    }
+
     private func image(from loader: ThumbLoader, minPixels: Int) async throws -> NSImage {
         for _ in 0..<50 {
             if let image = loader.image, pixelWidth(image) >= minPixels { return image }

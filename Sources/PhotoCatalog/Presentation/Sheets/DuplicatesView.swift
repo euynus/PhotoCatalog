@@ -123,7 +123,7 @@ struct DuplicatesView: View {
     private func dupItem(_ it: Asset, kept: Bool, groupId: String, resolved: Bool) -> some View {
         HStack(spacing: 13) {
             ZStack(alignment: .topLeading) {
-                Thumb(asset: it, radius: 6).frame(width: 86, height: 64)
+                Thumb(asset: it, radius: 6, maxDecodePixel: 172).frame(width: 86, height: 64)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 if kept {
                     HStack(spacing: 3) { Icon("check", size: 12, weight: .bold); Text("保留").font(.system(size: 9, weight: .bold)) }

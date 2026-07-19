@@ -138,7 +138,7 @@ struct Loupe: View {
                         Hover { hover in
                             Button { app.setPrimary(a.id) } label: {
                                 ZStack {
-                                    Thumb(asset: a, radius: 2)
+                                    Thumb(asset: a, radius: 2, maxDecodePixel: 216)
                                         .overlay(alignment: .bottomLeading) {
                                             if a.rating > 0 {
                                                 StarsView(value: a.rating, size: 7, dim: true).padding(.leading, 3).padding(.bottom, 2)

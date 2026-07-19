@@ -53,7 +53,7 @@ struct CompareView: View {
                             app.addToCompare(a.id)
                             trayOpen = false
                         } label: {
-                            Thumb(asset: a, radius: 3)
+                            Thumb(asset: a, radius: 3, maxDecodePixel: 152)
                                 .frame(width: 76, height: 52)
                                 .clipShape(RoundedRectangle(cornerRadius: 4))
                                 .opacity(hover ? 1 : 0.8)
