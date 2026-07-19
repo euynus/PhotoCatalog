@@ -1878,15 +1878,19 @@ final class AppState {
         let previewSize = previewMaxPixel
         let lowPowerSensitive = reduceBackgroundOnLowPower
         backfillTask = Task { [weak self, coordinator, real, previewSize] in
-            let chunkSize = 16
+            // Let the initial window and visible thumbnails settle before
+            // maintenance starts competing for disk and Image I/O.
+            do { try await Task.sleep(for: .milliseconds(750)) } catch { return }
+            let chunkSize = 8
             var index = 0
             while index < real.count {
                 if Task.isCancelled { break }
                 // re-check Low Power Mode between chunks — it can be toggled mid-run
                 if lowPowerSensitive, ProcessInfo.processInfo.isLowPowerModeEnabled { break }
                 let chunk = Array(real[index..<min(index + chunkSize, real.count)])
-                await Task.detached(priority: .background) {
+                let worker = Task.detached(priority: .background) {
                     for a in chunk {
+                        guard !Task.isCancelled else { return }
                         guard let path = a.localPath,
                               FileManager.default.fileExists(atPath: path) else { continue }
                         let original = URL(fileURLWithPath: path)
@@ -1898,9 +1902,14 @@ final class AppState {
                             catalogModificationDate: a.fileModifiedAt, assetId: a.id,
                             kind: ThumbnailService.previewKind(forCachePath: a.preview, fallbackMaxPixel: previewSize))
                     }
-                }.value
+                }
+                await withTaskCancellationHandler {
+                    await worker.value
+                } onCancel: {
+                    worker.cancel()
+                }
                 index += chunkSize
-                await Task.yield()
+                do { try await Task.sleep(for: .milliseconds(10)) } catch { break }
             }
             // only reset shared state if we're still the current run — a cancel or a newer
             // backfill may have superseded us and must not have its state clobbered.
@@ -1912,7 +1921,9 @@ final class AppState {
     }
 
     var thumbnailMaintenanceAssets: [Asset] {
-        assets.filter { hasExistingOriginal($0) }
+        assets.filter {
+            !$0.deleted && !$0.isDemo && $0.status == .ready && $0.localPath != nil
+        }
     }
 
     /// Privacy: delete catalog log files (§17.6).

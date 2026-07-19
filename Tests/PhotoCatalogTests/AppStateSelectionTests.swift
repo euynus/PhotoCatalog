@@ -1628,6 +1628,7 @@ final class AppStateSelectionTests: XCTestCase {
         missing.isDemo = false
         missing.localPath = dir.appendingPathComponent("missing.jpg").path
         missing.deleted = false
+        missing.status = .missing
         app.assets = [live, deleted, missing]
 
         XCTAssertEqual(app.thumbnailMaintenanceAssets.map(\.id), [live.id])
