@@ -41,7 +41,7 @@ struct SettingsSheet: View {
 
     private var body_: some View {
         @Bindable var app = app   // $app bindings below need the Bindable projection
-        return VStack(alignment: .leading, spacing: 18) {
+        return LazyVStack(alignment: .leading, spacing: 18) {
             section("常规") {
                 Toggle(isOn: $app.openLastCatalogOnLaunch) {
                     Text("启动时打开上次目录库").font(.system(size: 12.5)).foregroundStyle(Theme.text)

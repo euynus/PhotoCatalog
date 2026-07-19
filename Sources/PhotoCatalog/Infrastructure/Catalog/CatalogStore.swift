@@ -334,6 +334,32 @@ final class CatalogStore: @unchecked Sendable {
 
     func updateAsset(_ a: Asset) throws { try upsert([a]) }
 
+    func updateRatings(_ rating: Int, assetIDs: Set<String>) throws {
+        try updateAssetColumn("rating", value: .int(rating), assetIDs: assetIDs)
+    }
+
+    func updateFlags(_ flag: Flag, assetIDs: Set<String>) throws {
+        try updateAssetColumn("flag", value: .text(flag.rawValue), assetIDs: assetIDs)
+    }
+
+    func updateColorLabels(_ color: ColorLabel?, assetIDs: Set<String>) throws {
+        try updateAssetColumn("color_label", value: color.map { .text($0.rawValue) } ?? .null,
+                              assetIDs: assetIDs)
+    }
+
+    private func updateAssetColumn(_ column: String, value: SQLValue, assetIDs: Set<String>) throws {
+        guard !assetIDs.isEmpty else { return }
+        let ids = assetIDs.sorted()
+        try db.transaction {
+            for start in stride(from: 0, to: ids.count, by: 500) {
+                let chunk = ids[start..<min(start + 500, ids.count)]
+                let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+                let params = [value] + chunk.map(SQLValue.text)
+                try db.run("UPDATE assets SET \(column)=? WHERE id IN (\(placeholders));", params)
+            }
+        }
+    }
+
     func loadAssets() throws -> [Asset] {
         // soft-deleted rows are never shown; skip materializing them (uses idx_assets_deleted)
         try db.query("SELECT \(Self.columns) FROM assets WHERE deleted=0;").compactMap(Self.asset(from:))

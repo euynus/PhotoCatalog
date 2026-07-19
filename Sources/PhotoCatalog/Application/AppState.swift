@@ -117,6 +117,8 @@ final class AppState {
     var assetRenderVersion = 0
     var thumbnailCacheGeneration = 0
     @ObservationIgnored private var listCache: (signature: ListSignature, value: [Asset])?
+    @ObservationIgnored private var automaticXMPWriter = AutomaticXMPWriter()
+    @ObservationIgnored private var automaticXMPWriteSequence: UInt64 = 0
     private struct ListSignature: Equatable {
         let inputsVersion: Int
         let selection: Selection
@@ -1626,7 +1628,7 @@ final class AppState {
     }
 
     var canOperateOnSelectedOriginals: Bool {
-        !selectedRealAssetsWithOriginals().isEmpty
+        selectedAssetsContainLocalOriginalReference
     }
 
     func copySelectedOriginals() {
@@ -2546,20 +2548,20 @@ final class AppState {
                 return false
             }
         }
-        // mirror user-metadata edits to XMP sidecars when enabled (§17.4 META-007)
-        if autoWriteXMPSidecar {
-            var sidecarFailures = 0
-            for a in changed where hasExistingOriginal(a) {
-                guard let path = a.localPath else { continue }
-                if !XMPSidecar.write(a, to: XMPSidecar.sidecarURL(for: URL(fileURLWithPath: path))) {
-                    sidecarFailures += 1
-                }
-            }
-            if sidecarFailures > 0 {
-                push("\(sidecarFailures) 个 XMP sidecar 写入失败", "warning")
-            }
-        }
+        enqueueAutomaticXMPWrite(changed)
         return true
+    }
+
+    private func enqueueAutomaticXMPWrite(_ changed: [Asset]) {
+        guard autoWriteXMPSidecar, !changed.isEmpty else { return }
+        automaticXMPWriteSequence &+= 1
+        let sequence = automaticXMPWriteSequence
+        let writer = automaticXMPWriter
+        Task { [weak self, writer, changed, sequence] in
+            let failures = await writer.write(changed, sequence: sequence)
+            guard failures > 0 else { return }
+            self?.push("\(failures) 个 XMP sidecar 写入失败", "warning")
+        }
     }
 
     // ---------- toasts ----------
@@ -3185,7 +3187,7 @@ final class AppState {
     var hasSelection: Bool { onboarded && !targetIds.isEmpty }
     var canApplySelectionToAlbum: Bool { hasSelection }
     var canExportOriginalSelection: Bool { canOperateOnSelectedOriginals }
-    var canExportPreviewSelection: Bool { !selectedAssetsWithExportablePreviews().isEmpty }
+    var canExportPreviewSelection: Bool { selectedAssetsContainPreviewReference }
     var canRemoveSelectionFromCurrentAlbum: Bool { selection.type == .album && hasSelection }
     var canRemoveSelectedSource: Bool { selectedFolderIsCatalogSource }
     var canReauthorizeSelectedSource: Bool {
@@ -3198,6 +3200,28 @@ final class AppState {
             && store != nil
             && !DemoData.folders.contains { $0.id == selection.id }
             && folders.contains { $0.id == selection.id }
+    }
+
+    // Capability checks are read while SwiftUI builds toolbars and menus. Keep
+    // them metadata-only; the action revalidates paths before touching files.
+    private var selectedAssetsContainLocalOriginalReference: Bool {
+        targetIds.contains { id in
+            guard let index = assetIndex[id] else { return false }
+            let asset = assets[index]
+            return !asset.deleted && !asset.isDemo && asset.status == .ready && asset.localPath != nil
+        }
+    }
+
+    private var selectedAssetsContainPreviewReference: Bool {
+        targetIds.contains { id in
+            guard let index = assetIndex[id] else { return false }
+            let asset = assets[index]
+            guard !asset.deleted && !asset.isDemo else { return false }
+            let hasLocalCacheReference = [asset.preview, asset.thumb].contains {
+                !$0.isEmpty && !$0.hasPrefix("http")
+            }
+            return hasLocalCacheReference || (asset.status == .ready && asset.localPath != nil)
+        }
     }
 
     /// Apply an in-place edit to the current selection (or an explicit set).
@@ -3227,11 +3251,50 @@ final class AppState {
     }
 
     @discardableResult
-    func setRating(_ n: Int) -> Bool { mutate { $0.rating = n } }
+    func setRating(_ n: Int) -> Bool {
+        mutateIndexedMetadata({ $0.rating = n }) { store, ids in
+            try store.updateRatings(n, assetIDs: ids)
+        }
+    }
     @discardableResult
-    func setFlag(_ f: Flag) -> Bool { mutate { $0.flag = f } }
+    func setFlag(_ f: Flag) -> Bool {
+        mutateIndexedMetadata({ $0.flag = f }) { store, ids in
+            try store.updateFlags(f, assetIDs: ids)
+        }
+    }
     @discardableResult
-    func setColor(_ c: ColorLabel?) -> Bool { mutate { $0.colorLabel = c } }
+    func setColor(_ c: ColorLabel?) -> Bool {
+        mutateIndexedMetadata({ $0.colorLabel = c }) { store, ids in
+            try store.updateColorLabels(c, assetIDs: ids)
+        }
+    }
+
+    private func mutateIndexedMetadata(
+        _ transform: (inout Asset) -> Void,
+        persist: (CatalogStore, Set<String>) throws -> Void
+    ) -> Bool {
+        let ids = targetIds
+        guard !ids.isEmpty else { return false }
+        var updated = assets
+        var changed: [Asset] = []
+        changed.reserveCapacity(ids.count)
+        for index in updated.indices where ids.contains(updated[index].id) {
+            transform(&updated[index])
+            if !updated[index].isDemo { changed.append(updated[index]) }
+        }
+        if let store, !changed.isEmpty {
+            do {
+                try persist(store, Set(changed.map(\.id)))
+            } catch {
+                push("保存失败，更改未写入目录库", "warning")
+                return false
+            }
+        }
+        replaceAssetsForMutation(updated)
+        ensurePrimaryValid()
+        enqueueAutomaticXMPWrite(changed)
+        return true
+    }
 
     @discardableResult
     func applyRatingShortcut(_ rating: Int) -> Bool {

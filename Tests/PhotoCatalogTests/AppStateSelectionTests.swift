@@ -172,6 +172,35 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(app.toastCenter.toasts.last?.message, "保存失败，更改未写入目录库")
     }
 
+    @MainActor
+    func testIndexedMetadataMutationsPersistToCatalog() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-indexed-metadata-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        var asset = try XCTUnwrap(DemoData.assets.first)
+        asset.isDemo = false
+        asset.deleted = false
+        try store.upsert([asset])
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.primaryId = asset.id
+        app.selectedIds = [asset.id]
+
+        XCTAssertTrue(app.setRating(4))
+        XCTAssertTrue(app.setFlag(.pick))
+        XCTAssertTrue(app.setColor(.green))
+
+        let saved = try XCTUnwrap(store.loadAssets().first { $0.id == asset.id })
+        XCTAssertEqual(saved.rating, 4)
+        XCTAssertEqual(saved.flag, .pick)
+        XCTAssertEqual(saved.colorLabel, .green)
+    }
+
     func testExposureFormattingHidesUnknownValues() {
         XCTAssertEqual(formatFocalLength(0), "—")
         XCTAssertEqual(formatApertureValue(0), "—")
@@ -429,6 +458,29 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testSelectionCapabilitiesUseCatalogMetadataBeforeFilesystemValidation() throws {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-late-missing-\(UUID().uuidString).jpg")
+
+        let app = AppState()
+        app.onboarded = true
+        var asset = try XCTUnwrap(app.assets.first)
+        asset.localPath = missing.path
+        asset.status = .ready
+        asset.isDemo = false
+        app.assets = [asset]
+        app.primaryId = asset.id
+        app.selectedIds = [asset.id]
+
+        XCTAssertTrue(app.canOperateOnSelectedOriginals)
+        XCTAssertTrue(app.canExportOriginalSelection)
+        XCTAssertTrue(app.canExportPreviewSelection)
+
+        app.exportSelection()
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "没有可导出的本地原件")
+    }
+
+    @MainActor
     func testXMPWritesRequireExistingLocalFile() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-missing-xmp-\(UUID().uuidString)")
@@ -489,6 +541,70 @@ final class AppStateSelectionTests: XCTestCase {
         app.mutateAsset(asset.id) { $0.rating = 5 }
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: sidecar.path))
+    }
+
+    func testAutomaticXMPWriterDoesNotOverwriteNewerMetadata() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-xmp-order-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let original = dir.appendingPathComponent("photo.jpg")
+        try Data("image".utf8).write(to: original)
+        var older = try XCTUnwrap(DemoData.assets.first)
+        older.localPath = original.path
+        older.isDemo = false
+        older.rating = 1
+        var newer = older
+        newer.rating = 5
+
+        let writer = AutomaticXMPWriter()
+        let newerFailures = await writer.write([newer], sequence: 2)
+        let olderFailures = await writer.write([older], sequence: 1)
+        XCTAssertEqual(newerFailures, 0)
+        XCTAssertEqual(olderFailures, 0)
+
+        let sidecar = XMPSidecar.sidecarURL(for: original)
+        XCTAssertEqual(XMPSidecar.read(sidecar)?.rating, 5)
+    }
+
+    @MainActor
+    func testIndexedMetadataMutationQueuesAutomaticXMPWrite() async throws {
+        let defaults = UserDefaults.standard
+        let previousAutoWrite = defaults.object(forKey: "pc_autoWriteXMP")
+        defer {
+            if let previousAutoWrite {
+                defaults.set(previousAutoWrite, forKey: "pc_autoWriteXMP")
+            } else {
+                defaults.removeObject(forKey: "pc_autoWriteXMP")
+            }
+        }
+
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-xmp-queue-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let original = dir.appendingPathComponent("photo.jpg")
+        try Data("image".utf8).write(to: original)
+        let sidecar = XMPSidecar.sidecarURL(for: original)
+        var asset = try XCTUnwrap(DemoData.assets.first)
+        asset.localPath = original.path
+        asset.status = .ready
+        asset.isDemo = false
+
+        let app = AppState()
+        app.onboarded = true
+        app.autoWriteXMPSidecar = true
+        app.assets = [asset]
+        app.primaryId = asset.id
+        app.selectedIds = [asset.id]
+        XCTAssertTrue(app.setRating(5))
+
+        for _ in 0..<20 where XMPSidecar.read(sidecar)?.rating != 5 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(XMPSidecar.read(sidecar)?.rating, 5)
     }
 
     @MainActor
