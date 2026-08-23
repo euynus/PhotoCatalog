@@ -2954,7 +2954,8 @@ final class AppState {
             return live.filter { $0.folderId == selection.id }
         case .album:
             guard let al = albums.first(where: { $0.id == selection.id }) else { return [] }
-            return live.filter { al.assetIds.contains($0.id) }
+            let memberIds = Set(al.assetIds)
+            return live.filter { memberIds.contains($0.id) }
         case .smart:
             guard let sa = smartAlbums.first(where: { $0.id == selection.id }) else { return [] }
             return SmartMatcher.match(live, sa.rule)

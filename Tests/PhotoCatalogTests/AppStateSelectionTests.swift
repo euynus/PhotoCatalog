@@ -1468,6 +1468,27 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertLessThan(Self.seconds(elapsed), 2.0)
     }
 
+    @MainActor
+    func testLargeAlbumMembershipSmoke() {
+        let app = AppState()
+        app.onboarded = true
+        app.assets = Self.largeAssetFixture(count: 100_000)
+        let memberIds = stride(from: 0, to: 100_000, by: 2).map { "perf-\($0)" }
+        app.albums = [Album(id: "large-album", name: "Large Album", assetIds: memberIds)]
+        app.smartAlbums = []
+        app.folders = [Folder(id: "perf", name: "Performance")]
+        app.duplicateGroupsCache = []
+        app.selection = Selection(type: .album, id: "large-album", name: "Large Album")
+
+        let start = ContinuousClock.now
+        let matches = app.list
+        let elapsed = start.duration(to: .now)
+
+        XCTAssertEqual(matches.count, 50_000)
+        XCTAssertTrue(matches.allSatisfy { Int($0.id.dropFirst("perf-".count))?.isMultiple(of: 2) == true })
+        XCTAssertLessThan(Self.seconds(elapsed), 2.0)
+    }
+
     private static func seconds(_ duration: Duration) -> Double {
         let c = duration.components
         return Double(c.seconds) + Double(c.attoseconds) / 1_000_000_000_000_000_000
