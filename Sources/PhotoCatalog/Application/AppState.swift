@@ -345,12 +345,18 @@ final class AppState {
         return false
     }
 
-    init() {
+    init(arguments: [String] = CommandLine.arguments) {
         let a = DemoData.assets
         assets = a
         albums = DemoData.initialAlbums(a)
         smartAlbums = DemoData.initialSmartAlbums(a)
-        if onboarded && openLastCatalogOnLaunch, let error = loadExistingCatalog() {
+        if onboarded, let launchURL = Self.launchCatalogURL(from: arguments) {
+            launchCatalogHandled = true
+            if !openCatalog(at: launchURL), store == nil, openLastCatalogOnLaunch,
+               let error = loadExistingCatalog() {
+                push(catalogOpenFailureMessage(error), "warning")
+            }
+        } else if onboarded && openLastCatalogOnLaunch, let error = loadExistingCatalog() {
             push(catalogOpenFailureMessage(error), "warning")
         }
         if onboarded && store == nil {

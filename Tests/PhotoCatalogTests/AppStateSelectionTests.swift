@@ -732,6 +732,47 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testLaunchArgumentTakesPriorityOverConfiguredCatalog() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-launch-priority-\(UUID().uuidString)")
+        let target = root.appendingPathComponent("Target.photolibrary")
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try makeCatalogWithOneAsset(at: target, assetIndex: 1)
+
+        let defaults = UserDefaults.standard
+        defaults.set(true, forKey: "pc_openLast")
+        defaults.set("1", forKey: "pc_onboarded")
+        defaults.set(root.appendingPathComponent("Missing.photolibrary"), forKey: "pc_catalogURL")
+
+        let app = AppState(arguments: ["PhotoCatalog", target.path])
+
+        XCTAssertTrue(app.hasOpenCatalog)
+        XCTAssertEqual(app.catalogPath, target.path)
+        XCTAssertEqual(app.assets.map(\.id), [DemoData.assets[1].id])
+    }
+
+    @MainActor
+    func testInvalidLaunchArgumentFallsBackToConfiguredCatalog() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-launch-fallback-\(UUID().uuidString)")
+        let configured = root.appendingPathComponent("Configured.photolibrary")
+        let missing = root.appendingPathComponent("Missing.photolibrary")
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try makeCatalogWithOneAsset(at: configured, assetIndex: 2)
+
+        let defaults = UserDefaults.standard
+        defaults.set(true, forKey: "pc_openLast")
+        defaults.set("1", forKey: "pc_onboarded")
+        defaults.set(configured, forKey: "pc_catalogURL")
+
+        let app = AppState(arguments: ["PhotoCatalog", missing.path])
+
+        XCTAssertTrue(app.hasOpenCatalog)
+        XCTAssertEqual(app.catalogPath, configured.path)
+        XCTAssertEqual(app.assets.map(\.id), [DemoData.assets[2].id])
+    }
+
+    @MainActor
     func testWelcomeStateDoesNotExposeHiddenDemoSelection() {
         let app = AppState()
         app.onboarded = false
