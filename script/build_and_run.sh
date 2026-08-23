@@ -13,11 +13,64 @@ APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
+MODULE_CACHE="$ROOT_DIR/.build/ModuleCache"
 
 cd "$ROOT_DIR"
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+mkdir -p "$MODULE_CACHE"
+export SWIFTPM_MODULECACHE_OVERRIDE="$MODULE_CACHE"
+export SWIFT_MODULECACHE_PATH="$MODULE_CACHE"
+export CLANG_MODULE_CACHE_PATH="$MODULE_CACHE"
 
-swift build
+sdk_is_compatible() {
+  printf '%s\n' \
+    'import SwiftUI; struct SDKProbe: View { @State private var value = 0; var body: some View { Text(String(value)) } }' \
+    | command swiftc -sdk "$1" -module-cache-path "$MODULE_CACHE" -typecheck - >/dev/null 2>&1
+}
+
+resolve_sdk() {
+  if [[ -n "${SDKROOT:-}" ]]; then
+    local requested_sdk="$SDKROOT"
+    local resolved_sdk=""
+    resolved_sdk="$(cd "$requested_sdk" 2>/dev/null && pwd -P)" || true
+    if [[ -z "$resolved_sdk" ]] || ! sdk_is_compatible "$resolved_sdk"; then
+      echo "SDKROOT is not compatible with the active Swift toolchain: $SDKROOT" >&2
+      return 1
+    fi
+    printf '%s\n' "$resolved_sdk"
+    return
+  fi
+
+  local active=""
+  active="$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)"
+  local candidates=()
+  [[ -n "$active" ]] && candidates+=("$active")
+  while IFS= read -r candidate; do
+    candidates+=("$candidate")
+  done < <(find /Library/Developer/CommandLineTools/SDKs -maxdepth 1 -type d \
+    -name 'MacOSX*.sdk' -print 2>/dev/null | sort -Vr)
+
+  local seen=":"
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    candidate="$(cd "$candidate" 2>/dev/null && pwd -P)" || continue
+    [[ "$seen" == *":$candidate:"* ]] && continue
+    seen+="$candidate:"
+    if sdk_is_compatible "$candidate"; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done
+
+  echo "No installed macOS SDK is compatible with $(swift --version | head -n 1)." >&2
+  echo "Install or select a matching Xcode/Command Line Tools release." >&2
+  return 1
+}
+
+SDK_PATH="$(resolve_sdk)"
+export SDKROOT="$SDK_PATH"
+echo "Using macOS SDK: $SDK_PATH"
+
+swift build --sdk "$SDK_PATH"
 BUILD_BINARY="$ROOT_DIR/.build/debug/$APP_NAME"
 
 rm -rf "$APP_BUNDLE"
@@ -75,21 +128,34 @@ print(count)
 }
 
 case "$MODE" in
+  build)
+    ;;
+  selfcheck)
+    "$BUILD_BINARY" --selfcheck
+    ;;
+  pipeline)
+    "$BUILD_BINARY" --pipeline
+    ;;
   run)
+    pkill -x "$APP_NAME" >/dev/null 2>&1 || true
     open_app
     ;;
   --debug|debug)
+    pkill -x "$APP_NAME" >/dev/null 2>&1 || true
     lldb -- "$APP_BINARY"
     ;;
   --logs|logs)
+    pkill -x "$APP_NAME" >/dev/null 2>&1 || true
     open_app
     /usr/bin/log stream --info --style compact --predicate "process == \"$APP_NAME\""
     ;;
   --telemetry|telemetry)
+    pkill -x "$APP_NAME" >/dev/null 2>&1 || true
     open_app
     /usr/bin/log stream --info --style compact --predicate "subsystem == \"$BUNDLE_ID\""
     ;;
   --verify|verify)
+    pkill -x "$APP_NAME" >/dev/null 2>&1 || true
     open_app
     for _ in {1..20}; do
       if pgrep -x "$APP_NAME" >/dev/null; then
@@ -104,7 +170,7 @@ case "$MODE" in
     exit 1
     ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2
+    echo "usage: $0 [build|run|verify|debug|logs|telemetry|selfcheck|pipeline]" >&2
     exit 2
     ;;
 esac

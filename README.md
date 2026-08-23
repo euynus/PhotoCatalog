@@ -84,15 +84,21 @@ The built-in demo dataset is a **bit-faithful port** of the prototype's seeded R
 
 ## Build & run
 
-Requires Xcode 16 / Swift 6 toolchain on macOS 14+.
+Requires a Swift 6 toolchain on macOS 14+. Full Xcode is required to run XCTest;
+the app itself can also build with compatible Command Line Tools.
 
 ```sh
-swift build              # compile
-swift run PhotoCatalog   # launch the app
+script/build_and_run.sh build      # compile and assemble dist/PhotoCatalog.app
+script/build_and_run.sh run        # build and launch the app
+script/build_and_run.sh verify     # build, launch, and verify a visible window
 
-swift run PhotoCatalog --selfcheck   # headless: verify the demo dataset counts
-swift run PhotoCatalog --pipeline    # headless: end-to-end real-import pipeline test
+script/build_and_run.sh selfcheck  # headless demo dataset checks
+script/build_and_run.sh pipeline   # headless end-to-end import checks
 ```
+
+The script honors `SDKROOT` when set. Otherwise it probes installed macOS SDKs and
+selects one compatible with the active Swift compiler, which also handles temporarily
+out-of-sync Command Line Tools installations.
 
 You can also open `Package.swift` directly in Xcode and run the `PhotoCatalog` scheme.
 
