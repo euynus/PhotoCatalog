@@ -2996,8 +2996,8 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
-    func testRunBackupStopsWhenSavingCatalogFails() async throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-backup-failure-\(UUID().uuidString)")
+    func testRunBackupDoesNotRewriteCatalogRows() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-backup-no-rewrite-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
         let package = dir.appendingPathComponent("Library.photolibrary")
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
@@ -3019,19 +3019,19 @@ final class AppStateSelectionTests: XCTestCase {
 
         let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
         try db.execChecked("""
-        CREATE TRIGGER fail_backup_upsert BEFORE UPDATE ON assets
+        CREATE TRIGGER reject_backup_asset_update BEFORE UPDATE ON assets
         BEGIN
-          SELECT RAISE(ABORT, 'forced backup save failure');
+          SELECT RAISE(ABORT, 'backup must not rewrite asset rows');
         END;
         """)
 
         app.runBackup()
 
-        try await waitUntil("Timed out waiting for backup failure") {
-            app.toastCenter.toasts.last?.message == "备份失败"
+        try await waitUntil("Timed out waiting for backup") {
+            BackupService.listBackups(store).count == 1
         }
-        XCTAssertTrue(BackupService.listBackups(store).isEmpty)
-        XCTAssertEqual(app.toastCenter.toasts.last?.message, "备份失败")
+        XCTAssertEqual(BackupService.listBackups(store).count, 1)
+        XCTAssertTrue(app.toastCenter.toasts.last?.message.hasPrefix("已备份目录库") == true)
     }
 
     @MainActor

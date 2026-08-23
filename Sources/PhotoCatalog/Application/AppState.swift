@@ -2295,11 +2295,9 @@ final class AppState {
         guard !importing else { push("导入中无法备份目录库", "warning"); return }
         guard let store else { push("无目录库可备份", "warning"); return }
         let packageURL = store.packageURL
-        let snapshot = assets.filter { !$0.isDemo }
-        Task { [weak self, store, packageURL, snapshot] in
+        Task { [weak self, store, packageURL] in
             let url = await Task.detached(priority: .utility) { () -> URL? in
                 do {
-                    try store.upsert(snapshot)
                     return try BackupService.backup(store)
                 } catch {
                     return nil
@@ -2334,11 +2332,9 @@ final class AppState {
         }
 
         let packageURL = store.packageURL
-        let snapshot = assets.filter { !$0.isDemo }
-        Task { [weak self, store, packageURL, snapshot, backupKey, now] in
+        Task { [weak self, store, packageURL, backupKey, now] in
             let url = await Task.detached(priority: .utility) { () -> URL? in
                 do {
-                    try store.upsert(snapshot)
                     return try BackupService.backup(store, at: now)
                 } catch {
                     return nil
