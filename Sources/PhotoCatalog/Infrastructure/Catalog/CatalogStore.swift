@@ -71,7 +71,7 @@ enum CatalogStoreError: Error, Equatable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    private static let latestSchemaVersion = 15
+    private static let latestSchemaVersion = 16
     let packageURL: URL
     let db: Database
 
@@ -196,6 +196,21 @@ final class CatalogStore: @unchecked Sendable {
             try db.run("ALTER TABLE assets ADD COLUMN perceptual_hash INTEGER;")
             try recordMigration(15)
         }
+        if current < 16 {
+            try db.execChecked("DROP TABLE IF EXISTS asset_search;")
+            try db.execChecked(Self.assetSearchDDL)
+            try db.execChecked("""
+            INSERT INTO asset_search(asset_id, content)
+            SELECT id,
+                   COALESCE(filename, '') || ' ' || COALESCE(title, '') || ' '
+                   || COALESCE(caption, '') || ' ' || COALESCE(keywords, '') || ' '
+                   || COALESCE(camera, '') || ' ' || COALESCE(lens, '') || ' '
+                   || COALESCE(location, '') || ' ' || COALESCE(project, '') || ' '
+                   || COALESCE(client, '')
+            FROM assets;
+            """)
+            try recordMigration(16)
+        }
     }
 
     private func recordMigration(_ version: Int) throws {
@@ -203,15 +218,11 @@ final class CatalogStore: @unchecked Sendable {
                    [.int(version), .text(Self.iso(.now))])
     }
 
-    /// FTS5 full-text search returning matching asset ids (§12.7).
+    /// Trigram FTS search returning substring matches for queries of at least three characters.
     func search(_ query: String) -> [String] {
-        let q = query.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return [] }
-        // wrap each token as a quoted FTS5 prefix term; double any embedded quote so a query
-        // like 5"x7 produces a well-formed phrase instead of a malformed MATCH (zero results)
-        let match = q.split(separator: " ")
-            .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"*" }
-            .joined(separator: " ")
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard q.count >= 3 else { return [] }
+        let match = "\"\(q.replacingOccurrences(of: "\"", with: "\"\""))\""
         let rows = (try? db.query("""
         SELECT asset_search.asset_id
         FROM asset_search
@@ -300,6 +311,11 @@ final class CatalogStore: @unchecked Sendable {
     CREATE INDEX IF NOT EXISTS idx_album_assets_album ON album_assets(album_id, position);
     """
 
+    private static let assetSearchDDL = """
+    CREATE VIRTUAL TABLE asset_search USING fts5(
+      asset_id UNINDEXED, content, tokenize='trigram');
+    """
+
     // ---------- assets ----------
     private static let columns = """
     id,pid,ori,thumb,preview,filename,type,is_raw,folder_id,folder_name,\
@@ -323,13 +339,18 @@ final class CatalogStore: @unchecked Sendable {
                 try db.run(sql, Self.params(a))
                 // keep the FTS index in sync
                 try db.run("DELETE FROM asset_search WHERE asset_id=?;", [.text(a.id)])
-                try db.run("""
-                INSERT INTO asset_search(asset_id, filename, title, caption, keywords, camera, lens)
-                VALUES(?,?,?,?,?,?,?);
-                """, [.text(a.id), .text(a.filename), .text(a.title), .text(a.caption),
-                      .text(Self.keywordsJSON(a.keywords)), .text(a.camera), .text(a.lens)])
+                try db.run("INSERT INTO asset_search(asset_id, content) VALUES(?,?);", [
+                    .text(a.id),
+                    .text(Self.searchContent(a)),
+                ])
             }
         }
+    }
+
+    private static func searchContent(_ asset: Asset) -> String {
+        [asset.filename, asset.title, asset.caption, asset.keywords.joined(separator: " "),
+         asset.camera, asset.lens, asset.location, asset.project, asset.client]
+            .joined(separator: " ")
     }
 
     func updateAsset(_ a: Asset) throws { try upsert([a]) }

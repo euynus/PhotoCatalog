@@ -100,6 +100,42 @@ enum PipelineCheck {
         } else {
             check(false, "stale catalog manifest updates schema while preserving identity")
         }
+        let legacySearchLibrary = tmp.appendingPathComponent("LegacySearch.photolibrary")
+        do {
+            let legacyStore = try CatalogStore(packageURL: legacySearchLibrary)
+            var legacyAsset = DemoData.assets[0]
+            legacyAsset.isDemo = false
+            legacyAsset.deleted = false
+            legacyAsset.title = "Migration Search Needle"
+            try legacyStore.upsert([legacyAsset])
+            try legacyStore.db.run("DELETE FROM schema_migrations WHERE version=16;")
+            try legacyStore.db.execChecked("DROP TABLE asset_search;")
+            try legacyStore.db.execChecked("""
+            CREATE VIRTUAL TABLE asset_search USING fts5(
+              asset_id UNINDEXED, filename, title, caption, keywords, camera, lens,
+              tokenize='unicode61');
+            """)
+            try legacyStore.db.run("""
+            INSERT INTO asset_search(asset_id, filename, title, caption, keywords, camera, lens)
+            VALUES(?,?,?,?,?,?,?);
+            """, [.text(legacyAsset.id), .text(legacyAsset.filename), .text(legacyAsset.title),
+                  .text(legacyAsset.caption), .text(legacyAsset.keywords.joined(separator: " ")),
+                  .text(legacyAsset.camera), .text(legacyAsset.lens)])
+        } catch {
+            check(false, "schema 15 search fixture created")
+        }
+        if let migrated = try? CatalogStore(packageURL: legacySearchLibrary) {
+            let version = migrated.db.scalarInt("SELECT COALESCE(MAX(version),0) FROM schema_migrations;")
+            let backups = (try? fm.contentsOfDirectory(at: migrated.backupsURL,
+                                                       includingPropertiesForKeys: nil)) ?? []
+            check(version == 16 && !migrated.search("tion Sea").isEmpty,
+                  "schema 15 migration rebuilds the substring search index")
+            check(backups.contains { $0.lastPathComponent.hasPrefix("catalog-pre-migration-v15-") },
+                  "schema 15 migration keeps a pre-migration backup")
+        } else {
+            check(false, "schema 15 migration rebuilds the substring search index")
+            check(false, "schema 15 migration keeps a pre-migration backup")
+        }
         let futureLibrary = tmp.appendingPathComponent("Future.photolibrary")
         try? fm.createDirectory(at: futureLibrary, withIntermediateDirectories: true)
         do {
@@ -461,6 +497,7 @@ enum PipelineCheck {
                 a.makerNotes = "LensID=NIKKOR Z"
                 a.project = "Project A"
                 a.client = "Client A"
+                a.title = "Print 5\"x7"
                 return a
             }())
             let again = (try? store.loadAssets()) ?? []
@@ -669,8 +706,12 @@ enum PipelineCheck {
             check(false, "catalog backup restored")
         }
 
-        // 9. FTS5 full-text search
-        check(!store.search("IMG").isEmpty, "FTS5 search returns matches for 'IMG'")
+        // 9. FTS5 substring search
+        check(!store.search("G_00").isEmpty, "FTS5 search matches inside filenames")
+        check(store.search("Project A").contains(assets[0].id),
+              "FTS5 search includes project metadata")
+        check(store.search("5\"x7").contains(assets[0].id),
+              "FTS5 search safely matches quoted text")
 
         // 10. catalog health check
         let health = CatalogHealth.check(store, assets: assets)
@@ -830,7 +871,7 @@ enum PipelineCheck {
         }
 
         // 19. background availability resolution + narrow persistence
-        var unavailable = assets[0]
+        var unavailable = (try? store.loadAssets())?.first { $0.id == assets[0].id } ?? assets[0]
         unavailable.status = .ready
         unavailable.localPath = tmp.appendingPathComponent("gone.jpg").path
         let availabilityChanges = AssetAvailabilityService.changes(

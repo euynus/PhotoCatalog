@@ -1293,6 +1293,38 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testRealCatalogSearchUsesSubstringIndexAndShortQueryFallback() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-indexed-search-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        var asset = try XCTUnwrap(DemoData.assets.first)
+        asset.isDemo = false
+        asset.deleted = false
+        asset.title = "Graduation Needle 毕业照 5\"x7"
+        asset.project = "Client Project"
+        try store.upsert([asset])
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        app.setSearch("duation")
+        XCTAssertEqual(app.list.map(\.id), [asset.id])
+
+        app.setSearch("ent Pro")
+        XCTAssertEqual(app.list.map(\.id), [asset.id])
+
+        app.setSearch("5\"x7")
+        XCTAssertEqual(app.list.map(\.id), [asset.id])
+
+        app.setSearch("毕业")
+        XCTAssertEqual(app.list.map(\.id), [asset.id])
+    }
+
+    @MainActor
     func testAdvancedFiltersMatchMetadataStatusAndLocation() throws {
         let app = AppState()
         app.onboarded = true

@@ -2993,6 +2993,11 @@ final class AppState {
 
     private func computeList() -> [Asset] {
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        let indexedSearchIds: Set<String>? = if q.count >= 3, let store {
+            Set(store.search(q))
+        } else {
+            nil
+        }
         let cameraQuery = filters.camera.trimmingCharacters(in: .whitespacesAndNewlines)
         let lensQuery = filters.lens.trimmingCharacters(in: .whitespacesAndNewlines)
         var l = baseList.filter { a in
@@ -3012,10 +3017,14 @@ final class AppState {
             if filters.gps == "no" && a.hasGPS { return false }
             if filters.status != "any" && a.status.rawValue != filters.status { return false }
             if !q.isEmpty {
-                let haystack = ([a.filename, a.camera, a.lens, a.title, a.caption, a.location,
-                                 a.project, a.client]
-                    + a.keywords).joined(separator: " ")
-                if !haystack.localizedStandardContains(q) { return false }
+                if let indexedSearchIds {
+                    if !indexedSearchIds.contains(a.id) { return false }
+                } else {
+                    let haystack = ([a.filename, a.camera, a.lens, a.title, a.caption, a.location,
+                                     a.project, a.client]
+                        + a.keywords).joined(separator: " ")
+                    if !haystack.localizedStandardContains(q) { return false }
+                }
             }
             return true
         }
