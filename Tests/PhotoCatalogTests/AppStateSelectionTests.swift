@@ -1067,6 +1067,31 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testDuplicateBadgeRefreshKeepsUncollapsedListCache() throws {
+        let app = AppState()
+        app.onboarded = true
+        let stackAssets = Array(app.list.prefix(2))
+        XCTAssertEqual(stackAssets.count, 2)
+
+        _ = app.stackInfo(for: stackAssets[0])
+        let before = app.list
+        let beforeStorage = before.withUnsafeBufferPointer { buffer in
+            buffer.baseAddress.map { UInt(bitPattern: UnsafeRawPointer($0)) }
+        }
+
+        app.duplicateGroupsCache = [
+            DuplicateGroup(id: "dg-refresh", method: "contentHash", score: 1, items: stackAssets)
+        ]
+
+        let after = app.list
+        let afterStorage = after.withUnsafeBufferPointer { buffer in
+            buffer.baseAddress.map { UInt(bitPattern: UnsafeRawPointer($0)) }
+        }
+        XCTAssertEqual(afterStorage, beforeStorage)
+        XCTAssertEqual(app.stackInfo(for: stackAssets[0])?.count, 2)
+    }
+
+    @MainActor
     func testCommandKeyboardShortcutsRespectSheets() {
         let app = AppState()
         app.onboarded = true

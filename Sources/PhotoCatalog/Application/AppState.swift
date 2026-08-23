@@ -87,7 +87,12 @@ final class AppState {
     var importing = false
     var importRun: ImportRun?
     var duplicateGroupsCache: [DuplicateGroup] = DemoData.duplicateGroups {
-        didSet { photoStacksCache = nil; stackByAssetCache = nil; listInputsVersion &+= 1 }
+        didSet {
+            photoStacksCache = nil
+            stackByAssetCache = nil
+            stackInputsVersion &+= 1
+            if !collapsedStackIds.isEmpty { listInputsVersion &+= 1 }
+        }
     }
     private var collapsedStackIds: Set<String> = []
     @ObservationIgnored private var photoStacksCache: [PhotoStack]?
@@ -112,8 +117,9 @@ final class AppState {
         var all = 0, recent = 0, unrated = 0, picks = 0, rejected = 0, missingOffline = 0, places = 0, people = 0
     }
     /// Bumped whenever an array input to `list` changes (assets/albums/smartAlbums/folders/
-    /// source roots/priorities/duplicate groups); the small value inputs are compared directly.
+    /// source roots/priorities or collapsed-stack membership); small values are compared directly.
     private var listInputsVersion = 0   // tracked: cached getters read it so cache HITS register deps
+    private var stackInputsVersion = 0
     var assetRenderVersion = 0
     var thumbnailCacheGeneration = 0
     @ObservationIgnored private var listCache: (signature: ListSignature, value: [Asset])?
@@ -2721,7 +2727,7 @@ final class AppState {
     }
 
     private var photoStacks: [PhotoStack] {
-        _ = listInputsVersion   // register the dependency even on a cache hit
+        _ = stackInputsVersion   // register the dependency even on a cache hit
         if let cache = photoStacksCache { return cache }
         let stacks = PhotoStackService.stacks(from: duplicateGroupsCache)
         photoStacksCache = stacks
@@ -2730,7 +2736,7 @@ final class AppState {
 
     /// O(1) asset → stack lookup, rebuilt only when the stacks change (invalidated in didSet).
     private var stackByAsset: [String: PhotoStack] {
-        _ = listInputsVersion   // register the dependency even on a cache hit
+        _ = stackInputsVersion   // register the dependency even on a cache hit
         if let cache = stackByAssetCache { return cache }
         var map: [String: PhotoStack] = [:]
         for stack in photoStacks { for id in stack.assetIds { map[id] = stack } }
