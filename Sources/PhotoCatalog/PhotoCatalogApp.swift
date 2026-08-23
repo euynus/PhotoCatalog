@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 struct PhotoCatalogApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var app = AppState()
+    @State private var app = AppState(deferCatalogLoading: true)
 
     var body: some Scene {
         WindowGroup {
@@ -55,10 +55,10 @@ struct PhotoCatalogApp: App {
                 .frame(minWidth: 1080, minHeight: 680)
                 .preferredColorScheme(.dark)
                 .onAppear {
+                    app.startDeferredCatalogLoadingIfNeeded()
                     delegate.openCatalogURL = { url in
-                        app.openCatalog(at: url)
+                        app.openCatalogFromSystem(url)
                     }
-                    app.openLaunchCatalogIfNeeded()
                 }
         }
         .windowStyle(.hiddenTitleBar)

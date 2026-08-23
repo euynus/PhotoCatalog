@@ -12,6 +12,12 @@ private struct StatusMetrics: Equatable, Sendable {
     var backupCount = 0
 }
 
+private enum DeferredCatalogLoadOutcome: Sendable {
+    case success(CatalogStore, [Asset])
+    case incompatibleSchema(current: Int, supported: Int)
+    case failure
+}
+
 private final class CatalogOpenPanelDelegate: NSObject, NSOpenSavePanelDelegate {
     func panel(_ sender: Any, validate url: URL) throws {
         guard AppState.isValidCatalogSelection(url) else {
@@ -233,6 +239,11 @@ final class AppState {
     // ----- catalog (real persistence / scanning) -----
     private var store: CatalogStore?
     private var coordinator: ImportCoordinator?
+    private(set) var isLoadingCatalog = false
+    private var loadingCatalogURL: URL?
+    @ObservationIgnored private var deferredCatalogArguments: [String]?
+    @ObservationIgnored private var catalogLoadTask: Task<Void, Never>?
+    @ObservationIgnored private var catalogLoadGeneration = 0
     @ObservationIgnored private var watcher: FileWatcher?
     @ObservationIgnored private var watchedRoots: [URL] = []
     @ObservationIgnored private var securityScopedRoots: [URL] = []
@@ -351,33 +362,47 @@ final class AppState {
         return false
     }
 
-    init(arguments: [String] = CommandLine.arguments) {
+    init(arguments: [String] = CommandLine.arguments, deferCatalogLoading: Bool = false) {
         let a = DemoData.assets
         assets = a
         albums = DemoData.initialAlbums(a)
         smartAlbums = DemoData.initialSmartAlbums(a)
-        if onboarded, let launchURL = Self.launchCatalogURL(from: arguments) {
-            launchCatalogHandled = true
-            if !openCatalog(at: launchURL), store == nil, openLastCatalogOnLaunch,
-               let error = loadExistingCatalog() {
+        if deferCatalogLoading {
+            deferredCatalogArguments = arguments
+            if onboarded || Self.launchCatalogURL(from: arguments) != nil {
+                isLoadingCatalog = true
+                resetToEmptyCatalog()
+            }
+        } else {
+            if onboarded, let launchURL = Self.launchCatalogURL(from: arguments) {
+                launchCatalogHandled = true
+                if !openCatalog(at: launchURL), store == nil, openLastCatalogOnLaunch,
+                   let error = loadExistingCatalog() {
+                    push(catalogOpenFailureMessage(error), "warning")
+                }
+            } else if onboarded && openLastCatalogOnLaunch, let error = loadExistingCatalog() {
                 push(catalogOpenFailureMessage(error), "warning")
             }
-        } else if onboarded && openLastCatalogOnLaunch, let error = loadExistingCatalog() {
-            push(catalogOpenFailureMessage(error), "warning")
-        }
-        if onboarded && store == nil {
-            UserDefaults.standard.set("0", forKey: "pc_onboarded")
-            onboarded = false
+            if onboarded && store == nil {
+                UserDefaults.standard.set("0", forKey: "pc_onboarded")
+                onboarded = false
+            }
         }
         startVolumeMonitor()
-        runAutomaticBackupIfNeeded()
-        // seed the initial primary/selection from the first visible photo
+        if !deferCatalogLoading {
+            runAutomaticBackupIfNeeded()
+            seedInitialSelection()
+        }
+    }
+
+    private func seedInitialSelection() {
         let first = list.first
         primaryId = first?.id
         if let id = first?.id { selectedIds = [id]; anchorId = id }
     }
 
     deinit {
+        catalogLoadTask?.cancel()
         for url in securityScopedRoots {
             url.stopAccessingSecurityScopedResource()
         }
@@ -385,14 +410,14 @@ final class AppState {
 
     // ---------- catalog open / load ----------
     var hasOpenCatalog: Bool { store != nil }
-    var canRunCatalogMaintenance: Bool { hasOpenCatalog && !importing }
+    var canRunCatalogMaintenance: Bool { hasOpenCatalog && !importing && !isLoadingCatalog }
 
     var catalogPath: String {
-        store?.packageURL.path ?? "未打开目录库"
+        store?.packageURL.path ?? loadingCatalogURL?.path ?? "未打开目录库"
     }
 
     var catalogDisplayName: String {
-        store?.packageURL.deletingPathExtension().lastPathComponent ?? "PhotoCatalog"
+        (store?.packageURL ?? loadingCatalogURL)?.deletingPathExtension().lastPathComponent ?? "PhotoCatalog"
     }
 
     var recentCatalogs: [RecentCatalog] {
@@ -454,32 +479,37 @@ final class AppState {
         rememberCatalog(url)
         refreshStatusMetrics()
         let real = ((try? s.loadAssets()) ?? []).filter { !$0.isDemo && !$0.deleted }
-        let hasInterruptedImport = (try? s.loadJobs(type: "scan", states: ["running", "paused"]).isEmpty) == false
+        applyLoadedCatalog(real, from: s)
+        return nil
+    }
+
+    private func applyLoadedCatalog(_ real: [Asset], from store: CatalogStore) {
+        let hasInterruptedImport = (try? store.loadJobs(type: "scan", states: ["running", "paused"]).isEmpty) == false
         guard !real.isEmpty else {
             assets = []
             albums = []
             smartAlbums = []
             folders = []
             duplicateGroupsCache = []
-            restoreSourceRoots(from: s)
-            restoreAlbums(from: s, assets: [])
+            restoreSourceRoots(from: store)
+            restoreAlbums(from: store, assets: [])
             if hasInterruptedImport {
                 recoverInterruptedImportJobs(existingAssets: [])
             }
             ensurePrimaryValid()
-            return nil
+            return
         }
 
         assets = []
         albums = []
         smartAlbums = []
         folders = []
-        restoreSourceRoots(from: s)
+        restoreSourceRoots(from: store)
 
-        let sourceRootsById = sourceRootRecordsById(from: s)
+        let sourceRootsById = sourceRootRecordsById(from: store)
         let repaired = repairSourceRootOwnership(real, sourceRootsById: sourceRootsById)
         let checked = repaired.assets
-        if !repaired.changed.isEmpty { try? s.upsert(repaired.changed) }
+        if !repaired.changed.isEmpty { try? store.upsert(repaired.changed) }
         assets = checked
         for (fid, items) in Dictionary(grouping: checked, by: { $0.folderId }) where
             !folders.contains(where: { $0.id == fid }) {
@@ -490,17 +520,112 @@ final class AppState {
             sourceManagementModesById[folders[index].id] == ImportMode.managed.rawValue {
             let status = folderStatus(for: folders[index].id, in: checked)
             folders[index].status = status
-            try? s.updateSourceRootStatus(id: folders[index].id, status: status)
+            try? store.updateSourceRootStatus(id: folders[index].id, status: status)
         }
         recomputeDuplicates()
-        restoreAlbums(from: s, assets: checked)
+        restoreAlbums(from: store, assets: checked)
         recoverInterruptedImportJobs(existingAssets: checked)
         primeDefaultListCache(with: checked)
         ensurePrimaryValid()
         backfillThumbnails()
         detectMissingRealAssets()
         refreshStatusMetrics()
-        return nil
+    }
+
+    /// Starts the production launch load after SwiftUI has created the first window.
+    func startDeferredCatalogLoadingIfNeeded() {
+        guard let arguments = deferredCatalogArguments else { return }
+        deferredCatalogArguments = nil
+
+        let launchURL = Self.launchCatalogURL(from: arguments).map(Self.catalogPackageURL(for:))
+        if launchURL != nil { launchCatalogHandled = true }
+        let fallbackURL: URL? = if onboarded && openLastCatalogOnLaunch,
+                                   FileManager.default.fileExists(
+                                    atPath: configuredCatalogURL.appendingPathComponent("catalog.sqlite").path
+                                   ) {
+            configuredCatalogURL
+        } else {
+            nil
+        }
+
+        if let launchURL,
+           FileManager.default.fileExists(atPath: launchURL.appendingPathComponent("catalog.sqlite").path) {
+            let fallback = fallbackURL?.standardizedFileURL == launchURL.standardizedFileURL ? nil : fallbackURL
+            beginDeferredCatalogLoad(at: launchURL, fallbackURL: fallback)
+        } else if let fallbackURL {
+            beginDeferredCatalogLoad(at: fallbackURL, fallbackURL: nil)
+        } else {
+            finishDeferredCatalogLoadFailure(message: nil)
+        }
+    }
+
+    private func beginDeferredCatalogLoad(at url: URL, fallbackURL: URL?) {
+        catalogLoadTask?.cancel()
+        catalogLoadGeneration &+= 1
+        let generation = catalogLoadGeneration
+        isLoadingCatalog = true
+        loadingCatalogURL = url
+
+        catalogLoadTask = Task { [weak self] in
+            let outcome = await Task.detached(priority: .userInitiated) { () -> DeferredCatalogLoadOutcome in
+                do {
+                    let store = try CatalogStore(packageURL: url)
+                    let assets = try store.loadAssets().filter { !$0.isDemo && !$0.deleted }
+                    return .success(store, assets)
+                } catch let error as CatalogStoreError {
+                    switch error {
+                    case .incompatibleSchema(let current, let supported):
+                        return .incompatibleSchema(current: current, supported: supported)
+                    }
+                } catch {
+                    return .failure
+                }
+            }.value
+
+            guard let self, self.catalogLoadGeneration == generation, !Task.isCancelled else { return }
+            self.catalogLoadTask = nil
+            switch outcome {
+            case .success(let store, let assets):
+                self.store = store
+                self.coordinator = ImportCoordinator(store: store)
+                self.setActiveCatalog(url)
+                self.refreshStatusMetrics()
+                self.applyLoadedCatalog(assets, from: store)
+                self.isLoadingCatalog = false
+                self.loadingCatalogURL = nil
+                UserDefaults.standard.set("1", forKey: "pc_onboarded")
+                self.onboarded = true
+                self.seedInitialSelection()
+                self.runAutomaticBackupIfNeeded()
+            case .incompatibleSchema(let current, let supported):
+                let message = "目录库版本过新（schema \(current)，当前支持 \(supported)），请升级 PhotoCatalog 后再打开"
+                if let fallbackURL {
+                    self.push(message, "warning")
+                    self.beginDeferredCatalogLoad(at: fallbackURL, fallbackURL: nil)
+                } else {
+                    self.finishDeferredCatalogLoadFailure(message: message)
+                }
+            case .failure:
+                if let fallbackURL {
+                    self.push("打开目录库失败", "warning")
+                    self.beginDeferredCatalogLoad(at: fallbackURL, fallbackURL: nil)
+                } else {
+                    self.finishDeferredCatalogLoadFailure(message: "打开目录库失败")
+                }
+            }
+        }
+    }
+
+    private func finishDeferredCatalogLoadFailure(message: String?) {
+        catalogLoadTask?.cancel()
+        catalogLoadTask = nil
+        catalogLoadGeneration &+= 1
+        isLoadingCatalog = false
+        loadingCatalogURL = nil
+        resetToDemoCatalog()
+        UserDefaults.standard.set("0", forKey: "pc_onboarded")
+        onboarded = false
+        if let message { push(message, "warning") }
     }
 
     private func restoreAlbums(from store: CatalogStore, assets: [Asset]) {
@@ -779,6 +904,26 @@ final class AppState {
             return
         }
         openCatalog(at: url)
+    }
+
+    func openCatalogFromSystem(_ selected: URL) {
+        guard !importing else {
+            push("导入中无法切换目录库", "warning")
+            return
+        }
+        let url = Self.catalogPackageURL(for: selected)
+        if (store?.packageURL ?? loadingCatalogURL)?.standardizedFileURL == url.standardizedFileURL {
+            return
+        }
+        guard FileManager.default.fileExists(atPath: url.appendingPathComponent("catalog.sqlite").path) else {
+            push("所选目录库无效", "warning")
+            return
+        }
+
+        let fallbackURL = store?.packageURL
+        closeCurrentCatalog()
+        resetToEmptyCatalog()
+        beginDeferredCatalogLoad(at: url, fallbackURL: fallbackURL)
     }
 
     func openLaunchCatalogIfNeeded(arguments: [String] = CommandLine.arguments) {
@@ -2408,6 +2553,12 @@ final class AppState {
     }
 
     private func closeCurrentCatalog() {
+        catalogLoadTask?.cancel()
+        catalogLoadTask = nil
+        catalogLoadGeneration &+= 1
+        deferredCatalogArguments = nil
+        isLoadingCatalog = false
+        loadingCatalogURL = nil
         cancelBackfill()
         availabilityScanTask?.cancel()
         availabilityScanTask = nil
@@ -3928,6 +4079,7 @@ final class AppState {
     /// Returns true if the key was handled.
     @discardableResult
     func handleKey(_ key: String, hasCommand: Bool, hasShift: Bool = false) -> Bool {
+        if isLoadingCatalog { return true }
         // Sheets are overlays, not real modal windows — while one is open,
         // global shortcuts must not reach the photos behind the backdrop
         // (rating/flag/delete keys would silently mutate the selection).

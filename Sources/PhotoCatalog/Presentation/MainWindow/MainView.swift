@@ -9,8 +9,8 @@ struct MainView: View {
     var body: some View {
         ZStack {
             mainChrome
-                .disabled(app.sheet != nil)
-                .accessibilityHidden(app.sheet != nil)
+                .disabled(app.sheet != nil || app.isLoadingCatalog)
+                .accessibilityHidden(app.sheet != nil || app.isLoadingCatalog)
             ZStack { sheets }
                 .animation(.easeOut(duration: 0.18), value: app.sheet)
         }

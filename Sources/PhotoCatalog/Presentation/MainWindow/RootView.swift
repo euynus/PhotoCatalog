@@ -9,9 +9,24 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            if app.onboarded {
+            if app.onboarded || app.isLoadingCatalog {
                 MainView()
                     .transition(.opacity)
+                    .overlay {
+                        if app.isLoadingCatalog {
+                            ZStack {
+                                Color.black.opacity(0.58)
+                                VStack(spacing: 10) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("正在打开 \(app.catalogDisplayName)…")
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(Theme.text2)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                    }
             } else {
                 ZStack {
                     RadialGradient(

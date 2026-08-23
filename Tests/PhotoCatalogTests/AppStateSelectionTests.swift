@@ -752,6 +752,59 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testDeferredLaunchLoadsCatalogAfterInitializerReturns() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-deferred-launch-\(UUID().uuidString)")
+        let target = root.appendingPathComponent("Target.photolibrary")
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try makeCatalogWithOneAsset(at: target, assetIndex: 1)
+
+        let defaults = UserDefaults.standard
+        defaults.set(true, forKey: "pc_openLast")
+        defaults.set("1", forKey: "pc_onboarded")
+
+        let app = AppState(arguments: ["PhotoCatalog", target.path], deferCatalogLoading: true)
+
+        XCTAssertTrue(app.isLoadingCatalog)
+        XCTAssertFalse(app.hasOpenCatalog)
+        XCTAssertTrue(app.assets.isEmpty)
+
+        app.startDeferredCatalogLoadingIfNeeded()
+        try await waitUntil("Timed out waiting for deferred catalog load", timeout: 3) {
+            !app.isLoadingCatalog
+        }
+
+        XCTAssertTrue(app.hasOpenCatalog)
+        XCTAssertEqual(app.catalogPath, target.path)
+        XCTAssertEqual(app.assets.map(\.id), [DemoData.assets[1].id])
+    }
+
+    @MainActor
+    func testSystemCatalogOpenLoadsReplacementInBackground() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-system-open-\(UUID().uuidString)")
+        let first = root.appendingPathComponent("First.photolibrary")
+        let second = root.appendingPathComponent("Second.photolibrary")
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try makeCatalogWithOneAsset(at: first, assetIndex: 0)
+        _ = try makeCatalogWithOneAsset(at: second, assetIndex: 2)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: first))
+
+        app.openCatalogFromSystem(second)
+
+        XCTAssertTrue(app.isLoadingCatalog)
+        XCTAssertEqual(app.catalogPath, second.path)
+        try await waitUntil("Timed out waiting for system catalog open", timeout: 3) {
+            !app.isLoadingCatalog
+        }
+        XCTAssertEqual(app.catalogPath, second.path)
+        XCTAssertEqual(app.assets.map(\.id), [DemoData.assets[2].id])
+    }
+
+    @MainActor
     func testInvalidLaunchArgumentFallsBackToConfiguredCatalog() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-launch-fallback-\(UUID().uuidString)")
