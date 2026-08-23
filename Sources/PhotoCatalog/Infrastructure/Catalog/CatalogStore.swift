@@ -4,7 +4,7 @@
 // ============================================================
 import Foundation
 
-struct SourceRootRecord: Identifiable {
+struct SourceRootRecord: Identifiable, Sendable {
     let id: String
     let displayName: String
     let pathHint: String
@@ -345,6 +345,22 @@ final class CatalogStore: @unchecked Sendable {
     func updateColorLabels(_ color: ColorLabel?, assetIDs: Set<String>) throws {
         try updateAssetColumn("color_label", value: color.map { .text($0.rawValue) } ?? .null,
                               assetIDs: assetIDs)
+    }
+
+    func updateAssetAvailability(_ updates: [AssetAvailabilityUpdate]) throws {
+        guard !updates.isEmpty else { return }
+        try db.transaction {
+            for update in updates {
+                try db.run(
+                    "UPDATE assets SET status=?, local_path=? WHERE id=? AND deleted=0;",
+                    [
+                        .text(update.status.rawValue),
+                        update.localPath.map(SQLValue.text) ?? .null,
+                        .text(update.assetId),
+                    ]
+                )
+            }
+        }
     }
 
     private func updateAssetColumn(_ column: String, value: SQLValue, assetIDs: Set<String>) throws {

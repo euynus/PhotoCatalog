@@ -32,6 +32,14 @@ struct StatusBar: View {
                 }
                 .buttonStyle(.plain)
             }
+            if app.isCheckingOriginals {
+                HStack(spacing: 5) {
+                    ProgressView().controlSize(.mini)
+                    Text("正在检查原件…")
+                }
+                .foregroundStyle(Theme.text3)
+                .accessibilityElement(children: .combine)
+            }
             Button { app.runBackup() } label: {
                 HStack(spacing: 5) {
                     Icon("clock", size: 12)

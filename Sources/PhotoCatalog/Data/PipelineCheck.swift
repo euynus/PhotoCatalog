@@ -829,7 +829,31 @@ enum PipelineCheck {
             check(!fm.fileExists(atPath: p), "simulated missing original (file removed)")
         }
 
-        // 19. offline external-volume classification (§6.4 ORG-007)
+        // 19. background availability resolution + narrow persistence
+        var unavailable = assets[0]
+        unavailable.status = .ready
+        unavailable.localPath = tmp.appendingPathComponent("gone.jpg").path
+        let availabilityChanges = AssetAvailabilityService.changes(
+            in: [unavailable],
+            sourceRootsById: [:]
+        )
+        check(availabilityChanges == [
+            AssetAvailabilityUpdate(
+                assetId: unavailable.id,
+                status: .missing,
+                localPath: unavailable.localPath
+            )
+        ], "availability scan reports a missing internal original")
+
+        let originalTitle = unavailable.title
+        try? store.updateAssetAvailability(availabilityChanges ?? [])
+        let availabilitySaved = (try? store.loadAssets())?.first { $0.id == unavailable.id }
+        check(availabilitySaved?.status == .missing
+              && availabilitySaved?.localPath == unavailable.localPath
+              && availabilitySaved?.title == originalTitle,
+              "availability persistence changes only status and path")
+
+        // 20. offline external-volume classification (§6.4 ORG-007)
         check(VolumeMonitor.volumeRoot(of: "/Volumes/Photos/2026/a.jpg") == "/Volumes/Photos",
               "external volume root extracted")
         check(VolumeMonitor.volumeRoot(of: "/Users/me/Pictures/a.jpg") == nil, "internal path has no volume root")

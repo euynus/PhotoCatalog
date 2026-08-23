@@ -1949,7 +1949,7 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
-    func testManagedSourceDoesNotRequireOriginalFolderAuthorization() throws {
+    func testManagedSourceDoesNotRequireOriginalFolderAuthorization() async throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-managed-offline-source-\(UUID().uuidString)")
         let package = dir.appendingPathComponent("Library.photolibrary")
@@ -1991,6 +1991,9 @@ final class AppStateSelectionTests: XCTestCase {
         let reopened = AppState()
         reopened.onboarded = true
         XCTAssertTrue(reopened.openCatalog(at: package))
+        try await waitUntil("Timed out waiting for managed original availability") {
+            !reopened.isCheckingOriginals
+        }
 
         XCTAssertEqual(reopened.assets.first?.status, .missing)
         XCTAssertEqual(reopened.folders.first { $0.id == "managed-source" }?.status, "missing")
@@ -2563,7 +2566,7 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
-    func testMissingDetectionDoesNotPublishUnsavedStatus() throws {
+    func testMissingDetectionDoesNotPublishUnsavedStatus() async throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-missing-save-fail-\(UUID().uuidString)")
         let package = dir.appendingPathComponent("Library.photolibrary")
@@ -2597,10 +2600,46 @@ final class AppStateSelectionTests: XCTestCase {
         try FileManager.default.removeItem(at: original)
 
         app.detectMissingRealAssets()
+        try await waitUntil("Timed out waiting for missing-original scan") {
+            !app.isCheckingOriginals
+        }
 
         XCTAssertEqual(app.assets.first?.status, .ready)
         XCTAssertEqual(try store.loadAssets().first?.status, .ready)
         XCTAssertEqual(app.toastCenter.toasts.last?.message, "缺失状态保存失败")
+    }
+
+    func testAvailabilityPersistenceOnlyUpdatesChangedColumns() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-availability-columns-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        var asset = try XCTUnwrap(DemoData.assets.first)
+        asset.isDemo = false
+        asset.deleted = false
+        asset.status = .ready
+        asset.localPath = "/tmp/original.jpg"
+        try store.upsert([asset])
+
+        let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
+        try db.execChecked("""
+        CREATE TRIGGER reject_unrelated_availability_write
+        BEFORE UPDATE OF filename, title, caption, keywords, camera, lens ON assets
+        BEGIN
+          SELECT RAISE(ABORT, 'availability update touched unrelated metadata');
+        END;
+        """)
+
+        try store.updateAssetAvailability([
+            AssetAvailabilityUpdate(assetId: asset.id, status: .missing, localPath: asset.localPath)
+        ])
+
+        let saved = try XCTUnwrap(store.loadAssets().first)
+        XCTAssertEqual(saved.status, .missing)
+        XCTAssertEqual(saved.filename, asset.filename)
+        XCTAssertEqual(saved.title, asset.title)
     }
 
     @MainActor

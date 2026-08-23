@@ -239,6 +239,9 @@ final class AppState {
     }
     private var sourceManagementModesById: [String: String] = [:]
     @ObservationIgnored private var volumeMonitor: VolumeMonitor?
+    @ObservationIgnored private var availabilityScanTask: Task<Void, Never>?
+    @ObservationIgnored private var availabilityScanGeneration = 0
+    private(set) var isCheckingOriginals = false
     @ObservationIgnored private var lastImportSessionPersistedCount = 0
     @ObservationIgnored private var importControl: ImportControl?
     @ObservationIgnored private var activeImportJobId: String?
@@ -461,11 +464,9 @@ final class AppState {
         folders = []
         restoreSourceRoots(from: s)
 
-        // missing/offline detection (§6.4 ORG-003/007)
         let sourceRootsById = sourceRootRecordsById(from: s)
-        var checked = real.map { resolveAssetAccess($0, sourceRootsById: sourceRootsById) }
-        let repaired = repairSourceRootOwnership(checked, sourceRootsById: sourceRootsById)
-        checked = repaired.assets
+        let repaired = repairSourceRootOwnership(real, sourceRootsById: sourceRootsById)
+        let checked = repaired.assets
         if !repaired.changed.isEmpty { try? s.upsert(repaired.changed) }
         assets = checked
         for (fid, items) in Dictionary(grouping: checked, by: { $0.folderId }) where
@@ -484,6 +485,7 @@ final class AppState {
         recoverInterruptedImportJobs(existingAssets: checked)
         ensurePrimaryValid()
         backfillThumbnails()
+        detectMissingRealAssets()
         refreshStatusMetrics()
         return nil
     }
@@ -616,30 +618,6 @@ final class AppState {
         } else {
             folders.append(Folder(id: id, name: name, status: status))
         }
-    }
-
-    private func resolveAssetAccess(_ asset: Asset,
-                                    sourceRootsById: [String: SourceRootRecord]) -> Asset {
-        guard let path = asset.localPath else { return asset }
-        var resolved = asset
-        if FileManager.default.fileExists(atPath: path) {
-            resolved.status = .ready
-            return resolved
-        }
-
-        let sourceRoot = sourceRootsById[asset.folderId]
-        if let relocated = VolumeMonitor.relocatedURL(for: path,
-                                                      volumeIdentifier: sourceRoot?.volumeIdentifier) {
-            resolved.localPath = relocated.path
-            resolved.status = .ready
-            return resolved
-        }
-
-        resolved.status = VolumeMonitor.status(
-            forInaccessible: path,
-            volumeIdentifier: sourceRoot?.volumeIdentifier
-        )
-        return resolved
     }
 
     private func openOrCreateCatalog() {
@@ -1492,28 +1470,65 @@ final class AppState {
     }
 
     func detectMissingRealAssets() {
-        var changed = false
-        var updated = assets
-        let sourceRootsById = store.map { sourceRootRecordsById(from: $0) } ?? [:]
-        for i in updated.indices where !updated[i].isDemo {
-            let resolved = resolveAssetAccess(updated[i], sourceRootsById: sourceRootsById)
-            if updated[i].status != resolved.status || updated[i].localPath != resolved.localPath {
-                updated[i] = resolved
-                changed = true
-            }
+        guard let store else {
+            isCheckingOriginals = false
+            updateFolderStatusesFromAssets()
+            return
         }
-        if changed {
-            if let store {
+
+        availabilityScanTask?.cancel()
+        availabilityScanGeneration &+= 1
+        let generation = availabilityScanGeneration
+        let packageURL = store.packageURL
+        let snapshot = assets
+        let sourceRootsById = sourceRootRecordsById(from: store)
+        isCheckingOriginals = true
+
+        availabilityScanTask = Task { [weak self, store, snapshot, sourceRootsById] in
+            let worker = Task.detached(priority: .utility) { () -> ([AssetAvailabilityUpdate]?, Bool) in
+                guard let changes = AssetAvailabilityService.changes(
+                    in: snapshot,
+                    sourceRootsById: sourceRootsById
+                ) else { return (nil, true) }
+                guard !Task.isCancelled else { return (nil, true) }
                 do {
-                    try store.upsert(updated.filter { !$0.isDemo })
+                    try store.updateAssetAvailability(changes)
+                    return (changes, true)
                 } catch {
-                    push("缺失状态保存失败", "warning")
-                    return
+                    return (changes, false)
                 }
             }
-            replaceAssetsForMutation(updated)
+            let result = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+
+            guard let self,
+                  self.availabilityScanGeneration == generation,
+                  self.store?.packageURL == packageURL else { return }
+            self.availabilityScanTask = nil
+            self.isCheckingOriginals = false
+            guard let changes = result.0 else { return }
+            guard result.1 else {
+                self.push("缺失状态保存失败", "warning")
+                return
+            }
+
+            let changesById = Dictionary(uniqueKeysWithValues: changes.map { ($0.assetId, $0) })
+            var updated = self.assets
+            var didChange = false
+            for index in updated.indices {
+                guard let change = changesById[updated[index].id] else { continue }
+                if updated[index].status != change.status || updated[index].localPath != change.localPath {
+                    updated[index].status = change.status
+                    updated[index].localPath = change.localPath
+                    didChange = true
+                }
+            }
+            if didChange { self.replaceAssetsForMutation(updated) }
+            self.updateFolderStatusesFromAssets()
         }
-        updateFolderStatusesFromAssets()
     }
 
     private func updateFolderStatusesFromAssets() {
@@ -2385,6 +2400,10 @@ final class AppState {
 
     private func closeCurrentCatalog() {
         cancelBackfill()
+        availabilityScanTask?.cancel()
+        availabilityScanTask = nil
+        availabilityScanGeneration &+= 1
+        isCheckingOriginals = false
         incrementalRescanGeneration &+= 1
         isIncrementalRescanning = false
         needsIncrementalRescan = false
