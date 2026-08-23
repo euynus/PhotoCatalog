@@ -101,35 +101,45 @@ final class Database: @unchecked Sendable {
     }
 
     func query(_ sql: String, _ params: [SQLValue] = []) throws -> [Row] {
+        try queryMap(sql, params) { $0 }
+    }
+
+    /// Decodes rows as SQLite advances so callers with large result sets do not
+    /// retain an intermediate array of dictionaries alongside their final models.
+    func queryMap<T>(_ sql: String, _ params: [SQLValue] = [],
+                     transform: (Row) throws -> T?) throws -> [T] {
         try locked {
             let stmt = try preparedStatement(sql, params)
             defer { sqlite3_reset(stmt); sqlite3_clear_bindings(stmt) }
-            var rows: [Row] = []
+            var values: [T] = []
             let cols = Int(sqlite3_column_count(stmt))
             // column names are stable for the statement — read them once, not per row
             let names = (0..<cols).map { String(cString: sqlite3_column_name(stmt, Int32($0))) }
             while true {
                 let rc = sqlite3_step(stmt)
-                if rc == SQLITE_DONE { return rows }
+                if rc == SQLITE_DONE { return values }
                 guard rc == SQLITE_ROW else {
                     throw DBError.step(String(cString: sqlite3_errmsg(db)))
                 }
-                var row = Row(minimumCapacity: cols)
-                for c in 0..<cols {
-                    let i = Int32(c)
-                    let name = names[c]
-                    switch sqlite3_column_type(stmt, i) {
-                    case SQLITE_INTEGER: row[name] = .int(Int(sqlite3_column_int64(stmt, i)))
-                    case SQLITE_FLOAT: row[name] = .double(sqlite3_column_double(stmt, i))
-                    case SQLITE_TEXT: row[name] = .text(String(cString: sqlite3_column_text(stmt, i)))
-                    case SQLITE_BLOB:
-                        if let bytes = sqlite3_column_blob(stmt, i) {
-                            row[name] = .blob(Data(bytes: bytes, count: Int(sqlite3_column_bytes(stmt, i))))
-                        } else { row[name] = .null }
-                    default: row[name] = .null
+                let value = try autoreleasepool { () throws -> T? in
+                    var row = Row(minimumCapacity: cols)
+                    for c in 0..<cols {
+                        let i = Int32(c)
+                        let name = names[c]
+                        switch sqlite3_column_type(stmt, i) {
+                        case SQLITE_INTEGER: row[name] = .int(Int(sqlite3_column_int64(stmt, i)))
+                        case SQLITE_FLOAT: row[name] = .double(sqlite3_column_double(stmt, i))
+                        case SQLITE_TEXT: row[name] = .text(String(cString: sqlite3_column_text(stmt, i)))
+                        case SQLITE_BLOB:
+                            if let bytes = sqlite3_column_blob(stmt, i) {
+                                row[name] = .blob(Data(bytes: bytes, count: Int(sqlite3_column_bytes(stmt, i))))
+                            } else { row[name] = .null }
+                        default: row[name] = .null
+                        }
                     }
+                    return try transform(row)
                 }
-                rows.append(row)
+                if let value { values.append(value) }
             }
         }
     }
