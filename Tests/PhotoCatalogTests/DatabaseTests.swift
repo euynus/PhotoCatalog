@@ -3,6 +3,27 @@ import XCTest
 @testable import PhotoCatalog
 
 final class DatabaseTests: XCTestCase {
+    func testCatalogLoadsAssetsInDefaultCaptureOrder() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-capture-order-\(UUID().uuidString)")
+        let package = directory.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = try CatalogStore(packageURL: package)
+        var oldest = DemoData.assets[0]
+        oldest.date = Date(timeIntervalSince1970: 1_000)
+        oldest.isDemo = false
+        var newest = DemoData.assets[1]
+        newest.date = Date(timeIntervalSince1970: 3_000)
+        newest.isDemo = false
+        var middle = DemoData.assets[2]
+        middle.date = Date(timeIntervalSince1970: 2_000)
+        middle.isDemo = false
+        try store.upsert([middle, oldest, newest])
+
+        XCTAssertEqual(try store.loadAssets().map(\.id), [newest.id, middle.id, oldest.id])
+    }
+
     func testQueryMapDecodesRowsInOrderAndDropsNilTransforms() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-query-map-\(UUID().uuidString)")

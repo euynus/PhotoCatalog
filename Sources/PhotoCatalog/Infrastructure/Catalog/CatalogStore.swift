@@ -399,7 +399,10 @@ final class CatalogStore: @unchecked Sendable {
 
     func loadAssets() throws -> [Asset] {
         // soft-deleted rows are never shown; skip materializing them (uses idx_assets_deleted)
-        try db.queryMap("SELECT \(Self.columns) FROM assets WHERE deleted=0;", transform: Self.asset(from:))
+        try db.queryMap(
+            "SELECT \(Self.columns) FROM assets WHERE deleted=0 ORDER BY capture_date DESC;",
+            transform: Self.asset(from:)
+        )
     }
 
     func assetCount(includeDeleted: Bool = false) -> Int {

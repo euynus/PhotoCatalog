@@ -489,6 +489,7 @@ final class AppState {
         recomputeDuplicates()
         restoreAlbums(from: s, assets: checked)
         recoverInterruptedImportJobs(existingAssets: checked)
+        primeDefaultListCache(with: checked)
         ensurePrimaryValid()
         backfillThumbnails()
         detectMissingRealAssets()
@@ -2985,13 +2986,25 @@ final class AppState {
 
     // ---------- apply filter bar + search + sort ----------
     var list: [Asset] {
-        let signature = ListSignature(inputsVersion: listInputsVersion, selection: selection,
-                                      filters: filters, search: search, sort: sort,
-                                      collapsed: collapsedStackIds, recentDays: recentImportDays)
+        let signature = currentListSignature
         if let cache = listCache, cache.signature == signature { return cache.value }
         let value = computeList()
         listCache = (signature, value)
         return value
+    }
+
+    private var currentListSignature: ListSignature {
+        ListSignature(inputsVersion: listInputsVersion, selection: selection,
+                      filters: filters, search: search, sort: sort,
+                      collapsed: collapsedStackIds, recentDays: recentImportDays)
+    }
+
+    private func primeDefaultListCache(with loadedAssets: [Asset]) {
+        guard selection.type == .lib, selection.id == "all",
+              filters.isEmpty,
+              search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              sort == Sort(), collapsedStackIds.isEmpty else { return }
+        listCache = (currentListSignature, loadedAssets)
     }
 
     private func computeList() -> [Asset] {
