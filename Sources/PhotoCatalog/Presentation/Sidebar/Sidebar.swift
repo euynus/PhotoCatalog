@@ -14,13 +14,15 @@ struct Sidebar: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 librarySection
-                favoriteSection
-                folderSection
-                albumSection
-                smartSection
-                projectSection
-                clientSection
-                keywordSection
+                if !app.hasCatalogPreview {
+                    favoriteSection
+                    folderSection
+                    albumSection
+                    smartSection
+                    projectSection
+                    clientSection
+                    keywordSection
+                }
             }
             .padding(.horizontal, 8)
             .padding(.top, 10)
@@ -47,18 +49,20 @@ struct Sidebar: View {
 
     private var librarySection: some View {
         let c = app.libraryCounts
+        let pending = app.hasCatalogPreview ? "…" : nil
         return SidebarSection(title: "资料库") {
             row("photos", nil, "全部照片", "\(c.all)", .lib, "all", "全部照片")
-            row("clock", nil, "最近导入", "\(c.recent)", .lib, "recent", "最近导入")
-            row("star", nil, "未评分", "\(c.unrated)", .lib, "unrated", "未评分")
-            row("flag", nil, "精选", "\(c.picks)", .lib, "picks", "精选")
-            row("reject", nil, "被拒绝", "\(c.rejected)", .lib, "rejected", "被拒绝")
-            row("offline", Theme.yellow, "缺失 / 离线", "\(c.missingOffline)", .lib, "missing", "缺失 / 离线")
+            row("clock", nil, "最近导入", pending ?? "\(c.recent)", .lib, "recent", "最近导入")
+            row("star", nil, "未评分", pending ?? "\(c.unrated)", .lib, "unrated", "未评分")
+            row("flag", nil, "精选", pending ?? "\(c.picks)", .lib, "picks", "精选")
+            row("reject", nil, "被拒绝", pending ?? "\(c.rejected)", .lib, "rejected", "被拒绝")
+            row("offline", Theme.yellow, "缺失 / 离线", pending ?? "\(c.missingOffline)",
+                .lib, "missing", "缺失 / 离线")
             row("copy", Theme.purple, "重复文件",
-                "\(app.duplicateGroups.count) 组", .lib, "duplicates", "重复文件")
-            row("map", Theme.green, "地点", "\(c.places)", .lib, "places", "地点")
-            if c.people > 0 {
-                row("camera", Theme.albumBlue, "人物", "\(c.people)", .lib, "people", "人物")
+                pending ?? "\(app.duplicateGroups.count) 组", .lib, "duplicates", "重复文件")
+            row("map", Theme.green, "地点", pending ?? "\(c.places)", .lib, "places", "地点")
+            if app.hasCatalogPreview || c.people > 0 {
+                row("camera", Theme.albumBlue, "人物", pending ?? "\(c.people)", .lib, "people", "人物")
             }
         }
     }

@@ -13,8 +13,13 @@ private struct StatusMetrics: Equatable, Sendable {
 }
 
 private enum DeferredCatalogLoadOutcome: Sendable {
-    case success(CatalogStore, [Asset])
+    case success(CatalogStore, AssetPage)
     case incompatibleSchema(current: Int, supported: Int)
+    case failure
+}
+
+private enum DeferredCatalogHydrationOutcome: Sendable {
+    case success([Asset])
     case failure
 }
 
@@ -240,6 +245,10 @@ final class AppState {
     private var store: CatalogStore?
     private var coordinator: ImportCoordinator?
     private(set) var isLoadingCatalog = false
+    private(set) var hasCatalogPreview = false
+    private(set) var loadingCatalogTotalCount: Int? {
+        didSet { libraryCountsCache = nil }
+    }
     private var loadingCatalogURL: URL?
     @ObservationIgnored private var deferredCatalogArguments: [String]?
     @ObservationIgnored private var catalogLoadTask: Task<Void, Never>?
@@ -270,6 +279,7 @@ final class AppState {
     private static let pinnedSidebarItemsKey = "pc_pinnedSidebarItems"
     private static let sourcePrioritiesKey = "pc_sourcePriorities"
     private static let previewMaxPixelKey = "pc_previewMaxPixel"
+    private static let catalogPreviewPageSize = 240
 
     private static func normalizedAutomaticBackupFrequency(_ value: String) -> String {
         ["off", "daily", "weekly"].contains(value) ? value : "weekly"
@@ -426,7 +436,18 @@ final class AppState {
             .map { RecentCatalog(path: $0) }
     }
 
-    var statusAssetCount: Int { libraryCounts.all }
+    var statusAssetCount: Int { loadingCatalogTotalCount ?? libraryCounts.all }
+
+    var contentAssetCount: Int {
+        if isLoadingCatalog,
+           selection.type == .lib, selection.id == "all",
+           filters.isEmpty,
+           search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let loadingCatalogTotalCount {
+            return loadingCatalogTotalCount
+        }
+        return list.count
+    }
 
     var catalogManagementText: String {
         let real = assets.filter { !$0.deleted && !$0.isDemo }
@@ -559,19 +580,22 @@ final class AppState {
         }
     }
 
-    private func beginDeferredCatalogLoad(at url: URL, fallbackURL: URL?) {
+    private func beginDeferredCatalogLoad(at url: URL, fallbackURL: URL?, announceSuccess: Bool = false) {
         catalogLoadTask?.cancel()
         catalogLoadGeneration &+= 1
         let generation = catalogLoadGeneration
+        let previewPageSize = Self.catalogPreviewPageSize
         isLoadingCatalog = true
+        hasCatalogPreview = false
+        loadingCatalogTotalCount = nil
         loadingCatalogURL = url
 
         catalogLoadTask = Task { [weak self] in
             let outcome = await Task.detached(priority: .userInitiated) { () -> DeferredCatalogLoadOutcome in
                 do {
                     let store = try CatalogStore(packageURL: url)
-                    let assets = try store.loadAssets().filter { !$0.isDemo && !$0.deleted }
-                    return .success(store, assets)
+                    let page = try store.loadAssetPage(limit: previewPageSize)
+                    return .success(store, page)
                 } catch let error as CatalogStoreError {
                     switch error {
                     case .incompatibleSchema(let current, let supported):
@@ -583,20 +607,48 @@ final class AppState {
             }.value
 
             guard let self, self.catalogLoadGeneration == generation, !Task.isCancelled else { return }
-            self.catalogLoadTask = nil
             switch outcome {
-            case .success(let store, let assets):
+            case .success(let store, let page):
                 self.store = store
                 self.coordinator = ImportCoordinator(store: store)
-                self.setActiveCatalog(url)
-                self.refreshStatusMetrics()
-                self.applyLoadedCatalog(assets, from: store)
-                self.isLoadingCatalog = false
-                self.loadingCatalogURL = nil
-                UserDefaults.standard.set("1", forKey: "pc_onboarded")
-                self.onboarded = true
-                self.seedInitialSelection()
-                self.runAutomaticBackupIfNeeded()
+                self.applyCatalogPreview(page)
+
+                let hydration = await Task.detached(priority: .userInitiated) {
+                    do {
+                        return DeferredCatalogHydrationOutcome.success(
+                            try store.loadAssets().filter { !$0.isDemo && !$0.deleted }
+                        )
+                    } catch {
+                        return DeferredCatalogHydrationOutcome.failure
+                    }
+                }.value
+                guard self.catalogLoadGeneration == generation, !Task.isCancelled else { return }
+                switch hydration {
+                case .success(let assets):
+                    self.catalogLoadTask = nil
+                    self.setActiveCatalog(url)
+                    self.refreshStatusMetrics()
+                    self.loadingCatalogTotalCount = nil
+                    self.applyLoadedCatalog(assets, from: store)
+                    self.hasCatalogPreview = false
+                    self.isLoadingCatalog = false
+                    self.loadingCatalogURL = nil
+                    UserDefaults.standard.set("1", forKey: "pc_onboarded")
+                    self.onboarded = true
+                    self.seedInitialSelection()
+                    self.runAutomaticBackupIfNeeded()
+                    if announceSuccess {
+                        self.push("已打开目录库 · \(url.lastPathComponent)", "check")
+                    }
+                case .failure:
+                    self.discardCatalogPreview()
+                    if let fallbackURL {
+                        self.push("打开目录库失败", "warning")
+                        self.beginDeferredCatalogLoad(at: fallbackURL, fallbackURL: nil)
+                    } else {
+                        self.finishDeferredCatalogLoadFailure(message: "打开目录库失败")
+                    }
+                }
             case .incompatibleSchema(let current, let supported):
                 let message = "目录库版本过新（schema \(current)，当前支持 \(supported)），请升级 PhotoCatalog 后再打开"
                 if let fallbackURL {
@@ -616,10 +668,31 @@ final class AppState {
         }
     }
 
+    private func applyCatalogPreview(_ page: AssetPage) {
+        let preview = page.assets.filter { !$0.isDemo && !$0.deleted }
+        assets = preview
+        loadingCatalogTotalCount = page.totalCount
+        primeDefaultListCache(with: preview)
+        ensurePrimaryValid()
+        hasCatalogPreview = !preview.isEmpty
+    }
+
+    private func discardCatalogPreview() {
+        store = nil
+        coordinator = nil
+        hasCatalogPreview = false
+        loadingCatalogTotalCount = nil
+        resetToEmptyCatalog()
+    }
+
     private func finishDeferredCatalogLoadFailure(message: String?) {
         catalogLoadTask?.cancel()
         catalogLoadTask = nil
         catalogLoadGeneration &+= 1
+        store = nil
+        coordinator = nil
+        hasCatalogPreview = false
+        loadingCatalogTotalCount = nil
         isLoadingCatalog = false
         loadingCatalogURL = nil
         resetToDemoCatalog()
@@ -828,7 +901,7 @@ final class AppState {
         let panelDelegate = CatalogOpenPanelDelegate()
         panel.delegate = panelDelegate
         guard panel.runModal() == .OK, let selected = panel.url else { return }
-        openCatalog(at: selected)
+        beginCatalogSwitch(at: selected, announceSuccess: true)
     }
 
     func closeCatalog() {
@@ -903,7 +976,7 @@ final class AppState {
             push("最近目录库不可访问", "warning")
             return
         }
-        openCatalog(at: url)
+        beginCatalogSwitch(at: url, announceSuccess: true)
     }
 
     func openCatalogFromSystem(_ selected: URL) {
@@ -920,17 +993,35 @@ final class AppState {
             return
         }
 
-        let fallbackURL = store?.packageURL
-        closeCurrentCatalog()
-        resetToEmptyCatalog()
-        beginDeferredCatalogLoad(at: url, fallbackURL: fallbackURL)
+        beginCatalogSwitch(at: url)
     }
 
     func openLaunchCatalogIfNeeded(arguments: [String] = CommandLine.arguments) {
         guard !launchCatalogHandled else { return }
         launchCatalogHandled = true
         guard let url = Self.launchCatalogURL(from: arguments) else { return }
-        openCatalog(at: url)
+        beginCatalogSwitch(at: url)
+    }
+
+    private func beginCatalogSwitch(at selected: URL, announceSuccess: Bool = false) {
+        guard !importing else {
+            push("导入中无法切换目录库", "warning")
+            return
+        }
+        let url = Self.catalogPackageURL(for: selected)
+        if (store?.packageURL ?? loadingCatalogURL)?.standardizedFileURL == url.standardizedFileURL {
+            return
+        }
+        guard FileManager.default.fileExists(atPath: url.appendingPathComponent("catalog.sqlite").path) else {
+            forgetCatalog(url)
+            push("所选目录库无效", "warning")
+            return
+        }
+
+        let fallbackURL = store?.packageURL
+        closeCurrentCatalog()
+        resetToEmptyCatalog()
+        beginDeferredCatalogLoad(at: url, fallbackURL: fallbackURL, announceSuccess: announceSuccess)
     }
 
     func clearRecentCatalogs() {
@@ -2558,6 +2649,8 @@ final class AppState {
         catalogLoadGeneration &+= 1
         deferredCatalogArguments = nil
         isLoadingCatalog = false
+        hasCatalogPreview = false
+        loadingCatalogTotalCount = nil
         loadingCatalogURL = nil
         cancelBackfill()
         availabilityScanTask?.cancel()
@@ -2807,6 +2900,8 @@ final class AppState {
     var libraryCounts: LibraryCounts {
         _ = listInputsVersion   // register the dependency even on a cache hit
         _ = recentImportDays    // its didSet clears this cache without bumping the version
+        _ = isLoadingCatalog
+        _ = loadingCatalogTotalCount
         if let cache = libraryCountsCache { return cache }
         var counts = LibraryCounts()
         let cutoff = recentCutoff
@@ -2819,6 +2914,9 @@ final class AppState {
             if a.status == .missing || a.status == .offline { counts.missingOffline += 1 }
             if a.hasGPS { counts.places += 1 }
             if a.faces > 0 { counts.people += 1 }
+        }
+        if isLoadingCatalog, let loadingCatalogTotalCount {
+            counts.all = loadingCatalogTotalCount
         }
         libraryCountsCache = counts
         return counts

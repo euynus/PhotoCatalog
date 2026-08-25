@@ -747,7 +747,9 @@ final class AppStateSelectionTests: XCTestCase {
         let app = AppState(arguments: ["PhotoCatalog", target.path])
 
         XCTAssertTrue(app.hasOpenCatalog)
+        XCTAssertFalse(app.hasCatalogPreview)
         XCTAssertEqual(app.catalogPath, target.path)
+        XCTAssertEqual(app.contentAssetCount, 1)
         XCTAssertEqual(app.assets.map(\.id), [DemoData.assets[1].id])
     }
 
@@ -775,7 +777,9 @@ final class AppStateSelectionTests: XCTestCase {
         }
 
         XCTAssertTrue(app.hasOpenCatalog)
+        XCTAssertFalse(app.hasCatalogPreview)
         XCTAssertEqual(app.catalogPath, target.path)
+        XCTAssertEqual(app.contentAssetCount, 1)
         XCTAssertEqual(app.assets.map(\.id), [DemoData.assets[1].id])
     }
 
@@ -800,6 +804,8 @@ final class AppStateSelectionTests: XCTestCase {
         try await waitUntil("Timed out waiting for system catalog open", timeout: 3) {
             !app.isLoadingCatalog
         }
+        XCTAssertFalse(app.hasCatalogPreview)
+        XCTAssertEqual(app.contentAssetCount, 1)
         XCTAssertEqual(app.catalogPath, second.path)
         XCTAssertEqual(app.assets.map(\.id), [DemoData.assets[2].id])
     }

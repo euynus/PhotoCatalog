@@ -13,7 +13,7 @@ struct RootView: View {
                 MainView()
                     .transition(.opacity)
                     .overlay {
-                        if app.isLoadingCatalog {
+                        if app.isLoadingCatalog && !app.hasCatalogPreview {
                             ZStack {
                                 Color.black.opacity(0.58)
                                 VStack(spacing: 10) {

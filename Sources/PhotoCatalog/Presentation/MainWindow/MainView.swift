@@ -10,7 +10,7 @@ struct MainView: View {
         ZStack {
             mainChrome
                 .disabled(app.sheet != nil || app.isLoadingCatalog)
-                .accessibilityHidden(app.sheet != nil || app.isLoadingCatalog)
+                .accessibilityHidden(app.sheet != nil || (app.isLoadingCatalog && !app.hasCatalogPreview))
             ZStack { sheets }
                 .animation(.easeOut(duration: 0.18), value: app.sheet)
         }
@@ -92,7 +92,7 @@ struct ContentHeader: View {
                 Text(app.selection.name)
                     .font(.system(size: 15, weight: .bold)).tracking(-0.1)
                     .foregroundStyle(Theme.text)
-                Text("\(app.list.count) 张"
+                Text("\(app.contentAssetCount) 张"
                      + (app.selectedIds.count > 1 ? " · 已选 \(app.selectedIds.count)" : ""))
                     .font(.system(size: 12)).foregroundStyle(Theme.text3)
             }

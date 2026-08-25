@@ -8,9 +8,17 @@ struct StatusBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            HStack(spacing: 5) {
-                Icon("check", size: 13, weight: .bold).foregroundStyle(Theme.accent)
-                Text("目录库就绪")
+            if app.hasCatalogPreview {
+                HStack(spacing: 5) {
+                    ProgressView().controlSize(.mini).tint(Theme.accent)
+                    Text("正在载入完整目录…")
+                }
+                .foregroundStyle(Theme.text2)
+            } else {
+                HStack(spacing: 5) {
+                    Icon("check", size: 13, weight: .bold).foregroundStyle(Theme.accent)
+                    Text("目录库就绪")
+                }
             }
             Text("\(app.statusAssetCount) 张资产")
             sep
