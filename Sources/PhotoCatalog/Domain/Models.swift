@@ -185,7 +185,7 @@ struct PinnedSidebarItem: Identifiable, Equatable, Codable, Sendable {
 enum ViewMode: String { case grid, loupe, compare }
 
 /// Active filter-bar state.
-struct Filters: Equatable {
+struct Filters: Equatable, Sendable {
     var minRating: Int = 0
     var flag: String = "any"     // any / pick / reject
     var color: String = "any"    // any / red / orange / ...
@@ -246,8 +246,8 @@ struct Filters: Equatable {
 }
 
 /// Sort descriptor for the content header.
-struct Sort: Equatable {
-    enum Field: String, CaseIterable { case capture, imported, name, rating, size
+struct Sort: Equatable, Sendable {
+    enum Field: String, CaseIterable, Sendable { case capture, imported, name, rating, size
         var label: String {
             switch self {
             case .capture: return "拍摄时间"

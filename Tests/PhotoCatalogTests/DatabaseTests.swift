@@ -24,6 +24,90 @@ final class DatabaseTests: XCTestCase {
         XCTAssertEqual(try store.loadAssets().map(\.id), [newest.id, middle.id, oldest.id])
     }
 
+    func testCatalogLoadsStableAssetPagesWithoutOverlap() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-asset-pages-\(UUID().uuidString)")
+        let package = directory.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = try CatalogStore(packageURL: package)
+        var assets = Array(DemoData.assets.prefix(6))
+        for index in assets.indices {
+            assets[index].date = Date(timeIntervalSince1970: Double(index / 2 + 1) * 1_000)
+            assets[index].isDemo = false
+            assets[index].deleted = false
+        }
+        try store.upsert(Array(assets.reversed()))
+
+        let first = try store.loadAssetPage(offset: 0, limit: 2)
+        let second = try store.loadAssetPage(offset: 2, limit: 2)
+        let third = try store.loadAssetPage(offset: 4, limit: 2)
+        let expected = assets.sorted {
+            if $0.date != $1.date { return $0.date > $1.date }
+            return $0.id > $1.id
+        }.map(\.id)
+
+        XCTAssertEqual(first.totalCount, 6)
+        XCTAssertEqual(first.offset, 0)
+        XCTAssertTrue(first.hasMore)
+        XCTAssertEqual(first.assets.map(\.id) + second.assets.map(\.id) + third.assets.map(\.id), expected)
+        XCTAssertFalse(third.hasMore)
+    }
+
+    func testCatalogPageAppliesCollectionFiltersSearchAndSort() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-filtered-pages-\(UUID().uuidString)")
+        let package = directory.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = try CatalogStore(packageURL: package)
+        var assets = Array(DemoData.assets.prefix(4))
+        for index in assets.indices {
+            assets[index].isDemo = false
+            assets[index].deleted = false
+            assets[index].rating = [5, 3, 4, 4][index]
+            assets[index].flag = index == 2 ? .none : .pick
+            assets[index].keywords = index == 2 ? ["城市"] : ["旅行"]
+            assets[index].project = index < 2 ? "Editorial" : "Archive"
+            assets[index].title = index == 1 ? "Other Frame" : "Golden Needle \(index)"
+        }
+        try store.upsert(assets)
+        try store.saveAlbum(Album(id: "album-page", name: "Page", assetIds: assets.map(\.id)))
+
+        var filters = Filters()
+        filters.minRating = 4
+        filters.flag = Flag.pick.rawValue
+        let filtered = try store.loadAssetPage(
+            matching: AssetQuery(scope: .album(id: "album-page"), filters: filters,
+                                 search: "Needle", sort: Sort(field: .rating, descending: false)),
+            limit: 10
+        )
+        XCTAssertEqual(filtered.assets.map(\.id), [assets[3].id, assets[0].id])
+        XCTAssertEqual(filtered.totalCount, 2)
+
+        let shortSearch = try store.loadAssetPage(
+            matching: AssetQuery(search: "dl", sort: Sort(field: .name, descending: false)),
+            limit: 10
+        )
+        XCTAssertEqual(Set(shortSearch.assets.map(\.id)), Set([assets[0].id, assets[2].id, assets[3].id]))
+
+        let smartRule = SmartRule(match: "all", conditions: [
+            SmartCondition(field: "keywords", op: "包含", value: "旅行"),
+            SmartCondition(field: "rating", op: ">=", value: "4"),
+        ])
+        let smart = try store.loadAssetPage(
+            matching: AssetQuery(scope: .smart(rule: smartRule)),
+            limit: 10
+        )
+        XCTAssertEqual(Set(smart.assets.map(\.id)), Set([assets[0].id, assets[3].id]))
+
+        let keyword = try store.loadAssetPage(
+            matching: AssetQuery(scope: .keyword("旅行")),
+            limit: 10
+        )
+        XCTAssertEqual(Set(keyword.assets.map(\.id)), Set([assets[0].id, assets[1].id, assets[3].id]))
+    }
+
     func testQueryMapDecodesRowsInOrderAndDropsNilTransforms() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-query-map-\(UUID().uuidString)")

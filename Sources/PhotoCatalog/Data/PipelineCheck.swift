@@ -108,7 +108,7 @@ enum PipelineCheck {
             legacyAsset.deleted = false
             legacyAsset.title = "Migration Search Needle"
             try legacyStore.upsert([legacyAsset])
-            try legacyStore.db.run("DELETE FROM schema_migrations WHERE version=16;")
+            try legacyStore.db.run("DELETE FROM schema_migrations WHERE version>=16;")
             try legacyStore.db.execChecked("DROP TABLE asset_search;")
             try legacyStore.db.execChecked("""
             CREATE VIRTUAL TABLE asset_search USING fts5(
@@ -128,7 +128,7 @@ enum PipelineCheck {
             let version = migrated.db.scalarInt("SELECT COALESCE(MAX(version),0) FROM schema_migrations;")
             let backups = (try? fm.contentsOfDirectory(at: migrated.backupsURL,
                                                        includingPropertiesForKeys: nil)) ?? []
-            check(version == 16 && !migrated.search("tion Sea").isEmpty,
+            check(version == 17 && !migrated.search("tion Sea").isEmpty,
                   "schema 15 migration rebuilds the substring search index")
             check(backups.contains { $0.lastPathComponent.hasPrefix("catalog-pre-migration-v15-") },
                   "schema 15 migration keeps a pre-migration backup")
@@ -410,6 +410,12 @@ enum PipelineCheck {
         try? store.upsert(assets)
         let reloaded = (try? store.loadAssets()) ?? []
         check(reloaded.count == 7, "reloaded 7 assets from SQLite — got \(reloaded.count)")
+        let firstPage = try? store.loadAssetPage(offset: 0, limit: 3)
+        let secondPage = try? store.loadAssetPage(offset: 3, limit: 3)
+        let pagedIds = (firstPage?.assets ?? []).map(\.id) + (secondPage?.assets ?? []).map(\.id)
+        check(firstPage?.totalCount == 7 && firstPage?.assets.count == 3
+              && secondPage?.assets.count == 3 && Set(pagedIds).count == 6,
+              "asset paging returns a stable total and non-overlapping pages")
         check(reloaded.allSatisfy { $0.perceptualHash != nil }, "perceptual hash computed at import + persisted")
         let reloadedTimestamped = reloaded.first { $0.filename == "IMG_0000.jpg" }
         check(reloadedTimestamped?.fileModifiedAt.map { abs($0.timeIntervalSince(fixedModifiedAt)) < 1 } == true
@@ -507,6 +513,21 @@ enum PipelineCheck {
                   && edited?.project == "Project A" && edited?.client == "Client A",
                   "rating + keyword + rights + project edit persisted across reload")
             check(edited?.makerNotes == "LensID=NIKKOR Z", "maker notes persisted across reload")
+            let searchPage = try? store.loadAssetPage(
+                matching: AssetQuery(search: "Print 5", sort: Sort(field: .name, descending: false)),
+                limit: 10
+            )
+            check(searchPage?.totalCount == 1 && searchPage?.assets.first?.id == id,
+                  "paged FTS search returns edited metadata")
+            let smartPage = try? store.loadAssetPage(
+                matching: AssetQuery(scope: .smart(rule: SmartRule(match: "all", conditions: [
+                    SmartCondition(field: "keywords", op: "包含", value: "测试"),
+                    SmartCondition(field: "rating", op: ">=", value: "5"),
+                ]))),
+                limit: 10
+            )
+            check(smartPage?.totalCount == 1 && smartPage?.assets.first?.id == id,
+                  "paged smart-album query matches keyword and rating rules")
         }
 
         // 6. exact-duplicate detection (the identical pair)
