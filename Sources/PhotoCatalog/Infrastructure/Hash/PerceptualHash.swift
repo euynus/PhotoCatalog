@@ -7,6 +7,14 @@ import CoreGraphics
 import ImageIO
 
 enum PerceptualHash {
+    /// Automatic startup analysis is pairwise. Keep it bounded until the P2
+    /// similarity feature moves to an indexed nearest-neighbor implementation.
+    static let automaticAnalysisLimit = 5_000
+
+    static func canRunAutomaticAnalysis(assetCount: Int) -> Bool {
+        assetCount <= automaticAnalysisLimit
+    }
+
     /// 64-bit difference hash computed from a 9×8 grayscale downscale.
     static func dHash(path: String) -> UInt64? {
         guard let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),

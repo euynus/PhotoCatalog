@@ -815,6 +815,11 @@ enum PipelineCheck {
             check(PerceptualHash.hamming(ha, hc) > 10,
                   "dHash far pair dissimilar (hamming \(PerceptualHash.hamming(ha, hc)) > 10)")
         } else { check(false, "dHash computed") }
+        check(PerceptualHash.canRunAutomaticAnalysis(assetCount: PerceptualHash.automaticAnalysisLimit)
+              && !PerceptualHash.canRunAutomaticAnalysis(
+                assetCount: PerceptualHash.automaticAnalysisLimit + 1
+              ),
+              "automatic perceptual comparison is bounded for large catalogs")
 
         // 12. XMP sidecar write/read roundtrip
         var sample = assets[1]

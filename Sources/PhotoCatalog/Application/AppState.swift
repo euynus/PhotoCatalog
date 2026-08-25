@@ -2718,6 +2718,10 @@ final class AppState {
 
     // ---------- duplicate groups (§6.10): exact (content) + similar (perceptual) ----------
     var duplicateGroups: [DuplicateGroup] { duplicateGroupsCache }
+    var isAutomaticSimilarityAnalysisLimited: Bool {
+        let liveCount = assets.lazy.filter { !$0.isDemo && !$0.deleted }.count
+        return !PerceptualHash.canRunAutomaticAnalysis(assetCount: liveCount)
+    }
     @ObservationIgnored private var duplicateRecomputeGeneration = 0
 
     /// Recompute duplicates off the main thread (dHash reads thumbnails from disk).
@@ -2736,9 +2740,12 @@ final class AppState {
         }
         Task { [weak self, live] in
             let groups = await Task.detached(priority: .utility) {
-                HashService.exactDuplicateGroups(live)
+                var groups = HashService.exactDuplicateGroups(live)
                     + HashService.suspectedDuplicateGroups(live)
-                    + PerceptualHash.similarGroups(live)
+                if PerceptualHash.canRunAutomaticAnalysis(assetCount: live.count) {
+                    groups += PerceptualHash.similarGroups(live)
+                }
+                return groups
             }.value
             guard let self else { return }
             guard self.duplicateRecomputeGeneration == generation else { return }

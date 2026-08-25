@@ -20,4 +20,13 @@ final class DuplicateSizeFormattingTests: XCTestCase {
         XCTAssertEqual(megapixelText(0), "0 MP")
         XCTAssertEqual(megapixelText(12.34), "12.3 MP")
     }
+
+    func testAutomaticPerceptualAnalysisIsBounded() {
+        XCTAssertTrue(PerceptualHash.canRunAutomaticAnalysis(
+            assetCount: PerceptualHash.automaticAnalysisLimit
+        ))
+        XCTAssertFalse(PerceptualHash.canRunAutomaticAnalysis(
+            assetCount: PerceptualHash.automaticAnalysisLimit + 1
+        ))
+    }
 }

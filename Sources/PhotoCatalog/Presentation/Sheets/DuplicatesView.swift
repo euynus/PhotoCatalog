@@ -35,22 +35,33 @@ struct DuplicatesView: View {
     }
 
     private var head: some View {
-        HStack(alignment: .top, spacing: 20) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("重复文件").font(.system(size: 18, weight: .bold)).tracking(-0.1)
-                Text("基于内容哈希识别完全相同文件，并用 quick hash、拍摄时间、尺寸和感知哈希识别疑似重复")
-                    .font(.system(size: 12.5)).foregroundStyle(Theme.text3)
-                    .frame(maxWidth: 480, alignment: .leading).lineSpacing(2)
-            }
-            Spacer()
-            HStack(spacing: 16) {
-                summaryItem("\(groups.count)", "组", accent: false)
-                summaryItem("\(fileCount)", "个文件", accent: false)
-                HStack(spacing: 4) {
-                    Text("可释放 ≈").font(.system(size: 12.5)).foregroundStyle(Theme.text2)
-                    Text(fileSizeText(megabytes: reclaim))
-                        .font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.accent)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 20) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("重复文件").font(.system(size: 18, weight: .bold)).tracking(-0.1)
+                    Text("基于内容哈希识别完全相同文件，并用 quick hash、拍摄时间、尺寸和感知哈希识别疑似重复")
+                        .font(.system(size: 12.5)).foregroundStyle(Theme.text3)
+                        .frame(maxWidth: 480, alignment: .leading).lineSpacing(2)
                 }
+                Spacer()
+                HStack(spacing: 16) {
+                    summaryItem("\(groups.count)", "组", accent: false)
+                    summaryItem("\(fileCount)", "个文件", accent: false)
+                    HStack(spacing: 4) {
+                        Text("可释放 ≈").font(.system(size: 12.5)).foregroundStyle(Theme.text2)
+                        Text(fileSizeText(megabytes: reclaim))
+                            .font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.accent)
+                    }
+                }
+            }
+            if app.isAutomaticSimilarityAnalysisLimited {
+                HStack(spacing: 6) {
+                    Icon("info", size: 13)
+                    Text("目录库较大，感知相似分析未自动运行；当前显示精确重复与疑似重复。")
+                        .font(.system(size: 11.5))
+                }
+                .foregroundStyle(Theme.yellow)
+                .accessibilityElement(children: .combine)
             }
         }
     }
