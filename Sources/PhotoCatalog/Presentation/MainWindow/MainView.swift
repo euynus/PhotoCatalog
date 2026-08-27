@@ -83,36 +83,34 @@ struct ContentColumn: View {
 // ---------- Content header ----------
 struct ContentHeader: View {
     @Environment(AppState.self) var app
-    @State private var infoHover = false
-    @State private var dirHover = false
 
     var body: some View {
         HStack {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
                 Text(app.selection.name)
-                    .font(.system(size: 15, weight: .bold)).tracking(-0.1)
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Theme.text)
-                Text("\(app.contentAssetCount) 张"
-                     + (app.selectedIds.count > 1 ? " · 已选 \(app.selectedIds.count)" : ""))
+                Text("\(app.contentAssetCount) 张")
                     .font(.system(size: 12)).foregroundStyle(Theme.text3)
+                if !app.selectedIds.isEmpty {
+                    Label("\(app.selectedIds.count) 张已选", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Theme.accent)
+                        .padding(.horizontal, 7)
+                        .frame(height: 22)
+                        .background(Theme.accentSoft)
+                        .clipShape(Capsule())
+                }
             }
             Spacer()
-            HStack(spacing: 12) {
+            HStack(spacing: 6) {
                 if app.view == .grid {
-                    Button { app.showInfo.toggle() } label: {
-                        HStack(spacing: 5) {
-                            Icon(app.showInfo ? "eye" : "info", size: 14)
-                            Text(app.showInfo ? "隐藏信息" : "显示信息").font(.system(size: 12))
-                        }
-                        .foregroundStyle(infoHover ? Theme.text : Theme.text2)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(infoHover ? Theme.surface : .clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                    }
-                    .buttonStyle(.plain)
-                    .onHover { infoHover = $0 }
+                    ToolButton(icon: app.showInfo ? "eye" : "info",
+                               label: app.showInfo ? "隐藏缩略图信息" : "显示缩略图信息",
+                               active: app.showInfo,
+                               action: { app.toggleGridInfo() })
                 }
-                sortControl
+                sortMenu
             }
         }
         .padding(.horizontal, 16)
@@ -120,31 +118,63 @@ struct ContentHeader: View {
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
-    private var sortControl: some View {
-        HStack(spacing: 6) {
-            Icon("sort", size: 14).foregroundStyle(Theme.text3)
-            Menu {
+    private var sortMenu: some View {
+        Menu {
+            Section("排序方式") {
                 ForEach(Sort.Field.allCases, id: \.self) { f in
-                    Button(f.label) { var s = app.sort; s.field = f; app.setSort(s) }
+                    Button {
+                        var sort = app.sort
+                        sort.field = f
+                        app.setSort(sort)
+                    } label: {
+                        if app.sort.field == f {
+                            Label(f.label, systemImage: "checkmark")
+                        } else {
+                            Text(f.label)
+                        }
+                    }
                 }
-            } label: {
-                Text(app.sort.field.label).font(.system(size: 12.5)).foregroundStyle(Theme.text2)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            Section("顺序") {
+                sortOrderButton(descending: false, label: "升序")
+                sortOrderButton(descending: true, label: "降序")
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Icon("sort", size: 14)
+                Text(app.sort.field.label)
+                    .font(.system(size: 12.5))
+                Image(systemName: app.sort.descending ? "arrow.down" : "arrow.up")
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .foregroundStyle(Theme.text2)
+            .padding(.horizontal, 8)
+            .frame(height: 28)
+            .background(Theme.surface.opacity(0.65))
+            .overlay(RoundedRectangle(cornerRadius: Theme.rSm)
+                .strokeBorder(Theme.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("排序：\(app.sort.field.label) · \(app.sort.descending ? "降序" : "升序")")
+        .accessibilityLabel("排序")
+        .accessibilityValue("\(app.sort.field.label)，\(app.sort.descending ? "降序" : "升序")")
+    }
 
-            Button {
-                var s = app.sort; s.descending.toggle(); app.setSort(s)
-            } label: {
-                Text(app.sort.descending ? "↓" : "↑")
-                    .font(.system(size: 14)).foregroundStyle(dirHover ? Theme.text : Theme.text2)
-                    .frame(width: 22, height: 22)
-                    .background(dirHover ? Theme.surface : .clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
+    @ViewBuilder
+    private func sortOrderButton(descending: Bool, label: String) -> some View {
+        Button {
+            var sort = app.sort
+            sort.descending = descending
+            app.setSort(sort)
+        } label: {
+            if app.sort.descending == descending {
+                Label(label, systemImage: "checkmark")
+            } else {
+                Text(label)
             }
-            .buttonStyle(.plain)
-            .onHover { dirHover = $0 }
         }
     }
 }

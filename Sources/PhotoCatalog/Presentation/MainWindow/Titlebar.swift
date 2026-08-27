@@ -20,6 +20,7 @@ struct Titlebar: View {
             Color.clear.frame(width: 62, height: 1)
 
             ToolButton(icon: "importIcon", label: "导入 / 添加文件夹",
+                       horizontalPadding: 8,
                        action: { app.addFolder() }) {
                 Text("导入").font(.system(size: 12.5, weight: .medium))
             }
@@ -58,7 +59,7 @@ struct Titlebar: View {
             ZStack(alignment: .topTrailing) {
                 ToolButton(icon: "filter", label: "筛选",
                            active: app.filterOpen || app.filters.activeCount > 0,
-                           action: { app.filterOpen.toggle() })
+                           action: { app.toggleFilterBar() })
                 if app.filters.activeCount > 0 {
                     Text("\(app.filters.activeCount)")
                         .font(.system(size: 9, weight: .bold))
@@ -70,50 +71,12 @@ struct Titlebar: View {
             }
 
             searchField
-            if app.canSaveCurrentFilter {
-                ToolButton(icon: "sparkles", label: "保存筛选为智能相册",
-                           action: { app.saveCurrentFilterAsSmartAlbum() })
-            }
-
-            sizeSlider
+            if app.view == .grid { sizeSlider }
 
             separator
 
-            if app.canPinCurrentSelection {
-                ToolButton(icon: "star",
-                           label: app.isCurrentSelectionPinned ? "取消固定" : "固定到收藏夹",
-                           active: app.isCurrentSelectionPinned,
-                           action: { app.togglePinCurrentSelection() })
-            }
-            if app.canPromoteSelectedSource {
-                ToolButton(icon: "chevronU", label: "提高源优先级",
-                           action: { app.promoteSelectedSource() })
-            }
-            if app.canDemoteSelectedSource {
-                ToolButton(icon: "chevronD", label: "降低源优先级",
-                           action: { app.demoteSelectedSource() })
-            }
-            if app.canReauthorizeSelectedSource {
-                ToolButton(icon: "link", label: "重新授权源",
-                           action: { app.reauthorizeSelectedSource() })
-            }
-            if app.canRemoveSelectedSource {
-                ToolButton(icon: "trash", label: "移除源索引",
-                           danger: true,
-                           action: { app.removeSelectedSource() })
-            }
-            ToolButton(icon: "album", label: "加入相册",
-                       disabled: !app.canApplySelectionToAlbum,
-                       action: { app.addSelectionToAlbum() })
-            if app.canRemoveSelectionFromCurrentAlbum {
-                ToolButton(icon: "minus", label: "从相册移除",
-                           danger: true,
-                           action: { app.removeSelectionFromCurrentAlbum() })
-            }
-            ToolButton(icon: "export", label: "导出选中原件",
-                       disabled: !app.canExportOriginalSelection,
-                       action: { app.exportSelection() })
-            ToolButton(icon: "gear", label: "设置", action: { app.sheet = "settings" })
+            CatalogActionsMenu()
+            ToolButton(icon: "gear", label: "设置", action: { app.showSettings() })
             ToolButton(icon: "inspector", label: inspectorToggleLabel(isVisible: app.showInspector),
                        active: app.showInspector,
                        action: { app.showInspector.toggle() })
@@ -131,7 +94,9 @@ struct Titlebar: View {
             if !searchText.isEmpty {
                 Button { searchText = ""; app.setSearch("") } label: {
                     Icon("close", size: 12, weight: .bold).foregroundStyle(Theme.text3)
-                }.buttonStyle(.plain)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("清除搜索")
             }
         }
         .padding(.horizontal, 9)
@@ -159,11 +124,114 @@ struct Titlebar: View {
                 .frame(width: 76)
                 .controlSize(.mini)
                 .tint(Theme.surfaceHi)
+                .accessibilityLabel("缩略图大小")
+                .help("调整缩略图大小")
         }
         .padding(.horizontal, 4)
     }
 
     private var separator: some View {
         Rectangle().fill(Theme.line2).frame(width: 1, height: 22).padding(.horizontal, 5)
+    }
+}
+
+private struct CatalogActionsMenu: View {
+    @Environment(AppState.self) private var app
+    @State private var hover = false
+
+    var body: some View {
+        Menu {
+            Button {
+                app.addSelectionToAlbum()
+            } label: {
+                Label("加入相册…", systemImage: "rectangle.stack")
+            }
+            .disabled(!app.canApplySelectionToAlbum)
+
+            if app.canRemoveSelectionFromCurrentAlbum {
+                Button(role: .destructive) {
+                    app.removeSelectionFromCurrentAlbum()
+                } label: {
+                    Label("从当前相册移除", systemImage: "minus.circle")
+                }
+            }
+
+            Button {
+                app.exportSelection()
+            } label: {
+                Label("导出选中原件…", systemImage: "square.and.arrow.up")
+            }
+            .disabled(!app.canExportOriginalSelection)
+
+            if app.canSaveCurrentFilter || app.canPinCurrentSelection {
+                Divider()
+            }
+            if app.canSaveCurrentFilter {
+                Button {
+                    app.saveCurrentFilterAsSmartAlbum()
+                } label: {
+                    Label("保存筛选为智能相册…", systemImage: "sparkles")
+                }
+            }
+            if app.canPinCurrentSelection {
+                Button {
+                    app.togglePinCurrentSelection()
+                } label: {
+                    Label(app.isCurrentSelectionPinned ? "从收藏夹取消固定" : "固定到收藏夹",
+                          systemImage: app.isCurrentSelectionPinned ? "star.slash" : "star")
+                }
+            }
+
+            if hasSourceActions {
+                Divider()
+            }
+            if app.canPromoteSelectedSource {
+                Button {
+                    app.promoteSelectedSource()
+                } label: {
+                    Label("提高源优先级", systemImage: "arrow.up")
+                }
+            }
+            if app.canDemoteSelectedSource {
+                Button {
+                    app.demoteSelectedSource()
+                } label: {
+                    Label("降低源优先级", systemImage: "arrow.down")
+                }
+            }
+            if app.canReauthorizeSelectedSource {
+                Button {
+                    app.reauthorizeSelectedSource()
+                } label: {
+                    Label("重新授权源…", systemImage: "link")
+                }
+            }
+            if app.canRemoveSelectedSource {
+                Button(role: .destructive) {
+                    app.removeSelectedSource()
+                } label: {
+                    Label("移除源索引…", systemImage: "trash")
+                }
+            }
+        } label: {
+            Label("更多操作", systemImage: "ellipsis.circle")
+                .labelStyle(.iconOnly)
+                .font(.system(size: 16))
+                .frame(width: 30, height: 30)
+                .foregroundStyle(hover ? Theme.text : Theme.text2)
+                .background(hover ? Theme.surface : .clear)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { hover = $0 }
+        .help("更多操作")
+        .accessibilityLabel("更多操作")
+    }
+
+    private var hasSourceActions: Bool {
+        app.canPromoteSelectedSource || app.canDemoteSelectedSource
+            || app.canReauthorizeSelectedSource || app.canRemoveSelectedSource
     }
 }

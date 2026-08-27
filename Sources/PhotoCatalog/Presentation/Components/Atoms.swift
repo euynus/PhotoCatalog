@@ -183,18 +183,21 @@ struct ToolButton<Trailing: View>: View {
     var active: Bool = false
     var danger: Bool = false
     var disabled: Bool = false
+    var horizontalPadding: CGFloat = 0
     let action: () -> Void
     @ViewBuilder var trailing: () -> Trailing
     @State private var hover = false
 
     init(icon: String? = nil, label: String, active: Bool = false, danger: Bool = false,
-         disabled: Bool = false, action: @escaping () -> Void,
+         disabled: Bool = false, horizontalPadding: CGFloat = 0,
+         action: @escaping () -> Void,
          @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }) {
         self.icon = icon
         self.label = label
         self.active = active
         self.danger = danger
         self.disabled = disabled
+        self.horizontalPadding = horizontalPadding
         self.action = action
         self.trailing = trailing
     }
@@ -217,7 +220,7 @@ struct ToolButton<Trailing: View>: View {
                 trailing()
             }
             .frame(minWidth: 30, minHeight: 30)
-            .padding(.horizontal, 9)
+            .padding(.horizontal, horizontalPadding)
             .foregroundStyle(foreground)
             .background(background)
             .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
