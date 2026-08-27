@@ -226,7 +226,7 @@ struct SidebarSection<Content: View, Action: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(title).font(.system(size: 11, weight: .bold)).tracking(0.3)
+                Text(title).font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Theme.text3).textCase(.uppercase)
                 Spacer()
                 action

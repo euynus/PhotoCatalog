@@ -27,7 +27,7 @@ struct WelcomeView: View {
                 .shadow(color: Theme.accent.opacity(0.3), radius: 30, y: 10)
                 .padding(.bottom, 20)
 
-            Text("PhotoCatalog").font(.system(size: 27, weight: .bold)).tracking(-0.5)
+            Text("PhotoCatalog").font(.system(size: 27, weight: .bold))
             Text("版本 1.0 · 本地优先的照片原件管理")
                 .font(.system(size: 12.5)).foregroundStyle(Theme.text3).padding(.top, 6)
 
@@ -68,7 +68,7 @@ struct WelcomeView: View {
 
     private var right: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("最近打开").font(.system(size: 11, weight: .bold)).tracking(0.4)
+            Text("最近打开").font(.system(size: 11, weight: .bold))
                 .foregroundStyle(Theme.text3).textCase(.uppercase).padding(.bottom, 14)
             if app.recentCatalogs.isEmpty {
                 Text("还没有最近目录库")

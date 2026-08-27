@@ -77,7 +77,6 @@ struct TypeBadge: View {
     var body: some View {
         Text(asset.type)
             .font(.system(size: small ? 8.5 : 9.5, weight: .bold))
-            .tracking(0.4)
             .padding(.horizontal, small ? 3 : 4)
             .padding(.vertical, small ? 1 : 1.5)
             .foregroundStyle(asset.isRaw ? Theme.onAccent : Color.white(0.92))

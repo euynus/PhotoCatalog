@@ -48,7 +48,7 @@ struct FilterBar: View {
 
     private var label: some View { EmptyView() }
     private func label(_ t: String) -> some View {
-        Text(t).font(.system(size: 11, weight: .semibold)).tracking(0.3)
+        Text(t).font(.system(size: 11, weight: .semibold))
             .foregroundStyle(Theme.text3).textCase(.uppercase)
     }
     private var sep: some View { Rectangle().fill(Theme.line2).frame(width: 1, height: 18) }

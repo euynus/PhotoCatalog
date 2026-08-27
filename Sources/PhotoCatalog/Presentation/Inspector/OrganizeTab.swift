@@ -155,7 +155,7 @@ struct OrganizeTab: View {
 
     private func block<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(label).font(.system(size: 11, weight: .semibold)).tracking(0.3)
+            Text(label).font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.text3).textCase(.uppercase)
             content()
         }

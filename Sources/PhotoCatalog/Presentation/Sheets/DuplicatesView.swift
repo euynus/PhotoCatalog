@@ -38,7 +38,7 @@ struct DuplicatesView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 20) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("重复文件").font(.system(size: 18, weight: .bold)).tracking(-0.1)
+                    Text("重复文件").font(.system(size: 18, weight: .bold))
                     Text("基于内容哈希识别完全相同文件，并用 quick hash、拍摄时间、尺寸和感知哈希识别疑似重复")
                         .font(.system(size: 12.5)).foregroundStyle(Theme.text3)
                         .frame(maxWidth: 480, alignment: .leading).lineSpacing(2)

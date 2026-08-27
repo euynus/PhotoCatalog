@@ -310,7 +310,7 @@ struct SettingsSheet: View {
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text(title).font(.system(size: 11, weight: .bold)).tracking(0.3)
+            Text(title).font(.system(size: 11, weight: .bold))
                 .foregroundStyle(Theme.text3).textCase(.uppercase)
             content()
         }
