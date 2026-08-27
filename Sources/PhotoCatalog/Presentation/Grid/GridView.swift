@@ -12,14 +12,12 @@ struct GridView: View {
         let _ = assetRevision
         let list = app.list
         if list.isEmpty {
-            VStack(spacing: 10) {
-                Icon("photos", size: 46).foregroundStyle(Theme.text4)
-                Text("没有符合条件的照片").font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.text2)
-                Text("调整筛选条件或选择其他集合").font(.system(size: 12.5))
-                    .foregroundStyle(Theme.text3)
+            GridEmptyState(selectionName: app.selection.name,
+                           search: app.search,
+                           activeFilterCount: app.filters.activeCount) {
+                app.setSearch("")
+                app.setFilters(Filters())
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             GeometryReader { geo in
                 let size = app.thumbSize
@@ -110,20 +108,27 @@ struct GridCell: View {
         .padding(5)
         .background(background)
         .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(borderColor, lineWidth: 1.5))
+        .overlay(RoundedRectangle(cornerRadius: 6)
+            .strokeBorder(borderColor, lineWidth: borderWidth))
         .frame(width: size)
+        .contentShape(RoundedRectangle(cornerRadius: 6))
         .onHover { hover = $0 }
     }
 
     private var background: Color {
         if selected { return Theme.accentSoft }
-        if hover { return Color.white(0.035) }
+        if hover { return Theme.surface.opacity(0.55) }
         return .clear
     }
     private var borderColor: Color {
         if isPrimary { return Theme.accent }
-        if selected { return Theme.accent.opacity(0.5) }
+        if selected { return Theme.accent.opacity(0.72) }
         return .clear
+    }
+    private var borderWidth: CGFloat {
+        if isPrimary { return 2 }
+        if selected { return 1.5 }
+        return 1
     }
 
     private var frame: some View {
@@ -152,6 +157,20 @@ struct GridCell: View {
                         .padding(.leading, 6).padding(.bottom, 5)
                 }
             }
+            .overlay(alignment: .bottomTrailing) {
+                if selected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .symbolRenderingMode(.palette)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Theme.onAccent, Theme.accent)
+                        .background {
+                            Circle().fill(Color.black.opacity(0.5)).padding(2)
+                        }
+                        .shadow(color: .black.opacity(0.55), radius: 2, y: 1)
+                        .padding(6)
+                        .accessibilityHidden(true)
+                }
+            }
             .overlay {
                 if asset.status == .missing {
                     ZStack {
@@ -178,6 +197,53 @@ struct GridCell: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 2)
+    }
+}
+
+private struct GridEmptyState: View {
+    let selectionName: String
+    let search: String
+    let activeFilterCount: Int
+    let onReset: () -> Void
+
+    private var trimmedSearch: String {
+        search.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var hasActiveQuery: Bool {
+        !trimmedSearch.isEmpty || activeFilterCount > 0
+    }
+
+    private var title: String {
+        hasActiveQuery ? "未找到照片" : "此集合中没有照片"
+    }
+
+    private var message: String {
+        if !trimmedSearch.isEmpty, activeFilterCount > 0 {
+            return "没有与“\(trimmedSearch)”匹配并符合当前筛选条件的照片。"
+        }
+        if !trimmedSearch.isEmpty {
+            return "没有与“\(trimmedSearch)”匹配的照片。"
+        }
+        if activeFilterCount > 0 {
+            return "“\(selectionName)”中没有符合当前筛选条件的照片。"
+        }
+        return "“\(selectionName)”当前为空。"
+    }
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(title, systemImage: hasActiveQuery ? "line.3.horizontal.decrease.circle" : "photo.on.rectangle")
+        } description: {
+            Text(message)
+        } actions: {
+            if hasActiveQuery {
+                Button("重置搜索和筛选", systemImage: "arrow.counterclockwise", action: onReset)
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.accent)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
