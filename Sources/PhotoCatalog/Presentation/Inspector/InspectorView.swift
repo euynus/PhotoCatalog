@@ -27,9 +27,11 @@ struct InspectorView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(width: Theme.inspectorW)
+        .frame(minWidth: Theme.inspectorMinW,
+               idealWidth: Theme.inspectorW,
+               maxWidth: Theme.inspectorMaxW,
+               maxHeight: .infinity)
         .background(Theme.bgPanel)
-        .overlay(alignment: .leading) { Rectangle().fill(Theme.line).frame(width: 1) }
     }
 
     private func content(_ asset: Asset) -> some View {

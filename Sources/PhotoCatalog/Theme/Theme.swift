@@ -79,8 +79,13 @@ enum Theme {
     static let rSm: CGFloat = 5
 
     // Layout
+    static let sidebarMinW: CGFloat = 184
     static let sidebarW: CGFloat = 222
+    static let sidebarMaxW: CGFloat = 300
+    static let contentMinW: CGFloat = 480
+    static let inspectorMinW: CGFloat = 268
     static let inspectorW: CGFloat = 304
+    static let inspectorMaxW: CGFloat = 400
     static let titlebarH: CGFloat = 52
     static let filterbarH: CGFloat = 44
     static let contentHeadH: CGFloat = 40

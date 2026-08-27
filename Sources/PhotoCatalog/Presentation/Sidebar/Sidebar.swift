@@ -28,9 +28,11 @@ struct Sidebar: View {
             .padding(.top, 10)
             .padding(.bottom, 20)
         }
-        .frame(width: Theme.sidebarW)
+        .frame(minWidth: Theme.sidebarMinW,
+               idealWidth: Theme.sidebarW,
+               maxWidth: Theme.sidebarMaxW,
+               maxHeight: .infinity)
         .background(Theme.bgSidebar)
-        .overlay(alignment: .trailing) { Rectangle().fill(Theme.line).frame(width: 1) }
     }
 
     // ---- sections ----

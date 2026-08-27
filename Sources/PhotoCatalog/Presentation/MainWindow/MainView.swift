@@ -23,9 +23,11 @@ struct MainView: View {
         return VStack(spacing: 0) {
             Titlebar()
             if app.filterOpen { FilterBar() }
-            HStack(spacing: 0) {
+            HSplitView {
                 Sidebar(assetRevision: assetRevision)
                 ContentColumn(assetRevision: assetRevision)
+                    .frame(minWidth: Theme.contentMinW)
+                    .layoutPriority(1)
                 if app.showInspector && !app.isDuplicates {
                     InspectorView(asset: app.primary, assetRevision: assetRevision)
                 }
