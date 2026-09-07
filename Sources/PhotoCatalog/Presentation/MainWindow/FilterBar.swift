@@ -11,34 +11,37 @@ struct FilterBar: View {
     @State private var lensText = ""
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 14) {
-                ratingGroup
-                sep
-                flagGroup
-                sep
-                colorGroup
-                sep
-                typeGroup
-                sep
-                metadataGroup
-                sep
-                dateGroup
-                sep
-                gpsGroup
-                sep
-                statusGroup
-                if app.filters.activeCount > 0 {
-                    Button {
-                        app.setFilters(Filters())
-                    } label: {
-                        Text("清除筛选").font(.system(size: 12)).foregroundStyle(Theme.accent)
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                    }
-                    .buttonStyle(.plain)
+        HStack(spacing: 0) {
+            ScrollView(.horizontal) {
+                HStack(spacing: 14) {
+                    ratingGroup
+                    sep
+                    flagGroup
+                    sep
+                    colorGroup
+                    sep
+                    typeGroup
+                    sep
+                    metadataGroup
+                    sep
+                    dateGroup
+                    sep
+                    gpsGroup
+                    sep
+                    statusGroup
                 }
+                .padding(.horizontal, 16)
+                .frame(height: Theme.filterbarH)
             }
-            .padding(.horizontal, 16)
+            .scrollIndicatorsFlash(onAppear: true)
+            sep
+            ToolButton(icon: "refresh", label: "清除筛选",
+                       disabled: app.filters.activeCount == 0 && cameraText.isEmpty && lensText.isEmpty) {
+                cameraText = ""
+                lensText = ""
+                app.setFilters(Filters())
+            }
+            .padding(.horizontal, 8)
         }
         .frame(height: Theme.filterbarH)
         .frame(maxWidth: .infinity, alignment: .leading)
