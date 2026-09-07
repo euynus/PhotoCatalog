@@ -53,7 +53,7 @@ struct PhotoCatalogApp: App {
             RootView()
                 .environment(app)
                 .frame(minWidth: 1080, minHeight: 680)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(.light)
                 .onAppear {
                     app.startDeferredCatalogLoadingIfNeeded()
                     delegate.openCatalogURL = { url in

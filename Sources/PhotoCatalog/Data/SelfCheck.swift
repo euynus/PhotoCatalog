@@ -4,6 +4,8 @@
 // ============================================================
 import Foundation
 import ImageIO
+import AppKit
+import SwiftUI
 
 enum SelfCheck {
     static func run() {
@@ -116,6 +118,40 @@ enum SelfCheck {
         let pinnedData = try? JSONEncoder().encode([pinned])
         let restoredPins = pinnedData.flatMap { try? JSONDecoder().decode([PinnedSidebarItem].self, from: $0) }
         assert(pinned.id == "folder:fld-tokyo" && restoredPins == [pinned], "pinned sidebar item persists")
+        checkThemeContrast()
+        assert(CompareView.stageColumnCount(itemCount: 4, size: CGSize(width: 785, height: 1200)) == 2
+               && CompareView.stageColumnCount(itemCount: 4, size: CGSize(width: 2064, height: 1200)) == 4
+               && CompareView.stageColumnCount(itemCount: 4, size: CGSize(width: 480, height: 440)) == 4
+               && CompareView.stageColumnCount(itemCount: 2, size: CGSize(width: 785, height: 1200)) == 2
+               && CompareView.stageColumnCount(itemCount: 1, size: CGSize(width: 785, height: 1200)) == 1,
+               "comparison layout keeps every panel visible in wide, short, and portrait windows")
         print("--- all structural assertions passed ---")
+    }
+
+    private static func checkThemeContrast() {
+        func luminance(_ color: Color) -> Double {
+            guard let rgb = NSColor(color).usingColorSpace(.sRGB) else {
+                preconditionFailure("theme colors must resolve to sRGB")
+            }
+            func linear(_ value: CGFloat) -> Double {
+                let channel = Double(value)
+                return channel <= 0.04045 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * linear(rgb.redComponent)
+                + 0.7152 * linear(rgb.greenComponent)
+                + 0.0722 * linear(rgb.blueComponent)
+        }
+
+        for (foreground, background) in [
+            (Theme.text, Theme.bgPanel), (Theme.text2, Theme.bgSidebar),
+            (Theme.text3, Theme.bgSidebar), (Theme.accent, Theme.bgPanel),
+            (Theme.green, Theme.bgPanel), (Theme.red, Theme.bgPanel),
+            (Theme.onAccent, Theme.accent), (Theme.canvasText, Theme.canvas),
+            (Theme.canvasText2, Theme.canvasSurface), (Theme.canvasText3, Theme.canvasSurface),
+        ] {
+            let lightness = [luminance(foreground), luminance(background)].sorted()
+            assert((lightness[1] + 0.05) / (lightness[0] + 0.05) >= 4.5,
+                   "workspace and canvas text must retain readable contrast")
+        }
     }
 }

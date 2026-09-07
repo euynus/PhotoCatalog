@@ -63,9 +63,11 @@ struct GridView: View {
                     }
                     .padding(18)
                 }
+                .environment(\.colorScheme, .dark)
                 .onAppear { app.gridWidth = avail }
                 .onChange(of: avail) { app.gridWidth = avail }
             }
+            .background(Theme.canvas)
         }
     }
 
@@ -101,23 +103,23 @@ struct GridCell: View {
     private var frameHeight: CGFloat { (size * 0.72).rounded() }
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             frame
             if showInfo { foot }
         }
-        .padding(5)
+        .padding(6)
         .background(background)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 4)
             .strokeBorder(borderColor, lineWidth: borderWidth))
         .frame(width: size)
-        .contentShape(RoundedRectangle(cornerRadius: 6))
+        .contentShape(RoundedRectangle(cornerRadius: 4))
         .onHover { hover = $0 }
     }
 
     private var background: Color {
-        if selected { return Theme.accentSoft }
-        if hover { return Theme.surface.opacity(0.55) }
+        if selected { return Theme.canvasSelection }
+        if hover { return Theme.canvasSurface }
         return .clear
     }
     private var borderColor: Color {
@@ -132,9 +134,10 @@ struct GridCell: View {
     }
 
     private var frame: some View {
-        Thumb(asset: asset, radius: 3, dim: asset.status == .missing,
+        Thumb(asset: asset, radius: 2, contentMode: .fit, dim: asset.status == .missing,
               maxDecodePixel: Int((size * 2).rounded(.up)))
-            .frame(height: frameHeight)
+            .frame(width: size - 12, height: frameHeight)
+            .background(Theme.canvasSurface)
             .overlay(alignment: .topLeading) {
                 HStack(spacing: 4) {
                     if asset.isRaw { TypeBadge(asset: asset, small: true) }
@@ -153,7 +156,6 @@ struct GridCell: View {
             .overlay(alignment: .bottomLeading) {
                 if asset.flag != .none {
                     FlagPill(flag: asset.flag, size: 14)
-                        .shadow(color: .black.opacity(0.6), radius: 1, y: 1)
                         .padding(.leading, 6).padding(.bottom, 5)
                 }
             }
@@ -163,10 +165,6 @@ struct GridCell: View {
                         .symbolRenderingMode(.palette)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(Theme.onAccent, Theme.accent)
-                        .background {
-                            Circle().fill(Color.black.opacity(0.5)).padding(2)
-                        }
-                        .shadow(color: .black.opacity(0.55), radius: 2, y: 1)
                         .padding(6)
                         .accessibilityHidden(true)
                 }
@@ -178,23 +176,26 @@ struct GridCell: View {
                         VStack(spacing: 4) {
                             Icon("missing", size: 20)
                             Text("缺失").font(.system(size: 11))
-                        }.foregroundStyle(.white.opacity(0.5))
+                        }.foregroundStyle(Theme.canvasText)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                    .clipShape(RoundedRectangle(cornerRadius: 2))
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .clipShape(RoundedRectangle(cornerRadius: 2))
     }
 
     private var foot: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            StarsView(value: asset.rating, size: 11, dim: asset.rating == 0)
-                .frame(height: 12, alignment: .leading)
+        VStack(alignment: .leading, spacing: 5) {
             Text(asset.filename)
-                .font(.system(size: 10.5)).monospacedDigit()
+                .font(.system(size: 11.5, weight: selected ? .medium : .regular)).monospacedDigit()
                 .lineLimit(1)
-                .foregroundStyle(selected || isPrimary ? Theme.text2 : Theme.text3)
+                .truncationMode(.middle)
+                .foregroundStyle(selected || isPrimary ? Theme.canvasText : Theme.canvasText2)
+                .help(asset.filename)
+            StarsView(value: asset.rating, size: 11, gap: 2, dim: asset.rating == 0)
+                .frame(height: 13, alignment: .leading)
         }
+        .frame(height: 34, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 2)
     }
@@ -234,8 +235,10 @@ private struct GridEmptyState: View {
     var body: some View {
         ContentUnavailableView {
             Label(title, systemImage: hasActiveQuery ? "line.3.horizontal.decrease.circle" : "photo.on.rectangle")
+                .foregroundStyle(Theme.canvasText)
         } description: {
             Text(message)
+                .foregroundStyle(Theme.canvasText2)
         } actions: {
             if hasActiveQuery {
                 Button("重置搜索和筛选", systemImage: "arrow.counterclockwise", action: onReset)
@@ -244,6 +247,8 @@ private struct GridEmptyState: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.canvas)
+        .environment(\.colorScheme, .dark)
     }
 }
 
@@ -283,12 +288,12 @@ private struct StackBadge: View {
                     .font(.system(size: 9.5, weight: .bold))
                     .monospacedDigit()
             }
-            .foregroundStyle(collapsed ? Theme.onAccent : Theme.text2)
+            .foregroundStyle(collapsed ? Theme.onAccent : Theme.canvasText)
             .padding(.horizontal, 5)
             .padding(.vertical, 3)
-            .background(collapsed ? Theme.accent : Color.black.opacity(0.58))
-            .clipShape(Capsule())
-            .overlay(Capsule().strokeBorder(Color.white.opacity(collapsed ? 0.18 : 0.12), lineWidth: 1))
+            .background(collapsed ? Theme.accent : Theme.canvasSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(Theme.canvasLine, lineWidth: 1))
         }
         .buttonStyle(.plain)
         .help(collapsed ? "展开堆栈" : "折叠堆栈")

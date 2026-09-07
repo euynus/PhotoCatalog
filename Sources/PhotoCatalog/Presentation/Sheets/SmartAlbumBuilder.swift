@@ -36,10 +36,11 @@ struct SmartAlbumBuilder: View {
             foot(matchedCount: matched.count)
         }
         .frame(width: 580)
-        .background(Color(hex: "#232325"))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.line2, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.7), radius: 60, y: 40)
+        .frame(maxHeight: 620)
+        .foregroundStyle(Theme.text)
+        .background(Theme.bgPanel)
+        .overlay(RoundedRectangle(cornerRadius: Theme.r).strokeBorder(Theme.line2, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.r))
     }
 
     private var head: some View {
@@ -53,6 +54,7 @@ struct SmartAlbumBuilder: View {
             sheetClose { app.dismissSmartAlbumBuilder() }
         }
         .padding(.horizontal, 18).padding(.vertical, 15)
+        .background(Theme.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
@@ -60,11 +62,11 @@ struct SmartAlbumBuilder: View {
         VStack(alignment: .leading, spacing: 0) {
             // name
             HStack(spacing: 12) {
-                Text("名称").font(.system(size: 12)).foregroundStyle(Theme.text3).frame(width: 40, alignment: .leading)
+                Text("名称").font(.system(size: 12)).foregroundStyle(Theme.text2).frame(width: 40, alignment: .leading)
                 TextField("", text: $name)
                     .textFieldStyle(.plain).font(.system(size: 13.5, weight: .medium))
                     .padding(.horizontal, 11).padding(.vertical, 9)
-                    .background(Color.black.opacity(0.28))
+                    .background(Theme.surface)
                     .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.line2, lineWidth: 1))
                     .clipShape(RoundedRectangle(cornerRadius: 7))
             }.padding(.bottom, 16)
@@ -99,7 +101,7 @@ struct SmartAlbumBuilder: View {
                     Text(" 张照片符合规则").font(.system(size: 12.5)).foregroundStyle(Theme.text2)
                 }
                 if matched.isEmpty {
-                    Text("没有照片符合当前规则").font(.system(size: 12)).foregroundStyle(Theme.text4).padding(.vertical, 14)
+                    Text("没有照片符合当前规则").font(.system(size: 12)).foregroundStyle(Theme.text3).padding(.vertical, 14)
                 } else {
                     FlowRow(spacing: 5, lineSpacing: 5) {
                         ForEach(matched.prefix(14)) { a in
@@ -107,6 +109,9 @@ struct SmartAlbumBuilder: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 4))
                         }
                     }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.canvas)
                 }
             }
             .padding(.top, 15)
@@ -130,11 +135,14 @@ struct SmartAlbumBuilder: View {
             Button { conditions.remove(at: i) } label: {
                 Icon("minus", size: 14, weight: .bold).foregroundStyle(Theme.text3)
                     .frame(width: 30, height: 30).background(Theme.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: Theme.rSm).strokeBorder(Theme.line2, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
             }
             .buttonStyle(.plain)
             .disabled(conditions.count == 1)
             .opacity(conditions.count == 1 ? 0.3 : 1)
+            .help("移除条件")
+            .accessibilityLabel("移除条件")
         }
     }
 
@@ -198,6 +206,7 @@ struct SmartAlbumBuilder: View {
             Button { app.saveSmart(name: name, rule: rule, count: matchedCount) } label: {
                 Text(album == nil ? "创建智能相册" : "保存更改")
                     .font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.onAccent)
+                    .fixedSize()
                     .padding(.horizontal, 17).padding(.vertical, 8)
                     .background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 7))
             }.buttonStyle(.plain)
@@ -205,7 +214,7 @@ struct SmartAlbumBuilder: View {
                 .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || conditions.isEmpty)
         }
         .padding(.horizontal, 18).padding(.vertical, 13)
-        .background(Color.black.opacity(0.18))
+        .background(Theme.bgSidebar)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 }

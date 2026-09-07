@@ -19,28 +19,38 @@ struct Titlebar: View {
             // leading padding clears the real macOS traffic-light controls
             Color.clear.frame(width: 62, height: 1)
 
+            HStack(spacing: 9) {
+                Icon("aperture", size: 26, weight: .light)
+                    .foregroundStyle(Theme.text)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("PhotoCatalog")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text(app.catalogDisplayName)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.text3)
+                        .lineLimit(1)
+                }
+            }
+            .frame(minWidth: 144, maxWidth: 230, alignment: .leading)
+            .help(app.catalogDisplayName)
+
             ToolButton(icon: "importIcon", label: "导入 / 添加文件夹",
                        horizontalPadding: 8,
                        action: { app.addFolder() }) {
                 Text("导入").font(.system(size: 12.5, weight: .medium))
             }
-
-            HStack(spacing: 7) {
-                Icon("aperture", size: 14).foregroundStyle(Theme.accent)
-                Text(app.catalogDisplayName)
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(Theme.text2)
-                    .lineLimit(1)
-            }
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.rSm))
+            .overlay(RoundedRectangle(cornerRadius: Theme.rSm)
+                .strokeBorder(Theme.line, lineWidth: 1))
 
             Spacer(minLength: 8)
             rightGroup
         }
         .padding(.horizontal, 14)
         .frame(height: Theme.titlebarH)
-        .background(Theme.titlebarGradient)
-        .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.04)).frame(height: 1) }
-        .overlay(alignment: .bottom) { Rectangle().fill(Color.black.opacity(0.45)).frame(height: 1) }
+        .background(Theme.bgTitlebar)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
     private var rightGroup: some View {
@@ -100,8 +110,8 @@ struct Titlebar: View {
             }
         }
         .padding(.horizontal, 9)
-        .frame(width: 190, height: 30)
-        .background(Color.black.opacity(0.28))
+        .frame(width: 200, height: 32)
+        .background(Theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
         .focusRing(searchFocused, radius: Theme.rSm)
         .onAppear { searchText = app.search }
@@ -123,7 +133,7 @@ struct Titlebar: View {
             Slider(value: $app.thumbSize, in: 108...280)
                 .frame(width: 76)
                 .controlSize(.mini)
-                .tint(Theme.surfaceHi)
+                .tint(Theme.text3)
                 .accessibilityLabel("缩略图大小")
                 .help("调整缩略图大小")
         }
@@ -217,9 +227,9 @@ private struct CatalogActionsMenu: View {
             Label("更多操作", systemImage: "ellipsis.circle")
                 .labelStyle(.iconOnly)
                 .font(.system(size: 16))
-                .frame(width: 30, height: 30)
+                .frame(width: 32, height: 32)
                 .foregroundStyle(hover ? Theme.text : Theme.text2)
-                .background(hover ? Theme.surface : .clear)
+                .background(hover ? Theme.surfaceHi : .clear)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
         }
         .menuStyle(.borderlessButton)

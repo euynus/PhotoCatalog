@@ -33,8 +33,7 @@ struct StarsView: View {
         let on = n <= value
         return Image(systemName: on ? "star.fill" : "star")
             .font(.system(size: size))
-            .foregroundStyle(on ? Theme.accent
-                : (dim ? Color.white(0.16) : Color.white(0.26)))
+            .foregroundStyle(on ? Theme.rating : Theme.starInactive.opacity(dim ? 0.7 : 1))
             .contentShape(Rectangle())
     }
 }
@@ -47,7 +46,7 @@ struct FlagPill: View {
         switch flag {
         case .pick:
             Image(systemName: "flag.fill").font(.system(size: size))
-                .foregroundStyle(Theme.accent).help("精选")
+                .foregroundStyle(Theme.green).help("精选")
         case .reject:
             Image(systemName: "xmark.circle.fill").font(.system(size: size))
                 .foregroundStyle(Theme.red).help("拒绝")
@@ -76,14 +75,14 @@ struct TypeBadge: View {
     var small: Bool = false
     var body: some View {
         Text(asset.type)
-            .font(.system(size: small ? 8.5 : 9.5, weight: .bold))
-            .padding(.horizontal, small ? 3 : 4)
-            .padding(.vertical, small ? 1 : 1.5)
-            .foregroundStyle(asset.isRaw ? Theme.onAccent : Color.white(0.92))
-            .background(asset.isRaw ? Theme.accent.opacity(0.92) : Color.black.opacity(0.55))
+            .font(.system(size: small ? 9 : 10, weight: .medium))
+            .padding(.horizontal, small ? 4 : 5)
+            .padding(.vertical, 2)
+            .foregroundStyle(Theme.canvasText)
+            .background(Theme.canvasSurface.opacity(0.9))
             .overlay(
                 RoundedRectangle(cornerRadius: 3)
-                    .strokeBorder(asset.isRaw ? .clear : Color.white(0.18), lineWidth: 1))
+                    .strokeBorder(Theme.canvasLine, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: 3))
     }
 }
@@ -122,7 +121,7 @@ struct Segmented: View {
     let onChange: (String) -> Void
     var size: String = "md"  // md / sm
 
-    private var height: CGFloat { size == "sm" ? 21 : 24 }
+    private var height: CGFloat { size == "sm" ? 24 : 28 }
     private var hpad: CGFloat { size == "sm" ? 9 : 10 }
     private var fontSize: CGFloat { size == "sm" ? 11.5 : 12.5 }
     private var iconSize: CGFloat { size == "sm" ? 14 : 15 }
@@ -142,8 +141,8 @@ struct Segmented: View {
             }
         }
         .padding(2)
-        .background(Color.black.opacity(0.28))
-        .overlay(RoundedRectangle(cornerRadius: Theme.rSm).strokeBorder(Theme.line2, lineWidth: 1))
+        .background(Theme.surfaceHi)
+        .overlay(RoundedRectangle(cornerRadius: Theme.rSm).strokeBorder(Theme.line, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
     }
 }
@@ -165,10 +164,10 @@ private struct SegItem: View {
         }
         .frame(height: height)
         .padding(.horizontal, hpad)
-        .foregroundStyle(active ? Theme.text : (hover ? Theme.text : Theme.text2))
-        .background(active ? Theme.surfaceHi : .clear)
+        .foregroundStyle(active ? Theme.accent : (hover ? Theme.text : Theme.text2))
+        .background(active ? Theme.surface : .clear)
         .clipShape(RoundedRectangle(cornerRadius: 4))
-        .shadow(color: active ? .black.opacity(0.35) : .clear, radius: 1, y: 1)
+        .shadow(color: active ? .black.opacity(0.10) : .clear, radius: 1, y: 1)
         .contentShape(Rectangle())
         .onHover { hover = $0 }
         .help(option.title ?? option.label ?? "")
@@ -202,12 +201,12 @@ struct ToolButton<Trailing: View>: View {
     }
 
     private var background: Color {
-        if active { return Theme.surfaceHi }
-        if hover { return danger ? Theme.red.opacity(0.18) : Theme.surface }
+        if active { return Theme.accentSoft }
+        if hover { return danger ? Theme.red.opacity(0.10) : Theme.surfaceHi }
         return .clear
     }
     private var foreground: Color {
-        if active { return Theme.text }
+        if active { return Theme.accent }
         if hover { return danger ? Theme.redSoft : Theme.text }
         return Theme.text2
     }
@@ -218,7 +217,7 @@ struct ToolButton<Trailing: View>: View {
                 if let icon { Icon(icon, size: 16) }
                 trailing()
             }
-            .frame(minWidth: 30, minHeight: 30)
+            .frame(minWidth: 32, minHeight: 32)
             .padding(.horizontal, horizontalPadding)
             .foregroundStyle(foreground)
             .background(background)

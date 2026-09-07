@@ -16,7 +16,7 @@ struct StatusBar: View {
                 .foregroundStyle(Theme.text2)
             } else {
                 HStack(spacing: 5) {
-                    Icon("check", size: 13, weight: .bold).foregroundStyle(Theme.accent)
+                    Icon("check", size: 12, weight: .semibold).foregroundStyle(Theme.green)
                     Text("目录库就绪")
                 }
             }
@@ -58,10 +58,11 @@ struct StatusBar: View {
             Text(app.statusCacheText).foregroundStyle(Theme.text3)
         }
         .font(.system(size: 11))
+        .lineLimit(1)
         .foregroundStyle(Theme.text2)
         .padding(.horizontal, 14)
         .frame(height: Theme.statusbarH)
-        .background(Color(hex: "#232326"))
+        .background(Theme.bgTitlebar)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 

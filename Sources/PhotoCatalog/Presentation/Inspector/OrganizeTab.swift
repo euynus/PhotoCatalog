@@ -28,21 +28,16 @@ struct OrganizeTab: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
+        VStack(alignment: .leading, spacing: 16) {
             // rating
             block("评分") {
                 HStack(spacing: 12) {
                     StarsView(value: asset.rating, size: 22, gap: 3) { n in
                         app.setRating(asset.rating == n ? 0 : n)
                     }
-                    if asset.rating > 0 {
-                        Hover { hover in
-                            Button { app.setRating(0) } label: {
-                                Text("清除").font(.system(size: 11.5))
-                                    .foregroundStyle(hover ? Theme.text : Theme.text3)
-                                    .padding(.horizontal, 7).padding(.vertical, 3)
-                            }.buttonStyle(.plain)
-                        }
+                    Spacer(minLength: 8)
+                    ToolButton(icon: "close", label: "清除评分", disabled: asset.rating == 0) {
+                        app.setRating(0)
                     }
                 }
             }
@@ -59,6 +54,7 @@ struct OrganizeTab: View {
             }
             // color
             block("颜色标签") { ColorLabelPicker(value: asset.colorLabel) { app.setColor($0) } }
+            Rectangle().fill(Theme.line).frame(height: 1)
             // keywords — zIndex lifts the suggestion dropdown above the
             // 标题/说明 blocks below, which otherwise draw and hit-test over it
             block("关键词") {
@@ -73,46 +69,55 @@ struct OrganizeTab: View {
                     .textFieldStyle(.plain).font(.system(size: 12.5))
                     .focused($focusedField, equals: .title)
                     .padding(.horizontal, 10).padding(.vertical, 8)
-                    .background(Color.black.opacity(0.28))
+                    .background(Theme.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .focusRing(focusedField == .title, radius: 6)
+                    .accessibilityLabel("标题")
             }
             // caption
             block("说明") {
                 ZStack(alignment: .topLeading) {
                     if drafts.caption.isEmpty {
-                        Text("添加说明…").font(.system(size: 12.5)).foregroundStyle(Theme.text4)
+                        Text("添加说明…").font(.system(size: 12.5)).foregroundStyle(Theme.text3)
                             .padding(.horizontal, 12).padding(.vertical, 10)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                     }
                     TextEditor(text: $drafts.caption)
                         .font(.system(size: 12.5)).scrollContentBackground(.hidden)
                         .focused($focusedField, equals: .caption)
-                        .frame(minHeight: 56)
+                        .frame(minHeight: 72)
                         .padding(.horizontal, 6).padding(.vertical, 4)
+                        .accessibilityLabel("说明")
                 }
-                .background(Color.black.opacity(0.28))
+                .background(Theme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .focusRing(focusedField == .caption, radius: 6)
             }
+            Rectangle().fill(Theme.line).frame(height: 1)
             block("项目") {
                 TextField("项目名称", text: $drafts.project)
                     .textFieldStyle(.plain).font(.system(size: 12.5))
                     .focused($focusedField, equals: .project)
                     .padding(.horizontal, 10).padding(.vertical, 8)
-                    .background(Color.black.opacity(0.28))
+                    .background(Theme.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .focusRing(focusedField == .project, radius: 6)
+                    .accessibilityLabel("项目")
             }
             block("客户") {
                 TextField("客户名称", text: $drafts.client)
                     .textFieldStyle(.plain).font(.system(size: 12.5))
                     .focused($focusedField, equals: .client)
                     .padding(.horizontal, 10).padding(.vertical, 8)
-                    .background(Color.black.opacity(0.28))
+                    .background(Theme.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .focusRing(focusedField == .client, radius: 6)
+                    .accessibilityLabel("客户")
             }
         }
+        .foregroundStyle(Theme.text)
+        .tint(Theme.accent)
         .onChange(of: asset.id, initial: true) { commitDrafts(); seedDrafts() }
         .onChange(of: assetDrafts) {
             // adopt external changes, but never clobber an in-flight edit
@@ -155,10 +160,12 @@ struct OrganizeTab: View {
 
     private func block<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(label).font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.text3).textCase(.uppercase)
+            Text(label).font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(Theme.text2)
+                .accessibilityAddTraits(.isHeader)
             content()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
 }
@@ -172,19 +179,24 @@ private struct FlagButton: View {
     @State private var hover = false
 
     var body: some View {
-        let tint: Color = flag == .pick ? Theme.accent : Theme.redSoft
-        let bg: Color = flag == .pick ? Theme.accentSoft : Theme.red.opacity(0.16)
-        let borderTint: Color = flag == .pick ? Theme.accent : Theme.red
+        let tint: Color = flag == .pick ? Theme.green : Theme.red
+        let bg = tint.opacity(0.12)
         Button(action: action) {
-            HStack(spacing: 6) { Icon(icon, size: 15); Text(label).font(.system(size: 12.5)) }
+            HStack(spacing: 6) {
+                Icon(icon, size: 15).foregroundStyle(on ? tint : Theme.text3)
+                Text(label).font(.system(size: 12.5, weight: on ? .medium : .regular))
+                if on { Icon("check", size: 10, weight: .bold) }
+            }
                 .frame(maxWidth: .infinity).frame(height: 32)
-                .foregroundStyle(on ? tint : Theme.text2)
+                .foregroundStyle(on ? Theme.text : Theme.text2)
                 .background(on ? bg : (hover ? Theme.surfaceHi : Theme.surface))
                 .overlay(RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(on ? borderTint.opacity(0.4) : .clear, lineWidth: 1))
+                    .strokeBorder(on ? tint.opacity(0.5) : Theme.line2, lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain).onHover { hover = $0 }
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
@@ -202,34 +214,44 @@ struct ColorLabelPicker: View {
     }
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 5) {
             Hover { hover in
                 Button { onPick(nil) } label: {
                     Icon("close", size: 11, weight: .bold).foregroundStyle(Theme.text3)
-                        .frame(width: 26, height: 26)
+                        .frame(width: 20, height: 20)
                         .background(hover ? Theme.surfaceHi : Theme.surface).clipShape(Circle())
                         .overlay {
-                            if value == nil { ring(Theme.text3) }
-                            else if hover { ring(Color.white(0.25)) }
+                            if value == nil { ring(Theme.accent) }
+                            else if hover { ring(Theme.text3) }
                         }
+                        .frame(width: 28, height: 28)
                 }.buttonStyle(.plain).help("无")
                     .accessibilityLabel("无颜色标签")
+                    .accessibilityAddTraits(value == nil ? .isSelected : [])
             }
 
             ForEach(ColorLabel.allCases) { c in
                 Hover { hover in
                     Button { onPick(value == c ? nil : c) } label: {
-                        Circle().fill(c.hex).frame(width: 26, height: 26)
+                        Circle().fill(c.hex).frame(width: 20, height: 20)
+                            .overlay(Circle().strokeBorder(Theme.line2, lineWidth: 1))
                             .overlay {
-                                if value == c { ring(c.hex) }
-                                else if hover { ring(Color.white(0.25)) }
+                                if value == c {
+                                    Icon("check", size: 10, weight: .bold)
+                                        .foregroundStyle(Theme.text)
+                                    ring(Theme.accent)
+                                } else if hover {
+                                    ring(Theme.text3)
+                                }
                             }
+                            .frame(width: 28, height: 28)
                     }.buttonStyle(.plain).help(c.name)
                         .accessibilityLabel(c.name)
                         .accessibilityAddTraits(value == c ? .isSelected : [])
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -256,27 +278,31 @@ struct KeywordEditor: View {
         VStack(alignment: .leading, spacing: 8) {
             // tags
             if keywords.isEmpty {
-                Text("尚无关键词").font(.system(size: 12)).foregroundStyle(Theme.text4)
+                Text("尚无关键词").font(.system(size: 12)).foregroundStyle(Theme.text3)
             } else {
                 FlowRow(spacing: 6) {
                     ForEach(keywords, id: \.self) { k in
                         HStack(spacing: 5) {
-                            Text(k).font(.system(size: 12))
+                            Text(k).font(.system(size: 12)).foregroundStyle(Theme.text2)
+                                .lineLimit(1).truncationMode(.middle)
+                                // ponytail: cap tags at the minimum panel width until FlowLayout constrains ideal sizes.
+                                .frame(maxWidth: Theme.inspectorMinW - 63)
                             Hover { hover in
                                 Button { onRemove(k) } label: {
                                     Icon("close", size: 10, weight: .bold)
                                         .foregroundStyle(hover ? Theme.text : Theme.text3)
-                                        .frame(width: 15, height: 15)
-                                        .background(hover ? Color.white(0.08) : .clear)
+                                        .frame(width: 18, height: 18)
+                                        .background(hover ? Theme.surfaceHi : .clear)
                                         .clipShape(Circle())
                                 }.buttonStyle(.plain)
                                     .accessibilityLabel("移除关键词 \(k)")
                             }
                         }
-                        .padding(.leading, 9).padding(.trailing, 5).padding(.vertical, 3)
+                        .padding(.leading, 8).padding(.trailing, 4).padding(.vertical, 3)
                         .background(Theme.surface)
-                        .overlay(Capsule().strokeBorder(Theme.line2, lineWidth: 1))
-                        .clipShape(Capsule())
+                        .overlay(RoundedRectangle(cornerRadius: Theme.rSm).strokeBorder(Theme.line, lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
+                        .help(k)
                     }
                 }
             }
@@ -287,9 +313,10 @@ struct KeywordEditor: View {
                     .textFieldStyle(.plain).font(.system(size: 12.5))
                     .focused($focused)
                     .onSubmit { commit() }
+                    .accessibilityLabel("添加关键词")
             }
-            .padding(.horizontal, 9).frame(height: 30)
-            .background(Color.black.opacity(0.28))
+            .padding(.horizontal, 9).frame(height: 32)
+            .background(Theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .focusRing(focused, radius: 6)
             .overlay(alignment: .topLeading) {
@@ -300,11 +327,11 @@ struct KeywordEditor: View {
                         }
                     }
                     .padding(4)
-                    .background(Color(hex: "#2c2c2e"))
+                    .background(Theme.bgPanel)
                     .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.line2, lineWidth: 1))
                     .clipShape(RoundedRectangle(cornerRadius: 7))
-                    .shadow(color: .black.opacity(0.5), radius: 15, y: 10)
-                    .offset(y: 34)
+                    .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+                    .offset(y: 36)
                     .zIndex(10)
                 }
             }
@@ -319,12 +346,14 @@ private struct KWSuggestion: View {
     var body: some View {
         Button(action: action) {
             Text(text).font(.system(size: 12.5))
-                .foregroundStyle(hover ? Theme.onAccent : Theme.text)
+                .foregroundStyle(hover ? Theme.accent : Theme.text)
+                .lineLimit(1).truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 9).padding(.vertical, 6)
-                .background(hover ? Theme.accent : .clear)
+                .background(hover ? Theme.accentSoft : .clear)
                 .clipShape(RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(.plain).onHover { hover = $0 }
+        .help(text)
     }
 }

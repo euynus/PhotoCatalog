@@ -53,44 +53,51 @@ struct PlacesMapView: View {
     }
 
     var body: some View {
-        if located.isEmpty {
-            VStack(spacing: 10) {
-                Icon("location", size: 46).foregroundStyle(Theme.text4)
-                Text("没有带位置的照片").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text2)
-                Text("含 GPS 信息的照片会显示在地图上").font(.system(size: 12.5)).foregroundStyle(Theme.text3)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            Map(position: $position) {
-                ForEach(clusters) { c in
-                    Annotation("", coordinate: c.coordinate) {
-                        Button {
-                            if c.count == 1 {
-                                app.openLoupe(c.representative.id)
-                            } else {
-                                withAnimation {
-                                    position = .camera(MapCamera(centerCoordinate: c.coordinate,
-                                                                 distance: max(cameraDistance / 6, 1200)))
+        Group {
+            if located.isEmpty {
+                VStack(spacing: 10) {
+                    Icon("location", size: 46).foregroundStyle(Theme.text3)
+                    Text("没有带位置的照片").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
+                    Text("含 GPS 信息的照片会显示在地图上").font(.system(size: 12.5)).foregroundStyle(Theme.text3)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Map(position: $position) {
+                    ForEach(clusters) { c in
+                        Annotation("", coordinate: c.coordinate) {
+                            Button {
+                                if c.count == 1 {
+                                    app.openLoupe(c.representative.id)
+                                } else {
+                                    withAnimation {
+                                        position = .camera(MapCamera(centerCoordinate: c.coordinate,
+                                                                     distance: max(cameraDistance / 6, 1200)))
+                                    }
                                 }
-                            }
-                        } label: { pin(c) }.buttonStyle(.plain)
-                            .help(c.count == 1 ? c.representative.filename : "\(c.count) 张照片 — 点按放大")
+                            } label: { pin(c) }.buttonStyle(.plain)
+                                .help(c.count == 1 ? c.representative.filename : "\(c.count) 张照片 — 点按放大")
+                                .accessibilityLabel(c.count == 1 ? c.representative.filename : "\(c.count) 张照片")
+                                .accessibilityHint(c.count == 1 ? "打开照片" : "放大地图")
+                        }
                     }
                 }
+                .mapStyle(.standard(elevation: .flat))
+                .onMapCameraChange { context in
+                    cameraDistance = context.camera.distance
+                }
+                .overlay(alignment: .topLeading) { countBadge }
             }
-            .mapStyle(.standard(elevation: .flat))
-            .onMapCameraChange { context in
-                cameraDistance = context.camera.distance
-            }
-            .overlay(alignment: .topLeading) { countBadge }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.bgContent)
     }
 
     private func pin(_ c: Cluster) -> some View {
         Thumb(asset: c.representative, radius: 5, maxDecodePixel: 80)
             .frame(width: 40, height: 30)
+            .background(Theme.canvasSurface)
             .overlay(RoundedRectangle(cornerRadius: 5)
-                .strokeBorder(c.count == 1 && c.representative.id == app.primaryId ? Theme.accent : .white,
+                .strokeBorder(c.count == 1 && c.representative.id == app.primaryId ? Theme.accent : Theme.surface,
                               lineWidth: 2))
             .clipShape(RoundedRectangle(cornerRadius: 5))
             .overlay(alignment: .topTrailing) {
@@ -100,11 +107,11 @@ struct PlacesMapView: View {
                         .foregroundStyle(Theme.onAccent)
                         .padding(.horizontal, 5).padding(.vertical, 2)
                         .background(Theme.accent, in: Capsule())
-                        .overlay(Capsule().strokeBorder(Color(hex: "#1c1c1e"), lineWidth: 1))
+                        .overlay(Capsule().strokeBorder(Theme.surface, lineWidth: 1))
                         .offset(x: 7, y: -7)
                 }
             }
-            .shadow(color: .black.opacity(0.5), radius: 4, y: 2)
+            .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
     }
 
     private var countBadge: some View {
@@ -113,8 +120,8 @@ struct PlacesMapView: View {
             Text("\(located.count) 张照片有位置信息").font(.system(size: 12)).foregroundStyle(Theme.text)
         }
         .padding(.horizontal, 11).padding(.vertical, 7)
-        .background(Color(hex: "#1c1c1e").opacity(0.85), in: Capsule())
-        .overlay(Capsule().strokeBorder(Theme.line2, lineWidth: 1))
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.rSm))
+        .overlay(RoundedRectangle(cornerRadius: Theme.rSm).strokeBorder(Theme.line2, lineWidth: 1))
         .padding(14)
     }
 }

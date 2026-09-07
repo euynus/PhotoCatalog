@@ -23,35 +23,34 @@ struct DuplicatesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 head
-                // lazy: each card kicks off thumbnail loads for every member
+                // Lazy loading avoids decoding off-screen group thumbnails.
                 LazyVStack(spacing: 14) {
                     ForEach(groups) { g in groupCard(g) }
                 }
                 .frame(maxWidth: 920, alignment: .leading)
             }
             .padding(.horizontal, 22).padding(.vertical, 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .foregroundStyle(Theme.text)
+        .background(Theme.bgContent)
     }
 
     private var head: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 20) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("重复文件").font(.system(size: 18, weight: .bold))
-                    Text("基于内容哈希识别完全相同文件，并用 quick hash、拍摄时间、尺寸和感知哈希识别疑似重复")
-                        .font(.system(size: 12.5)).foregroundStyle(Theme.text3)
-                        .frame(maxWidth: 480, alignment: .leading).lineSpacing(2)
-                }
+            Text("重复文件").font(.system(size: 17, weight: .semibold))
+            Text("基于内容哈希识别完全相同文件，并用 quick hash、拍摄时间、尺寸和感知哈希识别疑似重复")
+                .font(.system(size: 12.5)).foregroundStyle(Theme.text3)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 16) {
+                summaryItem("\(groups.count)", "组", accent: false)
+                summaryItem("\(fileCount)", "个文件", accent: false)
                 Spacer()
-                HStack(spacing: 16) {
-                    summaryItem("\(groups.count)", "组", accent: false)
-                    summaryItem("\(fileCount)", "个文件", accent: false)
-                    HStack(spacing: 4) {
-                        Text("可释放 ≈").font(.system(size: 12.5)).foregroundStyle(Theme.text2)
-                        Text(fileSizeText(megabytes: reclaim))
-                            .font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.accent)
-                    }
+                HStack(spacing: 4) {
+                    Text("可释放 ≈").font(.system(size: 12.5)).foregroundStyle(Theme.text2)
+                    Text(fileSizeText(megabytes: reclaim))
+                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.accent)
                 }
             }
             if app.isAutomaticSimilarityAnalysisLimited {
@@ -64,6 +63,7 @@ struct DuplicatesView: View {
                 .accessibilityElement(children: .combine)
             }
         }
+        .frame(maxWidth: 920, alignment: .leading)
     }
 
     private func summaryItem(_ value: String, _ label: String, accent: Bool) -> some View {
@@ -89,10 +89,11 @@ struct DuplicatesView: View {
                 Spacer()
                 if isResolved {
                     HStack(spacing: 5) { Icon("check", size: 13, weight: .bold); Text("已处理").font(.system(size: 11.5)) }
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(Theme.green)
                 }
             }
             .padding(.horizontal, 15).padding(.vertical, 11)
+            .background(Theme.bgSidebar)
             .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
 
             // items
@@ -122,12 +123,13 @@ struct DuplicatesView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 15).padding(.bottom, 14)
+                .padding(.horizontal, 15).padding(.vertical, 12)
+                .background(Theme.bgPanel)
+                .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
             }
         }
-        .background(Color(hex: "#1f1f21"))
-        .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Theme.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 11))
+        .background(Theme.surface)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
         .opacity(isResolved ? 0.5 : 1)
     }
 
@@ -135,6 +137,7 @@ struct DuplicatesView: View {
         HStack(spacing: 13) {
             ZStack(alignment: .topLeading) {
                 Thumb(asset: it, radius: 6, maxDecodePixel: 172).frame(width: 86, height: 64)
+                    .background(Theme.canvasSurface)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 if kept {
                     HStack(spacing: 3) { Icon("check", size: 12, weight: .bold); Text("保留").font(.system(size: 9, weight: .bold)) }
@@ -146,6 +149,7 @@ struct DuplicatesView: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(it.filename).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+                    .truncationMode(.middle).help(it.filename)
                 Text("\(fileSizeText(megabytes: it.fileMB)) · \(it.width)×\(it.height) · \(it.folderName)")
                     .font(.system(size: 11)).foregroundStyle(Theme.text3)
                     .lineLimit(1)
@@ -157,16 +161,20 @@ struct DuplicatesView: View {
             if !resolved {
                 Button { keep[groupId] = it.id } label: {
                     Text(kept ? "已保留" : "保留这张").font(.system(size: 11.5)).foregroundStyle(Theme.text2)
+                        .fixedSize()
                         .padding(.horizontal, 11).padding(.vertical, 6)
-                        .background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: 6))
+                        .background(Theme.surface)
+                        .overlay(RoundedRectangle(cornerRadius: Theme.rSm).strokeBorder(Theme.line2, lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
                 }
                 .buttonStyle(.plain).disabled(kept).opacity(kept ? 0.5 : 1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(kept ? Theme.accentSoft : Color.black.opacity(0.18))
-        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(kept ? Theme.accent.opacity(0.5) : .clear, lineWidth: 1.5))
-        .clipShape(RoundedRectangle(cornerRadius: 9))
+        .background(kept ? Theme.accentSoft : .clear)
+        .overlay(alignment: .leading) {
+            Rectangle().fill(kept ? Theme.accent : .clear).frame(width: 2)
+        }
     }
 }

@@ -20,10 +20,10 @@ struct SettingsSheet: View {
         }
         .frame(width: 560)
         .frame(maxHeight: 620)
-        .background(Color(hex: "#232325"))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.line2, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.7), radius: 60, y: 40)
+        .foregroundStyle(Theme.text)
+        .background(Theme.bgPanel)
+        .overlay(RoundedRectangle(cornerRadius: Theme.r).strokeBorder(Theme.line2, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.r))
     }
 
     private var head: some View {
@@ -36,6 +36,7 @@ struct SettingsSheet: View {
             sheetClose { app.sheet = nil }
         }
         .padding(.horizontal, 18).padding(.vertical, 15)
+        .background(Theme.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
@@ -131,7 +132,7 @@ struct SettingsSheet: View {
                     TextField("预设名", text: $exportPresetName)
                         .textFieldStyle(.plain).font(.system(size: 12.5))
                         .padding(.horizontal, 10).padding(.vertical, 7)
-                        .background(Color.black.opacity(0.28))
+                        .background(Theme.surface)
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .frame(width: 140)
@@ -224,8 +225,10 @@ struct SettingsSheet: View {
                         .foregroundStyle(r.isHealthy ? Theme.text2 : Theme.redSoft)
                         .padding(9)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.black.opacity(0.24))
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                        .background(Theme.bgSidebar)
+                        .overlay(alignment: .leading) {
+                            Rectangle().fill(r.isHealthy ? Theme.line2 : Theme.redSoft).frame(width: 2)
+                        }
                 }
             }
 
@@ -236,7 +239,7 @@ struct SettingsSheet: View {
                     TextField("如 {date}_{seq} 或 IMG", text: $renamePrefix)
                         .textFieldStyle(.plain).font(.system(size: 12.5))
                         .padding(.horizontal, 10).padding(.vertical, 7)
-                        .background(Color.black.opacity(0.28))
+                        .background(Theme.surface)
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .frame(width: 200)
@@ -310,8 +313,8 @@ struct SettingsSheet: View {
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text(title).font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Theme.text3).textCase(.uppercase)
+            Text(title).font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.text)
             content()
         }
     }
@@ -328,7 +331,7 @@ struct SettingsSheet: View {
         TextField(placeholder, text: text)
             .textFieldStyle(.plain).font(.system(size: 12.5))
             .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(Color.black.opacity(0.28))
+            .background(Theme.surface)
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .frame(width: 220)
@@ -345,7 +348,7 @@ struct SettingsSheet: View {
                 .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, 18).padding(.vertical, 13)
-        .background(Color.black.opacity(0.18))
+        .background(Theme.bgSidebar)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 }

@@ -12,7 +12,7 @@ struct Sidebar: View {
     var body: some View {
         let _ = assetRevision
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 18) {
                 librarySection
                 if !app.hasCatalogPreview {
                     favoriteSection
@@ -25,7 +25,7 @@ struct Sidebar: View {
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.top, 10)
+            .padding(.top, 12)
             .padding(.bottom, 20)
         }
         .frame(minWidth: Theme.sidebarMinW,
@@ -225,13 +225,15 @@ struct SidebarSection<Content: View, Action: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(title).font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Theme.text3).textCase(.uppercase)
+            HStack(spacing: 8) {
+                Text(title).font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Theme.text2)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 action
             }
-            .padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 5)
+            .frame(height: 24)
+            .padding(.horizontal, 8).padding(.bottom, 3)
             content
         }
     }
@@ -245,8 +247,8 @@ private struct SBAddButton: View {
         Button(action: action) {
             Icon("plus", size: 13, weight: .bold)
                 .foregroundStyle(hover ? Theme.text : Theme.text3)
-                .frame(width: 18, height: 18)
-                .background(hover ? Theme.surface : .clear)
+                .frame(width: 22, height: 22)
+                .background(hover ? Theme.surfaceHi : .clear)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.plain).onHover { hover = $0 }.help(help)
@@ -268,25 +270,35 @@ struct SidebarRow: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Icon(icon, size: 16)
-                    .foregroundStyle(active ? Theme.onAccent.opacity(0.85) : (color ?? Theme.accent))
+                    .frame(width: 18)
+                    .foregroundStyle(active ? Theme.accent : (color ?? Theme.text3))
                 Text(label)
-                    .font(.system(size: 13, weight: active ? .medium : .regular))
+                    .font(.system(size: 13, weight: active ? .semibold : .regular))
                     .lineLimit(1)
-                    .foregroundStyle(active ? Theme.onAccent : Theme.text)
+                    .truncationMode(.middle)
+                    .foregroundStyle(Theme.text)
                 Spacer(minLength: 4)
                 if let count {
                     Text(count)
-                        .font(.system(size: 11.5)).monospacedDigit()
-                        .foregroundStyle(active ? Theme.onAccent.opacity(0.85) : Theme.text3)
+                        .font(.system(size: 11)).monospacedDigit()
+                        .foregroundStyle(active ? Theme.accent : Theme.text3)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(minWidth: 24, alignment: .trailing)
                 }
             }
             .padding(.horizontal, 8)
             .padding(.leading, indent)
-            .frame(height: 28)
-            .background(active ? Theme.accent : (hover ? Color.white(0.05) : .clear))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .frame(height: 30)
+            .background(active ? Theme.accentSoft : (hover ? Theme.surfaceHi : .clear))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityValue(count ?? "")
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 }

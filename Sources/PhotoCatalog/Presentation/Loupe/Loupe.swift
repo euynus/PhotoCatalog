@@ -11,16 +11,18 @@ struct Loupe: View {
         let idx = max(0, list.firstIndex { $0.id == app.primaryId } ?? 0)
         if list.isEmpty {
             VStack(spacing: 10) {
-                Icon("loupe", size: 40).foregroundStyle(Theme.text4)
-                Text("没有可查看的照片").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text2)
+                Icon("loupe", size: 40).foregroundStyle(Theme.canvasText3)
+                Text("没有可查看的照片").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.canvasText2)
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.canvas)
         } else {
             let asset = list[idx]
             VStack(spacing: 0) {
-                stage(asset, idx: idx, count: list.count)
+                stage(asset)
+                hud(asset, idx: idx, count: list.count)
                 filmstrip(list)
             }
-            .background(Color(hex: "#0e0e0f"))
+            .background(Theme.canvas)
             .task(id: "\(asset.id)|\(app.thumbnailCacheGeneration)") {
                 // warm the neighbors so arrow-key navigation lands on a cache hit
                 let cacheGeneration = app.thumbnailCacheGeneration
@@ -46,15 +48,12 @@ struct Loupe: View {
         app.setPrimary(list[target].id)
     }
 
-    private func stage(_ asset: Asset, idx: Int, count: Int) -> some View {
+    private func stage(_ asset: Asset) -> some View {
         ZStack {
-            // No .id(asset.id): keeping the loader alive across navigation
-            // holds the current photo on screen instead of flashing the
-            // gradient placeholder while the next one resolves.
-            Thumb(asset: asset, urlString: asset.preview, kind: .preview2048, radius: 4, contentMode: .fit)
+            // Keep the loader alive across navigation.
+            Thumb(asset: asset, urlString: asset.preview, kind: .preview2048, radius: 2, contentMode: .fit)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .shadow(color: .black.opacity(0.6), radius: 30, y: 16)
-                .padding(.horizontal, 64).padding(.vertical, 28)
+                .padding(.horizontal, 60).padding(.vertical, 20)
 
             // nav arrows
             HStack {
@@ -70,33 +69,28 @@ struct Loupe: View {
                         HStack(spacing: 6) {
                             Icon("offline", size: 15); Text("离线 — 显示缓存预览").font(.system(size: 11.5))
                         }
-                        .foregroundStyle(Theme.yellow)
+                        .foregroundStyle(Theme.canvasText2)
                         .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(Theme.yellow.opacity(0.18))
-                        .overlay(Capsule().strokeBorder(Theme.yellow.opacity(0.3), lineWidth: 1))
-                        .clipShape(Capsule())
+                        .background(Theme.canvasSurface)
+                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.canvasLine, lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
                         Spacer()
                     }
                     Spacer()
                 }.padding(12)
             }
-
-            // HUD
-            VStack {
-                Spacer()
-                hud(asset, idx: idx, count: count)
-                    .padding(.bottom, 14)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.canvas)
     }
 
     private func navButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
         Hover { hover in
             Button(action: action) {
-                Icon(icon, size: 24).foregroundStyle(Theme.text)
-                    .frame(width: 44, height: 44)
-                    .background(Color(hex: "#28282a").opacity(hover ? 0.95 : 0.72), in: Circle())
+                Icon(icon, size: 21).foregroundStyle(Theme.canvasText)
+                    .frame(width: 36, height: 44)
+                    .background(hover ? Theme.canvasSurfaceHi : Theme.canvasSurface,
+                                in: RoundedRectangle(cornerRadius: 5))
             }.buttonStyle(.plain)
                 .help(label)
                 .accessibilityLabel(label)
@@ -104,72 +98,84 @@ struct Loupe: View {
     }
 
     private func hud(_ asset: Asset, idx: Int, count: Int) -> some View {
-        HStack(spacing: 18) {
-            HStack(spacing: 8) {
-                Text(asset.filename).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.text)
-                Text("·").foregroundStyle(Theme.text4)
-                Text(asset.camera).font(.system(size: 12)).foregroundStyle(Theme.text2)
-                Text("·").foregroundStyle(Theme.text4)
-                Text(exposureSummary(asset, separator: "  "))
-                    .font(.system(size: 12)).monospacedDigit().foregroundStyle(Theme.text2)
-            }.lineLimit(1)
-            HStack(spacing: 12) {
-                StarsView(value: asset.rating, size: 15, gap: 2) { n in
-                    app.mutateAsset(asset.id) { $0.rating = asset.rating == n ? 0 : n }
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(asset.filename)
+                    .font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(asset.filename)
+                HStack(spacing: 6) {
+                    Text(asset.camera)
+                    Text("·").foregroundStyle(Theme.text4)
+                    Text(exposureSummary(asset, separator: "  ")).monospacedDigit()
                 }
-                FlagPill(flag: asset.flag, size: 15)
-                ColorDot(label: asset.colorLabel, size: 11)
-                Text("\(idx + 1) / \(count)").font(.system(size: 11.5)).monospacedDigit()
-                    .foregroundStyle(Theme.text3)
+                .font(.system(size: 11.5)).foregroundStyle(Theme.text2)
+                .lineLimit(1)
+                .help("\(asset.camera) · \(exposureSummary(asset))")
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .trailing, spacing: 5) {
+                HStack(spacing: 9) {
+                    StarsView(value: asset.rating, size: 15, gap: 2) { n in
+                        app.mutateAsset(asset.id) { $0.rating = asset.rating == n ? 0 : n }
+                    }
+                    FlagPill(flag: asset.flag, size: 15)
+                    ColorDot(label: asset.colorLabel, size: 11)
+                }
+                Text("\(idx + 1) / \(count)").font(.system(size: 11.5)).monospacedDigit()
+                    .foregroundStyle(Theme.text2)
+            }
+            .fixedSize()
         }
-        .padding(.horizontal, 16).padding(.vertical, 9)
-        .fixedSize(horizontal: true, vertical: false)
-        .background(Color(hex: "#1c1c1e").opacity(0.85), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.line2, lineWidth: 1))
-        .shadow(color: .black.opacity(0.45), radius: 15, y: 8)
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .background(Theme.bgPanel)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
     private func filmstrip(_ list: [Asset]) -> some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 6) {
+                LazyHStack(spacing: 8) {
                     ForEach(list) { a in
                         Hover { hover in
                             Button { app.setPrimary(a.id) } label: {
-                                ZStack {
-                                    Thumb(asset: a, radius: 2, maxDecodePixel: 216)
-                                        .overlay(alignment: .bottomLeading) {
-                                            if a.rating > 0 {
-                                                StarsView(value: a.rating, size: 7, dim: true).padding(.leading, 3).padding(.bottom, 2)
-                                            }
+                                VStack(spacing: 4) {
+                                    Thumb(asset: a, radius: 2, contentMode: .fit, maxDecodePixel: 216)
+                                        .frame(width: 108, height: 72)
+                                        .background(Theme.canvas)
+                                    HStack(spacing: 5) {
+                                        if a.rating > 0 {
+                                            StarsView(value: a.rating, size: 8, dim: true)
                                         }
-                                        .overlay(alignment: .topTrailing) {
-                                            if a.flag == .pick {
-                                                Circle().fill(Theme.accent).frame(width: 7, height: 7).padding(3)
-                                            } else if a.flag == .reject {
-                                                Circle().fill(Theme.red).frame(width: 7, height: 7).padding(3)
-                                            }
-                                        }
+                                        Spacer(minLength: 0)
+                                        FlagPill(flag: a.flag, size: 10)
+                                    }
+                                    .frame(height: 12)
                                 }
-                                .frame(width: 108, height: 72)
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                                .padding(4)
+                                .frame(width: 116, height: 96)
+                                .background(a.id == app.primaryId ? Theme.canvasSelection
+                                            : (hover ? Theme.canvasSurfaceHi : .clear))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
                             }
                             .buttonStyle(.plain)
-                            .opacity(a.id == app.primaryId ? 1 : (hover ? 0.85 : 0.62))
-                            .overlay(RoundedRectangle(cornerRadius: 3)
+                            .overlay(RoundedRectangle(cornerRadius: 4)
                                 .strokeBorder(a.id == app.primaryId ? Theme.accent : .clear, lineWidth: 2))
+                            .help(a.filename)
                             .accessibilityLabel(a.filename)
                             .accessibilityAddTraits(a.id == app.primaryId ? .isSelected : [])
                         }
                         .id(a.id)
                     }
                 }
-                .padding(.horizontal, 12).padding(.vertical, 10)
+                .padding(.horizontal, 12).padding(.vertical, 8)
             }
-            .frame(height: 92)
-            .background(Color(hex: "#1a1a1c"))
-            .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .frame(height: 112)
+            .background(Theme.canvasSurface)
+            .overlay(alignment: .top) { Rectangle().fill(Theme.canvasLine).frame(height: 1) }
+            .environment(\.colorScheme, .dark)
             .onChange(of: app.primaryId) {
                 if let id = app.primaryId { withAnimation { proxy.scrollTo(id, anchor: .center) } }
             }

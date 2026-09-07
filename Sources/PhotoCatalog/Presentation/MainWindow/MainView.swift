@@ -62,6 +62,8 @@ struct ContentColumn: View {
         VStack(spacing: 0) {
             if !app.isDuplicates { ContentHeader() }
             contentMain
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.canvas)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bgContent)
@@ -88,26 +90,24 @@ struct ContentHeader: View {
 
     var body: some View {
         HStack {
-            HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(app.selection.name)
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(app.selection.name)
-                Text("\(app.contentAssetCount) 张")
-                    .font(.system(size: 12)).foregroundStyle(Theme.text3)
-                    .fixedSize()
-                if !app.selectedIds.isEmpty {
-                    Label("\(app.selectedIds.count) 张已选", systemImage: "checkmark.circle.fill")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(Theme.accent)
-                        .padding(.horizontal, 7)
-                        .frame(height: 22)
-                        .background(Theme.accentSoft)
-                        .clipShape(Capsule())
+                HStack(spacing: 10) {
+                    Text("\(app.contentAssetCount) 张照片")
+                        .foregroundStyle(Theme.text3)
                         .fixedSize()
+                    if !app.selectedIds.isEmpty {
+                        Label("\(app.selectedIds.count) 张已选", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(Theme.accent)
+                            .fixedSize()
+                    }
                 }
+                .font(.system(size: 11.5))
             }
             Spacer()
             HStack(spacing: 6) {
@@ -120,8 +120,9 @@ struct ContentHeader: View {
                 sortMenu
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 18)
         .frame(height: Theme.contentHeadH)
+        .background(Theme.bgContent)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
@@ -156,8 +157,8 @@ struct ContentHeader: View {
             }
             .foregroundStyle(Theme.text2)
             .padding(.horizontal, 8)
-            .frame(height: 28)
-            .background(Theme.surface.opacity(0.65))
+            .frame(height: 30)
+            .background(Theme.surface)
             .overlay(RoundedRectangle(cornerRadius: Theme.rSm)
                 .strokeBorder(Theme.line, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
@@ -191,7 +192,7 @@ struct SheetBackdrop<Content: View>: View {
     @ViewBuilder var content: () -> Content
     var body: some View {
         ZStack {
-            Color.black.opacity(0.5).ignoresSafeArea()
+            Color.black.opacity(0.24).ignoresSafeArea()
             content()
         }
         .transition(.opacity)

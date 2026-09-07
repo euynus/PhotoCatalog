@@ -15,7 +15,7 @@ struct RootView: View {
                     .overlay {
                         if app.isLoadingCatalog && !app.hasCatalogPreview {
                             ZStack {
-                                Color.black.opacity(0.58)
+                                Theme.bgContent.opacity(0.94)
                                 VStack(spacing: 10) {
                                     ProgressView()
                                         .controlSize(.small)
@@ -29,10 +29,7 @@ struct RootView: View {
                     }
             } else {
                 ZStack {
-                    RadialGradient(
-                        colors: [Color(hex: "#2a2320"), Theme.bgDesktop],
-                        center: .top, startRadius: 0, endRadius: 900)
-                        .ignoresSafeArea()
+                    Theme.bgDesktop.ignoresSafeArea()
                     WelcomeView()
                         .scaleEffect(app.welcomeAnim ? 1.02 : 1)
                         .opacity(app.welcomeAnim ? 0 : 1)
@@ -58,12 +55,14 @@ struct ToastOverlay: View {
                     HStack(spacing: 8) {
                         Icon(toast.icon, size: 14).foregroundStyle(Theme.accent)
                         Text(toast.message).font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                            .lineLimit(2)
                     }
                     .padding(.horizontal, 15).padding(.vertical, 9)
-                    .background(Color(hex: "#2c2c2e").opacity(0.96))
-                    .overlay(Capsule().strokeBorder(Theme.line2, lineWidth: 1))
-                    .clipShape(Capsule())
-                    .shadow(color: .black.opacity(0.5), radius: 17, y: 10)
+                    .background(Theme.surface)
+                    .overlay(RoundedRectangle(cornerRadius: Theme.r)
+                        .strokeBorder(Theme.line, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.r))
+                    .shadow(color: .black.opacity(0.16), radius: 12, y: 5)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }

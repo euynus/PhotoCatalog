@@ -1,6 +1,5 @@
 // ============================================================
-//  PhotoCatalog Mac — macOS dark visual system
-//  Ported 1:1 from app/styles.css :root design tokens.
+//  Light workspace chrome and a neutral, dark photographic canvas.
 // ============================================================
 import SwiftUI
 
@@ -34,75 +33,73 @@ extension Color {
     }
 }
 
-/// Design tokens. Each value maps to a CSS custom property of the same intent.
+/// Shared workspace and photographic-canvas colors.
 enum Theme {
     // Accent
-    static let accent = Color(hex: "#ff9f0a")
-    static let accent2 = Color(hex: "#ffb340")
-    static let accentPress = Color(hex: "#e88f06")
-    static let accentSoft = Color(hex: "#ff9f0a").opacity(0.16)
-    /// Foreground used on top of the accent fill (`#1a1206`).
-    static let onAccent = Color(hex: "#1a1206")
+    static let accent = Color(hex: "#2764D6")
+    static let accent2 = Color(hex: "#3E77E1")
+    static let accentPress = Color(hex: "#184FAE")
+    static let accentSoft = accent.opacity(0.10)
+    static let onAccent = Color.white
 
     // Surfaces
-    static let bgDesktop = Color(hex: "#0a0a0b")
-    static let bgContent = Color(hex: "#1b1b1d")
-    static let bgSidebar = Color(hex: "#232325")
-    static let bgPanel = Color(hex: "#1f1f21")
-    static let bgTitlebar = Color(hex: "#2b2b2e")
-    static let surface = Color(hex: "#313134")
-    static let surfaceHi = Color(hex: "#3c3c40")
-    static let surfacePress = Color(hex: "#474749")
+    static let bgDesktop = Color(hex: "#E8E9EB")
+    static let bgContent = Color(hex: "#F8F9FA")
+    static let bgSidebar = Color(hex: "#EEEFF1")
+    static let bgPanel = Color(hex: "#F6F7F8")
+    static let bgTitlebar = Color(hex: "#F0F1F3")
+    static let surface = Color.white
+    static let surfaceHi = Color(hex: "#E4E7EB")
+    static let surfacePress = Color(hex: "#D7DCE2")
+
+    // Photo surfaces stay neutral regardless of the workspace appearance.
+    static let canvas = Color(hex: "#171819")
+    static let canvasSurface = Color(hex: "#242628")
+    static let canvasSurfaceHi = Color(hex: "#303336")
+    static let canvasText = Color(hex: "#F4F5F6")
+    static let canvasText2 = Color(hex: "#BCC0C5")
+    static let canvasText3 = Color(hex: "#8C9299")
+    static let canvasLine = Color.white.opacity(0.12)
+    static let canvasSelection = accent.opacity(0.18)
 
     // Lines
-    static let line = Color.white(0.075)
-    static let line2 = Color.white(0.13)
+    static let line = Color.black.opacity(0.08)
+    static let line2 = Color.black.opacity(0.15)
 
     // Text ramp
-    static let text = Color(hex: "#f3f3f5")
-    static let text2 = Color.label(0.62)
-    static let text3 = Color.label(0.40)
-    static let text4 = Color.label(0.28)
+    static let text = Color(hex: "#212328")
+    static let text2 = Color(hex: "#545B64")
+    static let text3 = Color(hex: "#626A74")
+    static let text4 = Color(hex: "#9198A1")
 
     // Semantic status colors
-    static let red = Color(hex: "#ff453a")
-    static let redSoft = Color(hex: "#ff6b62")
-    static let yellow = Color(hex: "#ffd60a")
-    static let green = Color(hex: "#30d158")
-    static let blue = Color(hex: "#0a84ff")
-    static let purple = Color(hex: "#bf5af2")
-    static let folderGray = Color(hex: "#9aa0a6")
-    static let albumBlue = Color(hex: "#5ac8fa")
+    static let red = Color(hex: "#C83D3D")
+    static let redSoft = Color(hex: "#B93939")
+    static let yellow = Color(hex: "#A87112")
+    static let green = Color(hex: "#23804F")
+    static let blue = accent
+    static let purple = Color(hex: "#8653BC")
+    static let folderGray = Color(hex: "#6B737E")
+    static let albumBlue = Color(hex: "#35709D")
+    static let rating = Color(hex: "#B98116")
+    static let starInactive = Color(hex: "#899099")
 
     // Radii
-    static let r: CGFloat = 7
-    static let rSm: CGFloat = 5
+    static let r: CGFloat = 8
+    static let rSm: CGFloat = 6
 
     // Layout
     static let sidebarMinW: CGFloat = 184
-    static let sidebarW: CGFloat = 222
+    static let sidebarW: CGFloat = 228
     static let sidebarMaxW: CGFloat = 300
     static let contentMinW: CGFloat = 480
     static let inspectorMinW: CGFloat = 268
-    static let inspectorW: CGFloat = 304
+    static let inspectorW: CGFloat = 320
     static let inspectorMaxW: CGFloat = 400
-    static let titlebarH: CGFloat = 52
-    static let filterbarH: CGFloat = 44
-    static let contentHeadH: CGFloat = 40
-    static let statusbarH: CGFloat = 26
-
-    // Titlebar gradient (linear 180deg #313134 -> #29292c)
-    static let titlebarGradient = LinearGradient(
-        colors: [Color(hex: "#313134"), Color(hex: "#29292c")],
-        startPoint: .top, endPoint: .bottom
-    )
-    static let glyphGradient = LinearGradient(
-        colors: [accent, Color(hex: "#ff7a00")],
-        startPoint: UnitPoint(x: 0.25, y: 0), endPoint: UnitPoint(x: 0.75, y: 1)  // ~150°
-    )
-    static let importFill = LinearGradient(
-        colors: [accent, accent2], startPoint: .leading, endPoint: .trailing
-    )
+    static let titlebarH: CGFloat = 60
+    static let filterbarH: CGFloat = 48
+    static let contentHeadH: CGFloat = 56
+    static let statusbarH: CGFloat = 28
 
     static let font = Font.system(size: 13)
     static let mono = Font.system(size: 11, design: .monospaced)

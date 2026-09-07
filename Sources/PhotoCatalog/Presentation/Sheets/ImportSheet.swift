@@ -26,10 +26,10 @@ struct ImportSheet: View {
             }
         }
         .frame(width: 560)
-        .background(Color(hex: "#232325"))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.line2, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.7), radius: 60, y: 40)
+        .foregroundStyle(Theme.text)
+        .background(Theme.bgPanel)
+        .overlay(RoundedRectangle(cornerRadius: Theme.r).strokeBorder(Theme.line2, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.r))
     }
 
     private var idleHead: some View {
@@ -43,15 +43,14 @@ struct ImportSheet: View {
             sheetClose { app.sheet = nil }
         }
         .padding(.horizontal, 18).padding(.vertical, 15)
+        .background(Theme.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
     private var idleBody: some View {
         VStack(spacing: 16) {
-            Icon("folder", size: 34).foregroundStyle(Theme.text3)
-                .frame(width: 68, height: 68)
-                .background(Color.black.opacity(0.22))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+            Icon("folder", size: 34).foregroundStyle(Theme.accent)
+                .frame(width: 56, height: 56)
             Text("尚未选择源文件夹")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Theme.text2)
@@ -80,7 +79,7 @@ struct ImportSheet: View {
             Spacer()
         }
         .padding(.horizontal, 18).padding(.vertical, 13)
-        .background(Color.black.opacity(0.18))
+        .background(Theme.bgSidebar)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
@@ -95,6 +94,7 @@ struct ImportSheet: View {
             sheetClose { app.sheet = nil }
         }
         .padding(.horizontal, 18).padding(.vertical, 15)
+        .background(Theme.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
@@ -106,10 +106,12 @@ struct ImportSheet: View {
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .help(run.sourcePath)
             Spacer()
             Text(run.mode.displayName).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.accent)
                 .padding(.horizontal, 8).padding(.vertical, 2)
                 .background(Theme.accentSoft).clipShape(Capsule())
+                .fixedSize()
         }
         .padding(.horizontal, 18).padding(.vertical, 12)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
@@ -119,8 +121,8 @@ struct ImportSheet: View {
         HStack(spacing: 12) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Theme.surface)
-                    Capsule().fill(Theme.importFill)
+                    Capsule().fill(Theme.surfaceHi)
+                    Capsule().fill(Theme.accent)
                         .frame(width: geo.size.width * CGFloat(run.percent) / 100)
                         .animation(.easeOut(duration: 0.2), value: run.percent)
                 }
@@ -136,7 +138,7 @@ struct ImportSheet: View {
         HStack(spacing: 8) {
             stat(run.scanned.formatted(), "已扫描", nil)
             stat(run.pending.formatted(), "待处理", nil)
-            stat(run.imported.formatted(), "成功", Theme.accent)
+            stat(run.imported.formatted(), "成功", Theme.green)
             stat(run.skipped.formatted(), "跳过（重复）", Theme.yellow)
             stat(run.failed.formatted(), "失败", Theme.redSoft)
         }
@@ -147,20 +149,17 @@ struct ImportSheet: View {
         VStack(spacing: 3) {
             Text(n).font(.system(size: 17, weight: .semibold)).monospacedDigit()
                 .foregroundStyle(color ?? Theme.text)
-            Text(label).font(.system(size: 10)).foregroundStyle(Theme.text3)
+            Text(label).font(.system(size: 11)).foregroundStyle(Theme.text3)
         }
         .frame(maxWidth: .infinity)
-        .padding(9)
-        .background(Color.black.opacity(0.24))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.vertical, 9)
     }
 
     private func wall(_ run: ImportRun) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if run.recentAssets.isEmpty {
                 Text(run.phase == .complete ? "没有新的缩略图" : "缩略图将在导入时逐步出现…")
-                    .font(.system(size: 12)).foregroundStyle(Theme.text4)
+                    .font(.system(size: 12)).foregroundStyle(Theme.canvasText3)
                     .frame(maxWidth: .infinity).padding(.top, 40)
             } else {
                 FlowRow(spacing: 4, lineSpacing: 4) {
@@ -177,6 +176,8 @@ struct ImportSheet: View {
         }
         .frame(maxWidth: .infinity, minHeight: 120, maxHeight: 120, alignment: .topLeading)
         .clipped()
+        .padding(12)
+        .background(Theme.canvas)
         .padding(.horizontal, 18).padding(.bottom, 14)
     }
 
@@ -194,7 +195,7 @@ struct ImportSheet: View {
                     .foregroundStyle(Theme.redSoft)
             }
             ScrollView {
-                LazyVStack(spacing: 6) {
+                LazyVStack(spacing: 0) {
                     ForEach(run.failures) { failure in
                         failureRow(failure)
                     }
@@ -222,16 +223,15 @@ struct ImportSheet: View {
                     .lineLimit(1)
                 Text(failure.path)
                     .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(Theme.text4)
+                    .foregroundStyle(Theme.text3)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 9).padding(.vertical, 7)
-        .background(Color.black.opacity(0.22))
-        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .background(Theme.surface)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
     private func foot(_ run: ImportRun) -> some View {
@@ -255,7 +255,7 @@ struct ImportSheet: View {
             } else if run.phase == .complete {
                 HStack(spacing: 6) {
                     Icon(run.failed > 0 ? "warning" : "check", size: 14, weight: .bold)
-                        .foregroundStyle(run.failed > 0 ? Theme.redSoft : Theme.accent)
+                        .foregroundStyle(run.failed > 0 ? Theme.redSoft : Theme.green)
                     Text("已导入 \(run.imported.formatted()) 张 · \(run.skipped.formatted()) 张跳过 · \(run.failed.formatted()) 张失败")
                 }
                 .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
@@ -282,7 +282,7 @@ struct ImportSheet: View {
             }
         }
         .padding(.horizontal, 18).padding(.vertical, 13)
-        .background(Color.black.opacity(0.18))
+        .background(Theme.bgSidebar)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
@@ -329,9 +329,9 @@ private struct SheetCloseButton: View {
     var body: some View {
         Button(action: action) {
             Icon("close", size: 15).foregroundStyle(hover ? Theme.text : Theme.text2)
-                .frame(width: 26, height: 26)
-                .background(hover ? Theme.surfaceHi : Theme.surface)
-                .clipShape(Circle())
+                .frame(width: 28, height: 28)
+                .background(hover ? Theme.surfaceHi : Theme.bgSidebar)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
         }.buttonStyle(.plain).onHover { hover = $0 }
             .help("关闭")
             .accessibilityLabel("关闭")
@@ -353,12 +353,15 @@ private struct GhostButton: View {
                 if let icon { Icon(icon, size: small ? 13 : 14) }
                 Text(label).font(.system(size: small ? 12 : 12.5))
             }
-            .foregroundStyle(disabled ? Theme.text4 : (danger ? Theme.redSoft : Theme.text))
+            .foregroundStyle(disabled ? Theme.text3 : (danger ? Theme.redSoft : Theme.text))
+            .fixedSize()
             .padding(.horizontal, small ? 10 : 15).padding(.vertical, small ? 5 : 8)
             .background(disabled ? Theme.surface
-                        : (danger ? Theme.red.opacity(hover ? 0.26 : 0.16)
+                        : (danger ? Theme.red.opacity(hover ? 0.12 : 0.06)
                                   : (hover ? Theme.surfaceHi : Theme.surface)))
-            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: Theme.rSm)
+                .strokeBorder(danger ? Theme.red.opacity(0.20) : Theme.line2, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
         }
         .buttonStyle(.plain)
         .disabled(disabled)

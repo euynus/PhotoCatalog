@@ -45,7 +45,7 @@ struct FilterBar: View {
         }
         .frame(height: Theme.filterbarH)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(hex: "#232326"))
+        .background(Theme.bgPanel)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
@@ -111,7 +111,7 @@ struct FilterBar: View {
                     } label: {
                         Circle().fill(c.hex).frame(width: 11, height: 11)
                             .frame(width: 22, height: 20)
-                            .background(on ? Color.white(0.06) : .clear)
+                            .background(on ? Theme.surfaceHi : .clear)
                             .overlay(RoundedRectangle(cornerRadius: 4)
                                 .strokeBorder(on ? c.hex : .clear, lineWidth: 1))
                             .clipShape(RoundedRectangle(cornerRadius: 4))
@@ -133,7 +133,7 @@ struct FilterBar: View {
             Button(action: action) {
                 Image(systemName: on ? "star.fill" : "star")
                     .font(.system(size: 14))
-                    .foregroundStyle(on ? Theme.accent : (hover ? Theme.accent2 : Theme.text4))
+                    .foregroundStyle(on || hover ? Theme.rating : Theme.text4)
                     .padding(2)
             }.buttonStyle(.plain).onHover { hover = $0 }
                 .accessibilityLabel("\(n) 星及以上")
