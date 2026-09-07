@@ -92,8 +92,12 @@ struct ContentHeader: View {
                 Text(app.selection.name)
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(app.selection.name)
                 Text("\(app.contentAssetCount) 张")
                     .font(.system(size: 12)).foregroundStyle(Theme.text3)
+                    .fixedSize()
                 if !app.selectedIds.isEmpty {
                     Label("\(app.selectedIds.count) 张已选", systemImage: "checkmark.circle.fill")
                         .font(.system(size: 11.5, weight: .medium))
@@ -102,6 +106,7 @@ struct ContentHeader: View {
                         .frame(height: 22)
                         .background(Theme.accentSoft)
                         .clipShape(Capsule())
+                        .fixedSize()
                 }
             }
             Spacer()
