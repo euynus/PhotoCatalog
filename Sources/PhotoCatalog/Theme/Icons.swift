@@ -24,6 +24,8 @@ enum IconName {
         "grid": "square.grid.2x2",
         "loupe": "photo",
         "compare": "rectangle.split.2x1",
+        "analysis": "chart.bar.xaxis",
+        "calendar": "calendar",
         "map": "map",
         "search": "magnifyingglass",
         "filter": "line.3.horizontal.decrease",

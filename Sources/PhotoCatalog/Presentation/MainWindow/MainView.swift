@@ -27,7 +27,7 @@ struct MainView: View {
                 ContentColumn(assetRevision: assetRevision)
                     .frame(minWidth: Theme.contentMinW)
                     .layoutPriority(1)
-                if app.showInspector && !app.isDuplicates {
+                if app.showInspector && !app.isDuplicates && app.view != .analysis {
                     InspectorView(asset: app.primary, assetRevision: assetRevision)
                 }
             }
@@ -81,6 +81,7 @@ struct ContentColumn: View {
             case .grid: GridView(assetRevision: assetRevision)
             case .loupe: Loupe()
             case .compare: CompareView()
+            case .analysis: CaptureAnalysisView()
             }
         }
     }
@@ -117,10 +118,11 @@ struct ContentHeader: View {
                         SegOption(value: "grid", icon: "grid", title: "网格 (G)"),
                         SegOption(value: "loupe", icon: "loupe", title: "单张 (E)"),
                         SegOption(value: "compare", icon: "compare", title: "比较 (C)"),
+                        SegOption(value: "analysis", icon: "analysis", title: "拍摄参数分析 (A)"),
                     ], value: app.view.rawValue,
                     onChange: { app.switchView(ViewMode(rawValue: $0) ?? .grid) }, size: "sm")
                 filterButton
-                sortMenu
+                if app.view != .analysis { sortMenu }
                 Spacer(minLength: 0)
                 if app.view == .grid {
                     ToolButton(icon: app.showInfo ? "eye" : "info",

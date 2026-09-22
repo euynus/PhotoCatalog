@@ -25,7 +25,7 @@ struct SmartRule: Equatable, Codable, Sendable {
 
 /// Field descriptor for the rule builder UI.
 struct SmartField {
-    enum Input { case rating, flag, color, text, type, year, status, datePreset, gps }
+    enum Input { case rating, flag, color, text, type, year, status, datePreset, date, gps }
     let key: String
     let label: String
     let ops: [String]
@@ -43,6 +43,7 @@ enum SmartFields {
         SmartField(key: "lens", label: "镜头", ops: ["包含", "="], input: .text),
         SmartField(key: "type", label: "文件类型", ops: ["="], input: .type),
         SmartField(key: "captureYear", label: "拍摄年份", ops: ["=", ">=", "<="], input: .year),
+        SmartField(key: "captureDate", label: "拍摄日期", ops: ["=", ">=", "<="], input: .date),
         SmartField(key: "datePreset", label: "日期范围", ops: ["="], input: .datePreset),
         SmartField(key: "gps", label: "GPS", ops: ["="], input: .gps),
         SmartField(key: "status", label: "文件状态", ops: ["="], input: .status),
@@ -53,13 +54,9 @@ enum SmartFields {
 
 enum SmartMatcher {
     static func matchesDatePreset(_ assetDate: Date, _ preset: String, now: Date = .now) -> Bool {
-        let current = Calendar.captureWallClock.dateComponents([.year, .month], from: now)
-        let assetDate = Calendar.captureWallClock.dateComponents([.year, .month], from: assetDate)
-        if preset == "thisYear" { return assetDate.year == current.year }
-        if preset == "thisMonth" {
-            return assetDate.year == current.year && assetDate.month == current.month
-        }
-        return true
+        if preset == "any" { return true }
+        guard let interval = CaptureDates.presetInterval(preset, now: now) else { return false }
+        return CaptureDates.contains(assetDate, in: interval)
     }
 
     static func eval(_ a: Asset, _ c: SmartCondition) -> Bool {
@@ -92,6 +89,11 @@ enum SmartMatcher {
             return y == v
         case "datePreset":
             return matchesDatePreset(a.date, c.value)
+        case "captureDate":
+            guard let interval = CaptureDates.interval(for: c.value) else { return false }
+            if c.op == ">=" { return a.date >= interval.start }
+            if c.op == "<=" { return a.date < interval.end }
+            return CaptureDates.contains(a.date, in: interval)
         case "gps":
             return c.value == "yes" ? a.hasGPS : !a.hasGPS
         case "status":

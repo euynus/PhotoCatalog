@@ -168,7 +168,7 @@ enum DuplicateResolutionAction {
 
 /// Sidebar / navigation selection.
 struct Selection: Equatable {
-    enum Kind: String, Codable { case lib, folder, album, smart, keyword, project, client }
+    enum Kind: String, Codable { case lib, folder, album, smart, keyword, project, client, captureDate }
     var type: Kind
     var id: String
     var name: String
@@ -182,7 +182,7 @@ struct PinnedSidebarItem: Identifiable, Equatable, Codable, Sendable {
     var id: String { "\(type.rawValue):\(selectionId)" }
 }
 
-enum ViewMode: String { case grid, loupe, compare }
+enum ViewMode: String { case grid, loupe, compare, analysis }
 
 /// Active filter-bar state.
 struct Filters: Equatable, Sendable {
@@ -192,7 +192,9 @@ struct Filters: Equatable, Sendable {
     var type: String = "any"     // any / RAW / HEIC
     var camera: String = ""
     var lens: String = ""
-    var date: String = "any"     // any / thisMonth / thisYear
+    var date: String = "any"     // any / CaptureDates preset / custom
+    var dateStart: Date?
+    var dateEnd: Date?
     var gps: String = "any"      // any / yes / no
     var status: String = "any"   // any / ready / missing / offline
 
@@ -205,6 +207,18 @@ struct Filters: Equatable, Sendable {
             + (status != "any" ? 1 : 0)
     }
     var isEmpty: Bool { activeCount == 0 }
+
+    func captureDateInterval(now: Date = .now) -> DateInterval? {
+        date == "custom"
+            ? CaptureDates.interval(from: dateStart, through: dateEnd)
+            : CaptureDates.presetInterval(date, now: now)
+    }
+
+    func matchesCaptureDate(_ value: Date, now: Date = .now) -> Bool {
+        if date == "any" { return true }
+        guard let interval = captureDateInterval(now: now) else { return false }
+        return CaptureDates.contains(value, in: interval)
+    }
 
     func smartConditions(search: String) -> [SmartCondition] {
         var conditions: [SmartCondition] = []
@@ -228,7 +242,10 @@ struct Filters: Equatable, Sendable {
         if !lensQuery.isEmpty {
             conditions.append(SmartCondition(field: "lens", op: "包含", value: lensQuery))
         }
-        if date != "any" {
+        if date == "custom" {
+            conditions.append(SmartCondition(field: "captureDate", op: ">=", value: dateStart.map { CaptureDates.key($0) } ?? ""))
+            conditions.append(SmartCondition(field: "captureDate", op: "<=", value: dateEnd.map { CaptureDates.key($0) } ?? ""))
+        } else if date != "any" {
             conditions.append(SmartCondition(field: "datePreset", op: "=", value: date))
         }
         if gps != "any" {

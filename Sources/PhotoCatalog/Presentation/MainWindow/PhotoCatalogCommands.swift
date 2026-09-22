@@ -77,12 +77,12 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.canSaveCurrentFilter)
             Divider()
             Button("从目录库移除…") { perform("照片.从目录库移除") { app.confirmDeleteSelected() } }
-                .disabled(app.sheet != nil || !app.hasSelection)
+                .disabled(app.sheet != nil || !app.hasSelection || app.view == .analysis)
             Button("将原件移到废纸篓…") {
                 perform("照片.将原件移到废纸篓") { app.trashSelectedOriginals() }
             }
                 .keyboardShortcut(.delete, modifiers: .command)
-                .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals)
+                .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals || app.view == .analysis)
         }
 
         CommandMenu("视图") {
@@ -91,6 +91,8 @@ struct PhotoCatalogCommands: Commands {
             Button("单张查看") { perform("视图.单张查看") { app.switchView(.loupe) } }
                 .disabled(app.sheet != nil || !app.onboarded)
             Button("比较视图") { perform("视图.比较视图") { app.enterCompare() } }
+                .disabled(app.sheet != nil || !app.onboarded)
+            Button("拍摄参数分析") { perform("视图.拍摄参数分析") { app.switchView(.analysis) } }
                 .disabled(app.sheet != nil || !app.onboarded)
             Divider()
             Button("搜索") { perform("视图.搜索") { app.focusSearch() } }
@@ -101,7 +103,7 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.onboarded)
             Button("显示/隐藏 Inspector") { perform("视图.显示隐藏Inspector") { app.showInspector.toggle() } }
                 .keyboardShortcut("i", modifiers: .command)
-                .disabled(app.sheet != nil || !app.onboarded)
+                .disabled(app.sheet != nil || !app.onboarded || app.view == .analysis)
             Button("显示/隐藏缩略图信息") { perform("视图.显示隐藏缩略图信息") { app.toggleGridInfo() } }
                 .disabled(app.sheet != nil || !app.onboarded)
             Divider()

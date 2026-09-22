@@ -15,6 +15,7 @@ struct Sidebar: View {
                     librarySection
                     filterSection
                     if !app.hasCatalogPreview {
+                        dateSection
                         folderSection
                         collectionSection
                     }
@@ -84,6 +85,17 @@ struct Sidebar: View {
                 pending ?? "\(app.duplicateGroups.count) 组", .lib, "duplicates", "重复文件")
         }
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private var dateSection: some View {
+        if !app.captureDateGroups.isEmpty {
+            SidebarSection(title: "拍摄日期") {
+                ForEach(app.captureDateGroups) { bucket in
+                    CaptureDateSidebarRow(bucket: bucket)
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -251,6 +263,7 @@ struct Sidebar: View {
         case .keyword: return "tag"
         case .project: return "project"
         case .client: return "client"
+        case .captureDate: return "calendar"
         case .lib: return "star"
         }
     }
@@ -263,8 +276,70 @@ struct Sidebar: View {
         case .keyword: return Theme.folderGray
         case .project: return Theme.purple
         case .client: return Theme.albumBlue
+        case .captureDate: return nil
         case .lib: return nil
         }
+    }
+}
+
+private struct CaptureDateSidebarRow: View {
+    @Environment(AppState.self) private var app
+    let bucket: CaptureDateBucket
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                if bucket.children.isEmpty {
+                    Color.clear.frame(width: 16, height: 28)
+                } else {
+                    Button {
+                        expanded.toggle()
+                    } label: {
+                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .frame(width: 16, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.text3)
+                    .accessibilityLabel("\(expanded ? "收起" : "展开") \(bucket.id)")
+                    .help("\(expanded ? "收起" : "展开") \(bucket.id)")
+                }
+                dateButton
+            }
+            if expanded {
+                VStack(spacing: 0) {
+                    ForEach(bucket.children) { child in
+                        CaptureDateSidebarRow(bucket: child)
+                    }
+                }
+                .padding(.leading, 12)
+            }
+        }
+        .padding(.horizontal, 2)
+    }
+
+    private var dateButton: some View {
+        let active = app.selection.type == .captureDate && app.selection.id == bucket.id
+        return Button {
+            app.select(Selection(type: .captureDate, id: bucket.id, name: bucket.id))
+        } label: {
+            HStack(spacing: 6) {
+                Text(bucket.label).foregroundStyle(active ? Theme.accent : Theme.text2)
+                Spacer(minLength: 4)
+                Text("\(bucket.count)").monospacedDigit().foregroundStyle(Theme.text3)
+            }
+            .font(.system(size: 12))
+            .padding(.horizontal, 6).frame(height: 28)
+            .background(active ? Theme.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 4))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("拍摄日期 \(bucket.id)")
+        .accessibilityValue("\(bucket.count) 张照片")
+        .accessibilityAddTraits(active ? .isSelected : [])
+        .help(bucket.id)
     }
 }
 

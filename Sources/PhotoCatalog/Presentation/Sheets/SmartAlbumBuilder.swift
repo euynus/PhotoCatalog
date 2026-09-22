@@ -167,6 +167,7 @@ struct SmartAlbumBuilder: View {
         case .type: conditions[i].value = "RAW"
         case .status: conditions[i].value = "ready"
         case .datePreset: conditions[i].value = "thisYear"
+        case .date: conditions[i].value = CaptureDates.key(.now)
         case .gps: conditions[i].value = "yes"
         case .year: conditions[i].value = "2026"
         case .color: conditions[i].value = "red"
@@ -188,7 +189,15 @@ struct SmartAlbumBuilder: View {
         case .status:
             SASelect(value: conditions[i].value, options: [("ready", "可访问"), ("offline", "离线"), ("missing", "缺失")]) { conditions[i].value = $0 }
         case .datePreset:
-            SASelect(value: conditions[i].value, options: [("thisMonth", "本月"), ("thisYear", "今年")]) { conditions[i].value = $0 }
+            SASelect(value: conditions[i].value, options: CaptureDates.presets) { conditions[i].value = $0 }
+        case .date:
+            DatePicker("拍摄日期", selection: Binding(
+                get: { CaptureDates.interval(for: conditions[i].value)?.start ?? .now },
+                set: { conditions[i].value = CaptureDates.key($0) }
+            ), displayedComponents: .date)
+            .labelsHidden()
+            .environment(\.calendar, Calendar.captureWallClock)
+            .environment(\.timeZone, TimeZone.captureWallClock)
         case .gps:
             SASelect(value: conditions[i].value, options: [("yes", "有 GPS"), ("no", "无 GPS")]) { conditions[i].value = $0 }
         case .year:

@@ -65,7 +65,8 @@ struct Titlebar: View {
             CatalogActionsMenu()
             ToolButton(icon: "gear", label: "设置", action: { app.showSettings() })
             ToolButton(icon: "inspector", label: inspectorToggleLabel(isVisible: app.showInspector),
-                       active: app.showInspector,
+                       active: app.showInspector && app.view != .analysis,
+                       disabled: app.view == .analysis,
                        action: { app.showInspector.toggle() })
         }
     }

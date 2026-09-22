@@ -84,6 +84,7 @@ enum AssetQueryScope: Equatable, Sendable {
     case keyword(String)
     case project(String)
     case client(String)
+    case captureDate(String)
 }
 
 struct AssetQuery: Equatable, Sendable {
@@ -544,6 +545,13 @@ final class CatalogStore: @unchecked Sendable {
             append("a.project=?", [.text(project)])
         case .client(let client):
             append("a.client=?", [.text(client)])
+        case .captureDate(let key):
+            if let range = CaptureDates.interval(for: key) {
+                append("a.capture_date>=? AND a.capture_date<?",
+                       [.double(range.start.timeIntervalSince1970), .double(range.end.timeIntervalSince1970)])
+            } else {
+                append("0")
+            }
         }
 
         let filters = query.filters
@@ -572,9 +580,13 @@ final class CatalogStore: @unchecked Sendable {
         if !lens.isEmpty {
             append(textContainsPredicate(column: "a.lens"), [.text(lens)])
         }
-        if let range = captureDateRange(for: filters.date, referenceDate: query.referenceDate) {
-            append("a.capture_date>=? AND a.capture_date<?",
-                   [.double(range.start.timeIntervalSince1970), .double(range.end.timeIntervalSince1970)])
+        if filters.date != "any" {
+            if let range = filters.captureDateInterval(now: query.referenceDate) {
+                append("a.capture_date>=? AND a.capture_date<?",
+                       [.double(range.start.timeIntervalSince1970), .double(range.end.timeIntervalSince1970)])
+            } else {
+                append("0")
+            }
         }
         if filters.gps == "yes" {
             append(hasGPSPredicate)
@@ -646,12 +658,26 @@ final class CatalogStore: @unchecked Sendable {
                 params: [.int(Int(condition.value) ?? 0)]
             )
         case "datePreset":
-            guard let range = captureDateRange(for: condition.value, referenceDate: referenceDate) else {
-                return AssetSQL(predicate: "1", params: [])
+            if condition.value == "any" { return AssetSQL(predicate: "1", params: []) }
+            guard let range = CaptureDates.presetInterval(condition.value, now: referenceDate) else {
+                return AssetSQL(predicate: "0", params: [])
             }
             return AssetSQL(predicate: "a.capture_date>=? AND a.capture_date<?", params: [
                 .double(range.start.timeIntervalSince1970),
                 .double(range.end.timeIntervalSince1970),
+            ])
+        case "captureDate":
+            guard let range = CaptureDates.interval(for: condition.value) else {
+                return AssetSQL(predicate: "0", params: [])
+            }
+            if condition.op == ">=" {
+                return AssetSQL(predicate: "a.capture_date>=?", params: [.double(range.start.timeIntervalSince1970)])
+            }
+            if condition.op == "<=" {
+                return AssetSQL(predicate: "a.capture_date<?", params: [.double(range.end.timeIntervalSince1970)])
+            }
+            return AssetSQL(predicate: "a.capture_date>=? AND a.capture_date<?", params: [
+                .double(range.start.timeIntervalSince1970), .double(range.end.timeIntervalSince1970),
             ])
         case "gps":
             return AssetSQL(predicate: condition.value == "yes" ? hasGPSPredicate : "NOT \(hasGPSPredicate)",
@@ -685,16 +711,6 @@ final class CatalogStore: @unchecked Sendable {
 
     private static func textContainsPredicate(column: String) -> String {
         "instr(lower(COALESCE(\(column), '')), lower(?))>0"
-    }
-
-    private static func captureDateRange(for preset: String, referenceDate: Date) -> DateInterval? {
-        let component: Calendar.Component
-        switch preset {
-        case "thisMonth": component = .month
-        case "thisYear": component = .year
-        default: return nil
-        }
-        return Calendar.captureWallClock.dateInterval(of: component, for: referenceDate)
     }
 
     private static func orderClause(for sort: Sort) -> String {

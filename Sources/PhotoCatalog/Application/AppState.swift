@@ -55,6 +55,7 @@ final class AppState {
             keywordSuggestionPoolCache = nil
             projectListCache = nil
             clientListCache = nil
+            captureDateGroupsCache = nil
             folderTreeCache = nil
             folderTreeCountCache = nil
             libraryCountsCache = nil
@@ -112,6 +113,8 @@ final class AppState {
     @ObservationIgnored private var keywordSuggestionPoolCache: [String]?
     @ObservationIgnored private var projectListCache: [KeywordCount]?
     @ObservationIgnored private var clientListCache: [KeywordCount]?
+    @ObservationIgnored private var captureDateGroupsCache: [CaptureDateBucket]?
+    @ObservationIgnored private var captureStatisticsCache: (signature: ListSignature, selectedIds: Set<String>?, value: CaptureStatistics)?
     @ObservationIgnored private var folderTreeCache: [FolderTreeItem]?
     @ObservationIgnored private var folderTreeCountCache: [String: Int]?
     @ObservationIgnored private var libraryCountsCache: LibraryCounts?
@@ -144,6 +147,7 @@ final class AppState {
         let sort: Sort
         let collapsed: Set<String>
         let recentDays: Int
+        let captureDay: Date
     }
 
     private func replaceAssetsForMutation(_ updated: [Asset]) {
@@ -2903,6 +2907,27 @@ final class AppState {
         return result
     }
 
+    var captureDateGroups: [CaptureDateBucket] {
+        _ = listInputsVersion
+        if let cached = captureDateGroupsCache { return cached }
+        let grouped = CaptureDates.groups(assets)
+        captureDateGroupsCache = grouped
+        return grouped
+    }
+
+    func captureStatistics(selectedOnly: Bool) -> CaptureStatistics {
+        let signature = currentListSignature
+        let ids = selectedOnly ? selectedIds : nil
+        if let cached = captureStatisticsCache, cached.signature == signature, cached.selectedIds == ids {
+            return cached.value
+        }
+        // Statistics cover all matching photos, including members hidden inside collapsed stacks.
+        let matching = computeList(collapseStacks: false)
+        let value = CaptureStatistics(assets: ids.map { selected in matching.filter { selected.contains($0.id) } } ?? matching)
+        captureStatisticsCache = (signature, ids, value)
+        return value
+    }
+
     /// Library sidebar tallies in one pass, cached and invalidated on assets/recent-days change.
     var libraryCounts: LibraryCounts {
         _ = listInputsVersion   // register the dependency even on a cache hit
@@ -3089,6 +3114,9 @@ final class AppState {
             return "\(counts.projectCounts[item.selectionId] ?? 0)"
         case .client:
             return "\(counts.clientCounts[item.selectionId] ?? 0)"
+        case .captureDate:
+            guard let range = CaptureDates.interval(for: item.selectionId) else { return "0" }
+            return "\(assets.filter { !$0.deleted && CaptureDates.contains($0.date, in: range) }.count)"
         case .lib:
             return ""
         }
@@ -3197,6 +3225,10 @@ final class AppState {
         case .client:
             guard clientList.contains(where: { $0.name == item.selectionId }) else { return nil }
             return PinnedSidebarItem(type: .client, selectionId: item.selectionId, name: item.name)
+        case .captureDate:
+            guard let range = CaptureDates.interval(for: item.selectionId),
+                  assets.contains(where: { !$0.deleted && CaptureDates.contains($0.date, in: range) }) else { return nil }
+            return item
         case .lib:
             return nil
         }
@@ -3224,6 +3256,9 @@ final class AppState {
             return live.filter { $0.project == selection.id }
         case .client:
             return live.filter { $0.client == selection.id }
+        case .captureDate:
+            guard let range = CaptureDates.interval(for: selection.id) else { return [] }
+            return live.filter { CaptureDates.contains($0.date, in: range) }
         case .lib:
             switch selection.id {
             case "recent":
@@ -3258,7 +3293,8 @@ final class AppState {
     private var currentListSignature: ListSignature {
         ListSignature(inputsVersion: listInputsVersion, selection: selection,
                       filters: filters, search: search, sort: sort,
-                      collapsed: collapsedStackIds, recentDays: recentImportDays)
+                      collapsed: collapsedStackIds, recentDays: recentImportDays,
+                      captureDay: Calendar.captureWallClock.startOfDay(for: .now))
     }
 
     private func primeDefaultListCache(with loadedAssets: [Asset]) {
@@ -3269,7 +3305,7 @@ final class AppState {
         listCache = (currentListSignature, loadedAssets)
     }
 
-    private func computeList() -> [Asset] {
+    private func computeList(collapseStacks: Bool = true) -> [Asset] {
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
         let indexedSearchIds: Set<String>? = if q.count >= 3, let store {
             Set(store.search(q))
@@ -3278,6 +3314,7 @@ final class AppState {
         }
         let cameraQuery = filters.camera.trimmingCharacters(in: .whitespacesAndNewlines)
         let lensQuery = filters.lens.trimmingCharacters(in: .whitespacesAndNewlines)
+        let referenceDate = Date.now
         var l = baseList.filter { a in
             if filters.minRating > 0 && a.rating < filters.minRating { return false }
             if filters.flag != "any" && a.flag.rawValue != filters.flag { return false }
@@ -3288,9 +3325,7 @@ final class AppState {
             }
             if !cameraQuery.isEmpty && !a.camera.localizedStandardContains(cameraQuery) { return false }
             if !lensQuery.isEmpty && !a.lens.localizedStandardContains(lensQuery) { return false }
-            if filters.date != "any" {
-                if !SmartMatcher.matchesDatePreset(a.date, filters.date) { return false }
-            }
+            if !filters.matchesCaptureDate(a.date, now: referenceDate) { return false }
             if filters.gps == "yes" && !a.hasGPS { return false }
             if filters.gps == "no" && a.hasGPS { return false }
             if filters.status != "any" && a.status.rawValue != filters.status { return false }
@@ -3322,7 +3357,7 @@ final class AppState {
                 return compare(a.fileMB, b.fileMB, dir)
             }
         }
-        return PhotoStackService.visibleAssets(l, stacks: photoStacks, collapsedStackIds: collapsedStackIds)
+        return collapseStacks ? PhotoStackService.visibleAssets(l, stacks: photoStacks, collapsedStackIds: collapsedStackIds) : l
     }
 
     private func compare(_ a: Double, _ b: Double, _ dir: Int) -> Bool {
@@ -4120,6 +4155,9 @@ final class AppState {
     }
 
     func switchView(_ v: ViewMode) {
+        if v == .analysis && isDuplicates {
+            select(Selection(type: .lib, id: "all", name: "全部照片"))
+        }
         if v == .compare { enterCompare() } else { view = v }
     }
 
@@ -4227,7 +4265,7 @@ final class AppState {
             case "i":
                 if hasShift {
                     addFolder()
-                } else {
+                } else if view != .analysis {
                     showInspector.toggle()
                 }
             case "e":
@@ -4264,6 +4302,7 @@ final class AppState {
             case "0":
                 resetThumbnailSize()
             case "delete", "backspace":
+                guard view != .analysis else { return true }
                 trashSelectedOriginals()
             default:
                 return false
@@ -4271,6 +4310,10 @@ final class AppState {
             return true
         }
         guard onboarded else { return false }
+
+        if view == .analysis && ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "p", "x", "u", "s", "delete", "backspace"].contains(key) {
+            return false
+        }
 
         switch key {
         case "escape":
@@ -4318,12 +4361,14 @@ final class AppState {
             view = (view == .loupe) ? .grid : .loupe
         case "c":
             enterCompare()
+        case "a":
+            switchView(.analysis)
         case "i":
             toggleGridInfo()
         case "s":
             toggleStackForPrimary()
         case "up", "down", "left", "right":
-            if view == .compare { return false }  // don't navigate the hidden grid from compare
+            if view == .compare || view == .analysis { return false }
             moveSelection(key)
         case "delete", "backspace":
             confirmDeleteSelected()

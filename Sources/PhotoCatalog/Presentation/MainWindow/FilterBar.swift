@@ -4,6 +4,8 @@ struct FilterBar: View {
     @Environment(AppState.self) var app
     @State private var cameraText = ""
     @State private var lensText = ""
+    @State private var startDate = Date.now
+    @State private var endDate = Date.now
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -60,9 +62,8 @@ struct FilterBar: View {
                 field("相机") { metadataField("全部相机", label: "相机", text: $cameraText) }
                 field("镜头") { metadataField("全部镜头", label: "镜头", text: $lensText) }
                 filterMenu("拍摄日期", value: app.filters.date,
-                           options: [("any", "全部日期"), ("thisMonth", "本月"), ("thisYear", "今年")]) {
-                    var filters = app.filters; filters.date = $0; app.setFilters(filters)
-                }
+                           options: [("any", "全部日期")] + CaptureDates.presets + [("custom", "自定义范围")],
+                           onSelect: setDateFilter)
                 filterMenu("GPS", value: app.filters.gps,
                            options: [("any", "不限"), ("yes", "有位置"), ("no", "无位置")]) {
                     var filters = app.filters; filters.gps = $0; app.setFilters(filters)
@@ -72,6 +73,17 @@ struct FilterBar: View {
                     var filters = app.filters; filters.status = $0; app.setFilters(filters)
                 }
             }
+            if app.filters.date == "custom" {
+                HStack(spacing: 16) {
+                    DatePicker("起始日期", selection: $startDate, displayedComponents: .date)
+                    DatePicker("结束日期", selection: $endDate, in: startDate..., displayedComponents: .date)
+                    Spacer(minLength: 0)
+                }
+                .controlSize(.small)
+                .environment(\.calendar, Calendar.captureWallClock)
+                .environment(\.timeZone, TimeZone.captureWallClock)
+                .help("包括起止两天；时间以目录记录的拍摄时间为准。")
+            }
         }
         .padding(.horizontal, 16).padding(.bottom, 14).padding(.top, 4)
         .foregroundStyle(Theme.text)
@@ -80,7 +92,15 @@ struct FilterBar: View {
         .onAppear {
             cameraText = app.filters.camera
             lensText = app.filters.lens
+            syncDates()
         }
+        .onChange(of: app.filters.dateStart) { syncDates() }
+        .onChange(of: app.filters.dateEnd) { syncDates() }
+        .onChange(of: startDate) {
+            if startDate > endDate { endDate = startDate }
+            applyDateRange()
+        }
+        .onChange(of: endDate) { applyDateRange() }
         .onChange(of: app.filters.camera) { if app.filters.camera != cameraText { cameraText = app.filters.camera } }
         .onChange(of: app.filters.lens) { if app.filters.lens != lensText { lensText = app.filters.lens } }
         .task(id: cameraText) {
@@ -169,5 +189,28 @@ struct FilterBar: View {
 
     private func setColor(_ color: String) {
         var filters = app.filters; filters.color = color; app.setFilters(filters)
+    }
+
+    private func setDateFilter(_ value: String) {
+        var filters = app.filters
+        filters.date = value
+        if value == "custom" {
+            filters.dateStart = filters.dateStart ?? Calendar.captureWallClock.startOfDay(for: app.primary?.date ?? .now)
+            filters.dateEnd = filters.dateEnd ?? filters.dateStart
+        }
+        app.setFilters(filters)
+    }
+
+    private func syncDates() {
+        startDate = app.filters.dateStart ?? Calendar.captureWallClock.startOfDay(for: app.primary?.date ?? .now)
+        endDate = app.filters.dateEnd ?? startDate
+    }
+
+    private func applyDateRange() {
+        guard app.filters.date == "custom" else { return }
+        var filters = app.filters
+        filters.dateStart = startDate
+        filters.dateEnd = endDate
+        if filters != app.filters { app.setFilters(filters) }
     }
 }
