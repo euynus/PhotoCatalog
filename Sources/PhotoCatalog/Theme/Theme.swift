@@ -44,16 +44,16 @@ enum Theme {
 
     // Surfaces
     static let bgDesktop = Color(hex: "#E8E9EB")
-    static let bgContent = Color(hex: "#F8F9FA")
-    static let bgSidebar = Color(hex: "#EEEFF1")
+    static let bgContent = Color(hex: "#F4F5F6")
+    static let bgSidebar = Color(hex: "#E8EAED")
     static let bgPanel = Color(hex: "#F6F7F8")
-    static let bgTitlebar = Color(hex: "#F0F1F3")
+    static let bgTitlebar = Color(hex: "#ECEEF0")
     static let surface = Color.white
     static let surfaceHi = Color(hex: "#E4E7EB")
     static let surfacePress = Color(hex: "#D7DCE2")
 
     // Photo surfaces stay neutral regardless of the workspace appearance.
-    static let canvas = Color(hex: "#171819")
+    static let canvas = Color(hex: "#1C1D1F")
     static let canvasSurface = Color(hex: "#242628")
     static let canvasSurfaceHi = Color(hex: "#303336")
     static let canvasText = Color(hex: "#F4F5F6")
@@ -69,7 +69,7 @@ enum Theme {
     // Text ramp
     static let text = Color(hex: "#212328")
     static let text2 = Color(hex: "#545B64")
-    static let text3 = Color(hex: "#626A74")
+    static let text3 = Color(hex: "#5D6570")
     static let text4 = Color(hex: "#9198A1")
 
     // Semantic status colors
@@ -96,10 +96,9 @@ enum Theme {
     static let inspectorMinW: CGFloat = 268
     static let inspectorW: CGFloat = 320
     static let inspectorMaxW: CGFloat = 400
-    static let titlebarH: CGFloat = 60
-    static let filterbarH: CGFloat = 48
-    static let contentHeadH: CGFloat = 56
-    static let statusbarH: CGFloat = 28
+    static let titlebarH: CGFloat = 54
+    static let contentHeadH: CGFloat = 86
+    static let statusbarH: CGFloat = 26
 
     static let font = Font.system(size: 13)
     static let mono = Font.system(size: 11, design: .monospaced)

@@ -10,14 +10,18 @@ struct ImportSheet: View {
         VStack(spacing: 0) {
             if let run = app.importRun {
                 head(run)
-                source(run)
-                progress(run)
-                stats(run)
-                if run.failures.isEmpty {
-                    wall(run)
-                } else {
-                    failureList(run)
+                ScrollView {
+                    VStack(spacing: 0) {
+                        source(run)
+                        progress(run)
+                        stats(run)
+                        wall(run)
+                        if !run.failures.isEmpty {
+                            failureList(run)
+                        }
+                    }
                 }
+                .frame(height: run.failures.isEmpty ? 310 : 450)
                 foot(run)
             } else {
                 idleHead
@@ -25,7 +29,8 @@ struct ImportSheet: View {
                 idleFoot
             }
         }
-        .frame(width: 560)
+        .frame(width: 720)
+        .font(.system(size: 13))
         .foregroundStyle(Theme.text)
         .background(Theme.bgPanel)
         .overlay(RoundedRectangle(cornerRadius: Theme.r).strokeBorder(Theme.line2, lineWidth: 1))
@@ -37,48 +42,88 @@ struct ImportSheet: View {
             HStack(spacing: 9) {
                 Icon("importIcon", size: 17).foregroundStyle(Theme.accent)
                 Text("导入照片文件夹")
-                    .font(.system(size: 14.5, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
             }
             Spacer()
             sheetClose { app.sheet = nil }
         }
-        .padding(.horizontal, 18).padding(.vertical, 15)
+        .padding(.horizontal, 18).padding(.vertical, 10)
         .background(Theme.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
     private var idleBody: some View {
-        VStack(spacing: 16) {
-            Icon("folder", size: 34).foregroundStyle(Theme.accent)
-                .frame(width: 56, height: 56)
-            Text("尚未选择源文件夹")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.text2)
-            Button { app.addFolder() } label: {
-                HStack(spacing: 8) {
-                    Icon("folder", size: 14)
-                    Text("选择文件夹…").font(.system(size: 12.5, weight: .semibold))
+        @Bindable var app = app
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Icon("folder", size: 22).foregroundStyle(Theme.text2)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("来源").font(.system(size: 15, weight: .semibold))
+                    Text("尚未选择源文件夹").foregroundStyle(Theme.text3)
                 }
-                .foregroundStyle(Theme.onAccent)
-                .padding(.horizontal, 18).padding(.vertical, 9)
-                .background(Theme.accent)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
+                Spacer()
             }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.defaultAction)
+            Rectangle().fill(Theme.line).frame(height: 1)
+            Text("导入选项").font(.system(size: 15, weight: .semibold))
+            HStack {
+                Text("导入模式").foregroundStyle(Theme.text2)
+                Spacer()
+                Segmented(options: [
+                    SegOption(value: "referenced", label: "引用式"),
+                    SegOption(value: "managed", label: "托管式"),
+                ], value: app.importMode.rawValue,
+                   onChange: { app.importMode = ImportMode(rawValue: $0) ?? .referenced })
+            }
+            if app.importMode == .managed {
+                HStack {
+                    Text("归档规则").foregroundStyle(Theme.text2)
+                    Spacer()
+                    Segmented(options: [
+                        SegOption(value: "date", label: "按日期"),
+                        SegOption(value: "camera", label: "按相机"),
+                    ], value: app.managedArchiveRule.rawValue,
+                       onChange: { app.managedArchiveRule = ManagedArchiveRule(rawValue: $0) ?? .date })
+                }
+            }
+            HStack {
+                Text("重复处理").foregroundStyle(Theme.text2)
+                Spacer()
+                Segmented(options: [
+                    SegOption(value: "groupExact", label: "分组"),
+                    SegOption(value: "skipExact", label: "跳过"),
+                    SegOption(value: "keep", label: "保留"),
+                ], value: app.importDuplicateStrategy.rawValue,
+                   onChange: {
+                    app.importDuplicateStrategy = ImportDuplicateStrategy(rawValue: $0) ?? .groupExact
+                })
+            }
+            HStack(spacing: 24) {
+                Toggle("读取 XMP sidecar", isOn: $app.readXMPSidecar)
+                Toggle("Vision 分析", isOn: $app.visionEnabled)
+                Spacer(minLength: 0)
+            }
+            .toggleStyle(.checkbox)
+            .tint(Theme.accent)
         }
-        .frame(maxWidth: .infinity, minHeight: 260)
         .padding(18)
     }
 
     private var idleFoot: some View {
         HStack {
-            Text("当前导入模式：\(app.importMode.displayName)")
-                .font(.system(size: 11.5))
-                .foregroundStyle(Theme.text3)
             Spacer()
+            ghostButton(nil, "取消") { app.sheet = nil }
+            Button { app.addFolder() } label: {
+                Label("选择文件夹…", systemImage: "folder")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.onAccent)
+                    .padding(.horizontal, 16).padding(.vertical, 8)
+                    .background(Theme.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.defaultAction)
         }
-        .padding(.horizontal, 18).padding(.vertical, 13)
+        .padding(.horizontal, 18).padding(.vertical, 10)
         .background(Theme.bgSidebar)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
@@ -88,50 +133,46 @@ struct ImportSheet: View {
             HStack(spacing: 9) {
                 Icon("importIcon", size: 17).foregroundStyle(Theme.accent)
                 Text(title(for: run.phase))
-                    .font(.system(size: 14.5, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
             }
             Spacer()
             sheetClose { app.sheet = nil }
         }
-        .padding(.horizontal, 18).padding(.vertical, 15)
+        .padding(.horizontal, 18).padding(.vertical, 10)
         .background(Theme.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
     private func source(_ run: ImportRun) -> some View {
-        HStack(spacing: 9) {
-            Icon("folder", size: 15).foregroundStyle(Theme.text2)
-            Text(run.sourcePath)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(run.sourcePath)
-            Spacer()
-            Text(run.mode.displayName).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.accent)
-                .padding(.horizontal, 8).padding(.vertical, 2)
-                .background(Theme.accentSoft).clipShape(Capsule())
-                .fixedSize()
+        HStack(alignment: .top, spacing: 24) {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("来源", systemImage: "folder").foregroundStyle(Theme.text2)
+                Text(run.sourcePath)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(run.sourcePath)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("导入模式").foregroundStyle(Theme.text2)
+                Text(run.mode.displayName).fontWeight(.medium)
+            }
         }
-        .padding(.horizontal, 18).padding(.vertical, 12)
+        .padding(.horizontal, 18).padding(.vertical, 14)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
     private func progress(_ run: ImportRun) -> some View {
         HStack(spacing: 12) {
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Theme.surfaceHi)
-                    Capsule().fill(Theme.accent)
-                        .frame(width: geo.size.width * CGFloat(run.percent) / 100)
-                        .animation(.easeOut(duration: 0.2), value: run.percent)
-                }
-            }
-            .frame(height: 7)
+            ProgressView(value: run.total == 0 && run.phase.isActive ? nil : Double(run.percent), total: 100)
+                .progressViewStyle(.linear)
+                .tint(Theme.accent)
+                .accessibilityLabel("导入进度")
+                .accessibilityValue(progressLabel(run))
             Text(progressLabel(run)).font(.system(size: 13, weight: .semibold)).monospacedDigit()
                 .frame(width: 50, alignment: .trailing)
         }
-        .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 6)
+        .padding(.horizontal, 18).padding(.top, 12)
     }
 
     private func stats(_ run: ImportRun) -> some View {
@@ -142,42 +183,42 @@ struct ImportSheet: View {
             stat(run.skipped.formatted(), "跳过（重复）", Theme.yellow)
             stat(run.failed.formatted(), "失败", Theme.redSoft)
         }
-        .padding(.horizontal, 18).padding(.vertical, 12)
+        .padding(.horizontal, 18).padding(.vertical, 8)
     }
 
     private func stat(_ n: String, _ label: String, _ color: Color?) -> some View {
         VStack(spacing: 3) {
             Text(n).font(.system(size: 17, weight: .semibold)).monospacedDigit()
                 .foregroundStyle(color ?? Theme.text)
-            Text(label).font(.system(size: 11)).foregroundStyle(Theme.text3)
+            Text(label).font(.system(size: 13)).foregroundStyle(Theme.text3)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 9)
+        .padding(.vertical, 4)
     }
 
     private func wall(_ run: ImportRun) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("预览").font(.system(size: 15, weight: .semibold))
             if run.recentAssets.isEmpty {
                 Text(run.phase == .complete ? "没有新的缩略图" : "缩略图将在导入时逐步出现…")
-                    .font(.system(size: 12)).foregroundStyle(Theme.canvasText3)
-                    .frame(maxWidth: .infinity).padding(.top, 40)
+                    .font(.system(size: 13)).foregroundStyle(Theme.canvasText3)
+                    .frame(maxWidth: .infinity, minHeight: 104)
+                    .background(Theme.canvas)
             } else {
-                FlowRow(spacing: 4, lineSpacing: 4) {
-                    ForEach(run.recentAssets) { a in
-                        Thumb(asset: a, radius: 3, maxDecodePixel: 112).frame(width: 56, height: 38)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                            .transition(.scale(scale: 0.6).combined(with: .opacity))
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 8) {
+                        ForEach(run.recentAssets) { a in
+                            Thumb(asset: a, radius: 2, contentMode: .fit, maxDecodePixel: 224)
+                                .frame(width: 112, height: 80)
+                                .help(a.filename)
+                        }
                     }
+                    .padding(10)
                 }
-                // makes the declared transition real — recentAssets is updated
-                // outside withAnimation, so thumbs otherwise pop in
-                .animation(.easeOut(duration: 0.25), value: run.recentAssets)
+                .frame(height: 104)
+                .background(Theme.canvas)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 120, maxHeight: 120, alignment: .topLeading)
-        .clipped()
-        .padding(12)
-        .background(Theme.canvas)
         .padding(.horizontal, 18).padding(.bottom, 14)
     }
 
@@ -186,11 +227,11 @@ struct ImportSheet: View {
             HStack(spacing: 7) {
                 Icon("warning", size: 13).foregroundStyle(Theme.redSoft)
                 Text("失败文件")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.text2)
                 Spacer()
                 Text(run.failures.count.formatted())
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(Theme.redSoft)
             }
@@ -203,7 +244,8 @@ struct ImportSheet: View {
             }
             .scrollContentBackground(.visible)
         }
-        .frame(maxWidth: .infinity, minHeight: 120, maxHeight: 150, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: 136)
         .padding(.horizontal, 18).padding(.bottom, 14)
     }
 
@@ -213,16 +255,16 @@ struct ImportSheet: View {
                 .frame(width: 16, height: 16)
             VStack(alignment: .leading, spacing: 2) {
                 Text(failure.filename)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(failure.reason)
-                    .font(.system(size: 10.5))
+                    .font(.system(size: 13))
                     .foregroundStyle(Theme.redSoft)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(failure.path)
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(Theme.text3)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -232,10 +274,11 @@ struct ImportSheet: View {
         .padding(.horizontal, 9).padding(.vertical, 7)
         .background(Theme.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .help("\(failure.path)\n\(failure.reason)")
     }
 
     private func foot(_ run: ImportRun) -> some View {
-        HStack(spacing: 9) {
+        VStack(alignment: .leading, spacing: 10) {
             if run.phase.isActive {
                 HStack(spacing: 6) {
                     if run.failed > 0 {
@@ -245,43 +288,55 @@ struct ImportSheet: View {
                         Text(activeDetail(run)).foregroundStyle(Theme.text3)
                     }
                 }
-                .font(.system(size: 11.5))
+                .font(.system(size: 13))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                ghostButton(run.phase == .paused ? "play" : "pause",
-                            run.phase == .paused ? "继续" : "暂停") {
-                    app.toggleImportPaused()
+                HStack(spacing: 9) {
+                    Spacer()
+                    ghostButton(run.phase == .paused ? "play" : "pause",
+                                run.phase == .paused ? "继续" : "暂停") {
+                        app.toggleImportPaused()
+                    }
+                    ghostButton(nil, "后台运行") { app.sheet = nil }
                 }
-                ghostButton(nil, "后台运行") { app.sheet = nil }
             } else if run.phase == .complete {
                 HStack(spacing: 6) {
                     Icon(run.failed > 0 ? "warning" : "check", size: 14, weight: .bold)
                         .foregroundStyle(run.failed > 0 ? Theme.redSoft : Theme.green)
                     Text("已导入 \(run.imported.formatted()) 张 · \(run.skipped.formatted()) 张跳过 · \(run.failed.formatted()) 张失败")
                 }
-                .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
+                .font(.system(size: 13)).foregroundStyle(Theme.text3)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if !run.failures.isEmpty {
-                    ghostButton("refresh", "重试失败", small: true) { app.retryFailedImport() }
+                HStack(spacing: 9) {
+                    Spacer()
+                    if !run.failures.isEmpty {
+                        ghostButton("refresh", "重试失败", small: true) { app.retryFailedImport() }
+                    }
+                    Button { app.sheet = nil; app.push("导入完成", "check") } label: {
+                        Label("完成", systemImage: "checkmark")
+                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
+                            .padding(.horizontal, 17).padding(.vertical, 8)
+                            .background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 6))
+                    }.buttonStyle(.plain)
                 }
-                Button { app.sheet = nil; app.push("导入完成", "check") } label: {
-                    Text("完成").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.onAccent)
-                        .padding(.horizontal, 17).padding(.vertical, 8)
-                        .background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 7))
-                }.buttonStyle(.plain)
             } else {
-                HStack(spacing: 6) {
+                HStack(alignment: .top, spacing: 6) {
                     Icon("warning", size: 14).foregroundStyle(Theme.redSoft)
                     Text(run.errorMessage ?? "导入失败")
+                        .lineLimit(2)
+                        .help(run.errorMessage ?? "导入失败")
                 }
-                .font(.system(size: 11.5)).foregroundStyle(Theme.redSoft)
+                .font(.system(size: 13)).foregroundStyle(Theme.redSoft)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if !run.failures.isEmpty {
-                    ghostButton("refresh", "重试失败", small: true) { app.retryFailedImport() }
+                HStack(spacing: 9) {
+                    Spacer()
+                    if !run.failures.isEmpty {
+                        ghostButton("refresh", "重试失败", small: true) { app.retryFailedImport() }
+                    }
+                    ghostButton(nil, "关闭") { app.sheet = nil }
                 }
-                ghostButton(nil, "关闭") { app.sheet = nil }
             }
         }
-        .padding(.horizontal, 18).padding(.vertical, 13)
+        .padding(.horizontal, 18).padding(.vertical, 10)
         .background(Theme.bgSidebar)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
@@ -351,7 +406,7 @@ private struct GhostButton: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let icon { Icon(icon, size: small ? 13 : 14) }
-                Text(label).font(.system(size: small ? 12 : 12.5))
+                Text(label).font(.system(size: 13))
             }
             .foregroundStyle(disabled ? Theme.text3 : (danger ? Theme.redSoft : Theme.text))
             .fixedSize()

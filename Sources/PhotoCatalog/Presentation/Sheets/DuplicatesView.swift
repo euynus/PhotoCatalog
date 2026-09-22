@@ -20,35 +20,40 @@ struct DuplicatesView: View {
     private var reclaim: Double { duplicateReclaimMegabytes(groups) }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
                 head
-                // Lazy loading avoids decoding off-screen group thumbnails.
-                LazyVStack(spacing: 14) {
-                    ForEach(groups) { g in groupCard(g) }
+                ScrollView {
+                    // Lazy loading avoids decoding off-screen group thumbnails.
+                    LazyVStack(spacing: 16) {
+                        if groups.isEmpty {
+                            Label("没有重复文件", systemImage: "checkmark.circle")
+                                .foregroundStyle(Theme.text3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 20)
+                        }
+                        ForEach(groups) { g in
+                            groupCard(g, width: geometry.size.width - 32)
+                        }
+                    }
+                    .padding(16)
                 }
-                .frame(maxWidth: 920, alignment: .leading)
             }
-            .padding(.horizontal, 22).padding(.vertical, 20)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .font(.system(size: 13))
         .foregroundStyle(Theme.text)
         .background(Theme.bgContent)
     }
 
     private var head: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("重复文件").font(.system(size: 17, weight: .semibold))
-            Text("基于内容哈希识别完全相同文件，并用 quick hash、拍摄时间、尺寸和感知哈希识别疑似重复")
-                .font(.system(size: 12.5)).foregroundStyle(Theme.text3)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 16) {
-                summaryItem("\(groups.count)", "组", accent: false)
-                summaryItem("\(fileCount)", "个文件", accent: false)
-                Spacer()
+            FlowRow(spacing: 18, lineSpacing: 6) {
+                summaryItem("\(groups.count)", "组")
+                summaryItem("\(fileCount)", "个文件")
                 HStack(spacing: 4) {
-                    Text("可释放 ≈").font(.system(size: 12.5)).foregroundStyle(Theme.text2)
+                    Text("可释放 ≈").foregroundStyle(Theme.text2)
                     Text(fileSizeText(megabytes: reclaim))
                         .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.accent)
                 }
@@ -57,62 +62,66 @@ struct DuplicatesView: View {
                 HStack(spacing: 6) {
                     Icon("info", size: 13)
                     Text("目录库较大，感知相似分析未自动运行；当前显示精确重复与疑似重复。")
-                        .font(.system(size: 11.5))
+                        .font(.system(size: 13))
                 }
                 .foregroundStyle(Theme.yellow)
                 .accessibilityElement(children: .combine)
             }
         }
-        .frame(maxWidth: 920, alignment: .leading)
+        .padding(.horizontal, 18).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.bgPanel)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
-    private func summaryItem(_ value: String, _ label: String, accent: Bool) -> some View {
+    private func summaryItem(_ value: String, _ label: String) -> some View {
         HStack(spacing: 5) {
-            Text(value).font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.text)
-            Text(label).font(.system(size: 12.5)).foregroundStyle(Theme.text2)
+            Text(value).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
+            Text(label).foregroundStyle(Theme.text2)
         }
     }
 
-    private func groupCard(_ g: DuplicateGroup) -> some View {
+    private func groupCard(_ g: DuplicateGroup, width: CGFloat) -> some View {
         let isResolved = resolved[g.id] != nil
         let keptId = keep[g.id] ?? g.items.first?.id
         let exact = g.method == "contentHash"
+        let columnCount = max(1, min(g.items.count, Int((width - 12) / 232)))
+        let itemWidth = min(360, (width - 24 - CGFloat(columnCount - 1) * 12) / CGFloat(columnCount))
         return VStack(spacing: 0) {
-            // head
             HStack {
                 HStack(spacing: 7) {
-                    Circle().fill(exact ? Theme.redSoft : Theme.yellow).frame(width: 8, height: 8)
+                    Icon(exact ? "copy" : "compare", size: 14)
                     Text(exact ? "精确重复 · 内容哈希一致" : "疑似重复 · 相似度 \(Int(g.score * 100))%")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(exact ? Theme.redSoft : Theme.yellow)
+                        .font(.system(size: 13, weight: .semibold))
                 }
+                .foregroundStyle(exact ? Theme.redSoft : Theme.yellow)
                 Spacer()
                 if isResolved {
-                    HStack(spacing: 5) { Icon("check", size: 13, weight: .bold); Text("已处理").font(.system(size: 11.5)) }
+                    HStack(spacing: 5) { Icon("check", size: 13, weight: .bold); Text("已处理") }
                         .foregroundStyle(Theme.green)
+                        .fixedSize()
                 }
             }
-            .padding(.horizontal, 15).padding(.vertical, 11)
+            .padding(.horizontal, 12).padding(.vertical, 10)
             .background(Theme.bgSidebar)
             .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
 
-            // items
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(g.items) { it in
-                        dupItem(it, kept: it.id == keptId, groupId: g.id, resolved: isResolved)
-                            .frame(width: 360, alignment: .leading)
-                    }
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(itemWidth), spacing: 12), count: columnCount),
+                      alignment: .leading, spacing: 12) {
+                ForEach(g.items) { it in
+                    dupItem(it, kept: it.id == keptId, groupId: g.id, resolved: isResolved,
+                            previewHeight: min(240, max(144, itemWidth * 0.75)))
                 }
-                .padding(15)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Theme.canvas)
 
-            // actions
             if !isResolved {
-                HStack(spacing: 9) {
-                    Text("保留 1 张，其余：").font(.system(size: 11.5)).foregroundStyle(Theme.text3)
-                    Spacer()
-                    ghostButton(nil, "从目录库移除", small: true) {
+                FlowRow(spacing: 10, lineSpacing: 8) {
+                    Text("保留 1 张，其余：").foregroundStyle(Theme.text3)
+                        .padding(.vertical, 5)
+                    ghostButton("minus", "从目录库移除", small: true) {
                         if app.resolveDuplicateGroup(g, keepId: keptId, action: .removeFromCatalog) {
                             resolved[g.id] = "removed"
                         }
@@ -123,58 +132,62 @@ struct DuplicatesView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 15).padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
                 .background(Theme.bgPanel)
                 .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
             }
         }
         .background(Theme.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
-        .opacity(isResolved ? 0.5 : 1)
+        .opacity(isResolved ? 0.65 : 1)
     }
 
-    private func dupItem(_ it: Asset, kept: Bool, groupId: String, resolved: Bool) -> some View {
-        HStack(spacing: 13) {
-            ZStack(alignment: .topLeading) {
-                Thumb(asset: it, radius: 6, maxDecodePixel: 172).frame(width: 86, height: 64)
-                    .background(Theme.canvasSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                if kept {
-                    HStack(spacing: 3) { Icon("check", size: 12, weight: .bold); Text("保留").font(.system(size: 9, weight: .bold)) }
-                        .foregroundStyle(Theme.onAccent)
-                        .padding(.horizontal, 5).padding(.vertical, 2)
-                        .background(Theme.accent).clipShape(Capsule())
-                        .padding(4)
-                }
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(it.filename).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+    private func dupItem(_ it: Asset, kept: Bool, groupId: String, resolved: Bool,
+                         previewHeight: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Thumb(asset: it, radius: 0, contentMode: .fit, maxDecodePixel: 512)
+                .frame(height: previewHeight)
+                .background(Theme.canvasSurface)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(it.filename).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                     .truncationMode(.middle).help(it.filename)
-                Text("\(fileSizeText(megabytes: it.fileMB)) · \(it.width)×\(it.height) · \(it.folderName)")
-                    .font(.system(size: 11)).foregroundStyle(Theme.text3)
+                Text("\(fileSizeText(megabytes: it.fileMB)) · \(it.width)×\(it.height)")
+                    .foregroundStyle(Theme.text2)
                     .lineLimit(1)
+                Text(it.folderName)
+                    .foregroundStyle(Theme.text3)
+                    .lineLimit(1).truncationMode(.middle)
+                    .help(it.localPath ?? it.folderName)
                 Text("\(DateFmt.shortCapture(it.date)) · \(it.camera)")
-                    .font(.system(size: 10.5, design: .monospaced)).foregroundStyle(Theme.text3)
+                    .font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.text3)
                     .lineLimit(1)
-            }
-            Spacer(minLength: 4)
-            if !resolved {
-                Button { keep[groupId] = it.id } label: {
-                    Text(kept ? "已保留" : "保留这张").font(.system(size: 11.5)).foregroundStyle(Theme.text2)
-                        .fixedSize()
-                        .padding(.horizontal, 11).padding(.vertical, 6)
-                        .background(Theme.surface)
-                        .overlay(RoundedRectangle(cornerRadius: Theme.rSm).strokeBorder(Theme.line2, lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
+                    .help("\(DateFmt.shortCapture(it.date)) · \(it.camera)")
+                if !resolved {
+                    Button { keep[groupId] = it.id } label: {
+                        Label(kept ? "已保留" : "保留这张",
+                              systemImage: kept ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(kept ? Theme.accent : Theme.text2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 5)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(kept)
+                    .accessibilityLabel("\(kept ? "已保留" : "保留这张")：\(it.filename)")
+                } else if kept {
+                    Label("已保留", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.accent)
                 }
-                .buttonStyle(.plain).disabled(kept).opacity(kept ? 0.5 : 1)
             }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(kept ? Theme.accentSoft : Theme.surface)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(kept ? Theme.accentSoft : .clear)
-        .overlay(alignment: .leading) {
-            Rectangle().fill(kept ? Theme.accent : .clear).frame(width: 2)
+        .background(Theme.surface)
+        .overlay {
+            Rectangle().strokeBorder(kept ? Theme.accent : Theme.line2, lineWidth: kept ? 2 : 1)
         }
     }
 }

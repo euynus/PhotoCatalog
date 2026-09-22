@@ -15,36 +15,28 @@ struct Titlebar: View {
     @State private var searchText = ""
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             // leading padding clears the real macOS traffic-light controls
             Color.clear.frame(width: 62, height: 1)
 
-            HStack(spacing: 9) {
-                Icon("aperture", size: 26, weight: .light)
+            HStack(spacing: 8) {
+                Icon("aperture", size: 22, weight: .medium)
+                    .foregroundStyle(Theme.accent)
+                Text("PhotoCatalog")
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.text)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("PhotoCatalog")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text(app.catalogDisplayName)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.text3)
-                        .lineLimit(1)
-                }
+                separator
+                Text(app.catalogDisplayName)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.text2)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
-            .frame(minWidth: 144, maxWidth: 230, alignment: .leading)
             .help(app.catalogDisplayName)
 
-            ToolButton(icon: "importIcon", label: "导入 / 添加文件夹",
-                       horizontalPadding: 8,
-                       action: { app.addFolder() }) {
-                Text("导入").font(.system(size: 12.5, weight: .medium))
-            }
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.rSm))
-            .overlay(RoundedRectangle(cornerRadius: Theme.rSm)
-                .strokeBorder(Theme.line, lineWidth: 1))
-
-            Spacer(minLength: 8)
+            Spacer(minLength: 16)
+            searchField
+            separator
             rightGroup
         }
         .padding(.horizontal, 14)
@@ -54,37 +46,22 @@ struct Titlebar: View {
     }
 
     private var rightGroup: some View {
-        HStack(spacing: 4) {
-            Segmented(
-                options: [
-                    SegOption(value: "grid", icon: "grid", title: "网格 (G)"),
-                    SegOption(value: "loupe", icon: "loupe", title: "单张 (E)"),
-                    SegOption(value: "compare", icon: "compare", title: "比较 (C)"),
-                ],
-                value: app.view.rawValue,
-                onChange: { app.switchView(ViewMode(rawValue: $0) ?? .grid) })
-
-            separator
-
-            ZStack(alignment: .topTrailing) {
-                ToolButton(icon: "filter", label: "筛选",
-                           active: app.filterOpen || app.filters.activeCount > 0,
-                           action: { app.toggleFilterBar() })
-                if app.filters.activeCount > 0 {
-                    Text("\(app.filters.activeCount)")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Theme.onAccent)
-                        .frame(minWidth: 14, minHeight: 14)
-                        .background(Theme.accent).clipShape(Capsule())
-                        .offset(x: -2, y: 2)
-                }
+        HStack(spacing: 6) {
+            Button { app.addFolder() } label: {
+                Label("导入", systemImage: "square.and.arrow.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .foregroundStyle(Theme.onAccent)
+                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.rSm))
             }
-
-            searchField
-            if app.view == .grid { sizeSlider }
-
+            .buttonStyle(.plain)
+            .help("导入 / 添加文件夹")
+            .accessibilityLabel("导入 / 添加文件夹")
+            ToolButton(icon: "export", label: "导出选中原件",
+                       disabled: !app.canExportOriginalSelection,
+                       action: { app.exportSelection() })
             separator
-
             CatalogActionsMenu()
             ToolButton(icon: "gear", label: "设置", action: { app.showSettings() })
             ToolButton(icon: "inspector", label: inspectorToggleLabel(isVisible: app.showInspector),
@@ -96,11 +73,12 @@ struct Titlebar: View {
     private var searchField: some View {
         HStack(spacing: 6) {
             Icon("search", size: 14).foregroundStyle(Theme.text3)
-            TextField("搜索", text: $searchText)
+            TextField("搜索照片、关键词…", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.text)
                 .focused($searchFocused)
+                .accessibilityLabel("搜索")
             if !searchText.isEmpty {
                 Button { searchText = ""; app.setSearch("") } label: {
                     Icon("close", size: 12, weight: .bold).foregroundStyle(Theme.text3)
@@ -110,7 +88,7 @@ struct Titlebar: View {
             }
         }
         .padding(.horizontal, 9)
-        .frame(width: 200, height: 32)
+        .frame(width: 240, height: 30)
         .background(Theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
         .focusRing(searchFocused, radius: Theme.rSm)
@@ -126,22 +104,8 @@ struct Titlebar: View {
         .onChange(of: app.searchBlurToken) { searchFocused = false }
     }
 
-    private var sizeSlider: some View {
-        @Bindable var app = app   // the slider binding needs the Bindable projection
-        return HStack(spacing: 6) {
-            Icon("photos", size: 13).foregroundStyle(Theme.text3)
-            Slider(value: $app.thumbSize, in: 108...280)
-                .frame(width: 76)
-                .controlSize(.mini)
-                .tint(Theme.text3)
-                .accessibilityLabel("缩略图大小")
-                .help("调整缩略图大小")
-        }
-        .padding(.horizontal, 4)
-    }
-
     private var separator: some View {
-        Rectangle().fill(Theme.line2).frame(width: 1, height: 22).padding(.horizontal, 5)
+        Rectangle().fill(Theme.line2).frame(width: 1, height: 18).padding(.horizontal, 3)
     }
 }
 
@@ -165,13 +129,6 @@ private struct CatalogActionsMenu: View {
                     Label("从当前相册移除", systemImage: "minus.circle")
                 }
             }
-
-            Button {
-                app.exportSelection()
-            } label: {
-                Label("导出选中原件…", systemImage: "square.and.arrow.up")
-            }
-            .disabled(!app.canExportOriginalSelection)
 
             if app.canSaveCurrentFilter || app.canPinCurrentSelection {
                 Divider()

@@ -32,11 +32,11 @@ struct SmartAlbumBuilder: View {
         let matched = self.matched
         VStack(spacing: 0) {
             head
-            ScrollView { body_(matched) }
+            body_(matched)
             foot(matchedCount: matched.count)
         }
-        .frame(width: 580)
-        .frame(maxHeight: 620)
+        .frame(width: 620)
+        .font(.system(size: 13))
         .foregroundStyle(Theme.text)
         .background(Theme.bgPanel)
         .overlay(RoundedRectangle(cornerRadius: Theme.r).strokeBorder(Theme.line2, lineWidth: 1))
@@ -48,73 +48,84 @@ struct SmartAlbumBuilder: View {
             HStack(spacing: 9) {
                 Icon("sparkles", size: 17).foregroundStyle(Theme.accent)
                 Text(album == nil ? "智能相册" : "编辑智能相册")
-                    .font(.system(size: 14.5, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
             }
             Spacer()
             sheetClose { app.dismissSmartAlbumBuilder() }
         }
-        .padding(.horizontal, 18).padding(.vertical, 15)
+        .padding(.horizontal, 18).padding(.vertical, 10)
         .background(Theme.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
     private func body_(_ matched: [Asset]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // name
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                Text("名称").font(.system(size: 12)).foregroundStyle(Theme.text2).frame(width: 40, alignment: .leading)
-                TextField("", text: $name)
-                    .textFieldStyle(.plain).font(.system(size: 13.5, weight: .medium))
-                    .padding(.horizontal, 11).padding(.vertical, 9)
+                Text("名称").foregroundStyle(Theme.text2).frame(width: 40, alignment: .leading)
+                TextField("名称", text: $name)
+                    .textFieldStyle(.plain).font(.system(size: 13, weight: .medium))
+                    .padding(.horizontal, 10).padding(.vertical, 7)
                     .background(Theme.surface)
-                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.line2, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
-            }.padding(.bottom, 16)
+                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
 
-            // match
             HStack(spacing: 9) {
-                Text("满足以下").font(.system(size: 12.5)).foregroundStyle(Theme.text2)
+                Text("规则").font(.system(size: 15, weight: .semibold))
+                Spacer()
                 Segmented(options: [
                     SegOption(value: "all", label: "全部 (AND)"),
                     SegOption(value: "any", label: "任一 (OR)"),
-                ], value: match, onChange: { match = $0 }, size: "sm")
-                Text("条件：").font(.system(size: 12.5)).foregroundStyle(Theme.text2)
-            }.padding(.bottom, 13)
-
-            // conditions
-            VStack(spacing: 8) {
-                ForEach(Array(conditions.enumerated()), id: \.element.id) { i, _ in
-                    conditionRow(i)
-                }
+                ], value: match, onChange: { match = $0 })
                 Button { conditions.append(SmartCondition(field: "camera", op: "包含", value: "")) } label: {
-                    HStack(spacing: 6) { Icon("plus", size: 13, weight: .bold); Text("添加条件").font(.system(size: 12.5)) }
-                        .foregroundStyle(Theme.accent).padding(.horizontal, 11).padding(.vertical, 7)
+                    Label("添加条件", systemImage: "plus")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 30, height: 30)
+                        .foregroundStyle(Theme.accent)
+                        .background(Theme.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
                 }
                 .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .help("添加条件")
             }
 
-            // preview
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach(Array(conditions.enumerated()), id: \.element.id) { i, _ in
+                        conditionRow(i)
+                            .frame(height: 32)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .frame(height: min(160, CGFloat(conditions.count) * 40))
+
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 0) {
-                    Text("\(matched.count)").font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.accent)
-                    Text(" 张照片符合规则").font(.system(size: 12.5)).foregroundStyle(Theme.text2)
+                HStack {
+                    Text("预览").font(.system(size: 15, weight: .semibold))
+                    Spacer()
+                    Text("\(matched.count) 张照片符合规则")
+                        .monospacedDigit().foregroundStyle(Theme.text2)
                 }
                 if matched.isEmpty {
-                    Text("没有照片符合当前规则").font(.system(size: 12)).foregroundStyle(Theme.text3).padding(.vertical, 14)
+                    Text("没有照片符合当前规则")
+                        .foregroundStyle(Theme.canvasText3)
+                        .frame(maxWidth: .infinity, minHeight: 104)
+                        .background(Theme.canvas)
                 } else {
-                    FlowRow(spacing: 5, lineSpacing: 5) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7), spacing: 6) {
                         ForEach(matched.prefix(14)) { a in
-                            Thumb(asset: a, radius: 3, maxDecodePixel: 120).frame(width: 60, height: 42)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                            Thumb(asset: a, radius: 2, contentMode: .fit, maxDecodePixel: 160)
+                                .frame(height: 40)
+                                .help(a.filename)
                         }
                     }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(9)
+                    .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
                     .background(Theme.canvas)
                 }
             }
-            .padding(.top, 15)
+            .padding(.top, 12)
             .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
         }
         .padding(18)
@@ -131,7 +142,7 @@ struct SmartAlbumBuilder: View {
                 conditions[i].op = $0
             }
             valueControl(i, field)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Button { conditions.remove(at: i) } label: {
                 Icon("minus", size: 14, weight: .bold).foregroundStyle(Theme.text3)
                     .frame(width: 30, height: 30).background(Theme.surface)
@@ -182,14 +193,14 @@ struct SmartAlbumBuilder: View {
             SASelect(value: conditions[i].value, options: [("yes", "有 GPS"), ("no", "无 GPS")]) { conditions[i].value = $0 }
         case .year:
             TextField("", text: Binding(get: { conditions[i].value }, set: { conditions[i].value = $0 }))
-                .textFieldStyle(.plain).font(.system(size: 12.5))
+                .textFieldStyle(.plain).font(.system(size: 13))
                 .padding(.horizontal, 9).padding(.vertical, 7)
                 .background(Theme.surface)
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         case .text:
             TextField("输入…", text: Binding(get: { conditions[i].value }, set: { conditions[i].value = $0 }))
-                .textFieldStyle(.plain).font(.system(size: 12.5))
+                .textFieldStyle(.plain).font(.system(size: 13))
                 .padding(.horizontal, 9).padding(.vertical, 7)
                 .background(Theme.surface)
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
@@ -199,13 +210,11 @@ struct SmartAlbumBuilder: View {
 
     private func foot(matchedCount: Int) -> some View {
         HStack(spacing: 9) {
-            Text("动态集合 · 新导入照片若符合规则会自动加入")
-                .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer()
             ghostButton(nil, "取消") { app.dismissSmartAlbumBuilder() }
             Button { app.saveSmart(name: name, rule: rule, count: matchedCount) } label: {
-                Text(album == nil ? "创建智能相册" : "保存更改")
-                    .font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.onAccent)
+                Label(album == nil ? "创建智能相册" : "保存更改", systemImage: "checkmark")
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
                     .fixedSize()
                     .padding(.horizontal, 17).padding(.vertical, 8)
                     .background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 7))
@@ -213,7 +222,7 @@ struct SmartAlbumBuilder: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || conditions.isEmpty)
         }
-        .padding(.horizontal, 18).padding(.vertical, 13)
+        .padding(.horizontal, 18).padding(.vertical, 10)
         .background(Theme.bgSidebar)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
@@ -235,7 +244,7 @@ struct SASelect: View {
             }
         } label: {
             HStack(spacing: 6) {
-                Text(label).font(.system(size: 12.5)).foregroundStyle(Theme.text).lineLimit(1)
+                Text(label).font(.system(size: 13)).foregroundStyle(Theme.text).lineLimit(1)
                 Spacer(minLength: 2)
                 Icon("chevronD", size: 10).foregroundStyle(Theme.text3)
             }

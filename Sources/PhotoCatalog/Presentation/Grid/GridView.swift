@@ -74,8 +74,8 @@ struct GridView: View {
     /// Spoken summary matching the cell's visible badges.
     private static func accessibilityLabel(_ asset: Asset,
                                            stack: (count: Int, collapsed: Bool)?) -> String {
-        var parts = [asset.filename]
-        if asset.rating > 0 { parts.append("\(asset.rating) 星") }
+        var parts = [asset.filename, asset.isRaw ? "\(asset.type) RAW" : asset.type]
+        parts.append(asset.rating > 0 ? "\(asset.rating) 星" : "未评分")
         switch asset.flag {
         case .pick: parts.append("精选")
         case .reject: parts.append("拒绝")
@@ -100,49 +100,41 @@ struct GridCell: View {
     let onToggleStack: () -> Void
     @State private var hover = false
 
-    private var frameHeight: CGFloat { (size * 0.72).rounded() }
-
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 0) {
             frame
             if showInfo { foot }
         }
-        .padding(6)
-        .background(background)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-        .overlay(RoundedRectangle(cornerRadius: 4)
-            .strokeBorder(borderColor, lineWidth: borderWidth))
         .frame(width: size)
-        .contentShape(RoundedRectangle(cornerRadius: 4))
+        .background(background)
+        .clipShape(RoundedRectangle(cornerRadius: 2))
+        .overlay(RoundedRectangle(cornerRadius: 2)
+            .strokeBorder(borderColor, lineWidth: borderWidth))
+        .contentShape(Rectangle())
+        .help("\(asset.filename) · \(asset.isRaw ? "RAW · " : "")\(asset.type)")
         .onHover { hover = $0 }
     }
 
     private var background: Color {
-        if selected { return Theme.canvasSelection }
-        if hover { return Theme.canvasSurface }
-        return .clear
+        selected || hover ? Theme.canvasSurfaceHi : Theme.canvasSurface
     }
     private var borderColor: Color {
-        if isPrimary { return Theme.accent }
-        if selected { return Theme.accent.opacity(0.72) }
-        return .clear
+        if isPrimary { return Theme.canvasText }
+        if selected { return Theme.canvasText2 }
+        return Theme.canvasLine
     }
     private var borderWidth: CGFloat {
-        if isPrimary { return 2 }
-        if selected { return 1.5 }
-        return 1
+        isPrimary ? 1.5 : 1
     }
 
     private var frame: some View {
         Thumb(asset: asset, radius: 2, contentMode: .fit, dim: asset.status == .missing,
               maxDecodePixel: Int((size * 2).rounded(.up)))
-            .frame(width: size - 12, height: frameHeight)
-            .background(Theme.canvasSurface)
+            .frame(width: size - 16, height: size - 16)
+            .background(Theme.canvas)
+            .padding(8)
             .overlay(alignment: .topLeading) {
-                HStack(spacing: 4) {
-                    if asset.isRaw { TypeBadge(asset: asset, small: true) }
-                    StatusBadge(status: asset.status)
-                }.padding(5)
+                StatusBadge(status: asset.status).padding(10)
             }
             .overlay(alignment: .topTrailing) {
                 VStack(alignment: .trailing, spacing: 5) {
@@ -151,22 +143,14 @@ struct GridCell: View {
                         StackBadge(count: stackCount, collapsed: stackCollapsed, action: onToggleStack)
                     }
                 }
-                .padding(6)
+                .padding(10)
             }
             .overlay(alignment: .bottomLeading) {
                 if asset.flag != .none {
                     FlagPill(flag: asset.flag, size: 14)
-                        .padding(.leading, 6).padding(.bottom, 5)
-                }
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if selected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .symbolRenderingMode(.palette)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Theme.onAccent, Theme.accent)
-                        .padding(6)
-                        .accessibilityHidden(true)
+                        .padding(3)
+                        .background(Theme.canvasSurface, in: RoundedRectangle(cornerRadius: 2))
+                        .padding(.leading, 10).padding(.bottom, 10)
                 }
             }
             .overlay {
@@ -179,25 +163,40 @@ struct GridCell: View {
                         }.foregroundStyle(Theme.canvasText)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 2))
+                    .padding(8)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 2))
     }
 
     private var foot: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(asset.filename)
-                .font(.system(size: 11.5, weight: selected ? .medium : .regular)).monospacedDigit()
+                .font(.system(size: 11, weight: selected ? .medium : .regular)).monospacedDigit()
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .foregroundStyle(selected || isPrimary ? Theme.canvasText : Theme.canvasText2)
+                .frame(height: 14, alignment: .leading)
                 .help(asset.filename)
-            StarsView(value: asset.rating, size: 11, gap: 2, dim: asset.rating == 0)
-                .frame(height: 13, alignment: .leading)
+            HStack(spacing: 6) {
+                if asset.rating > 0 {
+                    StarsView(value: asset.rating, size: 9, gap: 1)
+                        .fixedSize()
+                }
+                Spacer(minLength: 0)
+                if asset.isRaw {
+                    Text(asset.type)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.canvasText2)
+                        .lineLimit(1)
+                        .help("RAW · \(asset.type)")
+                }
+            }
+            .frame(height: 14)
         }
-        .frame(height: 34, alignment: .leading)
+        .padding(.horizontal, 8)
+        .padding(.bottom, 8)
+        .frame(height: 40)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 2)
     }
 }
 
@@ -264,6 +263,8 @@ extension GridCell: Equatable {
         l.asset.colorLabel == r.asset.colorLabel &&
         l.asset.status == r.asset.status &&
         l.asset.filename == r.asset.filename &&
+        l.asset.type == r.asset.type &&
+        l.asset.isRaw == r.asset.isRaw &&
         l.asset.thumb == r.asset.thumb &&
         l.asset.localPath == r.asset.localPath &&
         l.size == r.size &&

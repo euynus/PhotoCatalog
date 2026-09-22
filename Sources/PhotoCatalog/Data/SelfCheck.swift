@@ -142,16 +142,21 @@ enum SelfCheck {
                 + 0.0722 * linear(rgb.blueComponent)
         }
 
-        for (foreground, background) in [
-            (Theme.text, Theme.bgPanel), (Theme.text2, Theme.bgSidebar),
-            (Theme.text3, Theme.bgSidebar), (Theme.accent, Theme.bgPanel),
-            (Theme.green, Theme.bgPanel), (Theme.red, Theme.bgPanel),
-            (Theme.onAccent, Theme.accent), (Theme.canvasText, Theme.canvas),
-            (Theme.canvasText2, Theme.canvasSurface), (Theme.canvasText3, Theme.canvasSurface),
+        for (foreground, background, minimum) in [
+            (Theme.text, Theme.bgPanel, 4.5), (Theme.text2, Theme.bgSidebar, 4.5),
+            (Theme.text3, Theme.bgSidebar, 4.5), (Theme.accent, Theme.bgPanel, 4.5),
+            (Theme.green, Theme.bgPanel, 4.5), (Theme.red, Theme.bgPanel, 4.5),
+            (Theme.onAccent, Theme.accent, 4.5), (Theme.canvasText, Theme.canvas, 4.5),
+            (Theme.canvasText2, Theme.canvasSurface, 4.5), (Theme.canvasText3, Theme.canvasSurface, 4.5),
+            (Theme.canvasText2, Theme.canvasSurfaceHi, 4.5),
+            (Theme.green, Theme.canvasSurface, 3.0), (Theme.red, Theme.canvasSurface, 3.0),
+            (Theme.rating, Theme.canvasSurface, 3.0), (Theme.rating, Theme.bgPanel, 3.0),
+            (Theme.starInactive, Theme.canvasSurface, 3.0), (Theme.starInactive, Theme.bgPanel, 3.0),
+            (Theme.rating, Theme.canvasSurfaceHi, 3.0), (Theme.starInactive, Theme.canvasSurfaceHi, 3.0),
         ] {
             let lightness = [luminance(foreground), luminance(background)].sorted()
-            assert((lightness[1] + 0.05) / (lightness[0] + 0.05) >= 4.5,
-                   "workspace and canvas text must retain readable contrast")
+            assert((lightness[1] + 0.05) / (lightness[0] + 0.05) >= minimum,
+                   "workspace text and photo controls must retain readable contrast")
         }
     }
 }

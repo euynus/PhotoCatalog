@@ -22,7 +22,6 @@ struct MainView: View {
         let assetRevision = app.assetRenderVersion
         return VStack(spacing: 0) {
             Titlebar()
-            if app.filterOpen { FilterBar() }
             HSplitView {
                 Sidebar(assetRevision: assetRevision)
                 ContentColumn(assetRevision: assetRevision)
@@ -60,7 +59,10 @@ struct ContentColumn: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !app.isDuplicates { ContentHeader() }
+            if !app.isDuplicates {
+                ContentHeader()
+                if app.filterOpen { FilterBar() }
+            }
             contentMain
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Theme.canvas)
@@ -89,41 +91,71 @@ struct ContentHeader: View {
     @Environment(AppState.self) var app
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(app.selection.name)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(app.selection.name)
-                HStack(spacing: 10) {
-                    Text("\(app.contentAssetCount) 张照片")
-                        .foregroundStyle(Theme.text3)
+                Spacer(minLength: 8)
+                Text("\(app.contentAssetCount) 张照片")
+                    .font(.system(size: 12)).monospacedDigit()
+                    .foregroundStyle(Theme.text3)
+                    .fixedSize()
+                if !app.selectedIds.isEmpty {
+                    Text("已选 \(app.selectedIds.count)")
+                        .font(.system(size: 12, weight: .medium)).monospacedDigit()
+                        .foregroundStyle(Theme.accent)
                         .fixedSize()
-                    if !app.selectedIds.isEmpty {
-                        Label("\(app.selectedIds.count) 张已选", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(Theme.accent)
-                            .fixedSize()
-                    }
                 }
-                .font(.system(size: 11.5))
             }
-            Spacer()
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
+                Segmented(
+                    options: [
+                        SegOption(value: "grid", icon: "grid", title: "网格 (G)"),
+                        SegOption(value: "loupe", icon: "loupe", title: "单张 (E)"),
+                        SegOption(value: "compare", icon: "compare", title: "比较 (C)"),
+                    ], value: app.view.rawValue,
+                    onChange: { app.switchView(ViewMode(rawValue: $0) ?? .grid) }, size: "sm")
+                filterButton
+                sortMenu
+                Spacer(minLength: 0)
                 if app.view == .grid {
                     ToolButton(icon: app.showInfo ? "eye" : "info",
                                label: app.showInfo ? "隐藏缩略图信息" : "显示缩略图信息",
                                active: app.showInfo,
                                action: { app.toggleGridInfo() })
+                    sizeSlider
                 }
-                sortMenu
             }
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 16)
         .frame(height: Theme.contentHeadH)
         .background(Theme.bgContent)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+
+    private var filterButton: some View {
+        ToolButton(icon: "filter", label: "筛选",
+                   active: app.filterOpen || app.filters.activeCount > 0,
+                   action: { app.toggleFilterBar() }) {
+            if app.filters.activeCount > 0 {
+                Text("\(app.filters.activeCount)")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+        }
+    }
+
+    private var sizeSlider: some View {
+        @Bindable var app = app
+        return Slider(value: $app.thumbSize, in: 108...280)
+            .frame(width: 80)
+            .controlSize(.mini)
+            .tint(Theme.text2)
+            .accessibilityLabel("缩略图大小")
+            .help("调整缩略图大小")
     }
 
     private var sortMenu: some View {
@@ -150,17 +182,14 @@ struct ContentHeader: View {
         } label: {
             HStack(spacing: 6) {
                 Icon("sort", size: 14)
-                Text(app.sort.field.label)
-                    .font(.system(size: 12.5))
+                Text(app.sort.field.label).font(.system(size: 12))
                 Image(systemName: app.sort.descending ? "arrow.down" : "arrow.up")
                     .font(.system(size: 10, weight: .semibold))
             }
             .foregroundStyle(Theme.text2)
             .padding(.horizontal, 8)
             .frame(height: 30)
-            .background(Theme.surface)
-            .overlay(RoundedRectangle(cornerRadius: Theme.rSm)
-                .strokeBorder(Theme.line, lineWidth: 1))
+            .background(Theme.surfaceHi.opacity(0.5))
             .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
         }
         .menuStyle(.borderlessButton)

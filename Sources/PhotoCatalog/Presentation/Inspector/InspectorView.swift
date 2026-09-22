@@ -20,8 +20,8 @@ struct InspectorView: View {
                     .id(assetRevision)
             } else {
                 VStack(spacing: 10) {
-                    Icon("inspector", size: 34)
-                    Text("未选择照片").font(.system(size: 12.5))
+                    Icon("inspector", size: 24)
+                    Text("未选择照片").font(.system(size: 13))
                 }
                 .foregroundStyle(Theme.text3)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -38,7 +38,6 @@ struct InspectorView: View {
     private func content(_ asset: Asset) -> some View {
         VStack(spacing: 0) {
             preview(asset)
-            headline(asset)
             tabBar
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -49,66 +48,67 @@ struct InspectorView: View {
                     default: histTab(asset)
                     }
                 }
-                .padding(.horizontal, 14).padding(.vertical, 16)
+                .padding(12)
             }
         }
     }
 
     private func preview(_ asset: Asset) -> some View {
-        VStack(spacing: 0) {
+        HStack(spacing: 10) {
             // Keep the loader alive across selection changes.
-            Thumb(asset: asset, urlString: asset.thumb, radius: 0, contentMode: .fit)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(12)
-            if app.selectedIds.count > 1 {
-                Label("\(app.selectedIds.count) 张 · 批量编辑", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.canvasText2)
-                    .lineLimit(1)
-                    .padding(.horizontal, 12).padding(.bottom, 10)
-                    .help("编辑将批量应用")
-                    .accessibilityHint("编辑将批量应用")
-            }
+            Thumb(asset: asset, urlString: asset.thumb, radius: 2, contentMode: .fit)
+                .frame(width: 72, height: 88)
+                .background(Theme.canvas)
+                .accessibilityHidden(true)
+            headline(asset)
         }
-        .frame(height: 196)
-        .frame(maxWidth: .infinity)
-        .background(Theme.canvas)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.canvasLine).frame(height: 1) }
+        .padding(.horizontal, 12)
+        .frame(height: 112)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
     private func headline(_ asset: Asset) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(asset.filename)
-                .font(.system(size: 14, weight: .semibold))
-                .lineLimit(1).truncationMode(.middle)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(2).truncationMode(.middle)
                 .help(asset.filename)
             HStack(spacing: 6) {
                 TypeBadge(asset: asset, small: true)
                 Text("\(asset.width) × \(asset.height)")
-                Text("·")
-                Text(megapixelText(asset.megapixels))
             }
             .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.text2)
             .lineLimit(1)
+            Text("\(megapixelText(asset.megapixels)) · \(fileSizeText(megabytes: asset.fileMB))")
+                .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.text2)
+                .lineLimit(1)
+            if app.selectedIds.count > 1 {
+                Label("\(app.selectedIds.count) 张 · 批量编辑", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .lineLimit(1)
+                    .help("编辑将批量应用")
+                    .accessibilityHint("编辑将批量应用")
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
 
     private var tabBar: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 0) {
             ForEach(tabs, id: \.0) { tab in
                 InsTabButton(icon: tab.1, name: tab.2, active: app.insTab == tab.0) { app.insTab = tab.0 }
             }
         }
-        .padding(.horizontal, 10).padding(.top, 6)
+        .padding(.horizontal, 4)
+        .background(Theme.bgSidebar)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
     // ---------- Info ----------
     private func infoTab(_ a: Asset) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             InsGroup([
                 .init("文件名", a.filename, mono: true),
                 .init("类型", a.isRaw ? "RAW · \(a.type)" : a.type),
@@ -128,14 +128,17 @@ struct InspectorView: View {
                 if a.faces > 0 { rows.append(.init("人脸", "检测到 \(a.faces) 张")) }
                 return rows
             }(), title: "来源")
-            VStack(alignment: .leading, spacing: 9) {
-                Text("原件路径").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.text2)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("原件路径").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text2)
+                    .accessibilityAddTraits(.isHeader)
                 Text(a.localPath ?? "演示照片无本地原件")
                     .font(Theme.mono).foregroundStyle(Theme.text2)
                     .lineSpacing(2)
+                    .lineLimit(4).truncationMode(.middle)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
+                    .help(a.localPath ?? "演示照片无本地原件")
                 HStack(spacing: 6) {
                     let canReveal = a.localPath.map { FileManager.default.fileExists(atPath: $0) } ?? false
                     pathButton("folder", "在访达中显示", warn: false, disabled: !canReveal) {
@@ -152,7 +155,7 @@ struct InspectorView: View {
     private func pathButton(_ icon: String, _ label: String, warn: Bool, disabled: Bool = false,
                             action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 5) { Icon(icon, size: 13); Text(label).font(.system(size: 11.5)) }
+            HStack(spacing: 5) { Icon(icon, size: 13); Text(label).font(.system(size: 13)) }
                 .foregroundStyle(warn ? Theme.accent : Theme.text2)
                 .lineLimit(1)
         }
@@ -165,16 +168,14 @@ struct InspectorView: View {
 
     // ---------- Metadata ----------
     private func metaTab(_ a: Asset) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             InsGroup([.init("相机", a.camera), .init("镜头", a.lens)], title: "设备")
-            HStack(spacing: 8) {
-                exifCell("焦距", formatFocalLength(a.focal))
-                exifCell("光圈", formatApertureValue(a.aperture))
-            }
-            HStack(spacing: 8) {
-                exifCell("快门", formatShutterSpeed(a.shutter))
-                exifCell("ISO", formatISOValue(a.iso))
-            }
+            InsGroup([
+                .init("焦距", formatFocalLength(a.focal)),
+                .init("光圈", formatApertureValue(a.aperture)),
+                .init("快门", formatShutterSpeed(a.shutter)),
+                .init("ISO", formatISOValue(a.iso)),
+            ], title: "曝光")
             InsGroup([
                 .init("拍摄时间", DateFmt.longCapture(a.date)),
                 .init("时间来源", a.captureDateSource),
@@ -191,50 +192,20 @@ struct InspectorView: View {
         }
     }
 
-    private func exifCell(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label).font(.system(size: 11)).foregroundStyle(Theme.text3)
-            Text(value).font(.system(size: 17, weight: .medium)).monospacedDigit()
-                .lineLimit(1).minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 4)
-    }
-
     @ViewBuilder
     private func gpsPanel(_ a: Asset) -> some View {
         if a.hasGPS {
-            mapView(a)
+            InsGroup([
+                .init("坐标", formatGPSLabel(a.gps, altitude: a.gpsAltitude, isPresent: a.hasGPS), mono: true),
+            ], title: "位置")
         } else {
             HStack(spacing: 8) {
                 Icon("location", size: 16).foregroundStyle(Theme.text3)
-                Text("无 GPS 信息").font(.system(size: 12)).foregroundStyle(Theme.text3)
+                Text("无 GPS 信息").font(.system(size: 13)).foregroundStyle(Theme.text3)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 12)
+            .padding(.vertical, 4)
         }
-    }
-
-    private func mapView(_ a: Asset) -> some View {
-        ZStack {
-            Theme.surface
-            MapGrid()
-            Icon("location", size: 16).foregroundStyle(Theme.accent)
-                .offset(y: -8)
-            VStack {
-                Spacer()
-                Text(formatGPSLabel(a.gps, altitude: a.gpsAltitude, isPresent: a.hasGPS))
-                    .font(Theme.mono).foregroundStyle(Theme.text2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 8).padding(.vertical, 6)
-                    .background(Theme.bgPanel)
-            }
-        }
-        .frame(height: 116)
-        .overlay(RoundedRectangle(cornerRadius: Theme.r).strokeBorder(Theme.line, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.r))
     }
 
     // ---------- History ----------
@@ -313,20 +284,17 @@ private struct InsTabButton: View {
     @State private var hover = false
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 4) {
-                Icon(icon, size: 15)
-                Text(name).font(.system(size: 10.5, weight: active ? .semibold : .regular))
+            HStack(spacing: 4) {
+                Icon(icon, size: 12)
+                Text(name).font(.system(size: 13, weight: active ? .semibold : .regular))
                     .lineLimit(1)
             }
-            .foregroundStyle(active ? Theme.accent : (hover ? Theme.text2 : Theme.text3))
-            .frame(maxWidth: .infinity).frame(height: 46)
-            .background(
-                UnevenRoundedRectangle(topLeadingRadius: 6, topTrailingRadius: 6)
-                    .fill(active ? Theme.accentSoft : (hover ? Theme.surfaceHi : .clear)))
+            .foregroundStyle(active ? Theme.text : Theme.text2)
+            .frame(maxWidth: .infinity).frame(height: 36)
+            .background(active ? Theme.bgPanel : (hover ? Theme.surfaceHi : .clear))
             .overlay(alignment: .bottom) {
                 if active {
-                    RoundedRectangle(cornerRadius: 2).fill(Theme.accent)
-                        .frame(height: 2).padding(.horizontal, 6)
+                    Rectangle().fill(Theme.accent).frame(height: 2)
                 }
             }
         }
@@ -359,45 +327,26 @@ struct InsGroup: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.text2)
-                .padding(.bottom, 7)
+            Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text2)
+                .padding(.bottom, 6)
                 .accessibilityAddTraits(.isHeader)
             ForEach(rows) { r in
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(r.label).font(.system(size: 11.5)).foregroundStyle(Theme.text3)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(r.label).font(.system(size: 13)).foregroundStyle(Theme.text3)
                         .frame(width: 68, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(r.value)
-                        .font(r.mono ? .system(size: 11, design: .monospaced) : .system(size: 12))
+                        .font(r.mono ? .system(size: 12, design: .monospaced) : .system(size: 13))
                         .foregroundStyle(r.accent ? Theme.accent : Theme.text)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .multilineTextAlignment(.trailing)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
-                .padding(.vertical, 6)
+                .padding(.vertical, 4)
             }
         }
-        .padding(.bottom, 10)
+        .padding(.bottom, 8)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
-    }
-}
-
-struct MapGrid: View {
-    var body: some View {
-        GeometryReader { geo in
-            Path { p in
-                let step: CGFloat = 22
-                var x: CGFloat = 0
-                while x < geo.size.width {
-                    p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: geo.size.height)); x += step
-                }
-                var y: CGFloat = 0
-                while y < geo.size.height {
-                    p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: geo.size.width, y: y)); y += step
-                }
-            }
-            .stroke(Theme.line, lineWidth: 1)
-        }
     }
 }

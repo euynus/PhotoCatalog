@@ -1,181 +1,82 @@
-// ============================================================
-//  Filter bar
-// ============================================================
 import SwiftUI
 
 struct FilterBar: View {
     @Environment(AppState.self) var app
-    // Local echoes of the camera/lens filters — committed debounced so each
-    // keystroke doesn't pay a synchronous full-library filter + sort.
     @State private var cameraText = ""
     @State private var lensText = ""
 
     var body: some View {
-        HStack(spacing: 0) {
-            ScrollView(.horizontal) {
-                HStack(spacing: 14) {
-                    ratingGroup
-                    sep
-                    flagGroup
-                    sep
-                    colorGroup
-                    sep
-                    typeGroup
-                    sep
-                    metadataGroup
-                    sep
-                    dateGroup
-                    sep
-                    gpsGroup
-                    sep
-                    statusGroup
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text("筛选").font(.system(size: 12, weight: .semibold))
+                if app.filters.activeCount > 0 {
+                    Text("\(app.filters.activeCount) 项条件")
+                        .font(.system(size: 11)).foregroundStyle(Theme.accent)
                 }
-                .padding(.horizontal, 16)
-                .frame(height: Theme.filterbarH)
-            }
-            .scrollIndicatorsFlash(onAppear: true)
-            sep
-            ToolButton(icon: "refresh", label: "清除筛选",
-                       disabled: app.filters.activeCount == 0 && cameraText.isEmpty && lensText.isEmpty) {
-                cameraText = ""
-                lensText = ""
-                app.setFilters(Filters())
-            }
-            .padding(.horizontal, 8)
-        }
-        .frame(height: Theme.filterbarH)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.bgPanel)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
-    }
-
-    private var label: some View { EmptyView() }
-    private func label(_ t: String) -> some View {
-        Text(t).font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(Theme.text3).textCase(.uppercase)
-    }
-    private var sep: some View { Rectangle().fill(Theme.line2).frame(width: 1, height: 18) }
-
-    private var ratingGroup: some View {
-        HStack(spacing: 8) {
-            label("评分")
-            HStack(spacing: 2) {
-                ForEach(1...5, id: \.self) { n in
-                    FBStar(n: n, on: app.filters.minRating >= n) {
-                        var f = app.filters
-                        f.minRating = (f.minRating == n) ? 0 : n
-                        app.setFilters(f)
-                    }
+                Spacer()
+                ToolButton(icon: "refresh", label: "清除筛选",
+                           disabled: app.filters.activeCount == 0 && cameraText.isEmpty && lensText.isEmpty) {
+                    cameraText = ""
+                    lensText = ""
+                    app.setFilters(Filters())
                 }
-                Text(app.filters.minRating > 0 ? "\(app.filters.minRating)★ 及以上" : "不限")
-                    .font(.system(size: 11.5)).foregroundStyle(Theme.text2)
-                    .padding(.leading, 5)
+                ToolButton(icon: "close", label: "收起筛选") { app.toggleFilterBar() }
             }
-        }
-    }
-
-    private var flagGroup: some View {
-        HStack(spacing: 8) {
-            label("旗标")
-            Segmented(
-                options: [
-                    SegOption(value: "any", label: "全部"),
-                    SegOption(value: "pick", label: "精选"),
-                    SegOption(value: "reject", label: "拒绝"),
-                ],
-                value: app.filters.flag,
-                onChange: { v in var f = app.filters; f.flag = v; app.setFilters(f) },
-                size: "sm")
-        }
-    }
-
-    private var colorGroup: some View {
-        HStack(spacing: 8) {
-            label("颜色")
-            HStack(spacing: 4) {
-                Button {
-                    var f = app.filters; f.color = "any"; app.setFilters(f)
-                } label: {
-                    Text("全部").font(.system(size: 11.5))
-                        .foregroundStyle(app.filters.color == "any" ? Theme.text : Theme.text2)
-                        .padding(.horizontal, 8).frame(height: 20)
-                        .background(app.filters.color == "any" ? Theme.surfaceHi : .clear)
-                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.line2, lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                }.buttonStyle(.plain)
-
-                ForEach(ColorLabel.allCases) { c in
-                    let on = app.filters.color == c.rawValue
-                    Button {
-                        var f = app.filters; f.color = on ? "any" : c.rawValue; app.setFilters(f)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 12, alignment: .leading)],
+                      alignment: .leading, spacing: 12) {
+                field("最低评分") { ratingControl }
+                filterMenu("旗标", value: app.filters.flag,
+                           options: [("any", "全部"), ("pick", "精选"), ("reject", "拒绝")]) {
+                    var filters = app.filters; filters.flag = $0; app.setFilters(filters)
+                }
+                field("颜色标签") {
+                    Menu {
+                        Button("全部颜色") { setColor("any") }
+                        ForEach(ColorLabel.allCases) { color in
+                            Button { setColor(color.rawValue) } label: {
+                                Label {
+                                    Text(color.name)
+                                } icon: {
+                                    Image(systemName: "circle.fill").foregroundStyle(color.hex)
+                                }
+                            }
+                        }
                     } label: {
-                        Circle().fill(c.hex).frame(width: 11, height: 11)
-                            .frame(width: 22, height: 20)
-                            .background(on ? Theme.surfaceHi : .clear)
-                            .overlay(RoundedRectangle(cornerRadius: 4)
-                                .strokeBorder(on ? c.hex : .clear, lineWidth: 1))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                    }.buttonStyle(.plain)
-                        .help(c.name)
-                        .accessibilityLabel(c.name)
-                        .accessibilityAddTraits(on ? .isSelected : [])
+                        HStack(spacing: 6) {
+                            if let color = ColorLabel(rawValue: app.filters.color) {
+                                Circle().fill(color.hex).frame(width: 9, height: 9)
+                            }
+                            menuTitle(ColorLabel(rawValue: app.filters.color)?.name ?? "全部颜色")
+                        }
+                    }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                    .accessibilityLabel("颜色标签")
+                    .accessibilityValue(ColorLabel(rawValue: app.filters.color)?.name ?? "全部颜色")
+                }
+                filterMenu("文件类型", value: app.filters.type,
+                           options: [("any", "全部类型"), ("RAW", "RAW"), ("HEIC", "HEIC")]) {
+                    var filters = app.filters; filters.type = $0; app.setFilters(filters)
+                }
+                field("相机") { metadataField("全部相机", label: "相机", text: $cameraText) }
+                field("镜头") { metadataField("全部镜头", label: "镜头", text: $lensText) }
+                filterMenu("拍摄日期", value: app.filters.date,
+                           options: [("any", "全部日期"), ("thisMonth", "本月"), ("thisYear", "今年")]) {
+                    var filters = app.filters; filters.date = $0; app.setFilters(filters)
+                }
+                filterMenu("GPS", value: app.filters.gps,
+                           options: [("any", "不限"), ("yes", "有位置"), ("no", "无位置")]) {
+                    var filters = app.filters; filters.gps = $0; app.setFilters(filters)
+                }
+                filterMenu("文件状态", value: app.filters.status,
+                           options: [("any", "全部状态"), ("ready", "正常"), ("missing", "缺失"), ("offline", "离线")]) {
+                    var filters = app.filters; filters.status = $0; app.setFilters(filters)
                 }
             }
         }
-    }
-
-    private struct FBStar: View {
-        let n: Int
-        let on: Bool
-        let action: () -> Void
-        @State private var hover = false
-        var body: some View {
-            Button(action: action) {
-                Image(systemName: on ? "star.fill" : "star")
-                    .font(.system(size: 14))
-                    .foregroundStyle(on || hover ? Theme.rating : Theme.text4)
-                    .padding(2)
-            }.buttonStyle(.plain).onHover { hover = $0 }
-                .accessibilityLabel("\(n) 星及以上")
-        }
-    }
-
-    private var typeGroup: some View {
-        HStack(spacing: 8) {
-            label("类型")
-            Segmented(
-                options: [
-                    SegOption(value: "any", label: "全部"),
-                    SegOption(value: "RAW", label: "RAW"),
-                    SegOption(value: "HEIC", label: "HEIC"),
-                ],
-                value: app.filters.type,
-                onChange: { v in var f = app.filters; f.type = v; app.setFilters(f) },
-                size: "sm")
-        }
-    }
-
-    private var dateGroup: some View {
-        HStack(spacing: 8) {
-            label("日期")
-            Segmented(
-                options: [
-                    SegOption(value: "any", label: "全部"),
-                    SegOption(value: "thisMonth", label: "本月"),
-                    SegOption(value: "thisYear", label: "今年"),
-                ],
-                value: app.filters.date,
-                onChange: { v in var f = app.filters; f.date = v; app.setFilters(f) },
-                size: "sm")
-        }
-    }
-
-    private var metadataGroup: some View {
-        HStack(spacing: 8) {
-            label("元数据")
-            filterTextField("相机", text: $cameraText)
-            filterTextField("镜头", text: $lensText)
-        }
+        .padding(.horizontal, 16).padding(.bottom, 14).padding(.top, 4)
+        .foregroundStyle(Theme.text)
+        .background(Theme.bgSidebar)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line2).frame(height: 1) }
         .onAppear {
             cameraText = app.filters.camera
             lensText = app.filters.lens
@@ -183,59 +84,90 @@ struct FilterBar: View {
         .onChange(of: app.filters.camera) { if app.filters.camera != cameraText { cameraText = app.filters.camera } }
         .onChange(of: app.filters.lens) { if app.filters.lens != lensText { lensText = app.filters.lens } }
         .task(id: cameraText) {
-            // the do/catch matters: .task(id:) cancels on each keystroke and a
-            // swallowed CancellationError would still commit the stale text
             do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
             guard cameraText != app.filters.camera else { return }
-            var f = app.filters; f.camera = cameraText; app.setFilters(f)
+            var filters = app.filters; filters.camera = cameraText; app.setFilters(filters)
         }
         .task(id: lensText) {
             do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
             guard lensText != app.filters.lens else { return }
-            var f = app.filters; f.lens = lensText; app.setFilters(f)
+            var filters = app.filters; filters.lens = lensText; app.setFilters(filters)
         }
     }
 
-    private func filterTextField(_ placeholder: String, text: Binding<String>) -> some View {
+    private var ratingControl: some View {
+        HStack(spacing: 2) {
+            ForEach(1...5, id: \.self) { rating in
+                Button {
+                    var filters = app.filters
+                    filters.minRating = filters.minRating == rating ? 0 : rating
+                    app.setFilters(filters)
+                } label: {
+                    Image(systemName: app.filters.minRating >= rating ? "star.fill" : "star")
+                        .font(.system(size: 13))
+                        .foregroundStyle(app.filters.minRating >= rating ? Theme.rating : Theme.text3)
+                        .frame(width: 20, height: 28)
+                }
+                .buttonStyle(.plain)
+                .help("\(rating) 星及以上")
+                .accessibilityLabel("\(rating) 星及以上")
+                .accessibilityAddTraits(app.filters.minRating == rating ? .isSelected : [])
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func field<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.system(size: 11)).foregroundStyle(Theme.text2)
+            content()
+                .padding(.horizontal, 8)
+                .frame(height: 28)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 4))
+                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.line, lineWidth: 1))
+        }
+    }
+
+    private func filterMenu(_ title: String, value: String, options: [(String, String)],
+                            onSelect: @escaping (String) -> Void) -> some View {
+        field(title) {
+            Menu {
+                ForEach(options, id: \.0) { option in
+                    Button { onSelect(option.0) } label: {
+                        if value == option.0 {
+                            Label(option.1, systemImage: "checkmark")
+                        } else {
+                            Text(option.1)
+                        }
+                    }
+                }
+            } label: {
+                menuTitle(options.first { $0.0 == value }?.1 ?? value)
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden)
+            .accessibilityLabel(title)
+            .accessibilityValue(options.first { $0.0 == value }?.1 ?? value)
+        }
+    }
+
+    private func menuTitle(_ text: String) -> some View {
+        HStack(spacing: 4) {
+            Text(text).font(.system(size: 12)).lineLimit(1)
+            Spacer(minLength: 2)
+            Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Theme.text3)
+        }
+        .foregroundStyle(Theme.text)
+    }
+
+    private func metadataField(_ placeholder: String, label: String, text: Binding<String>) -> some View {
         TextField(placeholder, text: text)
-            .textFieldStyle(.plain)
-            .font(.system(size: 11.5))
-            .foregroundStyle(Theme.text)
-            .frame(width: 104, height: 22)
-            .padding(.horizontal, 7)
-            .background(Theme.surface)
-            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.line2, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .textFieldStyle(.plain).font(.system(size: 12))
+            .accessibilityLabel(label)
     }
 
-    private var gpsGroup: some View {
-        HStack(spacing: 8) {
-            label("GPS")
-            Segmented(
-                options: [
-                    SegOption(value: "any", label: "全部"),
-                    SegOption(value: "yes", label: "有"),
-                    SegOption(value: "no", label: "无"),
-                ],
-                value: app.filters.gps,
-                onChange: { v in var f = app.filters; f.gps = v; app.setFilters(f) },
-                size: "sm")
-        }
-    }
-
-    private var statusGroup: some View {
-        HStack(spacing: 8) {
-            label("状态")
-            Segmented(
-                options: [
-                    SegOption(value: "any", label: "全部"),
-                    SegOption(value: "ready", label: "正常"),
-                    SegOption(value: "missing", label: "缺失"),
-                    SegOption(value: "offline", label: "离线"),
-                ],
-                value: app.filters.status,
-                onChange: { v in var f = app.filters; f.status = v; app.setFilters(f) },
-                size: "sm")
-        }
+    private func setColor(_ color: String) {
+        var filters = app.filters; filters.color = color; app.setFilters(filters)
     }
 }

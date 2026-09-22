@@ -11,15 +11,43 @@ struct SettingsSheet: View {
     @State private var shiftMinutes = 0
     @State private var absoluteDate = Date()
     @State private var exportPresetName = ""
+    @State private var category: Category = .general
+
+    private enum Category: String, CaseIterable {
+        case general = "常规"
+        case importing = "导入"
+        case exporting = "导出"
+        case metadata = "元数据"
+        case cache = "缓存与性能"
+        case catalog = "目录库"
+        case files = "文件操作"
+
+        var symbol: String {
+            switch self {
+            case .general: return "gearshape"
+            case .importing: return "square.and.arrow.down"
+            case .exporting: return "square.and.arrow.up"
+            case .metadata: return "tag"
+            case .cache: return "internaldrive"
+            case .catalog: return "photo.on.rectangle"
+            case .files: return "folder"
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             head
-            ScrollView { body_ }
+            HStack(spacing: 0) {
+                navigation
+                ScrollView { body_ }
+                    .id(category)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
             foot
         }
-        .frame(width: 560)
-        .frame(maxHeight: 620)
+        .frame(width: 780, height: 560)
+        .font(.system(size: 13))
         .foregroundStyle(Theme.text)
         .background(Theme.bgPanel)
         .overlay(RoundedRectangle(cornerRadius: Theme.r).strokeBorder(Theme.line2, lineWidth: 1))
@@ -30,33 +58,58 @@ struct SettingsSheet: View {
         HStack {
             HStack(spacing: 9) {
                 Icon("gear", size: 17).foregroundStyle(Theme.accent)
-                Text("设置").font(.system(size: 14.5, weight: .semibold))
+                Text("设置").font(.system(size: 17, weight: .semibold))
             }
             Spacer()
             sheetClose { app.sheet = nil }
         }
-        .padding(.horizontal, 18).padding(.vertical, 15)
+        .padding(.horizontal, 18).padding(.vertical, 10)
         .background(Theme.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
+    private var navigation: some View {
+        VStack(spacing: 3) {
+            ForEach(Category.allCases, id: \.self) { item in
+                Button { category = item } label: {
+                    Label(item.rawValue, systemImage: item.symbol)
+                        .font(.system(size: 13, weight: category == item ? .semibold : .regular))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10).padding(.vertical, 9)
+                        .foregroundStyle(category == item ? Theme.accent : Theme.text2)
+                        .background(category == item ? Theme.accentSoft : .clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(category == item ? .isSelected : [])
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(width: 156)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Theme.bgSidebar)
+        .overlay(alignment: .trailing) { Rectangle().fill(Theme.line).frame(width: 1) }
+    }
+
     private var body_: some View {
         @Bindable var app = app   // $app bindings below need the Bindable projection
-        return LazyVStack(alignment: .leading, spacing: 18) {
-            section("常规") {
+        return VStack(alignment: .leading, spacing: 24) {
+            section("常规", category: .general) {
                 Toggle(isOn: $app.openLastCatalogOnLaunch) {
-                    Text("启动时打开上次目录库").font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                    Text("启动时打开上次目录库").font(.system(size: 13)).foregroundStyle(Theme.text)
                 }.toggleStyle(.switch).tint(Theme.accent)
                 HStack(spacing: 12) {
                     Stepper(value: $app.recentImportDays, in: 1...365) {
                         Text("「最近导入」窗口 \(app.recentImportDays) 天")
-                            .font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                            .font(.system(size: 13)).foregroundStyle(Theme.text)
                     }
                     Spacer()
                 }
             }
 
-            section("导入") {
+            section("导入", category: .importing) {
                 row("导入模式") {
                     Segmented(options: [
                         SegOption(value: "referenced", label: "引用式"),
@@ -107,13 +160,13 @@ struct SettingsSheet: View {
                 }
                 Toggle(isOn: $app.visionEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("导入时 Vision 分析（场景标签 + 人脸）").font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                        Text("导入时 Vision 分析（场景标签 + 人脸）").font(.system(size: 13)).foregroundStyle(Theme.text)
                         Text("完全在本机进行，照片不会离开设备。").font(.system(size: 11)).foregroundStyle(Theme.text3)
                     }
                 }.toggleStyle(.switch).tint(Theme.accent)
             }
 
-            section("导出") {
+            section("导出", category: .exporting) {
                 row("目录结构") {
                     Segmented(options: [
                         SegOption(value: "flat", label: "平铺"),
@@ -126,11 +179,11 @@ struct SettingsSheet: View {
                     }, size: "sm")
                 }
                 Toggle(isOn: $app.exportWritesXMP) {
-                    Text("导出时写入 XMP sidecar").font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                    Text("导出时写入 XMP sidecar").font(.system(size: 13)).foregroundStyle(Theme.text)
                 }.toggleStyle(.switch).tint(Theme.accent)
                 HStack(spacing: 9) {
                     TextField("预设名", text: $exportPresetName)
-                        .textFieldStyle(.plain).font(.system(size: 12.5))
+                        .textFieldStyle(.plain).font(.system(size: 13))
                         .padding(.horizontal, 10).padding(.vertical, 7)
                         .background(Theme.surface)
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
@@ -149,7 +202,7 @@ struct SettingsSheet: View {
                                 Button("删除「\(p.name)」", role: .destructive) { app.deleteExportPreset(p) }
                             }
                         } label: {
-                            Text("应用预设").font(.system(size: 12)).foregroundStyle(Theme.accent)
+                            Text("应用预设").font(.system(size: 13)).foregroundStyle(Theme.accent)
                         }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     }
                     Spacer()
@@ -161,20 +214,20 @@ struct SettingsSheet: View {
                 }
             }
 
-            section("元数据") {
+            section("元数据", category: .metadata) {
                 Toggle(isOn: $app.readXMPSidecar) {
-                    Text("导入时读取 XMP sidecar").font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                    Text("导入时读取 XMP sidecar").font(.system(size: 13)).foregroundStyle(Theme.text)
                 }.toggleStyle(.switch).tint(Theme.accent)
                 Toggle(isOn: $app.autoWriteXMPSidecar) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("编辑时自动写入 XMP sidecar").font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                        Text("编辑时自动写入 XMP sidecar").font(.system(size: 13)).foregroundStyle(Theme.text)
                         Text("评分 / 关键词 / 标题等改动会写入同名 .xmp，不改动原图。")
                             .font(.system(size: 11)).foregroundStyle(Theme.text3)
                     }
                 }.toggleStyle(.switch).tint(Theme.accent)
             }
 
-            section("缩略图与缓存") {
+            section("缩略图与缓存", category: .cache) {
                 row("预览长边") {
                     Segmented(options: [
                         SegOption(value: "1600", label: "1600px"),
@@ -184,7 +237,7 @@ struct SettingsSheet: View {
                 }
                 Stepper(value: $app.cacheLimitMB, in: 256...102_400, step: 256) {
                     Text("缓存上限 \(app.cacheLimitMB) MB")
-                        .font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                        .font(.system(size: 13)).foregroundStyle(Theme.text)
                 }
                 HStack(spacing: 9) {
                     ghostButton("refresh", "重建缩略图", small: true) { app.rebuildThumbnails() }
@@ -193,17 +246,17 @@ struct SettingsSheet: View {
                 }
             }
 
-            section("性能") {
+            section("性能", category: .cache) {
                 Toggle(isOn: $app.reduceBackgroundOnLowPower) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("低电量模式下减少后台任务").font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                        Text("低电量模式下减少后台任务").font(.system(size: 13)).foregroundStyle(Theme.text)
                         Text("开启「低电量模式」时暂停后台缩略图补齐，节省电量。")
                             .font(.system(size: 11)).foregroundStyle(Theme.text3)
                     }
                 }.toggleStyle(.switch).tint(Theme.accent)
             }
 
-            section("维护") {
+            section("维护", category: .catalog) {
                 row("自动备份") {
                     Segmented(options: [
                         SegOption(value: "off", label: "关闭"),
@@ -232,12 +285,12 @@ struct SettingsSheet: View {
                 }
             }
 
-            section("批量重命名") {
+            section("批量重命名", category: .files) {
                 Text("按命名模板重命名选中已导入照片的原件。可用占位符：{seq} {date} {time} {camera} {original}（纯前缀等价于「前缀_{seq}」）。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 HStack(spacing: 9) {
                     TextField("如 {date}_{seq} 或 IMG", text: $renamePrefix)
-                        .textFieldStyle(.plain).font(.system(size: 12.5))
+                        .textFieldStyle(.plain).font(.system(size: 13))
                         .padding(.horizontal, 10).padding(.vertical, 7)
                         .background(Theme.surface)
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
@@ -248,7 +301,7 @@ struct SettingsSheet: View {
                 }
             }
 
-            section("原件文件") {
+            section("原件文件", category: .files) {
                 Text("复制不会改变目录库路径；移动成功后会更新目录库中的原件位置。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 HStack(spacing: 9) {
@@ -262,17 +315,17 @@ struct SettingsSheet: View {
                 }
             }
 
-            section("批量调整拍摄时间") {
+            section("批量调整拍摄时间", category: .files) {
                 Text("对选中照片整体平移拍摄时间（时区/相机时钟校正），或统一设为指定时间。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 HStack(spacing: 12) {
                     Stepper(value: $shiftHours, in: -72...72) {
                         Text("\(shiftHours > 0 ? "+" : "")\(shiftHours) 时")
-                            .font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                            .font(.system(size: 13)).foregroundStyle(Theme.text)
                     }
                     Stepper(value: $shiftMinutes, in: -59...59) {
                         Text("\(shiftMinutes > 0 ? "+" : "")\(shiftMinutes) 分")
-                            .font(.system(size: 12.5)).foregroundStyle(Theme.text)
+                            .font(.system(size: 13)).foregroundStyle(Theme.text)
                     }
                     ghostButton(nil, "平移选中", small: true) {
                         app.shiftCaptureTime(hours: shiftHours, minutes: shiftMinutes)
@@ -287,7 +340,7 @@ struct SettingsSheet: View {
                 }
             }
 
-            section("目录库") {
+            section("目录库", category: .catalog) {
                 HStack(spacing: 9) {
                     ghostButton("plus", "新建目录库", small: true) { app.createCatalog() }
                     ghostButton("folder", "打开目录库", small: true) { app.openCatalog() }
@@ -299,7 +352,7 @@ struct SettingsSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            section("隐私") {
+            section("隐私", category: .general) {
                 Text("本地优先 · 仅访问授权的文件夹。可清除以下本地数据。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 HStack(spacing: 9) {
@@ -308,20 +361,27 @@ struct SettingsSheet: View {
                 }
             }
         }
-        .padding(18)
+        .padding(20)
     }
 
-    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(title).font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.text)
-            content()
+    @ViewBuilder
+    private func section<Content: View>(_ title: String, category: Category,
+                                       @ViewBuilder content: () -> Content) -> some View {
+        if self.category == category {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(title).font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 8)
+                    .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+                content()
+            }
         }
     }
 
     private func row<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
         HStack {
-            Text(label).font(.system(size: 12.5)).foregroundStyle(Theme.text2)
+            Text(label).font(.system(size: 13)).foregroundStyle(Theme.text2)
             Spacer()
             content()
         }
@@ -329,7 +389,7 @@ struct SettingsSheet: View {
 
     private func settingsTextField(_ placeholder: String, text: Binding<String>) -> some View {
         TextField(placeholder, text: text)
-            .textFieldStyle(.plain).font(.system(size: 12.5))
+            .textFieldStyle(.plain).font(.system(size: 13))
             .padding(.horizontal, 10).padding(.vertical, 7)
             .background(Theme.surface)
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
@@ -341,13 +401,13 @@ struct SettingsSheet: View {
         HStack {
             Spacer()
             Button { app.sheet = nil } label: {
-                Text("完成").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.onAccent)
+                Text("完成").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
                     .padding(.horizontal, 17).padding(.vertical, 8)
                     .background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 7))
             }.buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
         }
-        .padding(.horizontal, 18).padding(.vertical, 13)
+        .padding(.horizontal, 18).padding(.vertical, 10)
         .background(Theme.bgSidebar)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }

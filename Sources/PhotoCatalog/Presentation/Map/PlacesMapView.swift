@@ -55,12 +55,12 @@ struct PlacesMapView: View {
     var body: some View {
         Group {
             if located.isEmpty {
-                VStack(spacing: 10) {
-                    Icon("location", size: 46).foregroundStyle(Theme.text3)
+                HStack(spacing: 10) {
+                    Icon("location", size: 24).foregroundStyle(Theme.text3)
                     Text("没有带位置的照片").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
-                    Text("含 GPS 信息的照片会显示在地图上").font(.system(size: 12.5)).foregroundStyle(Theme.text3)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 Map(position: $position) {
                     ForEach(clusters) { c in
@@ -85,7 +85,7 @@ struct PlacesMapView: View {
                 .onMapCameraChange { context in
                     cameraDistance = context.camera.distance
                 }
-                .overlay(alignment: .topLeading) { countBadge }
+                .safeAreaInset(edge: .bottom, spacing: 0) { countBadge }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -117,11 +117,11 @@ struct PlacesMapView: View {
     private var countBadge: some View {
         HStack(spacing: 6) {
             Icon("location", size: 13).foregroundStyle(Theme.accent)
-            Text("\(located.count) 张照片有位置信息").font(.system(size: 12)).foregroundStyle(Theme.text)
+            Text("\(located.count) 张照片有位置信息").font(.system(size: 13)).foregroundStyle(Theme.text)
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 11).padding(.vertical, 7)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.rSm))
-        .overlay(RoundedRectangle(cornerRadius: Theme.rSm).strokeBorder(Theme.line2, lineWidth: 1))
-        .padding(14)
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(Theme.bgSidebar)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 }
