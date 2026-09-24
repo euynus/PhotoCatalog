@@ -1,11 +1,12 @@
 // ============================================================
-//  ImportControl — cooperative pause/resume for import workers
+//  ImportControl — cooperative pause/resume/cancellation for import workers
 // ============================================================
 import Foundation
 
 final class ImportControl: @unchecked Sendable {
     private let condition = NSCondition()
     private var paused = false
+    private var cancelled = false
 
     var isPaused: Bool {
         condition.lock()
@@ -15,7 +16,7 @@ final class ImportControl: @unchecked Sendable {
 
     func pause() {
         condition.lock()
-        paused = true
+        if !cancelled { paused = true }
         condition.unlock()
     }
 
@@ -26,11 +27,21 @@ final class ImportControl: @unchecked Sendable {
         condition.unlock()
     }
 
-    func waitIfPaused() {
+    func cancel() {
         condition.lock()
-        while paused {
+        cancelled = true
+        paused = false
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    @discardableResult
+    func waitIfPaused() -> Bool {
+        condition.lock()
+        defer { condition.unlock() }
+        while paused && !cancelled {
             condition.wait()
         }
-        condition.unlock()
+        return !cancelled
     }
 }

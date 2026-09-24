@@ -5,7 +5,8 @@ struct CaptureAnalysisView: View {
     @State private var selectedOnly = false
 
     var body: some View {
-        let statistics = app.captureStatistics(selectedOnly: selectedOnly)
+        let request = app.captureStatisticsRequest(selectedOnly: selectedOnly)
+        let statistics = app.captureStatistics(for: request)
         GeometryReader { geometry in
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
@@ -24,19 +25,24 @@ struct CaptureAnalysisView: View {
                     if app.isLoadingCatalog {
                         ProgressView("正在加载目录库…")
                             .frame(maxWidth: .infinity, minHeight: 200)
-                    } else if statistics.totalCount == 0 {
-                        ContentUnavailableView(selectedOnly ? "尚未选择照片" : "没有符合条件的照片",
-                                               systemImage: "chart.bar.xaxis")
-                            .frame(maxWidth: .infinity, minHeight: 240)
-                    } else {
-                        summary(statistics, width: geometry.size.width)
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 28, alignment: .top),
-                                                 count: max(1, min(3, Int(geometry.size.width / 400)))),
-                                  alignment: .leading, spacing: 28) {
-                            ForEach(statistics.distributions) { distribution in
-                                CaptureDistributionView(distribution: distribution, totalCount: statistics.totalCount)
+                    } else if let statistics {
+                        if statistics.totalCount == 0 {
+                            ContentUnavailableView(selectedOnly ? "尚未选择照片" : "没有符合条件的照片",
+                                                   systemImage: "chart.bar.xaxis")
+                                .frame(maxWidth: .infinity, minHeight: 240)
+                        } else {
+                            summary(statistics, width: geometry.size.width)
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 28, alignment: .top),
+                                                     count: max(1, min(3, Int(geometry.size.width / 400)))),
+                                      alignment: .leading, spacing: 28) {
+                                ForEach(statistics.distributions) { distribution in
+                                    CaptureDistributionView(distribution: distribution, totalCount: statistics.totalCount)
+                                }
                             }
                         }
+                    } else {
+                        ProgressView("正在分析拍摄参数…")
+                            .frame(maxWidth: .infinity, minHeight: 240)
                     }
                 }
                 .padding(20)
@@ -45,6 +51,7 @@ struct CaptureAnalysisView: View {
         }
         .foregroundStyle(Theme.text)
         .background(Theme.bgContent)
+        .task(id: request) { await app.loadCaptureStatistics(for: request) }
     }
 
     private func summary(_ statistics: CaptureStatistics, width: CGFloat) -> some View {

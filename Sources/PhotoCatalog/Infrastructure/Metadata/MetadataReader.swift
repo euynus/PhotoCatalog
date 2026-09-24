@@ -73,8 +73,7 @@ enum MetadataReader {
         if let f = (exif[kCGImagePropertyExifFocalLength] as? NSNumber)?.doubleValue { m.focal = Int(f.rounded()) }
         m.aperture = (exif[kCGImagePropertyExifFNumber] as? NSNumber)?.doubleValue ?? 0
         if let exp = (exif[kCGImagePropertyExifExposureTime] as? NSNumber)?.doubleValue { m.shutter = shutterString(exp) }
-        let isoValue = exif[kCGImagePropertyExifISOSpeedRatings] ?? exif["PhotographicSensitivity" as CFString]
-        if let iso = isoSpeed(from: isoValue) { m.iso = iso }
+        m.iso = isoSpeed(in: exif) ?? 0
         m.author = stringValue(iptc[kCGImagePropertyIPTCByline])
         m.copyright = stringValue(iptc[kCGImagePropertyIPTCCopyrightNotice])
         m.makerNotes = makerNotesSummary(from: props)
@@ -111,21 +110,20 @@ enum MetadataReader {
         return "1/\(Int((1 / exp).rounded()))"
     }
 
+    static func isoSpeed(in exif: [CFString: Any]) -> Int? {
+        isoSpeed(from: exif[kCGImagePropertyExifISOSpeedRatings])
+            ?? isoSpeed(from: exif["PhotographicSensitivity" as CFString])
+            ?? isoSpeed(from: exif[kCGImagePropertyExifISOSpeed])
+    }
+
     static func isoSpeed(from value: Any?) -> Int? {
-        switch value {
-        case let values as [Int]:
-            return values.first
-        case let values as [NSNumber]:
-            return values.first?.intValue
-        case let values as [Any]:
-            return values.lazy.compactMap { ($0 as? NSNumber)?.intValue ?? $0 as? Int }.first
-        case let value as NSNumber:
-            return value.intValue
-        case let value as Int:
-            return value
-        default:
-            return nil
+        if let values = value as? [Any] {
+            return values.lazy.compactMap { isoSpeed(from: $0) }.first
         }
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID(),
+              let iso = Int(exactly: number.doubleValue), iso > 0 else { return nil }
+        return iso
     }
 
     static func cameraName(make: String?, model: String?) -> String {

@@ -14,10 +14,10 @@ struct InspectorView: View {
     ]
 
     var body: some View {
+        let _ = assetRevision
         Group {
             if let asset {
                 content(asset)
-                    .id(assetRevision)
             } else {
                 VStack(spacing: 10) {
                     Icon("inspector", size: 24)
@@ -44,7 +44,7 @@ struct InspectorView: View {
                     switch app.insTab {
                     case "info": infoTab(asset)
                     case "meta": metaTab(asset)
-                    case "org": OrganizeTab(asset: asset)
+                    case "org": OrganizeTab(asset: asset, assetRevision: assetRevision)
                     default: histTab(asset)
                     }
                 }
@@ -214,14 +214,14 @@ struct InspectorView: View {
             .init("导入时间", DateFmt.long(a.importedAt)),
             .init("管理方式", app.managementDisplayText(for: a)),
             .init("内容哈希",
-                  a.contentHash.map { "sha256:\($0.prefix(12))…" } ?? "sha256:\(String(a.id.dropFirst()))e7b…",
+                  a.contentHash.map { "sha256:\($0.prefix(12))…" } ?? "未计算",
                   mono: true),
             .init("Quick Hash",
-                  a.quickHash.map { "\($0.prefix(10))…" } ?? "\(Int(a.fileMB))M·\(a.pid)af",
+                  a.quickHash.map { "\($0.prefix(10))…" } ?? "未计算",
                   mono: true),
             .init("原件修改", a.fileModifiedAt.map { DateFmt.short($0) } ?? "—"),
             .init("原件创建", a.fileCreatedAt.map { DateFmt.short($0) } ?? "—"),
-            .init("备份状态", "已包含于上次目录库备份", accent: true),
+            .init("目录库备份", app.statusBackupText),
         ], title: "记录")
     }
 

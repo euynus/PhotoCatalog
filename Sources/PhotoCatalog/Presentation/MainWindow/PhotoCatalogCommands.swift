@@ -39,10 +39,10 @@ struct PhotoCatalogCommands: Commands {
         CommandMenu("照片") {
             Button("全选当前列表") { perform("照片.全选当前列表", selectAllCurrentList) }
                 .keyboardShortcut("a", modifiers: .command)
-                .disabled(app.sheet != nil || !app.onboarded)
+                .disabled(!app.canChangeVisibleSelection)
             Button("反选当前列表") { perform("照片.反选当前列表", invertCurrentList) }
                 .keyboardShortcut("a", modifiers: [.command, .shift])
-                .disabled(app.sheet != nil || !app.onboarded)
+                .disabled(!app.canChangeVisibleSelection)
             Divider()
             Section("评分") {
                 Button("设置 1 星") { perform("照片.设置1星") { app.applyRatingShortcut(1) } }

@@ -11,26 +11,30 @@ The HTML/React files were prototypes; this app re-creates them faithfully in nat
 
 ## What's implemented
 
-A clickable, dark-mode macOS app with the amber accent (`#ff9f0a`) and the full screen set from the design:
+A native photo workbench with light-gray controls, a neutral dark photo canvas,
+and a restrained blue accent:
 
 - **Main window** — custom titlebar/toolbar, optional filter bar, translucent sidebar, photo grid, 4-tab Inspector, status bar.
 - **Sidebar** — 资料库 (全部 / 最近导入 / 未评分 / 精选 / 被拒绝 / 缺失·离线 / 重复文件), 文件夹, 相册, 智能相册, 关键词 — all with live counts.
 - **Grid view** — adjustable thumbnail size, RAW/HEIC & offline/missing badges, color labels, flags, star ratings, multi-select.
 - **Loupe** — single-photo view with bottom HUD and a filmstrip of the current collection.
 - **Compare** — 2–4 photos side by side, per-photo rating/flags, "选为最佳" winner.
+- **Capture dates** — year/month/day navigation, relative-date presets, and inclusive custom date ranges that can be saved as smart albums.
+- **Capture analysis** — camera, lens, focal length, aperture, shutter and ISO distributions for filtered results or selected photos; cancellable background aggregation rejects stale results and reports missing metadata separately.
 - **Inspector** — Info / Metadata (EXIF + GPS map) / Organize (rating, flags, color, keywords, title, caption) / History.
 - **Smart Album builder** — AND/OR rule rows with a live match-count preview.
 - **Duplicate detection** — exact (content-hash) & perceptual groups with keep-one resolution.
 - **Import / scan** — animated scan→import progress with a 5-stat panel and a thumbnail wall.
 - **First-launch / Welcome** — catalog creation card with recents.
 - **Interactions** — click / ⌘-click / ⇧-click selection, live search, filter bar, sort, toasts, and keyboard shortcuts:
-  `1–5` rate · `0` clear · `P/X/U` flags · `6–9` color · `G/E/C` views · arrows navigate · `Return` loupe · `Esc` close panels · `F` filters · `I` thumbnail info · `⌘F` search · `⌘I` inspector · `⌘N/⌘O` catalog · `⇧⌘I` import · `⌘E` export · `⇧⌘E` preview export · `⌘R` rescan · `⌘B` backup · `⌘,` settings · `⌘+/-/0` thumbnail size · `⌫` remove · `⌘⌫` trash originals.
+  `1–5` rate · `0` clear · `P/X/U` flags · `6–9` color · `G/E/C/A` views · arrows navigate · `Return` loupe · `Esc` close panels · `F` filters · `I` thumbnail info · `⌘F` search · `⌘I` inspector · `⌘N/⌘O` catalog · `⇧⌘I` import · `⌘E` export · `⇧⌘E` preview export · `⌘R` rescan · `⌘B` backup · `⌘,` settings · `⌘+/-/0` thumbnail size · `⌫` remove · `⌘⌫` trash originals.
 
 ### Real catalog backend (PRD Infrastructure layer, §11)
 
 Beyond the UI, the app has a working file→catalog pipeline:
 
 - **Add folder import** (toolbar 导入) — `NSOpenPanel` → recursive scan → real EXIF/GPS metadata (Image I/O) → thumbnail + preview generation (sharded disk cache) → content/quick hashing → persisted to a real `.photolibrary` catalog.
+- **Import checkpoints** — session/job creation and state transitions use transactions. Persistence failures stop subsequent files and report partial saves; already-copied originals and caches are not automatically removed.
 - **SQLite persistence** — a `.photolibrary` package (`catalog.sqlite` + `manifest.json` + `Cache/` + `Backups/`) via the system SQLite library; user edits (rating/flag/color/keywords/title/caption) write through and survive relaunch.
 - **Exact duplicate detection** — size-bucketed SHA-256 content hashing.
 - **Export** — copy selected originals to a chosen folder (preserving mtime) + JSON metadata sidecar.
@@ -96,7 +100,16 @@ script/build_and_run.sh verify     # build, launch, and verify a visible window
 
 script/build_and_run.sh selfcheck  # headless demo dataset checks
 script/build_and_run.sh pipeline   # headless end-to-end import checks
+./.build/debug/PhotoCatalog --selfcheck --benchmark  # optional 100k synthetic metadata benchmark
+./.build/debug/PhotoCatalog --import-memory-check "/path/to/sample.CR3" 200
 ```
+
+The import memory check reads the supplied image through distinct temporary
+symlinks, exercises the real import pipeline without the UI, and removes its
+temporary catalog afterward. It fails above 512 MiB at a file boundary or if
+post-warmup growth reaches 128 MiB. It never imports into an existing catalog or
+changes the original. This is a repeated-input regression check, not a full-library
+or all-RAW-format performance guarantee.
 
 The script honors `SDKROOT` when set. Otherwise it probes installed macOS SDKs and
 selects one compatible with the active Swift compiler, which also handles temporarily

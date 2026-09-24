@@ -933,11 +933,11 @@ final class CatalogStore: @unchecked Sendable {
     func updateImportSession(id: String, rootId: String? = nil, state: String, totalCount: Int,
                              importedCount: Int, skippedCount: Int, failedCount: Int,
                              finishedAt: Date? = nil, errorMessage: String? = nil) throws {
-        try db.run("""
+        let updated = try db.query("""
         UPDATE import_sessions
         SET root_id=?, state=?, total_count=?, imported_count=?, skipped_count=?, failed_count=?,
             finished_at=?, error_message=?
-        WHERE id=?;
+        WHERE id=? RETURNING id;
         """, [
             rootId.map { SQLValue.text($0) } ?? .null,
             .text(state), .int(totalCount), .int(importedCount), .int(skippedCount), .int(failedCount),
@@ -945,6 +945,7 @@ final class CatalogStore: @unchecked Sendable {
             errorMessage.map { SQLValue.text($0) } ?? .null,
             .text(id),
         ])
+        guard updated.count == 1 else { throw DBError.step("Import session not found: \(id)") }
     }
 
     func loadImportSessions() throws -> [ImportSessionRecord] {
@@ -976,10 +977,10 @@ final class CatalogStore: @unchecked Sendable {
     }
 
     func updateJob(id: String, state: String, lockedAt: Date? = .now, lastError: String? = nil) throws {
-        try db.run("""
+        let updated = try db.query("""
         UPDATE jobs
         SET state=?, locked_at=?, last_error=?, updated_at=?
-        WHERE id=?;
+        WHERE id=? RETURNING id;
         """, [
             .text(state),
             lockedAt.map { SQLValue.text(Self.iso($0)) } ?? .null,
@@ -987,6 +988,7 @@ final class CatalogStore: @unchecked Sendable {
             .text(Self.iso(.now)),
             .text(id),
         ])
+        guard updated.count == 1 else { throw DBError.step("Import job not found: \(id)") }
     }
 
     func loadJobs(type: String? = nil, states: [String]? = nil) throws -> [JobRecord] {

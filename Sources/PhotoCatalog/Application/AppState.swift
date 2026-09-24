@@ -114,7 +114,9 @@ final class AppState {
     @ObservationIgnored private var projectListCache: [KeywordCount]?
     @ObservationIgnored private var clientListCache: [KeywordCount]?
     @ObservationIgnored private var captureDateGroupsCache: [CaptureDateBucket]?
-    @ObservationIgnored private var captureStatisticsCache: (signature: ListSignature, selectedIds: Set<String>?, value: CaptureStatistics)?
+    private var captureStatisticsCache: (request: CaptureStatisticsRequest, value: CaptureStatistics)?
+    @ObservationIgnored private var captureStatisticsTask: Task<CaptureStatistics, Error>?
+    @ObservationIgnored private var captureStatisticsGeneration = 0
     @ObservationIgnored private var folderTreeCache: [FolderTreeItem]?
     @ObservationIgnored private var folderTreeCountCache: [String: Int]?
     @ObservationIgnored private var libraryCountsCache: LibraryCounts?
@@ -137,9 +139,10 @@ final class AppState {
     var assetRenderVersion = 0
     var thumbnailCacheGeneration = 0
     @ObservationIgnored private var listCache: (signature: ListSignature, value: [Asset])?
+    @ObservationIgnored private var uncollapsedListCache: (signature: ListSignature, value: [Asset])?
     @ObservationIgnored private var automaticXMPWriter = AutomaticXMPWriter()
     @ObservationIgnored private var automaticXMPWriteSequence: UInt64 = 0
-    private struct ListSignature: Equatable {
+    fileprivate struct ListSignature: Equatable {
         let inputsVersion: Int
         let selection: Selection
         let filters: Filters
@@ -148,6 +151,13 @@ final class AppState {
         let collapsed: Set<String>
         let recentDays: Int
         let captureDay: Date
+    }
+
+    struct CaptureStatisticsRequest: Equatable {
+        fileprivate let list: ListSignature
+        fileprivate let selectedIds: Set<String>?
+        fileprivate let catalogGeneration: Int
+        fileprivate let isLoading: Bool
     }
 
     private func replaceAssetsForMutation(_ updated: [Asset]) {
@@ -417,6 +427,7 @@ final class AppState {
 
     deinit {
         catalogLoadTask?.cancel()
+        captureStatisticsTask?.cancel()
         for url in securityScopedRoots {
             url.stopAccessingSecurityScopedResource()
         }
@@ -509,7 +520,6 @@ final class AppState {
     }
 
     private func applyLoadedCatalog(_ real: [Asset], from store: CatalogStore) {
-        let hasInterruptedImport = (try? store.loadJobs(type: "scan", states: ["running", "paused"]).isEmpty) == false
         guard !real.isEmpty else {
             assets = []
             albums = []
@@ -518,9 +528,7 @@ final class AppState {
             duplicateGroupsCache = []
             restoreSourceRoots(from: store)
             restoreAlbums(from: store, assets: [])
-            if hasInterruptedImport {
-                recoverInterruptedImportJobs(existingAssets: [])
-            }
+            recoverInterruptedImportJobs(existingAssets: [])
             ensurePrimaryValid()
             return
         }
@@ -1104,7 +1112,6 @@ final class AppState {
         openOrCreateCatalog()
         guard let coordinator, let store else { return }
         let sourceId = coordinator.sourceId(forFolder: folder)
-        setSourceFolder(id: sourceId, name: folder.lastPathComponent, path: folder.path, status: "scanning")
         let existingIds = Set(assets.map { $0.id })
         // referenced assets already in this source folder can be reused on a re-import instead
         // of being re-read/re-thumbnailed/re-Vision'd (process() skips by id)
@@ -1112,23 +1119,12 @@ final class AppState {
             assets.filter { !$0.deleted && !$0.isDemo && $0.folderId == sourceId }.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first })
         let run = ImportRun(source: folder, mode: mode)
-        let control = ImportControl()
-        let jobId = "job-" + run.id.uuidString
-        importRun = run
-        importControl = control
-        activeImportJobId = jobId
-        lastImportSessionPersistedCount = 0
+        guard startPersistedImport(run, store: store), let control = importControl else { return }
         let vision = visionEnabled
         let previewSize = previewMaxPixel
         let archiveRule = managedArchiveRule
         let readXMP = readXMPSidecar
         cancelBackfill()  // let the import generate thumbnails without a background pass contending
-        importing = true
-        sheet = "import"
-        try? store.startImportSession(id: run.id.uuidString, startedAt: run.startedAt)
-        try? store.startImportJob(id: jobId, sessionId: run.id.uuidString, sourcePath: folder.path,
-                                  mode: mode, autoTag: vision, archiveRule: archiveRule,
-                                  readSidecar: readXMP, previewMaxPixel: previewSize)
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: folder)
         Task { [weak self, coordinator, store, folder, mode, vision, previewSize, archiveRule, readXMP, bookmark, existingIds, sourceId, run, control, knownAssetsById] in
@@ -1137,7 +1133,7 @@ final class AppState {
                                          readSidecar: readXMP, previewMaxPixel: previewSize, control: control,
                                          knownAssetsById: knownAssetsById) { progress in
                     Task { @MainActor [weak self] in
-                        self?.recordImportProgress(progress, for: run.id)
+                        self?.recordImportProgress(progress, for: run.id, store: store)
                     }
                 }
             }.value
@@ -1157,7 +1153,7 @@ final class AppState {
     @ObservationIgnored private var pendingImportRun: ImportRun?
     @ObservationIgnored private var lastImportRunFlush: ContinuousClock.Instant?
 
-    private func recordImportProgress(_ progress: ImportProgress, for runId: UUID) {
+    func recordImportProgress(_ progress: ImportProgress, for runId: UUID, store: CatalogStore) {
         guard let live = importRun, live.id == runId, live.phase.isActive else { return }
         var run = (pendingImportRun?.id == runId ? pendingImportRun : nil) ?? live
         run.total = progress.total
@@ -1181,7 +1177,7 @@ final class AppState {
             }
         }
         pendingImportRun = run
-        persistImportSessionProgress(run)
+        guard persistImportSessionProgress(run, store: store) else { return }
         let due = lastImportRunFlush.map { ContinuousClock.now - $0 >= .milliseconds(100) } ?? true
         let final = progress.total > 0 && progress.processed + progress.failed >= progress.total
         if due || final { flushPendingImportRun() }
@@ -1198,10 +1194,18 @@ final class AppState {
         importRun = flush
     }
 
-    private func finishImport(folder: URL, imported: [Asset], existingIds: Set<String>, store: CatalogStore,
-                              bookmark: Data?, mode: ImportMode, runId: UUID, sourceId: String? = nil,
-                              persistSourceRoot: Bool) {
+    func finishImport(folder: URL, imported: [Asset], existingIds: Set<String>, store: CatalogStore,
+                      bookmark: Data?, mode: ImportMode, runId: UUID, sourceId: String? = nil,
+                      persistSourceRoot: Bool) {
+        guard importRun?.id == runId else { return }
+        defer {
+            importing = false
+            importControl = nil
+            activeImportJobId = nil
+        }
         flushPendingImportRun()  // adopt any progress still waiting on the 100 ms window
+        // A failed checkpoint is terminal for this run, even if the worker has more results.
+        guard var run = importRun, run.phase.isActive else { return }
         let dedup = ImportDeduplicationService.apply(
             imported: imported,
             existingAssets: assets.filter { !$0.deleted && !$0.isDemo },
@@ -1209,74 +1213,64 @@ final class AppState {
             strategy: importDuplicateStrategy)
         let fresh = applyPostImportMetadata(to: dedup.fresh)
         let skipped = dedup.skipped
-        var persistFailed = false
+        let rootId = fresh.first?.folderId ?? imported.first?.folderId ?? sourceId
+        var assetsSaved = false
         do {
+            guard let activeImportJobId else { throw DBError.step("Missing active import job") }
             try store.upsert(fresh)
-        } catch {
-            persistFailed = true
-        }
-        if !fresh.isEmpty && !persistFailed {
-            replaceAssetsForMutation(assets + fresh)
-        }
-        var rootId: String?
-        if let fid = fresh.first?.folderId ?? imported.first?.folderId ?? sourceId {
-            rootId = fid
-            if persistFailed && skipped == 0 {
-                folders.removeAll { $0.id == fid }
-                sourceRootPathsById.removeValue(forKey: fid)
-                sourceManagementModesById.removeValue(forKey: fid)
-            } else {
-                if persistSourceRoot && (!fresh.isEmpty || skipped > 0) {
-                    try? store.addSourceRoot(id: fid, displayName: folder.lastPathComponent,
-                                             path: folder.path, bookmark: bookmark, mode: mode,
-                                             volumeIdentifier: VolumeMonitor.volumeIdentifier(for: folder))
-                }
-                sourceManagementModesById[fid] = mode.rawValue
-                if fresh.isEmpty && skipped == 0 {
-                    folders.removeAll { $0.id == fid }
-                    sourceRootPathsById.removeValue(forKey: fid)
-                    sourceManagementModesById.removeValue(forKey: fid)
-                } else {
-                    setSourceFolder(id: fid, name: folder.lastPathComponent, path: folder.path, status: "online")
-                    select(Selection(type: .folder, id: fid, name: folder.lastPathComponent))
-                }
-            }
-        }
-        if !persistFailed, mode == .referenced, (!fresh.isEmpty || skipped > 0), !watchedRoots.contains(folder) {
-            watchedRoots.append(folder)
-            refreshWatcher()
-        }
-
-        if var run = importRun, run.id == runId {
-            run.phase = persistFailed ? .failed : .complete
+            assetsSaved = true
             run.total = max(run.total, imported.count + run.failed)
             run.processed = imported.count
             run.skipped = skipped
             run.finishedAt = .now
-            let previewAssets = fresh.isEmpty ? imported : fresh
-            run.recentAssets = Array(previewAssets.prefix(28))
-            run.errorMessage = persistFailed
-                ? [importFailureSummary(run.failures), "写入目录库失败"].compactMap { $0 }.joined(separator: " · ")
-                : importFailureSummary(run.failures)
-            importRun = run
-            lastImportSessionPersistedCount = run.processed + run.failed
-            try? store.updateImportSession(id: run.id.uuidString, rootId: rootId,
-                                           state: persistFailed ? "failed" : "completed",
-                                           totalCount: run.total, importedCount: run.imported,
-                                           skippedCount: run.skipped, failedCount: run.failed,
-                                           finishedAt: run.finishedAt, errorMessage: run.errorMessage)
+            run.recentAssets = Array((fresh.isEmpty ? imported : fresh).prefix(28))
+            run.errorMessage = importFailureSummary(run.failures)
+            // Asset upsert owns its transaction. Commit the source and both terminal records
+            // together; if this second commit fails, report the already-saved assets explicitly.
+            try store.db.transaction {
+                if let rootId, persistSourceRoot, !fresh.isEmpty || skipped > 0 {
+                    let existingBookmark = try store.loadSourceRoots().first { $0.id == rootId }?.bookmarkData
+                    try store.addSourceRoot(id: rootId, displayName: folder.lastPathComponent,
+                                            path: folder.path, bookmark: bookmark ?? existingBookmark, mode: mode,
+                                            volumeIdentifier: VolumeMonitor.volumeIdentifier(for: folder))
+                }
+                try store.updateImportSession(id: run.id.uuidString, rootId: rootId,
+                                              state: "completed", totalCount: run.total,
+                                              importedCount: run.imported, skippedCount: run.skipped,
+                                              failedCount: run.failed, finishedAt: run.finishedAt,
+                                              errorMessage: run.errorMessage)
+                try store.updateJob(id: activeImportJobId, state: "succeeded", lockedAt: nil,
+                                    lastError: run.errorMessage)
+            }
+        } catch {
+            if assetsSaved, !fresh.isEmpty {
+                replaceAssetsForMutation(assets + fresh)
+            } else if !assetsSaved {
+                run.processed = 0
+                run.skipped = 0
+            }
+            let detail = assetsSaved && !fresh.isEmpty
+                ? "\(fresh.count) 张照片已写入，但源目录或导入状态未保存"
+                : "本次导入未完成"
+            failImportPersistence(error, run: run, store: store, detail: detail,
+                                  hasSavedAssets: assetsSaved)
+            return
         }
-
+        if !fresh.isEmpty { replaceAssetsForMutation(assets + fresh) }
+        if let rootId, !fresh.isEmpty || skipped > 0 {
+            sourceManagementModesById[rootId] = mode.rawValue
+            setSourceFolder(id: rootId, name: folder.lastPathComponent, path: folder.path, status: "online")
+            select(Selection(type: .folder, id: rootId, name: folder.lastPathComponent))
+        }
+        if mode == .referenced, (!fresh.isEmpty || skipped > 0), !watchedRoots.contains(folder) {
+            watchedRoots.append(folder)
+            refreshWatcher()
+        }
+        run.phase = .complete
+        importRun = run
+        lastImportSessionPersistedCount = run.processed + run.failed
         importing = false
-        importControl = nil
-        if let activeImportJobId {
-            try? store.updateJob(id: activeImportJobId, state: persistFailed ? "failed" : "succeeded",
-                                 lockedAt: nil, lastError: importRun?.errorMessage)
-            self.activeImportJobId = nil
-        }
-        if !persistFailed {
-            applyPostImportAlbum(assetIds: fresh.map(\.id))
-        }
+        applyPostImportAlbum(assetIds: fresh.map(\.id))
         recomputeDuplicates()
         enforceCacheLimitIfNeeded()
         backfillThumbnails()
@@ -1288,9 +1282,6 @@ final class AppState {
             icon = "warning"
         } else if fresh.isEmpty {
             message = failedCount > 0 ? "导入失败 \(failedCount) 个文件" : "未发现可导入的照片"
-            icon = "warning"
-        } else if persistFailed {
-            message = "已导入 \(fresh.count) 张，但写入目录库失败，请重试"
             icon = "warning"
         } else {
             message = "已导入 \(fresh.count) 张照片" + (failedCount > 0 ? " · \(failedCount) 失败" : "")
@@ -1334,89 +1325,91 @@ final class AppState {
             }
             return
         }
-        if run.phase == .paused {
+        guard let store else { return }
+        let resuming = run.phase == .paused
+        run.phase = resuming ? .importing : .paused
+        guard persistImportState(run, state: resuming ? "running" : "paused", store: store) else { return }
+        importRun = run
+        if resuming {
             importControl.resume()
-            run.phase = .importing
-            importRun = run
-            persistImportSessionState(run, state: "running")
-            persistImportJobState("running")
             push("导入已继续", "play")
         } else {
             importControl.pause()
-            run.phase = .paused
-            importRun = run
-            persistImportSessionState(run, state: "paused")
-            persistImportJobState("paused")
             push("导入已暂停", "pause")
         }
     }
 
     private func recoverInterruptedImportJobs(existingAssets: [Asset]) {
         guard !importing, let store else { return }
-        guard let job = (try? store.loadJobs(type: "scan", states: ["running", "paused"]))?.first else { return }
-        guard let payload = importJobPayload(from: job),
-              payload.kind == "importFolder",
-              let mode = ImportMode(rawValue: payload.mode) else {
-            try? store.updateJob(id: job.id, state: "failed", lockedAt: nil,
-                                 lastError: "无法解析导入任务")
-            return
+        do {
+            guard let job = try store.loadJobs(type: "scan", states: ["running", "paused"]).first else { return }
+            do {
+                guard let payload = importJobPayload(from: job), payload.kind == "importFolder",
+                      let mode = ImportMode(rawValue: payload.mode) else {
+                    throw DBError.step("无法解析导入任务")
+                }
+                let folder = URL(fileURLWithPath: payload.sourcePath)
+                let phase: ImportPhase = job.state == "paused" ? .paused : .importing
+                let run = try restoredImportRun(job: job, payload: payload, folder: folder,
+                                                mode: mode, phase: phase, store: store)
+                guard FileManager.default.fileExists(atPath: folder.path) else {
+                    throw DBError.step("源文件夹不可访问")
+                }
+                if phase == .paused {
+                    importRun = run
+                    activeImportJobId = job.id
+                    lastImportSessionPersistedCount = run.processed + run.failed
+                    importing = true
+                    sheet = "import"
+                    push("发现暂停的导入任务", "pause")
+                    return
+                }
+                restartRecoveredImport(jobId: job.id, run: run, folder: folder, mode: mode,
+                                       autoTag: payload.autoTag,
+                                       archiveRule: recoveredArchiveRule(payload),
+                                       readSidecar: payload.readSidecar ?? readXMPSidecar,
+                                       previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel,
+                                       existingIds: Set(existingAssets.map { $0.id }))
+            } catch {
+                var message = "未能恢复导入：\(error)"
+                do {
+                    try store.updateJob(id: job.id, state: "failed", lockedAt: nil, lastError: message)
+                } catch { message += " · 任务失败状态也未保存：\(error)" }
+                push(message, "warning")
+            }
+        } catch {
+            push("读取导入任务失败：\(error)", "warning")
         }
-
-        let folder = URL(fileURLWithPath: payload.sourcePath)
-        guard FileManager.default.fileExists(atPath: folder.path) else {
-            try? store.updateJob(id: job.id, state: "failed", lockedAt: nil,
-                                 lastError: "源文件夹不可访问")
-            push("未能恢复导入：源文件夹不可访问", "warning")
-            return
-        }
-
-        let phase: ImportPhase = job.state == "paused" ? .paused : .importing
-        let run = restoredImportRun(job: job, payload: payload, folder: folder, mode: mode, phase: phase)
-        if phase == .paused {
-            importRun = run
-            activeImportJobId = job.id
-            lastImportSessionPersistedCount = run.processed + run.failed
-            importing = true
-            sheet = "import"
-            push("发现暂停的导入任务", "pause")
-            return
-        }
-
-        restartRecoveredImport(jobId: job.id, run: run, folder: folder, mode: mode,
-                               autoTag: payload.autoTag,
-                               archiveRule: recoveredArchiveRule(payload),
-                               readSidecar: payload.readSidecar ?? readXMPSidecar,
-                               previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel,
-                               existingIds: Set(existingAssets.map { $0.id }))
     }
 
     private func resumeRecoveredImport(_ run: ImportRun) {
-        guard let store, let activeImportJobId,
-              let job = (try? store.loadJobs(type: "scan", states: ["running", "paused"]))?
-                .first(where: { $0.id == activeImportJobId }),
-              let payload = importJobPayload(from: job),
-              let mode = ImportMode(rawValue: payload.mode) else { return }
-        let folder = URL(fileURLWithPath: payload.sourcePath)
-        guard FileManager.default.fileExists(atPath: folder.path) else {
-            try? store.updateJob(id: job.id, state: "failed", lockedAt: nil,
-                                 lastError: "源文件夹不可访问")
-            var failedRun = run
-            failedRun.phase = .failed
-            failedRun.errorMessage = "源文件夹不可访问"
-            importRun = failedRun
+        guard let store else { return }
+        do {
+            guard let activeImportJobId,
+                  let job = try store.loadJobs(type: "scan", states: ["running", "paused"])
+                    .first(where: { $0.id == activeImportJobId }),
+                  let payload = importJobPayload(from: job), payload.kind == "importFolder",
+                  let mode = ImportMode(rawValue: payload.mode) else {
+                throw DBError.step("导入任务缺失或无法解析")
+            }
+            let folder = URL(fileURLWithPath: payload.sourcePath)
+            _ = try restoredImportRun(job: job, payload: payload, folder: folder,
+                                       mode: mode, phase: .paused, store: store)
+            guard FileManager.default.fileExists(atPath: folder.path) else {
+                throw DBError.step("源文件夹不可访问")
+            }
+            restartRecoveredImport(jobId: job.id, run: run, folder: folder, mode: mode,
+                                   autoTag: payload.autoTag,
+                                   archiveRule: recoveredArchiveRule(payload),
+                                   readSidecar: payload.readSidecar ?? readXMPSidecar,
+                                   previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel,
+                                   existingIds: Set(assets.map { $0.id }))
+        } catch {
+            failImportPersistence(error, run: run, store: store, detail: "未能恢复导入")
             importControl = nil
             self.activeImportJobId = nil
             importing = false
-            push("源文件夹不可访问", "warning")
-            return
         }
-
-        restartRecoveredImport(jobId: job.id, run: run, folder: folder, mode: mode,
-                               autoTag: payload.autoTag,
-                               archiveRule: recoveredArchiveRule(payload),
-                               readSidecar: payload.readSidecar ?? readXMPSidecar,
-                               previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel,
-                               existingIds: Set(assets.map { $0.id }))
     }
 
     private func restartRecoveredImport(jobId: String, run: ImportRun, folder: URL, mode: ImportMode,
@@ -1424,25 +1417,25 @@ final class AppState {
                                         readSidecar: Bool, previewMaxPixel: Int,
                                         existingIds: Set<String>) {
         guard let coordinator, let store else { return }
-        let control = ImportControl()
         var runningRun = run
         runningRun.phase = .importing
+        activeImportJobId = jobId
+        guard persistImportState(runningRun, state: "running", store: store) else {
+            activeImportJobId = nil
+            importing = false
+            return
+        }
+        let control = ImportControl()
         importRun = runningRun
         importControl = control
-        activeImportJobId = jobId
         lastImportSessionPersistedCount = runningRun.processed + runningRun.failed
         let sourceId = coordinator.sourceId(forFolder: folder)
-        setSourceFolder(id: sourceId, name: folder.lastPathComponent, path: folder.path, status: "scanning")
         // skip re-processing originals already cataloged before the crash (referenced mode)
         let knownAssetsById = Dictionary(
             assets.filter { !$0.deleted && !$0.isDemo && $0.folderId == sourceId }.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first })
         importing = true
         sheet = "import"
-        try? store.updateJob(id: jobId, state: "running")
-        try? store.updateImportSession(id: runningRun.id.uuidString, state: "running",
-                                       totalCount: runningRun.total, importedCount: runningRun.imported,
-                                       skippedCount: runningRun.skipped, failedCount: runningRun.failed)
         push("正在恢复导入「\(folder.lastPathComponent)」…", "refresh")
 
         Task { [weak self, coordinator, store, folder, mode, autoTag, archiveRule, readSidecar, previewMaxPixel, existingIds, sourceId, runningRun, control, knownAssetsById] in
@@ -1452,7 +1445,7 @@ final class AppState {
                                          previewMaxPixel: previewMaxPixel, control: control,
                                          knownAssetsById: knownAssetsById) { progress in
                     Task { @MainActor [weak self] in
-                        self?.recordImportProgress(progress, for: runningRun.id)
+                        self?.recordImportProgress(progress, for: runningRun.id, store: store)
                     }
                 }
             }.value
@@ -1464,23 +1457,22 @@ final class AppState {
         }
     }
 
-    private func restoredImportRun(job: JobRecord, payload: ImportJobPayload, folder: URL,
-                                   mode: ImportMode, phase: ImportPhase) -> ImportRun {
-        let session = store.flatMap { store in
-            (try? store.loadImportSessions())?.first { $0.id == payload.sessionId }
+    func restoredImportRun(job: JobRecord, payload: ImportJobPayload, folder: URL,
+                           mode: ImportMode, phase: ImportPhase, store: CatalogStore) throws -> ImportRun {
+        guard let runId = UUID(uuidString: payload.sessionId),
+              let session = try store.loadImportSessions().first(where: { $0.id == payload.sessionId }),
+              ["running", "paused"].contains(session.state), session.state == job.state else {
+            throw DBError.step("导入会话缺失或状态不一致，不能自动恢复")
         }
-        let runId = UUID(uuidString: payload.sessionId) ?? UUID()
         var run = ImportRun(id: runId, source: folder, mode: mode,
-                            startedAt: session?.startedAt ?? job.createdAt)
+                            startedAt: session.startedAt)
         run.phase = phase
-        if let session {
-            run.total = session.totalCount
-            run.skipped = session.skippedCount
-            run.failed = session.failedCount
-            run.processed = session.importedCount + session.skippedCount
-            run.finishedAt = session.finishedAt
-            run.errorMessage = session.errorMessage
-        }
+        run.total = session.totalCount
+        run.skipped = session.skippedCount
+        run.failed = session.failedCount
+        run.processed = session.importedCount + session.skippedCount
+        run.finishedAt = session.finishedAt
+        run.errorMessage = session.errorMessage
         return run
     }
 
@@ -1494,7 +1486,7 @@ final class AppState {
     }
 
     func retryFailedImport() {
-        guard let run = importRun, run.phase.isFinished, !run.failures.isEmpty else { return }
+        guard !importing, let run = importRun, run.phase.isFinished, !run.failures.isEmpty else { return }
         guard let coordinator, let store else {
             push("无可用目录库", "warning")
             return
@@ -1506,22 +1498,15 @@ final class AppState {
         }
         let files = run.failures.map { URL(fileURLWithPath: $0.path) }
         let retry = ImportRun(source: folder, mode: run.mode)
-        let control = ImportControl()
-        let jobId = "job-" + retry.id.uuidString
+        guard startPersistedImport(retry, store: store), let control = importControl else {
+            importRun?.failures = run.failures
+            return
+        }
         let existingIds = Set(assets.map { $0.id })
-        importRun = retry
-        importControl = control
-        activeImportJobId = jobId
-        lastImportSessionPersistedCount = 0
         let vision = visionEnabled
         let previewSize = previewMaxPixel
         let archiveRule = managedArchiveRule
         let readXMP = readXMPSidecar
-        importing = true
-        try? store.startImportSession(id: retry.id.uuidString, startedAt: retry.startedAt)
-        try? store.startImportJob(id: jobId, sessionId: retry.id.uuidString, sourcePath: folder.path,
-                                  mode: retry.mode, autoTag: vision, archiveRule: archiveRule,
-                                  readSidecar: readXMP, previewMaxPixel: previewSize)
         push("正在重试 \(files.count) 个失败文件…", "refresh")
         Task { [weak self, coordinator, store, folder, files, existingIds, retry, vision, archiveRule, readXMP, previewSize, control] in
             let imported = await Task.detached(priority: .userInitiated) { [coordinator, folder, files, retry, vision, archiveRule, readXMP, previewSize, control] in
@@ -1529,14 +1514,14 @@ final class AppState {
                                         archiveRule: archiveRule, readSidecar: readXMP,
                                         previewMaxPixel: previewSize, control: control) { progress in
                     Task { @MainActor [weak self] in
-                        self?.recordImportProgress(progress, for: retry.id)
+                        self?.recordImportProgress(progress, for: retry.id, store: store)
                     }
                 }
             }.value
             guard let self else { return }
             self.finishImport(folder: folder, imported: imported, existingIds: existingIds,
                               store: store, bookmark: nil, mode: retry.mode, runId: retry.id,
-                              persistSourceRoot: false)
+                              persistSourceRoot: true)
         }
     }
 
@@ -1545,29 +1530,97 @@ final class AppState {
         return failures.map { "\($0.filename): \($0.reason)" }.joined(separator: "\n")
     }
 
-    private func persistImportSessionProgress(_ run: ImportRun) {
-        guard let store else { return }
+    func startPersistedImport(_ run: ImportRun, store: CatalogStore) -> Bool {
+        guard !importing else { return false }
+        sheet = "import"
+        let jobId = "job-" + run.id.uuidString
+        do {
+            try store.db.transaction {
+                try store.startImportSession(id: run.id.uuidString, startedAt: run.startedAt)
+                try store.startImportJob(id: jobId, sessionId: run.id.uuidString,
+                                         sourcePath: run.sourcePath, mode: run.mode,
+                                         autoTag: visionEnabled, archiveRule: managedArchiveRule,
+                                         readSidecar: readXMPSidecar, previewMaxPixel: previewMaxPixel)
+            }
+        } catch {
+            failImportPersistence(error, run: run, store: store)
+            return false
+        }
+        importRun = run
+        pendingImportRun = nil
+        importControl = ImportControl()
+        activeImportJobId = jobId
+        lastImportSessionPersistedCount = 0
+        importing = true
+        return true
+    }
+
+    private func persistImportSessionProgress(_ run: ImportRun, store: CatalogStore) -> Bool {
         let completedCount = run.processed + run.failed
         let stride = max(1, run.total / 100)
         guard completedCount == 0 || completedCount == run.total ||
-                completedCount - lastImportSessionPersistedCount >= stride else { return }
-        lastImportSessionPersistedCount = completedCount
-        try? store.updateImportSession(id: run.id.uuidString,
-                                       state: run.phase == .paused ? "paused" : "running",
-                                       totalCount: run.total, importedCount: run.imported,
-                                       skippedCount: run.skipped, failedCount: run.failed)
+                completedCount - lastImportSessionPersistedCount >= stride else { return true }
+        do {
+            try store.updateImportSession(id: run.id.uuidString,
+                                          state: run.phase == .paused ? "paused" : "running",
+                                          totalCount: run.total, importedCount: run.imported,
+                                          skippedCount: run.skipped, failedCount: run.failed)
+            lastImportSessionPersistedCount = completedCount
+            return true
+        } catch {
+            failImportPersistence(error, run: run, store: store)
+            return false
+        }
     }
 
-    private func persistImportSessionState(_ run: ImportRun, state: String) {
-        guard let store else { return }
-        try? store.updateImportSession(id: run.id.uuidString, state: state,
-                                       totalCount: run.total, importedCount: run.imported,
-                                       skippedCount: run.skipped, failedCount: run.failed)
+    func persistImportState(_ run: ImportRun, state: String, store: CatalogStore) -> Bool {
+        do {
+            guard let activeImportJobId else { throw DBError.step("Missing active import job") }
+            try store.db.transaction {
+                try store.updateImportSession(id: run.id.uuidString, state: state,
+                                              totalCount: run.total, importedCount: run.imported,
+                                              skippedCount: run.skipped, failedCount: run.failed)
+                try store.updateJob(id: activeImportJobId, state: state)
+            }
+            return true
+        } catch {
+            failImportPersistence(error, run: run, store: store)
+            return false
+        }
     }
 
-    private func persistImportJobState(_ state: String) {
-        guard let store, let activeImportJobId else { return }
-        try? store.updateJob(id: activeImportJobId, state: state)
+    private func failImportPersistence(_ error: Error, run: ImportRun, store: CatalogStore,
+                                       detail: String = "本次处理结果未保存", hasSavedAssets: Bool = false) {
+        var failed = run
+        failed.phase = .failed
+        failed.finishedAt = .now
+        if !hasSavedAssets {
+            failed.processed = 0
+            failed.skipped = 0
+            failed.recentAssets = []
+        }
+        var messages = ["写入目录库失败：\(error)", detail]
+        if let summary = importFailureSummary(run.failures) { messages.append(summary) }
+        if let activeImportJobId {
+            // Attempt both independently: a broken session must not leave a resumable job.
+            do {
+                try store.updateJob(id: activeImportJobId, state: "failed", lockedAt: nil,
+                                    lastError: messages.joined(separator: " · "))
+            } catch { messages.append("任务失败状态也未保存：\(error)") }
+            do {
+                try store.updateImportSession(id: run.id.uuidString, state: "failed",
+                                              totalCount: failed.total, importedCount: failed.imported,
+                                              skippedCount: failed.skipped, failedCount: failed.failed,
+                                              finishedAt: failed.finishedAt,
+                                              errorMessage: messages.joined(separator: " · "))
+            } catch { messages.append("会话失败状态也未保存：\(error)") }
+        }
+        failed.errorMessage = messages.joined(separator: " · ")
+        pendingImportRun = nil
+        importRun = failed
+        // ponytail: cancellation takes effect between files; keep the lock until the current file exits.
+        importControl?.cancel()
+        push(failed.errorMessage ?? "导入失败", "warning")
     }
 
     // ---------- FSEvents incremental watch (§12.8) ----------
@@ -2648,6 +2701,10 @@ final class AppState {
     }
 
     private func closeCurrentCatalog() {
+        captureStatisticsTask?.cancel()
+        captureStatisticsTask = nil
+        captureStatisticsGeneration &+= 1
+        captureStatisticsCache = nil
         catalogLoadTask?.cancel()
         catalogLoadTask = nil
         catalogLoadGeneration &+= 1
@@ -2915,17 +2972,55 @@ final class AppState {
         return grouped
     }
 
-    func captureStatistics(selectedOnly: Bool) -> CaptureStatistics {
-        let signature = currentListSignature
-        let ids = selectedOnly ? selectedIds : nil
-        if let cached = captureStatisticsCache, cached.signature == signature, cached.selectedIds == ids {
-            return cached.value
+    func captureStatisticsRequest(selectedOnly: Bool) -> CaptureStatisticsRequest {
+        CaptureStatisticsRequest(list: currentListSignature,
+                                 selectedIds: selectedOnly ? selectedIds : nil,
+                                 catalogGeneration: catalogLoadGeneration, isLoading: isLoadingCatalog)
+    }
+
+    func captureStatistics(for request: CaptureStatisticsRequest) -> CaptureStatistics? {
+        guard !request.isLoading,
+              request == captureStatisticsRequest(selectedOnly: request.selectedIds != nil),
+              let cached = captureStatisticsCache, cached.request == request else { return nil }
+        return cached.value
+    }
+
+    func loadCaptureStatistics(for request: CaptureStatisticsRequest) async {
+        guard !Task.isCancelled, !request.isLoading,
+              request == captureStatisticsRequest(selectedOnly: request.selectedIds != nil) else { return }
+        captureStatisticsGeneration &+= 1
+        let generation = captureStatisticsGeneration
+        captureStatisticsTask?.cancel()
+        captureStatisticsTask = nil
+        if captureStatistics(for: request) != nil { return }
+
+        // Share the grid snapshot, including members hidden inside collapsed stacks.
+        // ponytail: filtering is still on the main actor; SQL paging must replace the shared list.
+        _ = list
+        guard let snapshot = uncollapsedListCache, snapshot.signature == request.list else { return }
+        let matching = snapshot.value
+        let ids = request.selectedIds
+        let worker = Task.detached(priority: .userInitiated) {
+            try Task.checkCancellation()
+            let samples = ids.map { selected in matching.filter { selected.contains($0.id) } } ?? matching
+            return try CaptureStatistics(assets: samples)
         }
-        // Statistics cover all matching photos, including members hidden inside collapsed stacks.
-        let matching = computeList(collapseStacks: false)
-        let value = CaptureStatistics(assets: ids.map { selected in matching.filter { selected.contains($0.id) } } ?? matching)
-        captureStatisticsCache = (signature, ids, value)
-        return value
+        captureStatisticsTask = worker
+        defer {
+            if captureStatisticsGeneration == generation { captureStatisticsTask = nil }
+        }
+        do {
+            let value = try await withTaskCancellationHandler {
+                try await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+            guard !Task.isCancelled, captureStatisticsGeneration == generation,
+                  request == captureStatisticsRequest(selectedOnly: request.selectedIds != nil) else { return }
+            captureStatisticsCache = (request, value)
+        } catch {
+            // Aggregation only throws CancellationError; cancelled work must never publish.
+        }
     }
 
     /// Library sidebar tallies in one pass, cached and invalidated on assets/recent-days change.
@@ -3285,7 +3380,9 @@ final class AppState {
     var list: [Asset] {
         let signature = currentListSignature
         if let cache = listCache, cache.signature == signature { return cache.value }
-        let value = computeList()
+        let matching = computeList()
+        uncollapsedListCache = (signature, matching)
+        let value = PhotoStackService.visibleAssets(matching, stacks: photoStacks, collapsedStackIds: collapsedStackIds)
         listCache = (signature, value)
         return value
     }
@@ -3303,9 +3400,10 @@ final class AppState {
               search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               sort == Sort(), collapsedStackIds.isEmpty else { return }
         listCache = (currentListSignature, loadedAssets)
+        uncollapsedListCache = (currentListSignature, loadedAssets)
     }
 
-    private func computeList(collapseStacks: Bool = true) -> [Asset] {
+    private func computeList() -> [Asset] {
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
         let indexedSearchIds: Set<String>? = if q.count >= 3, let store {
             Set(store.search(q))
@@ -3314,7 +3412,7 @@ final class AppState {
         }
         let cameraQuery = filters.camera.trimmingCharacters(in: .whitespacesAndNewlines)
         let lensQuery = filters.lens.trimmingCharacters(in: .whitespacesAndNewlines)
-        let referenceDate = Date.now
+        let dateInterval = filters.captureDateInterval()
         var l = baseList.filter { a in
             if filters.minRating > 0 && a.rating < filters.minRating { return false }
             if filters.flag != "any" && a.flag.rawValue != filters.flag { return false }
@@ -3325,7 +3423,9 @@ final class AppState {
             }
             if !cameraQuery.isEmpty && !a.camera.localizedStandardContains(cameraQuery) { return false }
             if !lensQuery.isEmpty && !a.lens.localizedStandardContains(lensQuery) { return false }
-            if !filters.matchesCaptureDate(a.date, now: referenceDate) { return false }
+            if filters.date != "any" {
+                guard let dateInterval, CaptureDates.contains(a.date, in: dateInterval) else { return false }
+            }
             if filters.gps == "yes" && !a.hasGPS { return false }
             if filters.gps == "no" && a.hasGPS { return false }
             if filters.status != "any" && a.status.rawValue != filters.status { return false }
@@ -3357,7 +3457,7 @@ final class AppState {
                 return compare(a.fileMB, b.fileMB, dir)
             }
         }
-        return collapseStacks ? PhotoStackService.visibleAssets(l, stacks: photoStacks, collapsedStackIds: collapsedStackIds) : l
+        return l
     }
 
     private func compare(_ a: Double, _ b: Double, _ dir: Int) -> Bool {
@@ -3462,8 +3562,13 @@ final class AppState {
         anchorId = id
     }
 
+    var canChangeVisibleSelection: Bool {
+        onboarded && !isLoadingCatalog && sheet == nil && view != .compare
+    }
+
     @discardableResult
     func selectAllVisible() -> Bool {
+        guard canChangeVisibleSelection else { return false }
         let ids = list.map(\.id)
         guard !ids.isEmpty else { return false }
         selectedIds = Set(ids)
@@ -3476,6 +3581,7 @@ final class AppState {
 
     @discardableResult
     func invertVisibleSelection() -> Bool {
+        guard canChangeVisibleSelection else { return false }
         let ids = list.map(\.id)
         guard !ids.isEmpty else { return false }
         let visible = Set(ids)
@@ -3483,6 +3589,15 @@ final class AppState {
         primaryId = ids.first { selectedIds.contains($0) }
         anchorId = primaryId
         return true
+    }
+
+    // Self-checks must exercise interactions, not the launch-loading guard.
+    static func selfCheckFixture() -> AppState {
+        let app = AppState(arguments: [], deferCatalogLoading: true)
+        app.deferredCatalogArguments = nil
+        app.isLoadingCatalog = false
+        app.onboarded = true
+        return app
     }
 
     private func normalizeSelectionToVisibleList() {
@@ -4288,6 +4403,7 @@ final class AppState {
                 guard canSaveCurrentFilter else { return false }
                 saveCurrentFilterAsSmartAlbum()
             case "a":
+                guard canChangeVisibleSelection else { return true }
                 if hasShift {
                     guard invertVisibleSelection() else { return false }
                     push("已反选当前列表")

@@ -119,6 +119,9 @@ enum SelfCheck {
         let restoredPins = pinnedData.flatMap { try? JSONDecoder().decode([PinnedSidebarItem].self, from: $0) }
         assert(pinned.id == "folder:fld-tokyo" && restoredPins == [pinned], "pinned sidebar item persists")
         checkThemeContrast()
+        InteractionCheck.run()
+        ImportSafetyCheck.run()
+        ImportPersistenceCheck.run()
         CaptureAnalysisCheck.run()
         assert(CompareView.stageColumnCount(itemCount: 4, size: CGSize(width: 785, height: 1200)) == 2
                && CompareView.stageColumnCount(itemCount: 4, size: CGSize(width: 2064, height: 1200)) == 4

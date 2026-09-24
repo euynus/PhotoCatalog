@@ -133,36 +133,42 @@ final class ImportCoordinator: @unchecked Sendable {
         var assets: [Asset] = []
         var prog = ImportProgress(total: files.count, processed: 0, failed: 0)
         for url in files {
-            control?.waitIfPaused()
-            guard FileManager.default.fileExists(atPath: url.path) else {
-                prog.failed += 1
-                prog.latestAsset = nil
-                prog.latestFailure = ImportFailure(url: url, reason: "文件不存在或不可访问")
-                progress?(prog)
-                continue
-            }
-            // Referenced files already cataloged here keep the same id (derived from the source
-            // path). Reuse the known asset instead of re-reading metadata, regenerating
-            // thumbnails, and re-running Vision — dedup still counts it as skipped downstream.
-            if mode == .referenced, let known = knownAssetsById[assetId(forPath: url.path)] {
-                assets.append(known)
-                prog.processed += 1
-                prog.latestAsset = known
-                prog.latestFailure = nil
-                progress?(prog)
-                continue
-            }
-            if let asset = makeAsset(source: url, folderId: folderId, folderName: folderName,
-                                     mode: mode, autoTag: autoTag, archiveRule: archiveRule,
-                                     readSidecar: readSidecar, previewMaxPixel: previewMaxPixel) {
-                assets.append(asset)
-                prog.processed += 1
-                prog.latestAsset = asset
-                prog.latestFailure = nil
-            } else {
-                prog.failed += 1
-                prog.latestAsset = nil
-                prog.latestFailure = ImportFailure(url: url, reason: "无法读取图片元数据或像素尺寸")
+            guard control?.waitIfPaused() != false else { break }
+            // A detached import can run for hours; drain Foundation/ImageIO temporaries
+            // per file, before reporting progress or blocking at the next pause point.
+            autoreleasepool {
+                guard FileManager.default.fileExists(atPath: url.path) else {
+                    prog.failed += 1
+                    prog.latestAsset = nil
+                    prog.latestFailure = ImportFailure(url: url, reason: "文件不存在或不可访问")
+                    return
+                }
+                // Reuse cataloged referenced files; downstream dedup still counts them as skipped.
+                if mode == .referenced, let known = knownAssetsById[assetId(forPath: url.path)] {
+                    assets.append(known)
+                    prog.processed += 1
+                    prog.latestAsset = known
+                    prog.latestFailure = nil
+                    return
+                }
+                do {
+                    if let asset = try makeAsset(source: url, folderId: folderId, folderName: folderName,
+                                                mode: mode, autoTag: autoTag, archiveRule: archiveRule,
+                                                readSidecar: readSidecar, previewMaxPixel: previewMaxPixel) {
+                        assets.append(asset)
+                        prog.processed += 1
+                        prog.latestAsset = asset
+                        prog.latestFailure = nil
+                    } else {
+                        prog.failed += 1
+                        prog.latestAsset = nil
+                        prog.latestFailure = ImportFailure(url: url, reason: "无法读取图片元数据或像素尺寸")
+                    }
+                } catch {
+                    prog.failed += 1
+                    prog.latestAsset = nil
+                    prog.latestFailure = ImportFailure(url: url, reason: "复制原件失败：\(error.localizedDescription)")
+                }
             }
             progress?(prog)
         }
@@ -171,12 +177,15 @@ final class ImportCoordinator: @unchecked Sendable {
 
     private func makeAsset(source url: URL, folderId: String, folderName: String,
                            mode: ImportMode, autoTag: Bool, archiveRule: ManagedArchiveRule = .date,
-                           readSidecar: Bool = true, previewMaxPixel: Int) -> Asset? {
+                           readSidecar: Bool = true, previewMaxPixel: Int) throws -> Asset? {
         let meta = MetadataReader.read(url)
         guard meta.width > 0, meta.height > 0 else { return nil }
-        let finalURL = mode == .managed
-            ? (copyToOriginals(url, date: meta.captureDate, camera: meta.camera, rule: archiveRule) ?? url)
-            : url
+        let finalURL: URL
+        if mode == .managed {
+            finalURL = try copyToOriginals(url, date: meta.captureDate, camera: meta.camera, rule: archiveRule)
+        } else {
+            finalURL = url
+        }
 
         let hash = shortHash(finalURL.path)
         let assetId = "r" + hash
@@ -234,7 +243,7 @@ final class ImportCoordinator: @unchecked Sendable {
         return asset
     }
 
-    private func copyToOriginals(_ url: URL, date: Date, camera: String, rule: ManagedArchiveRule) -> URL? {
+    private func copyToOriginals(_ url: URL, date: Date, camera: String, rule: ManagedArchiveRule) throws -> URL {
         let c = Calendar.captureWallClock.dateComponents([.year, .month, .day], from: date)
         let year = String(format: "%04d", c.year ?? 1970)
         let month = String(format: "%02d", c.month ?? 1)
@@ -249,7 +258,7 @@ final class ImportCoordinator: @unchecked Sendable {
             dir = store.originalsURL.appendingPathComponent(folderName)
                 .appendingPathComponent(year).appendingPathComponent(month)
         }
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var dest = dir.appendingPathComponent(url.lastPathComponent)
         var i = 1
         while FileManager.default.fileExists(atPath: dest.path) {
@@ -263,7 +272,8 @@ final class ImportCoordinator: @unchecked Sendable {
             dest = dir.appendingPathComponent("\(base) (\(i)).\(url.pathExtension)")
             i += 1
         }
-        do { try FileManager.default.copyItem(at: url, to: dest); return dest } catch { return nil }
+        try FileManager.default.copyItem(at: url, to: dest)
+        return dest
     }
 
     private func preservingCatalogMetadata(from known: Asset, in refreshed: Asset,

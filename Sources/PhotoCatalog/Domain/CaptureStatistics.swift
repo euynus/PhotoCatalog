@@ -83,33 +83,52 @@ struct CaptureStatistics: Sendable {
     let lastDate: Date?
     let distributions: [CaptureDistribution]
 
-    init(assets: [Asset]) {
-        let live = assets.filter { !$0.deleted }
-        totalCount = live.count
-        let dates = live.map(\.date).filter { $0.timeIntervalSince1970.isFinite }
-        dayCount = Set(dates.map { Calendar.captureWallClock.startOfDay(for: $0) }).count
-        firstDate = dates.min()
-        lastDate = dates.max()
-        completeCount = live.filter { asset in CaptureParameter.allCases.allSatisfy { $0.value(in: asset) != nil } }.count
-        fileDateCount = live.filter { $0.captureDateSource.hasPrefix("文件") }.count
-        distributions = CaptureParameter.allCases.map { parameter in
-            var counts: [String: Int] = [:]
-            var missing = 0
-            for asset in live {
+    init(assets: [Asset]) throws {
+        try Task.checkCancellation()
+        let parameters = CaptureParameter.allCases
+        var counts = Array(repeating: [String: Int](), count: parameters.count)
+        var missing = Array(repeating: 0, count: parameters.count)
+        var days = Set<Date>()
+        var total = 0, complete = 0, fileDates = 0
+        var first: Date?, last: Date?
+        for (index, asset) in assets.enumerated() {
+            if index.isMultiple(of: 256) { try Task.checkCancellation() }
+            guard !asset.deleted else { continue }
+            total += 1
+            if asset.date.timeIntervalSince1970.isFinite {
+                days.insert(Calendar.captureWallClock.startOfDay(for: asset.date))
+                first = first.map { min($0, asset.date) } ?? asset.date
+                last = last.map { max($0, asset.date) } ?? asset.date
+            }
+            if asset.captureDateSource.hasPrefix("文件") { fileDates += 1 }
+            var isComplete = true
+            for (index, parameter) in parameters.enumerated() {
                 if let value = parameter.value(in: asset) {
-                    counts[value, default: 0] += 1
+                    counts[index][value, default: 0] += 1
                 } else {
-                    missing += 1
+                    missing[index] += 1
+                    isComplete = false
                 }
             }
-            let values = counts.map { CaptureParameterCount(value: $0.key, count: $0.value) }.sorted {
+            if isComplete { complete += 1 }
+        }
+        try Task.checkCancellation()
+        totalCount = total
+        dayCount = days.count
+        completeCount = complete
+        fileDateCount = fileDates
+        firstDate = first
+        lastDate = last
+        distributions = parameters.enumerated().map { index, parameter in
+            let values = counts[index].map { CaptureParameterCount(value: $0.key, count: $0.value) }.sorted {
                 if $0.count != $1.count { return $0.count > $1.count }
                 if parameter != .camera, parameter != .lens, let left = Double($0.value), let right = Double($1.value) {
                     return left < right
                 }
                 return $0.value.localizedStandardCompare($1.value) == .orderedAscending
             }
-            return CaptureDistribution(parameter: parameter, values: values, missingCount: missing)
+            return CaptureDistribution(parameter: parameter, values: values, missingCount: missing[index])
         }
+        try Task.checkCancellation()
     }
 }

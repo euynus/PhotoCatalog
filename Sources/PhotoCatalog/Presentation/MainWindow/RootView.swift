@@ -111,6 +111,17 @@ struct KeyCatcher: NSViewRepresentable {
         }
     }
 
+    nonisolated static func routeEvent(_ event: NSEvent, isMenuTracking: Bool, isEditingText: Bool,
+                                      handle: (String, Bool, Bool) -> Bool) -> NSEvent? {
+        guard !isMenuTracking, !isEditingText,
+              !shouldPassThroughGlobalShortcut(event.modifierFlags) else { return event }
+        let command = event.modifierFlags.contains(.command)
+        let key = keyString(keyCode: event.keyCode,
+                            charactersIgnoringModifiers: event.charactersIgnoringModifiers)
+        guard !shouldPassThroughMenuCommand(key, hasCommand: command) else { return event }
+        return handle(key, command, event.modifierFlags.contains(.shift)) ? nil : event
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator(app: app) }
     func makeNSView(context: Context) -> NSView {
         context.coordinator.install()
@@ -124,35 +135,44 @@ struct KeyCatcher: NSViewRepresentable {
     final class Coordinator {
         let app: AppState
         private var monitor: Any?
+        private var menuObservers: [NSObjectProtocol] = []
+        private var menuTrackingDepth = 0
         init(app: AppState) { self.app = app }
 
         func install() {
+            remove()
+            // Native menus can leave the main window's responder unchanged.
+            menuObservers = [
+                NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification,
+                                                       object: nil, queue: nil) { [weak self] _ in
+                    self?.menuTrackingDepth += 1
+                },
+                NotificationCenter.default.addObserver(forName: NSMenu.didEndTrackingNotification,
+                                                       object: nil, queue: nil) { [weak self] _ in
+                    guard let self else { return }
+                    self.menuTrackingDepth = max(0, self.menuTrackingDepth - 1)
+                },
+            ]
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                self?.handle(event) ?? event
+                guard let self else { return event }
+                return self.handle(event)
             }
         }
         func remove() {
             if let monitor { NSEvent.removeMonitor(monitor) }
             monitor = nil
-        }
-
-        private func isEditingText() -> Bool {
-            MainActor.assumeIsolated { KeyCatcher.isEditingText() }
+            for observer in menuObservers { NotificationCenter.default.removeObserver(observer) }
+            menuObservers = []
+            menuTrackingDepth = 0
         }
 
         private func handle(_ event: NSEvent) -> NSEvent? {
-            let cmd = event.modifierFlags.contains(.command)
-            let shift = event.modifierFlags.contains(.shift)
-            if KeyCatcher.shouldPassThroughGlobalShortcut(event.modifierFlags) { return event }
-            let key = KeyCatcher.keyString(keyCode: event.keyCode,
-                                           charactersIgnoringModifiers: event.charactersIgnoringModifiers)
             let app = app
-
-            if isEditingText() { return event }
-            if KeyCatcher.shouldPassThroughMenuCommand(key, hasCommand: cmd) { return event }
-
             let handled = MainActor.assumeIsolated {
-                app.handleKey(key, hasCommand: cmd, hasShift: shift)
+                KeyCatcher.routeEvent(event, isMenuTracking: menuTrackingDepth > 0,
+                                      isEditingText: KeyCatcher.isEditingText()) { key, command, shift in
+                    app.handleKey(key, hasCommand: command, hasShift: shift)
+                } == nil
             }
             return handled ? nil : event
         }

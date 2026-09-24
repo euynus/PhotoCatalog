@@ -70,16 +70,21 @@ enum CaptureDates {
     }
 
     static func groups(_ assets: [Asset]) -> [CaptureDateBucket] {
-        buckets(assets.filter { !$0.deleted && $0.date.timeIntervalSince1970.isFinite }, depth: 0)
+        var days: [Date: Int] = [:]
+        for asset in assets where !asset.deleted && asset.date.timeIntervalSince1970.isFinite {
+            days[Calendar.captureWallClock.startOfDay(for: asset.date), default: 0] += 1
+        }
+        let counts = days.map { (key: key($0.key), count: $0.value) }
+        return buckets(counts, depth: 0)
     }
 
-    private static func buckets(_ assets: [Asset], depth: Int) -> [CaptureDateBucket] {
-        let grouped = Dictionary(grouping: assets) { key($0.date, depth: depth) }
+    private static func buckets(_ days: [(key: String, count: Int)], depth: Int) -> [CaptureDateBucket] {
+        let grouped = Dictionary(grouping: days) { $0.key.split(separator: "-").prefix(depth + 1).joined(separator: "-") }
         return grouped.keys.sorted(by: >).map { key in
             let members = grouped[key] ?? []
             let suffix = Int(key.split(separator: "-").last ?? "") ?? 0
             return CaptureDateBucket(id: key, label: "\(suffix)\(["年", "月", "日"][depth])",
-                                     count: members.count,
+                                     count: members.reduce(0) { $0 + $1.count },
                                      children: depth < 2 ? buckets(members, depth: depth + 1) : [])
         }
     }

@@ -6,6 +6,7 @@ import SwiftUI
 struct OrganizeTab: View {
     @Environment(AppState.self) var app
     let asset: Asset
+    let assetRevision: Int
 
     private enum Field { case title, caption, project, client }
     @FocusState private var focusedField: Field?
@@ -28,6 +29,7 @@ struct OrganizeTab: View {
     }
 
     var body: some View {
+        let _ = assetRevision
         VStack(alignment: .leading, spacing: 12) {
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
                 GridRow {
@@ -63,6 +65,7 @@ struct OrganizeTab: View {
                 KeywordEditor(keywords: asset.keywords,
                               suggestions: app.keywordSuggestionPool,
                               onAdd: { app.addKeyword($0) }, onRemove: { app.removeKeyword($0) })
+                    .id(asset.id)
             }
             .zIndex(10)
             // title
