@@ -285,7 +285,7 @@ private struct StackBadge: View {
             .foregroundStyle(collapsed ? Theme.onAccent : Theme.canvasText)
             .padding(.horizontal, 5)
             .padding(.vertical, 3)
-            .background(collapsed ? Theme.accent : Theme.canvasSurface)
+            .background(collapsed ? Theme.accentFill : Theme.canvasSurface)
             .clipShape(RoundedRectangle(cornerRadius: 3))
             .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(Theme.canvasLine, lineWidth: 1))
         }

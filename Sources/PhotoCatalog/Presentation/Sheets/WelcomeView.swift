@@ -69,7 +69,7 @@ struct WelcomeView: View {
                 }
                 .foregroundStyle(primary ? Theme.onAccent : Theme.text)
                 .padding(.horizontal, 12).frame(height: 34)
-                .background(primary ? (hover ? Theme.accent2 : Theme.accent)
+                .background(primary ? (hover ? Theme.accentFillHover : Theme.accentFill)
                                     : (hover ? Theme.surfaceHi : Theme.surface))
                 .overlay(RoundedRectangle(cornerRadius: Theme.rSm).strokeBorder(primary ? .clear : Theme.line2, lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))

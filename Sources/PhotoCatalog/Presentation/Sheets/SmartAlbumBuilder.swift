@@ -224,7 +224,7 @@ struct SmartAlbumBuilder: View {
                     .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
                     .fixedSize()
                     .padding(.horizontal, 17).padding(.vertical, 8)
-                    .background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 7))
+                    .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
             }.buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
                 .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || conditions.isEmpty)

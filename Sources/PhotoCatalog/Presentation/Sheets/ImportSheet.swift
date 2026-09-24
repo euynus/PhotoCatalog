@@ -115,7 +115,7 @@ struct ImportSheet: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.onAccent)
                     .padding(.horizontal, 16).padding(.vertical, 8)
-                    .background(Theme.accent)
+                    .background(Theme.accentFill)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
@@ -313,7 +313,7 @@ struct ImportSheet: View {
                         Label("完成", systemImage: "checkmark")
                             .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
                             .padding(.horizontal, 17).padding(.vertical, 8)
-                            .background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 6))
+                            .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 6))
                     }.buttonStyle(.plain)
                 }
             } else {

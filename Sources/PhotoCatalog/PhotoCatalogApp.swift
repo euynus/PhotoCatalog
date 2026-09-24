@@ -11,6 +11,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private var pendingCatalogURLs: [URL] = []
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // before the first window draws, so a saved light/dark choice doesn't flash
+        AppAppearance.stored.apply()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
@@ -53,7 +58,6 @@ struct PhotoCatalogApp: App {
             RootView()
                 .environment(app)
                 .frame(minWidth: 1080, minHeight: 680)
-                .preferredColorScheme(.light)
                 .onAppear {
                     app.startDeferredCatalogLoadingIfNeeded()
                     delegate.openCatalogURL = { url in

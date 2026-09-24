@@ -184,6 +184,19 @@ struct PinnedSidebarItem: Identifiable, Equatable, Codable, Sendable {
 
 enum ViewMode: String { case grid, loupe, compare, analysis }
 
+/// Workspace appearance preference; the photo canvas is dark in every mode.
+enum AppAppearance: String, CaseIterable, Sendable {
+    case system, light, dark
+
+    var label: String {
+        switch self {
+        case .system: return "跟随系统"
+        case .light: return "浅色"
+        case .dark: return "深色"
+        }
+    }
+}
+
 /// Active filter-bar state.
 struct Filters: Equatable, Sendable {
     var minRating: Int = 0

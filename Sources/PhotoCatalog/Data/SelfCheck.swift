@@ -146,21 +146,36 @@ enum SelfCheck {
                 + 0.0722 * linear(rgb.blueComponent)
         }
 
-        for (foreground, background, minimum) in [
+        // Workspace tokens are dynamic: hold every pair in both appearances.
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            NSAppearance(named: name)!.performAsCurrentDrawingAppearance {
+                checkContrastPairs(luminance)
+            }
+        }
+    }
+
+    private static func checkContrastPairs(_ luminance: (Color) -> Double) {
+        for (index, (foreground, background, minimum)) in [
             (Theme.text, Theme.bgPanel, 4.5), (Theme.text2, Theme.bgSidebar, 4.5),
             (Theme.text3, Theme.bgSidebar, 4.5), (Theme.accent, Theme.bgPanel, 4.5),
+            (Theme.accent, Theme.surface, 4.5), (Theme.text3, Theme.surface, 4.5),
             (Theme.green, Theme.bgPanel, 4.5), (Theme.red, Theme.bgPanel, 4.5),
-            (Theme.onAccent, Theme.accent, 4.5), (Theme.canvasText, Theme.canvas, 4.5),
+            (Theme.yellow, Theme.bgPanel, 3.0),
+            (Theme.onAccent, Theme.accentFill, 4.5), (Theme.onAccent, Theme.accentFillHover, 4.5),
+            (Theme.canvasText, Theme.canvas, 4.5),
             (Theme.canvasText2, Theme.canvasSurface, 4.5), (Theme.canvasText3, Theme.canvasSurface, 4.5),
             (Theme.canvasText2, Theme.canvasSurfaceHi, 4.5),
             (Theme.green, Theme.canvasSurface, 3.0), (Theme.red, Theme.canvasSurface, 3.0),
             (Theme.rating, Theme.canvasSurface, 3.0), (Theme.rating, Theme.bgPanel, 3.0),
             (Theme.starInactive, Theme.canvasSurface, 3.0), (Theme.starInactive, Theme.bgPanel, 3.0),
             (Theme.rating, Theme.canvasSurfaceHi, 3.0), (Theme.starInactive, Theme.canvasSurfaceHi, 3.0),
-        ] {
+        ].enumerated() {
             let lightness = [luminance(foreground), luminance(background)].sorted()
-            assert((lightness[1] + 0.05) / (lightness[0] + 0.05) >= minimum,
-                   "workspace text and photo controls must retain readable contrast")
+            let ratio = (lightness[1] + 0.05) / (lightness[0] + 0.05)
+            assert(ratio >= minimum,
+                   "workspace text and photo controls must retain readable contrast "
+                   + "(\(NSAppearance.currentDrawing().name.rawValue) pair \(index): "
+                   + "\(String(format: "%.2f", ratio)) < \(minimum))")
         }
     }
 }

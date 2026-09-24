@@ -106,7 +106,7 @@ struct PlacesMapView: View {
                         .font(.system(size: 9.5, weight: .bold)).monospacedDigit()
                         .foregroundStyle(Theme.onAccent)
                         .padding(.horizontal, 5).padding(.vertical, 2)
-                        .background(Theme.accent, in: Capsule())
+                        .background(Theme.accentFill, in: Capsule())
                         .overlay(Capsule().strokeBorder(Theme.surface, lineWidth: 1))
                         .offset(x: 7, y: -7)
                 }

@@ -95,6 +95,13 @@ struct SettingsSheet: View {
         @Bindable var app = app   // $app bindings below need the Bindable projection
         return VStack(alignment: .leading, spacing: 24) {
             section("常规", category: .general) {
+                row("外观") {
+                    Segmented(options: AppAppearance.allCases.map { SegOption(value: $0.rawValue, label: $0.label) },
+                              value: app.appearance.rawValue,
+                              onChange: { app.appearance = AppAppearance(rawValue: $0) ?? .system }, size: "sm")
+                }
+                Text("照片画布始终保持深色中性背景，便于判断曝光与色彩。")
+                    .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 Toggle(isOn: $app.openLastCatalogOnLaunch) {
                     Text("启动时打开上次目录库").font(.system(size: 13)).foregroundStyle(Theme.text)
                 }.toggleStyle(.switch).tint(Theme.accent)
@@ -401,7 +408,7 @@ struct SettingsSheet: View {
             Button { app.sheet = nil } label: {
                 Text("完成").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
                     .padding(.horizontal, 17).padding(.vertical, 8)
-                    .background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 7))
+                    .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
             }.buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
         }

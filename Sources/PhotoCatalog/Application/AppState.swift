@@ -193,6 +193,12 @@ final class AppState {
     var importPostAlbumName = UserDefaults.standard.string(forKey: "pc_importPostAlbumName") ?? "" {
         didSet { UserDefaults.standard.set(importPostAlbumName, forKey: "pc_importPostAlbumName") }
     }
+    var appearance: AppAppearance = .stored {
+        didSet {
+            UserDefaults.standard.set(appearance.rawValue, forKey: AppAppearance.defaultsKey)
+            appearance.apply()
+        }
+    }
     var exportWritesXMP = UserDefaults.standard.bool(forKey: "pc_exportXMP") {
         didSet { UserDefaults.standard.set(exportWritesXMP, forKey: "pc_exportXMP") }
     }
@@ -4515,6 +4521,23 @@ final class AppState {
 
     /// Updated by the grid so arrow-key navigation knows the column count.
     @ObservationIgnored var gridWidth: CGFloat?
+}
+
+extension AppAppearance {
+    static let defaultsKey = "pc_appearance"
+    static var stored: AppAppearance {
+        AppAppearance(rawValue: UserDefaults.standard.string(forKey: defaultsKey) ?? "") ?? .system
+    }
+
+    /// AppKit-level so menus, sheets and alerts follow along; `nil` tracks the system.
+    @MainActor func apply() {
+        let name: NSAppearance.Name? = switch self {
+        case .system: nil
+        case .light: .aqua
+        case .dark: .darkAqua
+        }
+        NSApp.appearance = name.flatMap(NSAppearance.init(named:))
+    }
 }
 
 /// Grid layout shared by GridView and arrow-key navigation. `target` is the
