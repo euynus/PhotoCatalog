@@ -1,71 +1,101 @@
 // ============================================================
-//  MainView — the app-root layout (toolbar / body / status)
+//  MainView — native split view: sidebar / content / inspector
 // ============================================================
 import SwiftUI
+import AppKit
 
 struct MainView: View {
     @Environment(AppState.self) var app
+    // Local echo of app.search — committed debounced so each keystroke doesn't
+    // pay a synchronous full-library filter + sort.
+    @State private var searchText = ""
 
     var body: some View {
-        ZStack {
-            mainChrome
-                .disabled(app.sheet != nil || app.isLoadingCatalog)
-                .accessibilityHidden(app.sheet != nil || (app.isLoadingCatalog && !app.hasCatalogPreview))
-            ZStack { sheets }
-                .animation(.easeOut(duration: 0.18), value: app.sheet)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.bgContent)
-    }
-
-    private var mainChrome: some View {
         let assetRevision = app.assetRenderVersion
-        return VStack(spacing: 0) {
-            Titlebar()
-            HSplitView {
-                Sidebar(assetRevision: assetRevision)
-                ContentColumn(assetRevision: assetRevision)
-                    .frame(minWidth: Theme.contentMinW)
-                    .layoutPriority(1)
-                if app.showInspector && !app.isDuplicates && app.view != .analysis {
+        NavigationSplitView {
+            Sidebar(assetRevision: assetRevision)
+                .navigationSplitViewColumnWidth(min: Theme.sidebarMinW, ideal: Theme.sidebarW,
+                                                max: Theme.sidebarMaxW)
+        } detail: {
+            ContentColumn(assetRevision: assetRevision)
+                .frame(minWidth: Theme.contentMinW)
+                .inspector(isPresented: inspectorPresented) {
                     InspectorView(asset: app.primary, assetRevision: assetRevision)
+                        .inspectorColumnWidth(min: Theme.inspectorMinW, ideal: Theme.inspectorW,
+                                              max: Theme.inspectorMaxW)
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            StatusBar()
+                .navigationTitle(app.selection.name)
+                .navigationSubtitle(subtitle)
+                .toolbar { MainToolbar() }
+                .searchable(text: $searchText, placement: .toolbar, prompt: "搜索照片、关键词")
         }
-        .background(Theme.bgContent)
+        .disabled(app.isLoadingCatalog)
+        .accessibilityHidden(app.isLoadingCatalog && !app.hasCatalogPreview)
+        .sheet(isPresented: sheetPresented) { sheetContent }
+        .onAppear { searchText = app.search }
+        .onChange(of: app.search) { if app.search != searchText { searchText = app.search } }
+        .task(id: searchText) {
+            // the do/catch matters: .task(id:) cancels on each keystroke and a
+            // swallowed CancellationError would still commit the stale text
+            do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+            if app.search != searchText { app.setSearch(searchText) }
+        }
+        .onChange(of: app.searchFocusToken) { ToolbarSearchField.focus() }
+        .onChange(of: app.searchBlurToken) { ToolbarSearchField.blur() }
     }
 
-    @ViewBuilder private var sheets: some View {
-        if app.sheet == "import" {
-            SheetBackdrop { ImportSheet() }
-        } else if app.sheet == "smart" {
-            SheetBackdrop {
-                SmartAlbumBuilder(album: app.smartAlbumEditingID.flatMap { id in
-                    app.smartAlbums.first { $0.id == id }
-                })
-            }
-        } else if app.sheet == "settings" {
-            SheetBackdrop { SettingsSheet() }
+    private var subtitle: String {
+        var parts = [app.catalogDisplayName, "\(app.contentAssetCount.formatted()) 张照片"]
+        if !app.selectedIds.isEmpty { parts.append("已选 \(app.selectedIds.count.formatted())") }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Analysis and duplicate review own the full width; the user's inspector
+    /// preference survives visiting them.
+    private var inspectorPresented: Binding<Bool> {
+        Binding(
+            get: { app.showInspector && app.inspectorAvailable },
+            set: { shown in
+                if app.inspectorAvailable { app.showInspector = shown }
+            })
+    }
+
+    private var sheetPresented: Binding<Bool> {
+        Binding(get: { app.sheet != nil }, set: { if !$0 { app.sheet = nil } })
+    }
+
+    @ViewBuilder private var sheetContent: some View {
+        switch app.sheet {
+        case "import":
+            ImportSheet()
+        case "smart":
+            SmartAlbumBuilder(album: app.smartAlbumEditingID.flatMap { id in
+                app.smartAlbums.first { $0.id == id }
+            })
+        case "settings":
+            SettingsSheet()
+        default:
+            EmptyView()
         }
     }
 }
 
-// ---------- Content column (header + main) ----------
+extension AppState {
+    var inspectorAvailable: Bool { !isDuplicates && view != .analysis }
+}
+
+// ---------- Content column (filters / main / status) ----------
 struct ContentColumn: View {
     @Environment(AppState.self) var app
     let assetRevision: Int
 
     var body: some View {
         VStack(spacing: 0) {
-            if !app.isDuplicates {
-                ContentHeader()
-                if app.filterOpen { FilterBar() }
-            }
+            if app.filterOpen && !app.isDuplicates { FilterBar() }
             contentMain
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Theme.canvas)
+            StatusBar()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bgContent)
@@ -87,145 +117,32 @@ struct ContentColumn: View {
     }
 }
 
-// ---------- Content header ----------
-struct ContentHeader: View {
-    @Environment(AppState.self) var app
-
-    var body: some View {
-        VStack(spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(app.selection.name)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(app.selection.name)
-                Spacer(minLength: 8)
-                Text("\(app.contentAssetCount) 张照片")
-                    .font(.system(size: 12)).monospacedDigit()
-                    .foregroundStyle(Theme.text3)
-                    .fixedSize()
-                if !app.selectedIds.isEmpty {
-                    Text("已选 \(app.selectedIds.count)")
-                        .font(.system(size: 12, weight: .medium)).monospacedDigit()
-                        .foregroundStyle(Theme.accent)
-                        .fixedSize()
-                }
-            }
-            HStack(spacing: 8) {
-                Segmented(
-                    options: [
-                        SegOption(value: "grid", icon: "grid", title: "网格 (G)"),
-                        SegOption(value: "loupe", icon: "loupe", title: "单张 (E)"),
-                        SegOption(value: "compare", icon: "compare", title: "比较 (C)"),
-                        SegOption(value: "analysis", icon: "analysis", title: "拍摄参数分析 (A)"),
-                    ], value: app.view.rawValue,
-                    onChange: { app.switchView(ViewMode(rawValue: $0) ?? .grid) }, size: "sm")
-                filterButton
-                if app.view != .analysis { sortMenu }
-                Spacer(minLength: 0)
-                if app.view == .grid {
-                    ToolButton(icon: app.showInfo ? "eye" : "info",
-                               label: app.showInfo ? "隐藏缩略图信息" : "显示缩略图信息",
-                               active: app.showInfo,
-                               action: { app.toggleGridInfo() })
-                    sizeSlider
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .frame(height: Theme.contentHeadH)
-        .background(Theme.bgContent)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
-    }
-
-    private var filterButton: some View {
-        ToolButton(icon: "filter", label: "筛选",
-                   active: app.filterOpen || app.filters.activeCount > 0,
-                   action: { app.toggleFilterBar() }) {
-            if app.filters.activeCount > 0 {
-                Text("\(app.filters.activeCount)")
-                    .font(.system(size: 11, weight: .semibold))
-            }
+// ---------- Toolbar search focus ----------
+/// SwiftUI's toolbar search field is an AppKit NSSearchToolbarItem; driving it
+/// directly keeps ⌘F / click-to-blur working on macOS 14 (no `searchFocused`).
+@MainActor
+enum ToolbarSearchField {
+    static func focus() {
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow,
+              let items = window.toolbar?.items else { return }
+        if let item = items.lazy.compactMap({ $0 as? NSSearchToolbarItem }).first {
+            item.beginSearchInteraction()
+        } else if let field = items.lazy.compactMap({ $0.view.flatMap(searchField(in:)) }).first {
+            window.makeFirstResponder(field)
         }
     }
 
-    private var sizeSlider: some View {
-        @Bindable var app = app
-        return Slider(value: $app.thumbSize, in: 108...280)
-            .frame(width: 80)
-            .controlSize(.mini)
-            .tint(Theme.text2)
-            .accessibilityLabel("缩略图大小")
-            .help("调整缩略图大小")
+    /// Resign only the search field so an inspector edit in progress keeps focus.
+    static func blur() {
+        guard let window = NSApp.keyWindow,
+              let editor = window.firstResponder as? NSTextView,
+              editor.delegate is NSSearchField else { return }
+        window.makeFirstResponder(nil)
     }
 
-    private var sortMenu: some View {
-        Menu {
-            Section("排序方式") {
-                ForEach(Sort.Field.allCases, id: \.self) { f in
-                    Button {
-                        var sort = app.sort
-                        sort.field = f
-                        app.setSort(sort)
-                    } label: {
-                        if app.sort.field == f {
-                            Label(f.label, systemImage: "checkmark")
-                        } else {
-                            Text(f.label)
-                        }
-                    }
-                }
-            }
-            Section("顺序") {
-                sortOrderButton(descending: false, label: "升序")
-                sortOrderButton(descending: true, label: "降序")
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Icon("sort", size: 14)
-                Text(app.sort.field.label).font(.system(size: 12))
-                Image(systemName: app.sort.descending ? "arrow.down" : "arrow.up")
-                    .font(.system(size: 10, weight: .semibold))
-            }
-            .foregroundStyle(Theme.text2)
-            .padding(.horizontal, 8)
-            .frame(height: 30)
-            .background(Theme.surfaceHi.opacity(0.5))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("排序：\(app.sort.field.label) · \(app.sort.descending ? "降序" : "升序")")
-        .accessibilityLabel("排序")
-        .accessibilityValue("\(app.sort.field.label)，\(app.sort.descending ? "降序" : "升序")")
-    }
-
-    @ViewBuilder
-    private func sortOrderButton(descending: Bool, label: String) -> some View {
-        Button {
-            var sort = app.sort
-            sort.descending = descending
-            app.setSort(sort)
-        } label: {
-            if app.sort.descending == descending {
-                Label(label, systemImage: "checkmark")
-            } else {
-                Text(label)
-            }
-        }
-    }
-}
-
-// ---------- Reusable sheet backdrop ----------
-struct SheetBackdrop<Content: View>: View {
-    @ViewBuilder var content: () -> Content
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.24).ignoresSafeArea()
-            content()
-        }
-        .transition(.opacity)
+    private static func searchField(in view: NSView) -> NSSearchField? {
+        if let field = view as? NSSearchField { return field }
+        for sub in view.subviews { if let field = searchField(in: sub) { return field } }
+        return nil
     }
 }

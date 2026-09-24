@@ -50,8 +50,6 @@ struct SettingsSheet: View {
         .font(.system(size: 13))
         .foregroundStyle(Theme.text)
         .background(Theme.bgPanel)
-        .overlay(RoundedRectangle(cornerRadius: Theme.r).strokeBorder(Theme.line2, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.r))
     }
 
     private var head: some View {

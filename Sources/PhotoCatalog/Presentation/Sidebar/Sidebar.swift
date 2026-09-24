@@ -1,119 +1,114 @@
 // ============================================================
-//  Sidebar — port of sidebar.jsx
+//  Sidebar — native source list (library, collections, dates, folders)
 // ============================================================
 import SwiftUI
+
+/// List-selection identity for a sidebar row. Names can change (album rename)
+/// without moving the highlight, so only kind + id participate in equality.
+struct SidebarTag: Hashable {
+    let selection: Selection
+
+    static func == (l: SidebarTag, r: SidebarTag) -> Bool {
+        l.selection.type == r.selection.type && l.selection.id == r.selection.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(selection.type)
+        hasher.combine(selection.id)
+    }
+}
 
 struct Sidebar: View {
     @Environment(AppState.self) var app
     let assetRevision: Int
 
+    @AppStorage("pc_sidebarLibraryExpanded") private var libraryExpanded = true
+    @AppStorage("pc_sidebarReviewExpanded") private var reviewExpanded = true
+    @AppStorage("pc_sidebarCollectionsExpanded") private var collectionsExpanded = true
+    @AppStorage("pc_sidebarDatesExpanded") private var datesExpanded = true
+    @AppStorage("pc_sidebarFoldersExpanded") private var foldersExpanded = true
+    @AppStorage("pc_sidebarTagsExpanded") private var tagsExpanded = false
+    @AppStorage("pc_sidebarMaintenanceExpanded") private var maintenanceExpanded = true
+
     var body: some View {
         let _ = assetRevision
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    librarySection
-                    filterSection
-                    if !app.hasCatalogPreview {
-                        dateSection
-                        folderSection
-                        collectionSection
+        List(selection: selection) {
+            Section("资料库", isExpanded: $libraryExpanded) { librarySection }
+            Section("筛选", isExpanded: $reviewExpanded) { reviewSection }
+            if !app.hasCatalogPreview {
+                Section(isExpanded: $collectionsExpanded) {
+                    collectionSection
+                } header: {
+                    collectionHeader
+                }
+                if !app.captureDateGroups.isEmpty {
+                    Section("拍摄日期", isExpanded: $datesExpanded) {
+                        OutlineGroup(app.captureDateGroups, children: \.childBuckets) { bucket in
+                            dateRow(bucket)
+                        }
                     }
                 }
-                .padding(.bottom, 8)
+                if !app.folderTree.isEmpty {
+                    Section("文件夹", isExpanded: $foldersExpanded) {
+                        OutlineGroup(FolderNode.build(app.folderTree), children: \.children) { node in
+                            folderRow(node.item)
+                        }
+                    }
+                }
+                if hasTags {
+                    Section("标签", isExpanded: $tagsExpanded) { tagSection }
+                }
             }
-            managementSection
+            Section("管理", isExpanded: $maintenanceExpanded) { maintenanceSection }
         }
-        .frame(minWidth: Theme.sidebarMinW,
-               idealWidth: Theme.sidebarW,
-               maxWidth: Theme.sidebarMaxW,
-               maxHeight: .infinity)
-        .background(Theme.bgSidebar)
+        .listStyle(.sidebar)
     }
+
+    private var selection: Binding<SidebarTag?> {
+        Binding(
+            get: { SidebarTag(selection: app.selection) },
+            set: { tag in
+                guard let tag, tag != SidebarTag(selection: app.selection) else { return }
+                app.select(tag.selection)
+            })
+    }
+
+    private var pendingBadge: Text? { app.hasCatalogPreview ? Text("…") : nil }
 
     // ---- sections ----
     @ViewBuilder
-    private var favoriteSection: some View {
-        if !app.pinnedSidebarFavorites.isEmpty {
-            Text("收藏夹").font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.text2)
-                .padding(.horizontal, 8).padding(.top, 4)
-                .accessibilityAddTraits(.isHeader)
-            ForEach(app.pinnedSidebarFavorites) { item in
-                row(pinnedIcon(item), pinnedColor(item), item.name,
-                    app.countForPinnedSidebarItem(item),
-                    item.type, item.selectionId, item.name)
-            }
-        }
-    }
-
     private var librarySection: some View {
         let c = app.libraryCounts
-        let pending = app.hasCatalogPreview ? "…" : nil
-        return SidebarSection(title: "浏览") {
-            row("photos", nil, "全部照片", "\(c.all)", .lib, "all", "全部照片")
-            row("clock", nil, "最近导入", pending ?? "\(c.recent)", .lib, "recent", "最近导入")
-            row("map", Theme.green, "地点", pending ?? "\(c.places)", .lib, "places", "地点")
-            if app.hasCatalogPreview || c.people > 0 {
-                row("camera", Theme.albumBlue, "人物", pending ?? "\(c.people)", .lib, "people", "人物")
-            }
-        }
-    }
-
-    private var filterSection: some View {
-        let c = app.libraryCounts
-        let pending = app.hasCatalogPreview ? "…" : nil
-        return SidebarSection(title: "筛选") {
-            row("star", nil, "未评分", pending ?? "\(c.unrated)", .lib, "unrated", "未评分")
-            row("flag", nil, "精选", pending ?? "\(c.picks)", .lib, "picks", "精选")
-            row("reject", nil, "被拒绝", pending ?? "\(c.rejected)", .lib, "rejected", "被拒绝")
-            if !app.hasCatalogPreview {
-                projectSection
-                clientSection
-                keywordSection
-            }
-        }
-    }
-
-    private var managementSection: some View {
-        let c = app.libraryCounts
-        let pending = app.hasCatalogPreview ? "…" : nil
-        return SidebarSection(title: "管理") {
-            row("offline", Theme.yellow, "缺失 / 离线", pending ?? "\(c.missingOffline)",
-                .lib, "missing", "缺失 / 离线")
-            row("copy", Theme.purple, "重复文件",
-                pending ?? "\(app.duplicateGroups.count) 组", .lib, "duplicates", "重复文件")
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    @ViewBuilder
-    private var dateSection: some View {
-        if !app.captureDateGroups.isEmpty {
-            SidebarSection(title: "拍摄日期") {
-                ForEach(app.captureDateGroups) { bucket in
-                    CaptureDateSidebarRow(bucket: bucket)
-                }
-            }
+        row("photos", "全部照片", .lib, "all", badge: Text(c.all.formatted()))
+        row("clock", "最近导入", .lib, "recent", badge: pendingBadge ?? Text(c.recent.formatted()))
+        row("map", "地点", .lib, "places", badge: pendingBadge ?? Text(c.places.formatted()))
+        if app.hasCatalogPreview || c.people > 0 {
+            row("person.crop.rectangle", "人物", .lib, "people", badge: pendingBadge ?? Text(c.people.formatted()))
         }
     }
 
     @ViewBuilder
-    private var folderSection: some View {
-        if !app.folderTree.isEmpty {
-            SidebarSection(title: "文件夹") {
-                ForEach(app.folderTree) { f in
-                    let count = app.countForFolderTreeItem(f)
-                    row("folder", folderColor(f.status), f.name,
-                        folderStatusText(f.status) ?? "\(count)", .folder, f.id, f.name,
-                        indent: CGFloat(f.depth) * 12)
-                }
-            }
-        }
+    private var reviewSection: some View {
+        let c = app.libraryCounts
+        row("star", "未评分", .lib, "unrated", badge: pendingBadge ?? Text(c.unrated.formatted()))
+        row("flag", "精选", .lib, "picks", badge: pendingBadge ?? Text(c.picks.formatted()))
+        row("reject", "被拒绝", .lib, "rejected", badge: pendingBadge ?? Text(c.rejected.formatted()))
     }
 
-    private var collectionSection: some View {
-        SidebarSection(title: "收藏与集合", action: {
+    @ViewBuilder
+    private var maintenanceSection: some View {
+        let c = app.libraryCounts
+        row("offline", "缺失 / 离线", .lib, "missing",
+            tint: c.missingOffline > 0 ? Theme.yellow : nil,
+            badge: pendingBadge ?? Text(c.missingOffline.formatted()))
+        row("copy", "重复文件", .lib, "duplicates",
+            badge: pendingBadge ?? Text("\(app.duplicateGroups.count.formatted()) 组"))
+    }
+
+    private var collectionHeader: some View {
+        HStack(spacing: 4) {
+            Text("相册")
+            Spacer(minLength: 0)
             Menu {
                 Button { app.createAlbumFromSelection() } label: {
                     Label("新建相册", systemImage: "rectangle.stack.badge.plus")
@@ -123,124 +118,116 @@ struct Sidebar: View {
                 }
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 24, height: 28)
-                    .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
             .help("新建相册或智能相册")
             .accessibilityLabel("新建相册或智能相册")
-        }) {
-            favoriteSection
-            albumSection
-            smartSection
         }
     }
 
     @ViewBuilder
-    private var albumSection: some View {
-        if !app.albums.isEmpty {
-            Text("相册").font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.text2)
-                .padding(.horizontal, 8).padding(.top, 4)
-                .accessibilityAddTraits(.isHeader)
-            ForEach(app.albums) { al in
-                row("album", Theme.albumBlue, al.name, "\(app.countForAlbum(al))", .album, al.id, al.name)
-                    .contextMenu {
-                        Button { app.renameAlbum(al.id) } label: {
-                            Label("重命名相册…", systemImage: "pencil")
-                        }
-                        Button(role: .destructive) { app.deleteAlbum(al.id) } label: {
-                            Label("删除相册…", systemImage: "trash")
-                        }
+    private var collectionSection: some View {
+        ForEach(app.pinnedSidebarFavorites) { item in
+            row(pinnedIcon(item), item.name, item.type, item.selectionId,
+                badge: Text(app.countForPinnedSidebarItem(item)))
+        }
+        ForEach(app.albums) { album in
+            row("album", album.name, .album, album.id, badge: Text(app.countForAlbum(album).formatted()))
+                .contextMenu {
+                    Button { app.renameAlbum(album.id) } label: {
+                        Label("重命名相册…", systemImage: "pencil")
                     }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var smartSection: some View {
-        if !app.smartAlbums.isEmpty {
-            Text("智能相册").font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.text2)
-                .padding(.horizontal, 8).padding(.top, 4)
-                .accessibilityAddTraits(.isHeader)
-            ForEach(app.smartAlbums) { sa in
-                row("sparkles", Theme.accent, sa.name, "\(app.countForSmartAlbum(sa))", .smart, sa.id, sa.name)
-                    .contextMenu {
-                        Button { app.editSmartAlbum(sa.id) } label: {
-                            Label("编辑智能相册…", systemImage: "slider.horizontal.3")
-                        }
-                        Button(role: .destructive) { app.deleteSmartAlbum(sa.id) } label: {
-                            Label("删除智能相册…", systemImage: "trash")
-                        }
+                    Button(role: .destructive) { app.deleteAlbum(album.id) } label: {
+                        Label("删除相册…", systemImage: "trash")
                     }
-            }
+                }
+        }
+        ForEach(app.smartAlbums) { smart in
+            row("sparkles", smart.name, .smart, smart.id,
+                badge: Text(app.countForSmartAlbum(smart).formatted()))
+                .contextMenu {
+                    Button { app.editSmartAlbum(smart.id) } label: {
+                        Label("编辑智能相册…", systemImage: "slider.horizontal.3")
+                    }
+                    Button(role: .destructive) { app.deleteSmartAlbum(smart.id) } label: {
+                        Label("删除智能相册…", systemImage: "trash")
+                    }
+                }
+        }
+        if app.pinnedSidebarFavorites.isEmpty && app.albums.isEmpty && app.smartAlbums.isEmpty {
+            Text("用 + 新建相册或智能相册")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
         }
     }
 
+    private var hasTags: Bool {
+        !app.projectList.isEmpty || !app.clientList.isEmpty || !app.keywordList.isEmpty
+    }
+
     @ViewBuilder
-    private var projectSection: some View {
+    private var tagSection: some View {
         if !app.projectList.isEmpty {
             DisclosureGroup("项目") {
                 ForEach(app.projectList) { item in
-                    row("project", Theme.purple, item.name, "\(item.count)", .project, item.name, item.name)
+                    row("project", item.name, .project, item.name, badge: Text(item.count.formatted()))
                 }
             }
-            .font(.system(size: 13)).tint(Theme.text2)
-            .padding(.horizontal, 8).padding(.vertical, 6)
         }
-    }
-
-    @ViewBuilder
-    private var clientSection: some View {
         if !app.clientList.isEmpty {
             DisclosureGroup("客户") {
                 ForEach(app.clientList) { item in
-                    row("client", Theme.albumBlue, item.name, "\(item.count)", .client, item.name, item.name)
+                    row("client", item.name, .client, item.name, badge: Text(item.count.formatted()))
                 }
             }
-            .font(.system(size: 13)).tint(Theme.text2)
-            .padding(.horizontal, 8).padding(.vertical, 6)
+        }
+        if !app.keywordList.isEmpty {
+            DisclosureGroup("关键词") {
+                ForEach(app.keywordList) { item in
+                    row("tag", item.name, .keyword, item.name, badge: Text(item.count.formatted()))
+                }
+            }
         }
     }
 
-    @ViewBuilder
-    private var keywordSection: some View {
-        if !app.keywordList.isEmpty {
-            DisclosureGroup("关键词") {
-                ForEach(app.keywordList) { k in
-                    row("tag", Theme.folderGray, k.name, "\(k.count)", .keyword, k.name, k.name)
-                }
-            }
-            .font(.system(size: 13)).tint(Theme.text2)
-            .padding(.horizontal, 8).padding(.vertical, 6)
-        }
+    private func dateRow(_ bucket: CaptureDateBucket) -> some View {
+        Text(bucket.label)
+            .lineLimit(1)
+            .badge(Text(bucket.count.formatted()))
+            .tag(SidebarTag(selection: Selection(type: .captureDate, id: bucket.id, name: bucket.id)))
+            .help(bucket.id)
+            .accessibilityLabel("拍摄日期 \(bucket.id)")
+            .accessibilityValue("\(bucket.count) 张照片")
+    }
+
+    private func folderRow(_ folder: FolderTreeItem) -> some View {
+        let status = folderStatusText(folder.status)
+        return row("folder", folder.name, .folder, folder.id,
+                   tint: folderColor(folder.status),
+                   badge: Text(status ?? app.countForFolderTreeItem(folder).formatted()))
     }
 
     // ---- row builder ----
-    private func row(_ icon: String, _ color: Color?, _ label: String, _ count: String,
-                     _ type: Selection.Kind, _ id: String, _ name: String,
-                     indent: CGFloat = 0) -> some View {
-        let active = app.selection.type == type && app.selection.id == id
-        return SidebarRow(icon: icon, color: color, label: label, count: count,
-                          active: active, indent: indent) {
-            app.select(Selection(type: type, id: id, name: name))
+    private func row(_ icon: String, _ label: String, _ type: Selection.Kind, _ id: String,
+                     tint: Color? = nil, badge: Text?) -> some View {
+        Label {
+            Text(label).lineLimit(1)
+        } icon: {
+            Image(systemName: IconName.map[icon] ?? icon)
+                .foregroundStyle(tint.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.tint))
         }
+        .badge(badge)
+        .tag(SidebarTag(selection: Selection(type: type, id: id, name: label)))
+        .help(label)
     }
 
-    private func folderColor(_ status: String) -> Color {
+    private func folderColor(_ status: String) -> Color? {
         switch status {
-        case "offline":
-            return Theme.yellow
-        case "missing", "permissionLost", "error":
-            return Theme.redSoft
-        case "scanning":
-            return Theme.accent
-        default:
-            return Theme.folderGray
+        case "offline": return Theme.yellow
+        case "missing", "permissionLost", "error": return Theme.redSoft
+        default: return nil
         }
     }
 
@@ -267,183 +254,31 @@ struct Sidebar: View {
         case .lib: return "star"
         }
     }
-
-    private func pinnedColor(_ item: PinnedSidebarItem) -> Color? {
-        switch item.type {
-        case .folder: return Theme.folderGray
-        case .album: return Theme.albumBlue
-        case .smart: return Theme.accent
-        case .keyword: return Theme.folderGray
-        case .project: return Theme.purple
-        case .client: return Theme.albumBlue
-        case .captureDate: return nil
-        case .lib: return nil
-        }
-    }
 }
 
-private struct CaptureDateSidebarRow: View {
-    @Environment(AppState.self) private var app
-    let bucket: CaptureDateBucket
-    @State private var expanded = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                if bucket.children.isEmpty {
-                    Color.clear.frame(width: 16, height: 28)
-                } else {
-                    Button {
-                        expanded.toggle()
-                    } label: {
-                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .frame(width: 16, height: 28)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Theme.text3)
-                    .accessibilityLabel("\(expanded ? "收起" : "展开") \(bucket.id)")
-                    .help("\(expanded ? "收起" : "展开") \(bucket.id)")
-                }
-                dateButton
-            }
-            if expanded {
-                VStack(spacing: 0) {
-                    ForEach(bucket.children) { child in
-                        CaptureDateSidebarRow(bucket: child)
-                    }
-                }
-                .padding(.leading, 12)
-            }
-        }
-        .padding(.horizontal, 2)
-    }
-
-    private var dateButton: some View {
-        let active = app.selection.type == .captureDate && app.selection.id == bucket.id
-        return Button {
-            app.select(Selection(type: .captureDate, id: bucket.id, name: bucket.id))
-        } label: {
-            HStack(spacing: 6) {
-                Text(bucket.label).foregroundStyle(active ? Theme.accent : Theme.text2)
-                Spacer(minLength: 4)
-                Text("\(bucket.count)").monospacedDigit().foregroundStyle(Theme.text3)
-            }
-            .font(.system(size: 12))
-            .padding(.horizontal, 6).frame(height: 28)
-            .background(active ? Theme.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 4))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("拍摄日期 \(bucket.id)")
-        .accessibilityValue("\(bucket.count) 张照片")
-        .accessibilityAddTraits(active ? .isSelected : [])
-        .help(bucket.id)
-    }
+private extension CaptureDateBucket {
+    var childBuckets: [CaptureDateBucket]? { children.isEmpty ? nil : children }
 }
 
-struct SidebarSection<Content: View, Action: View>: View {
-    let title: String
-    private let action: Action
-    private let content: Content
-    @State private var expanded = true
+/// The folder tree arrives flattened (depth-first with depths); OutlineGroup
+/// needs it nested so deep folders collapse instead of indenting off-screen.
+private struct FolderNode: Identifiable {
+    let item: FolderTreeItem
+    var children: [FolderNode]?
+    var id: String { item.id }
 
-    init(title: String, @ViewBuilder content: () -> Content) where Action == EmptyView {
-        self.title = title
-        self.action = EmptyView()
-        self.content = content()
-    }
-    init(title: String, @ViewBuilder action: () -> Action,
-         @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.action = action()
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 4) {
-                Button { expanded.toggle() } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .frame(width: 10)
-                        Text(title).font(.system(size: 12, weight: .semibold))
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                    }
-                    .frame(height: 30)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(title)
-                .accessibilityValue(expanded ? "已展开" : "已折叠")
-                .accessibilityAddTraits(.isHeader)
-                action
+    static func build(_ items: [FolderTreeItem]) -> [FolderNode] {
+        var index = 0
+        func level(_ depth: Int) -> [FolderNode] {
+            var nodes: [FolderNode] = []
+            while index < items.count, items[index].depth >= depth {
+                let item = items[index]
+                index += 1
+                let children = level(item.depth + 1)
+                nodes.append(FolderNode(item: item, children: children.isEmpty ? nil : children))
             }
-            .foregroundStyle(Theme.text2)
-            .padding(.horizontal, 12)
-            .background(Theme.surfaceHi.opacity(0.5))
-            .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
-            if expanded {
-                VStack(alignment: .leading, spacing: 0) { content }
-                    .padding(.horizontal, 6).padding(.vertical, 4)
-            }
+            return nodes
         }
-    }
-}
-
-struct SidebarRow: View {
-    let icon: String
-    var color: Color?
-    let label: String
-    var count: String?
-    let active: Bool
-    var indent: CGFloat = 0
-    let action: () -> Void
-    @State private var hover = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Icon(icon, size: 16)
-                    .frame(width: 18)
-                    .foregroundStyle(color ?? Theme.text2)
-                Text(label)
-                    .font(.system(size: 13, weight: active ? .semibold : .regular))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .foregroundStyle(Theme.text)
-                Spacer(minLength: 4)
-                if let count {
-                    Text(count)
-                        .font(.system(size: 11)).monospacedDigit()
-                        .foregroundStyle(Theme.text3)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .frame(minWidth: 24, alignment: .trailing)
-                }
-            }
-            .padding(.horizontal, 8)
-            // ponytail: cap deep-folder indentation at 24pt; a tree outline can replace this if depth must stay visible.
-            .padding(.leading, min(indent, 24))
-            .frame(height: 32)
-            .background(active ? Theme.surfacePress : (hover ? Theme.surfaceHi : .clear))
-            .clipShape(RoundedRectangle(cornerRadius: 3))
-            .overlay(alignment: .leading) {
-                if active {
-                    Rectangle().fill(Theme.accent).frame(width: 2)
-                        .padding(.vertical, 7)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hover = $0 }
-        .help(label)
-        .accessibilityLabel(label)
-        .accessibilityValue(count ?? "")
-        .accessibilityAddTraits(active ? .isSelected : [])
+        return level(items.first?.depth ?? 0)
     }
 }

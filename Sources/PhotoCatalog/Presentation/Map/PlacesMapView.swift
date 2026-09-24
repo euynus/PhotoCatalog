@@ -55,12 +55,12 @@ struct PlacesMapView: View {
     var body: some View {
         Group {
             if located.isEmpty {
-                HStack(spacing: 10) {
-                    Icon("location", size: 24).foregroundStyle(Theme.text3)
-                    Text("没有带位置的照片").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
+                ContentUnavailableView {
+                    Label("没有带位置的照片", systemImage: "mappin.and.ellipse")
+                } description: {
+                    Text("包含 GPS 信息的照片会按拍摄地点聚合显示在地图上。")
                 }
-                .padding(20)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Map(position: $position) {
                     ForEach(clusters) { c in

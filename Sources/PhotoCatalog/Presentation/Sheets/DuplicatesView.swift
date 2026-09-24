@@ -23,20 +23,23 @@ struct DuplicatesView: View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
                 head
-                ScrollView {
-                    // Lazy loading avoids decoding off-screen group thumbnails.
-                    LazyVStack(spacing: 16) {
-                        if groups.isEmpty {
-                            Label("没有重复文件", systemImage: "checkmark.circle")
-                                .foregroundStyle(Theme.text3)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 20)
-                        }
-                        ForEach(groups) { g in
-                            groupCard(g, width: geometry.size.width - 32)
-                        }
+                if groups.isEmpty {
+                    ContentUnavailableView {
+                        Label("没有重复文件", systemImage: "checkmark.circle")
+                    } description: {
+                        Text("内容完全相同或疑似重复的照片会分组显示在这里。")
                     }
-                    .padding(16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        // Lazy loading avoids decoding off-screen group thumbnails.
+                        LazyVStack(spacing: 16) {
+                            ForEach(groups) { g in
+                                groupCard(g, width: geometry.size.width - 32)
+                            }
+                        }
+                        .padding(16)
+                    }
                 }
             }
         }
@@ -48,7 +51,6 @@ struct DuplicatesView: View {
 
     private var head: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("重复文件").font(.system(size: 17, weight: .semibold))
             FlowRow(spacing: 18, lineSpacing: 6) {
                 summaryItem("\(groups.count)", "组")
                 summaryItem("\(fileCount)", "个文件")
