@@ -37,7 +37,7 @@ struct InspectorView: View {
 
     private func content(_ asset: Asset) -> some View {
         VStack(spacing: 0) {
-            preview(asset)
+            header(asset)
             tabBar
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -53,19 +53,37 @@ struct InspectorView: View {
         }
     }
 
-    private func preview(_ asset: Asset) -> some View {
-        HStack(spacing: 10) {
-            // Keep the loader alive across selection changes.
-            Thumb(asset: asset, urlString: asset.thumb, radius: 2, contentMode: .fit)
-                .frame(width: 72, height: 88)
-                .background(Theme.canvas)
-                .accessibilityHidden(true)
-            headline(asset)
+    private func header(_ asset: Asset) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                // Keep the loader alive across selection changes.
+                Thumb(asset: asset, urlString: asset.thumb, radius: 5, contentMode: .fit,
+                      maxDecodePixel: 160)
+                    .frame(width: 64, height: 64)
+                    .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .accessibilityHidden(true)
+                headline(asset)
+            }
+            ExposureStrip(asset: asset)
+            if hasCameraInfo(asset) {
+                Label(cameraLine(asset), systemImage: "camera")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.text2)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(cameraLine(asset))
+            }
         }
-        .padding(.horizontal, 12)
-        .frame(height: 112)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+
+    private func hasCameraInfo(_ asset: Asset) -> Bool {
+        !asset.camera.isEmpty || !asset.lens.isEmpty
+    }
+
+    private func cameraLine(_ asset: Asset) -> String {
+        [asset.camera, asset.lens].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private func headline(_ asset: Asset) -> some View {
@@ -74,13 +92,8 @@ struct InspectorView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(2).truncationMode(.middle)
                 .help(asset.filename)
-            HStack(spacing: 6) {
-                TypeBadge(asset: asset, small: true)
-                Text("\(asset.width) × \(asset.height)")
-            }
-            .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.text2)
-            .lineLimit(1)
-            Text("\(megapixelText(asset.megapixels)) · \(fileSizeText(megabytes: asset.fileMB))")
+                .textSelection(.enabled)
+            Text("\(asset.width) × \(asset.height) · \(megapixelText(asset.megapixels)) · \(fileSizeText(megabytes: asset.fileMB))")
                 .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.text2)
                 .lineLimit(1)
             if app.selectedIds.count > 1 {
@@ -90,19 +103,24 @@ struct InspectorView: View {
                     .lineLimit(1)
                     .help("编辑将批量应用")
                     .accessibilityHint("编辑将批量应用")
+            } else {
+                TypeBadge(asset: asset, small: true)
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
 
     private var tabBar: some View {
-        HStack(spacing: 0) {
+        @Bindable var app = app
+        return Picker("简介分页", selection: $app.insTab) {
             ForEach(tabs, id: \.0) { tab in
-                InsTabButton(icon: tab.1, name: tab.2, active: app.insTab == tab.0) { app.insTab = tab.0 }
+                Text(tab.2).tag(tab.0)
             }
         }
-        .padding(.horizontal, 4)
-        .background(Theme.bgSidebar)
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
@@ -186,7 +204,7 @@ struct InspectorView: View {
             ].compactMap { $0 }
             if !rightsRows.isEmpty { InsGroup(rightsRows, title: "版权") }
             if !a.makerNotes.isEmpty {
-                InsGroup([.init("MakerNotes", a.makerNotes)], title: "厂商信息")
+                MakerNotesGroup(rows: makerNoteRows(a.makerNotes))
             }
             gpsPanel(a)
         }
@@ -276,32 +294,71 @@ func formatGPSLabel(_ gps: (Double, Double), altitude: Double?, isPresent: Bool?
     return coordinate + " · \(formatAltitude(altitude))"
 }
 
-private struct InsTabButton: View {
-    let icon: String
-    let name: String
-    let active: Bool
-    let action: () -> Void
-    @State private var hover = false
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Icon(icon, size: 12)
-                Text(name).font(.system(size: 13, weight: active ? .semibold : .regular))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(active ? Theme.text : Theme.text2)
-            .frame(maxWidth: .infinity).frame(height: 36)
-            .background(active ? Theme.bgPanel : (hover ? Theme.surfaceHi : .clear))
-            .overlay(alignment: .bottom) {
-                if active {
-                    Rectangle().fill(Theme.accent).frame(height: 2)
-                }
-            }
+/// Splits the "Vendor: key=value, key=value · …" summary into readable rows.
+func makerNoteRows(_ summary: String) -> [InfoRowData] {
+    summary.components(separatedBy: " · ").flatMap { entry -> [InfoRowData] in
+        guard let colon = entry.range(of: ": ") else { return [InfoRowData("备注", entry)] }
+        let name = String(entry[..<colon.lowerBound])
+        let body = String(entry[colon.upperBound...])
+        let pairs = body.components(separatedBy: ", ").compactMap { pair -> InfoRowData? in
+            guard let eq = pair.firstIndex(of: "=") else { return nil }
+            let value = pair[pair.index(after: eq)...].trimmingCharacters(in: .whitespaces)
+            return value.isEmpty ? nil : InfoRowData(String(pair[..<eq]), value)
         }
-        .buttonStyle(.plain).onHover { hover = $0 }
-        .help(name)
-        .accessibilityLabel(name)
-        .accessibilityAddTraits(active ? .isSelected : [])
+        return pairs.isEmpty ? [InfoRowData(name, body)] : pairs
+    }
+}
+
+/// Camera exposure at a glance — the four numbers photographers scan first.
+private struct ExposureStrip: View {
+    let asset: Asset
+
+    var body: some View {
+        HStack(spacing: 0) {
+            cell(formatFocalLength(asset.focal), "焦距")
+            divider
+            cell(formatApertureValue(asset.aperture), "光圈")
+            divider
+            cell(formatShutterSpeed(asset.shutter), "快门")
+            divider
+            cell(formatISOValue(asset.iso), "ISO")
+        }
+        .frame(height: 44)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+        .accessibilityElement(children: .combine)
+    }
+
+    private var divider: some View {
+        Rectangle().fill(Theme.line).frame(width: 1, height: 24)
+    }
+
+    private func cell(_ value: String, _ label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                .foregroundStyle(value == "—" ? Theme.text4 : Theme.text)
+                .lineLimit(1).minimumScaleFactor(0.75)
+            Text(label).font(.system(size: 10)).foregroundStyle(Theme.text3)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct MakerNotesGroup: View {
+    let rows: [InfoRowData]
+    @State private var expanded = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            InsGroup(rows, title: "", compact: true)
+                .padding(.top, 4)
+        } label: {
+            Text("厂商信息").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text2)
+        }
+        .tint(Theme.text3)
+        .padding(.bottom, 8)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 }
 
@@ -320,23 +377,27 @@ struct InfoRowData: Identifiable {
 struct InsGroup: View {
     let rows: [InfoRowData]
     let title: String
-    init(_ rows: [InfoRowData], title: String) {
+    var compact = false
+    init(_ rows: [InfoRowData], title: String, compact: Bool = false) {
         self.rows = rows
         self.title = title
+        self.compact = compact
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text2)
-                .padding(.bottom, 6)
-                .accessibilityAddTraits(.isHeader)
+            if !title.isEmpty {
+                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text2)
+                    .padding(.bottom, 6)
+                    .accessibilityAddTraits(.isHeader)
+            }
             ForEach(rows) { r in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(r.label).font(.system(size: 13)).foregroundStyle(Theme.text3)
-                        .frame(width: 68, alignment: .leading)
+                    Text(r.label).font(.system(size: compact ? 11 : 13)).foregroundStyle(Theme.text3)
+                        .frame(width: compact ? 96 : 68, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(r.value)
-                        .font(r.mono ? .system(size: 12, design: .monospaced) : .system(size: 13))
+                        .font(r.mono ? .system(size: 12, design: .monospaced) : .system(size: compact ? 11 : 13))
                         .foregroundStyle(r.accent ? Theme.accent : Theme.text)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .multilineTextAlignment(.trailing)
@@ -346,7 +407,9 @@ struct InsGroup: View {
                 .padding(.vertical, 4)
             }
         }
-        .padding(.bottom, 8)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .padding(.bottom, compact ? 0 : 8)
+        .overlay(alignment: .bottom) {
+            if !compact { Rectangle().fill(Theme.line).frame(height: 1) }
+        }
     }
 }
