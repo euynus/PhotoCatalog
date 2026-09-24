@@ -1,0 +1,19 @@
+# PhotoCatalog Icon Concepts v2
+
+Generated from scratch with the built-in image_gen tool. B - Contact Sheet is selected for production and exported as AppIcon.png and AppIcon.icns. A is retained as an alternative. No user photos were used.
+
+## A - Frame
+Use case: logo-brand.
+Design ONE completely new minimal macOS app icon for PhotoCatalog, a serious professional photography catalog. This is concept A: "Frame". Do not reuse any existing icon or show literal photographs.
+Visual: a perfectly smooth rounded-square tile in near-black graphite #191B1E. At its center, a single substantial off-white geometric frame. The frame is a clean continuous rounded-rectangle outline whose right edge is interrupted in its middle, subtly forming an abstract C. A short bright azure-blue vertical stroke sits in that opening, detached by two precise gaps, acting as the sole accent. The overall mark reads as a photographic image gate and an abstract catalog initial, not as text. Elegant exact proportions, consistent stroke weight, balanced negative space. The complete mark occupies about 55 percent of the tile width and 45 percent of its height. Generous empty space.
+Style: rigorous flat graphic design, Swiss typographic precision, optically balanced, two inks on graphite, no perspective. Clean silhouette identifiable at 24px. Only a barely perceptible edge highlight on the outer tile is allowed; the symbol itself is perfectly flat.
+A square 1024x1024 image, one centered icon with a clean transparent margin around the rounded tile, crisp antialiasing and no detached pixels. No presentation board or labels.
+Absolutely no mountains, landscape photo, camera, lens, aperture blades, photo stacks, overlapping cards, glass, plastic, bevelled 3D frame, extruded shapes, deep shadows, glowing gradients, textures, lettering, tiny decorative details, or watermark. The entire design should be visually quiet, spare and distinctive.
+
+## B - Contact Sheet
+Use case: logo-brand.
+Create ONE new minimal macOS app icon for PhotoCatalog, a professional photo library and RAW catalog. This is concept B: "Contact Sheet".
+A clean flat light porcelain rounded-square tile, nearly white #F1F2F3, with no thick rim. In its center sits a bold asymmetric contact-sheet mark made of exactly four solid rectangular cells separated by generous consistent white gutters. Two columns: the left column is a little narrower than the right; the top-left cell is shorter, the bottom-left cell taller; the top-right cell is taller, the bottom-right cell shorter. The four cells together form a compact nearly square mark with carefully balanced white space. Three cells are deep graphite #25292E. Only the small top-left cell is saturated cobalt blue #2764D6. Each cell has restrained slightly rounded corners, not bubbles or capsules. The mark is about 52 percent of the tile width. The result should immediately feel like a curated image contact sheet, with one selected photograph, expressed as pure geometry. Strong readable silhouette at 24px.
+Style: precise flat Swiss graphic design, quiet editorial character, sharp optical alignment, confident negative space. Absolutely no extrusion, no raised buttons, no inset tiles, no texture, no shadows between the cells. The tile may have a barely visible neutral edge but nothing dimensional.
+Deliver one centered icon on a square 1024x1024 canvas, genuine transparency outside its clean rounded-square tile, ample even safe margin, no presentation mockup, labels or explanatory text.
+Do not add literal photos, landscape illustrations, mountain symbols, suns, lenses, shutters, letters, camera bodies, perspective, folded paper, 3D bevels, glass, gradients, glow, colorful rainbow cells, a Windows logo, tiny perforations, decorative marks or watermark. Exactly four simple flat filled cells, on one calm light tile.
