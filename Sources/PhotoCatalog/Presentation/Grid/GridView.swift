@@ -20,17 +20,16 @@ struct GridView: View {
             }
         } else {
             GeometryReader { geo in
-                let size = app.thumbSize
-                let gap = max(8, size * 0.06)
-                let avail = geo.size.width - 36
-                let cols = max(1, Int((avail + gap) / (size + gap)))
-                let columns = Array(repeating: GridItem(.fixed(size), spacing: gap, alignment: .topLeading),
-                                    count: cols)
+                let avail = geo.size.width - 2 * Self.inset
+                let metrics = GridMetrics(width: avail, target: app.thumbSize)
+                let columns = Array(repeating: GridItem(.fixed(metrics.cellSize), spacing: metrics.spacing,
+                                                        alignment: .topLeading),
+                                    count: metrics.columns)
                 ScrollView {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: gap) {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: metrics.spacing) {
                         ForEach(list) { asset in
                             let stack = app.stackInfo(for: asset)
-                            GridCell(asset: asset, size: size,
+                            GridCell(asset: asset, size: metrics.cellSize,
                                      selected: app.selectedIds.contains(asset.id),
                                      isPrimary: asset.id == app.primaryId,
                                      showInfo: app.showInfo,
@@ -61,7 +60,7 @@ struct GridView: View {
                                 }
                         }
                     }
-                    .padding(18)
+                    .padding(Self.inset)
                 }
                 .environment(\.colorScheme, .dark)
                 .onAppear { app.gridWidth = avail }
@@ -70,6 +69,8 @@ struct GridView: View {
             .background(Theme.canvas)
         }
     }
+
+    private static let inset: CGFloat = 16
 
     /// Spoken summary matching the cell's visible badges.
     private static func accessibilityLabel(_ asset: Asset,
@@ -100,57 +101,63 @@ struct GridCell: View {
     let onToggleStack: () -> Void
     @State private var hover = false
 
+    private static let radius: CGFloat = 6
+    private static let pad: CGFloat = 6
+
     var body: some View {
         VStack(spacing: 0) {
-            frame
+            photo
             if showInfo { foot }
         }
         .frame(width: size)
-        .background(background)
-        .clipShape(RoundedRectangle(cornerRadius: 2))
-        .overlay(RoundedRectangle(cornerRadius: 2)
-            .strokeBorder(borderColor, lineWidth: borderWidth))
+        .background(background, in: RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
+        .overlay {
+            if selected {
+                RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
+                    .strokeBorder(Theme.accent, lineWidth: isPrimary ? 2.5 : 1.5)
+            }
+        }
         .contentShape(Rectangle())
-        .help("\(asset.filename) · \(asset.isRaw ? "RAW · " : "")\(asset.type)")
+        .help(asset.filename)
         .onHover { hover = $0 }
     }
 
     private var background: Color {
-        selected || hover ? Theme.canvasSurfaceHi : Theme.canvasSurface
-    }
-    private var borderColor: Color {
-        if isPrimary { return Theme.canvasText }
-        if selected { return Theme.canvasText2 }
-        return Theme.canvasLine
-    }
-    private var borderWidth: CGFloat {
-        isPrimary ? 1.5 : 1
+        if selected { return Theme.canvasSelection }
+        return hover ? Theme.canvasSurface : .clear
     }
 
-    private var frame: some View {
-        Thumb(asset: asset, radius: 2, contentMode: .fit, dim: asset.status == .missing,
-              maxDecodePixel: Int((size * 2).rounded(.up)))
-            .frame(width: size - 16, height: size - 16)
-            .background(Theme.canvas)
-            .padding(8)
+    // The photo keeps its own aspect inside a square slot; the canvas shows
+    // through the letterbox instead of a card, so the image reads as the tile.
+    private var photo: some View {
+        let side = size - 2 * Self.pad
+        return Thumb(asset: asset, radius: 3, contentMode: .fit, dim: asset.status == .missing,
+                     maxDecodePixel: Int((side * 2).rounded(.up)))
+            .frame(width: side, height: side)
+            .padding(Self.pad)
             .overlay(alignment: .topLeading) {
-                StatusBadge(status: asset.status).padding(10)
+                if asset.status != .ready {
+                    StatusBadge(status: asset.status)
+                        .padding(4)
+                        .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 4))
+                        .padding(Self.pad + 4)
+                }
             }
             .overlay(alignment: .topTrailing) {
-                VStack(alignment: .trailing, spacing: 5) {
-                    if asset.colorLabel != nil { ColorDot(label: asset.colorLabel, size: 11) }
+                HStack(spacing: 5) {
+                    if asset.colorLabel != nil { ColorDot(label: asset.colorLabel, size: 10) }
                     if let stackCount {
                         StackBadge(count: stackCount, collapsed: stackCollapsed, action: onToggleStack)
                     }
                 }
-                .padding(10)
+                .padding(Self.pad + 4)
             }
             .overlay(alignment: .bottomLeading) {
                 if asset.flag != .none {
-                    FlagPill(flag: asset.flag, size: 14)
-                        .padding(3)
-                        .background(Theme.canvasSurface, in: RoundedRectangle(cornerRadius: 2))
-                        .padding(.leading, 10).padding(.bottom, 10)
+                    FlagPill(flag: asset.flag, size: 12)
+                        .padding(4)
+                        .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 4))
+                        .padding(Self.pad + 4)
                 }
             }
             .overlay {
@@ -162,40 +169,28 @@ struct GridCell: View {
                             Text("缺失").font(.system(size: 11))
                         }.foregroundStyle(Theme.canvasText)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 2))
-                    .padding(8)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                    .padding(Self.pad)
                 }
             }
     }
 
     private var foot: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 6) {
             Text(asset.filename)
                 .font(.system(size: 11, weight: selected ? .medium : .regular)).monospacedDigit()
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .foregroundStyle(selected || isPrimary ? Theme.canvasText : Theme.canvasText2)
-                .frame(height: 14, alignment: .leading)
-                .help(asset.filename)
-            HStack(spacing: 6) {
-                if asset.rating > 0 {
-                    StarsView(value: asset.rating, size: 9, gap: 1)
-                        .fixedSize()
-                }
-                Spacer(minLength: 0)
-                if asset.isRaw {
-                    Text(asset.type)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Theme.canvasText2)
-                        .lineLimit(1)
-                        .help("RAW · \(asset.type)")
-                }
+                .foregroundStyle(selected ? Theme.canvasText : Theme.canvasText2)
+            Spacer(minLength: 0)
+            if asset.rating > 0 {
+                StarsView(value: asset.rating, size: 9, gap: 1, filledOnly: true)
+                    .fixedSize()
             }
-            .frame(height: 14)
         }
-        .padding(.horizontal, 8)
-        .padding(.bottom, 8)
-        .frame(height: 40)
+        .padding(.horizontal, Self.pad + 2)
+        .frame(height: 22)
+        .padding(.bottom, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -263,8 +258,6 @@ extension GridCell: Equatable {
         l.asset.colorLabel == r.asset.colorLabel &&
         l.asset.status == r.asset.status &&
         l.asset.filename == r.asset.filename &&
-        l.asset.type == r.asset.type &&
-        l.asset.isRaw == r.asset.isRaw &&
         l.asset.thumb == r.asset.thumb &&
         l.asset.localPath == r.asset.localPath &&
         l.size == r.size &&

@@ -9,11 +9,13 @@ struct StarsView: View {
     var size: CGFloat = 12
     var gap: CGFloat = 1
     var dim: Bool = false
+    /// Passive displays in dense lists drop the hollow stars and show only the rating.
+    var filledOnly: Bool = false
     var onRate: ((Int) -> Void)?
 
     var body: some View {
         HStack(spacing: gap) {
-            ForEach(1...5, id: \.self) { n in
+            ForEach(1...(filledOnly && onRate == nil ? max(1, value) : 5), id: \.self) { n in
                 if let onRate {
                     Button { onRate(n) } label: { star(n) }
                         .buttonStyle(.plain)

@@ -154,7 +154,7 @@ struct Loupe: View {
                                         .background(Theme.canvas)
                                     HStack(spacing: 5) {
                                         if a.rating > 0 {
-                                            StarsView(value: a.rating, size: 8, dim: true)
+                                            StarsView(value: a.rating, size: 8, dim: true, filledOnly: true)
                                         }
                                         Spacer(minLength: 0)
                                         FlagPill(flag: a.flag, size: 10)

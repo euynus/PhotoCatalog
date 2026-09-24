@@ -4499,10 +4499,8 @@ final class AppState {
         guard let cur = ids.firstIndex(of: primaryId ?? "") else { return }
         var cols = 1
         if view == .grid {
-            // mirror GridView's exact column math so arrow nav lands on the right row
-            let w = gridWidth ?? 800
-            let gap = max(8, thumbSize * 0.06)
-            cols = max(1, Int((w + gap) / (thumbSize + gap)))
+            // same metrics as GridView so arrow nav lands on the right row
+            cols = GridMetrics(width: gridWidth ?? 800, target: thumbSize).columns
         }
         var next = cur
         switch key {
@@ -4517,4 +4515,20 @@ final class AppState {
 
     /// Updated by the grid so arrow-key navigation knows the column count.
     @ObservationIgnored var gridWidth: CGFloat?
+}
+
+/// Grid layout shared by GridView and arrow-key navigation. `target` is the
+/// minimum cell size; cells grow to fill the row instead of leaving a ragged gap.
+struct GridMetrics: Equatable {
+    let columns: Int
+    let cellSize: CGFloat
+    let spacing: CGFloat
+
+    init(width: CGFloat, target: CGFloat) {
+        let spacing = max(6, (target * 0.05).rounded())
+        let columns = max(1, Int((width + spacing) / (target + spacing)))
+        self.columns = columns
+        self.spacing = spacing
+        cellSize = max(1, ((width - spacing * CGFloat(columns - 1)) / CGFloat(columns)).rounded(.down))
+    }
 }
