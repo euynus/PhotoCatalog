@@ -94,9 +94,9 @@ Requires a Swift 6 toolchain on macOS 14+. Full Xcode is required to run XCTest;
 the app itself can also build with compatible Command Line Tools.
 
 ```sh
-script/build_and_run.sh build      # compile and assemble dist/PhotoCatalog.app
-script/build_and_run.sh run        # build and launch the app
-script/build_and_run.sh verify     # build, launch, and verify a visible window
+script/build_and_run.sh build      # compile (Debug) and assemble dist/PhotoCatalog.app
+script/build_and_run.sh run        # build (Release) and launch the app
+script/build_and_run.sh verify     # build (Release), launch, and verify a visible window
 
 script/build_and_run.sh selfcheck  # headless demo dataset checks
 script/build_and_run.sh pipeline   # headless end-to-end import checks
@@ -110,6 +110,10 @@ temporary catalog afterward. It fails above 512 MiB at a file boundary or if
 post-warmup growth reaches 128 MiB. It never imports into an existing catalog or
 changes the original. This is a repeated-input regression check, not a full-library
 or all-RAW-format performance guarantee.
+
+Launch modes (`run`, `verify`, `logs`, `telemetry`) build the optimized Release
+configuration; `build`, `selfcheck`, and `pipeline` use Debug because the checks rely on
+`assert`. Set `CONFIGURATION=debug` or `CONFIGURATION=release` to override.
 
 The script honors `SDKROOT` when set. Otherwise it probes installed macOS SDKs and
 selects one compatible with the active Swift compiler, which also handles temporarily

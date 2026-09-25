@@ -71,8 +71,18 @@ SDK_PATH="$(resolve_sdk)"
 export SDKROOT="$SDK_PATH"
 echo "Using macOS SDK: $SDK_PATH"
 
-swift build --sdk "$SDK_PATH"
-BUILD_BINARY="$ROOT_DIR/.build/debug/$APP_NAME"
+# Launch modes run an optimized build: Debug Swift is several times slower in the
+# filtering, sorting, and copying paths a large catalog exercises. Checks stay on Debug
+# because they rely on assert(), which Release compiles out. Override with CONFIGURATION.
+case "$MODE" in
+  run|verify|--verify|logs|--logs|telemetry|--telemetry) DEFAULT_CONFIGURATION=release ;;
+  *) DEFAULT_CONFIGURATION=debug ;;
+esac
+CONFIGURATION="${CONFIGURATION:-$DEFAULT_CONFIGURATION}"
+echo "Building $CONFIGURATION configuration"
+
+swift build -c "$CONFIGURATION" --sdk "$SDK_PATH"
+BUILD_BINARY="$ROOT_DIR/.build/$CONFIGURATION/$APP_NAME"
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
