@@ -7,7 +7,10 @@ import Foundation
 enum RenameService {
     /// Rename each asset's original from a token template (§4.2).
     /// Supported tokens: {seq} {date} {time} {camera} {original}. The extension is preserved.
-    static func renameWithTemplate(_ assets: [Asset], template: String, start: Int = 1) -> [String: URL] {
+    /// `companions` (keyed by asset id) move to the same new base name — a RAW's paired
+    /// JPEG stays paired — and a name is only taken when every file of the group is free.
+    static func renameWithTemplate(_ assets: [Asset], template: String, start: Int = 1,
+                                   companions: [String: [Asset]] = [:]) -> [String: URL] {
         let fm = FileManager.default
         // {date}/{time} come from the capture wall-clock (UTC-anchored), so renamed files carry
         // the time the camera recorded regardless of the machine's timezone
@@ -32,14 +35,34 @@ enum RenameService {
                 .replacingOccurrences(of: "{original}", with: original)
             name = sanitize(name)
             let base = name.isEmpty ? original : name
-            func candidate(_ suffix: String) -> URL {
+            let partners = (companions[a.id] ?? []).compactMap { partner in
+                partner.localPath.map { (id: partner.id, src: URL(fileURLWithPath: $0)) }
+            }
+            func candidate(_ suffix: String, ext: String = ext) -> URL {
                 dir.appendingPathComponent(ext.isEmpty ? base + suffix : "\(base)\(suffix).\(ext)")
             }
-            var dest = candidate("")
+            func isFree(_ suffix: String) -> Bool {
+                let dest = candidate(suffix)
+                guard !fm.fileExists(atPath: dest.path) || dest.path == src.path else { return false }
+                return partners.allSatisfy { partner in
+                    let target = candidate(suffix, ext: partner.src.pathExtension)
+                    return !fm.fileExists(atPath: target.path) || target.path == partner.src.path
+                }
+            }
+            var suffix = ""
             var k = 1
-            while fm.fileExists(atPath: dest.path) && dest.path != src.path { dest = candidate("_\(k)"); k += 1 }
-            if dest.path == src.path { result[a.id] = src; seq += 1; continue }
-            do { try fm.moveItem(at: src, to: dest); result[a.id] = dest; seq += 1 } catch { continue }
+            while !isFree(suffix) { suffix = "_\(k)"; k += 1 }
+            let dest = candidate(suffix)
+            if dest.path != src.path {
+                do { try fm.moveItem(at: src, to: dest) } catch { continue }
+            }
+            result[a.id] = dest
+            seq += 1
+            for partner in partners {
+                let target = candidate(suffix, ext: partner.src.pathExtension)
+                if target.path == partner.src.path { result[partner.id] = target; continue }
+                if (try? fm.moveItem(at: partner.src, to: target)) != nil { result[partner.id] = target }
+            }
         }
         return result
     }

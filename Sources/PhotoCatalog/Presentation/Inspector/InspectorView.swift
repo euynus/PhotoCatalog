@@ -99,7 +99,15 @@ struct InspectorView: View {
                     .help("编辑将批量应用")
                     .accessibilityHint("编辑将批量应用")
             } else {
-                TypeBadge(asset: asset, small: true)
+                HStack(spacing: 4) {
+                    TypeBadge(asset: asset, small: true)
+                    if let pair = GridView.pairLabel(app.companions(of: asset)) {
+                        Text("+ \(pair)")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Theme.text3)
+                            .help("RAW + \(pair) 显示为一张照片，编辑同时写入两个文件")
+                    }
+                }
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
@@ -116,7 +124,7 @@ struct InspectorView: View {
                 .init("尺寸", "\(a.width) × \(a.height)", mono: true),
                 .init("色彩空间", a.colorSpace),
                 .init("ICC", a.hasICCProfile ? "有" : "无"),
-            ], title: "文件")
+            ] + pairRows(a), title: "文件")
             InsGroup({
                 var rows: [InfoRowData] = [
                     .init("文件夹", a.folderName),
@@ -150,6 +158,15 @@ struct InspectorView: View {
                 }
             }
         }
+    }
+
+    private func pairRows(_ a: Asset) -> [InfoRowData] {
+        let companions = app.companions(of: a)
+        guard !companions.isEmpty else { return [] }
+        return [.init("配对文件",
+                      companions.map { "\($0.filename) · \(fileSizeText(megabytes: $0.fileMB))" }
+                        .joined(separator: "\n"),
+                      mono: true)]
     }
 
     private func pathButton(_ icon: String, _ label: String, warn: Bool, disabled: Bool = false,

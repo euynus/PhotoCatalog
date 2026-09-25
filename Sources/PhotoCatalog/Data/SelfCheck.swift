@@ -120,6 +120,7 @@ enum SelfCheck {
         assert(pinned.id == "folder:fld-tokyo" && restoredPins == [pinned], "pinned sidebar item persists")
         checkThemeContrast()
         InteractionCheck.run()
+        PairingCheck.run()
         ImportSafetyCheck.run()
         ImportPersistenceCheck.run()
         CaptureAnalysisCheck.run()

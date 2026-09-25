@@ -137,7 +137,7 @@ struct OrganizeTab: View {
             if focusedField == nil {
                 commitDrafts()
             } else if editTargets.isEmpty {
-                editTargets = app.selectedIds.isEmpty ? [asset.id] : app.selectedIds
+                editTargets = app.withCompanions(app.selectedIds.isEmpty ? [asset.id] : app.selectedIds)
             }
         }
         .onDisappear { commitDrafts() }

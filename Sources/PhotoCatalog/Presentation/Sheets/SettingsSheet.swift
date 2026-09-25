@@ -115,6 +115,14 @@ struct SettingsSheet: View {
             }
 
             section("导入", category: .importing) {
+                Toggle(isOn: $app.pairRawAndJpeg) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("RAW+JPEG 显示为一张照片").font(.system(size: 13)).foregroundStyle(Theme.text)
+                        Text("同一文件夹中同名的 RAW 与 JPEG/HEIC 视为一次拍摄：网格只显示 RAW，评分、旗标、关键词和删除同时作用于两个文件。")
+                            .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }.toggleStyle(.switch).tint(Theme.accent)
                 row("导入模式") {
                     Segmented(options: [
                         SegOption(value: "referenced", label: "引用式"),

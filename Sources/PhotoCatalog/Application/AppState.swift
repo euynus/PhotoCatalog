@@ -197,8 +197,12 @@ final class AppState {
         var patchedCounts: LibraryCounts?
         var listBefore: ListSignature?
         if scope == .review {
+            let pairing = assetPairing
             patchedCounts = libraryCountsCache.map { counts in
-                edits.reduce(into: counts) { $0.applyReviewChange(from: assets[$1.offset], to: $1.asset) }
+                edits.reduce(into: counts) { counts, edit in
+                    guard !pairing.isHiddenCompanion(edit.asset.id) else { return }
+                    counts.applyReviewChange(from: assets[edit.offset], to: edit.asset)
+                }
             }
             if !listDependsOnReviewFields { listBefore = currentListSignature }
         }
@@ -272,6 +276,54 @@ final class AppState {
     var importPostAlbumName = UserDefaults.standard.string(forKey: "pc_importPostAlbumName") ?? "" {
         didSet { UserDefaults.standard.set(importPostAlbumName, forKey: "pc_importPostAlbumName") }
     }
+    /// Show a RAW and its same-name JPEG/HEIC as one photo; off lists every file separately.
+    var pairRawAndJpeg: Bool = (UserDefaults.standard.object(forKey: "pc_pairRawJpeg") as? Bool) ?? true {
+        didSet {
+            UserDefaults.standard.set(pairRawAndJpeg, forKey: "pc_pairRawJpeg")
+            invalidatePresentationCaches()
+        }
+    }
+    @ObservationIgnored private var assetPairingCache: (version: Int, pairing: AssetPairing)?
+    /// Rebuilt only on structural edits: pairing depends on paths and deletion, never on ratings.
+    var assetPairing: AssetPairing {
+        guard pairRawAndJpeg else { return .empty }
+        let version = structureVersion
+        if let cache = assetPairingCache, cache.version == version { return cache.pairing }
+        let pairing = AssetPairing.rawJpeg(assets)
+        assetPairingCache = (version, pairing)
+        return pairing
+    }
+
+    /// `ids` plus their paired JPEG/HEIC files, for edits that must reach both.
+    func withCompanions(_ ids: Set<String>) -> Set<String> { assetPairing.withCompanions(ids) }
+
+    /// Companion files presented behind this asset's tile (e.g. its JPEG).
+    func companions(of asset: Asset) -> [Asset] {
+        (assetPairing.companionsByPrimary[asset.id] ?? []).compactMap { id in
+            assetIndex[id].map { assets[$0] }
+        }
+    }
+
+    /// Live assets as the library presents them: companions are folded into their RAW.
+    private func presentedAssets() -> [Asset] {
+        let pairing = assetPairing
+        return assets.filter { !$0.deleted && !pairing.isHiddenCompanion($0.id) }
+    }
+
+    /// Pairing changes what every count and list shows.
+    private func invalidatePresentationCaches() {
+        folderTreeCountCache = nil
+        captureDateGroupsCache = nil
+        keywordListCache = nil
+        projectListCache = nil
+        clientListCache = nil
+        libraryCountsCache = nil
+        sidebarCountIndexCache = nil
+        pinnedSidebarFavoritesCache = nil
+        listInputsVersion &+= 1
+        ensurePrimaryValid()
+    }
+
     var appearance: AppAppearance = .stored {
         didSet {
             UserDefaults.standard.set(appearance.rawValue, forKey: AppAppearance.defaultsKey)
@@ -2015,15 +2067,20 @@ final class AppState {
         let trimmed = rawTemplate.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         let template = trimmed.contains("{") ? trimmed : "\(trimmed)_{seq}"
-        let ids = targetIds
+        let ids = selectionTargetIds
         let real = list.filter { ids.contains($0.id) && hasExistingOriginal($0) }
         guard !real.isEmpty else { push("仅可重命名已导入照片", "warning"); return }
+        // a paired JPEG takes the RAW's new base name so the pair survives the rename
+        let partners = Dictionary(uniqueKeysWithValues: real.map { primary in
+            (primary.id, companions(of: primary).filter(hasExistingOriginal))
+        }).filter { !$0.value.isEmpty }
+        let fileCount = real.count + partners.values.reduce(0) { $0 + $1.count }
         guard confirmDestructiveAction(
             "重命名原件？",
-            "将重命名 \(real.count) 个磁盘原件，并更新目录库中的文件路径。",
+            "将重命名 \(fileCount) 个磁盘原件，并更新目录库中的文件路径。",
             "重命名"
         ) else { return }
-        let map = RenameService.renameWithTemplate(real, template: template)
+        let map = RenameService.renameWithTemplate(real, template: template, companions: partners)
         guard !map.isEmpty else {
             push("重命名失败", "warning")
             return
@@ -2037,7 +2094,8 @@ final class AppState {
             updated[index].localPath = url.path
         }
         guard persist(changedIds, in: updated) else {
-            let rolledBack = OriginalFileOperationService.rollBackMoves(map, originals: real)
+            let rolledBack = OriginalFileOperationService.rollBackMoves(
+                map, originals: real + partners.values.flatMap { $0 })
             push("重命名未完成"
                  + (rolledBack > 0 ? " · 已回滚 \(rolledBack) 张照片" : " · 回滚失败")
                  + " · 目录库保存失败",
@@ -2046,8 +2104,8 @@ final class AppState {
         }
         replaceAssetsForMutation(updated)
         let saved = map.count
-        push("已重命名 \(saved) 张照片" + (saved < real.count ? " · \(real.count - saved) 失败" : ""),
-             saved < real.count ? "warning" : "check")
+        push("已重命名 \(saved) 个文件" + (saved < fileCount ? " · \(fileCount - saved) 失败" : ""),
+             saved < fileCount ? "warning" : "check")
     }
 
     var canOperateOnSelectedOriginals: Bool {
@@ -2122,7 +2180,7 @@ final class AppState {
     }
 
     private func selectedAssetsWithExportablePreviews() -> [Asset] {
-        let ids = targetIds
+        let ids = selectionTargetIds   // one preview per photo, not per paired file
         let fm = FileManager.default
         return assets.filter { asset in
             guard ids.contains(asset.id), !asset.deleted, !asset.isDemo else { return false }
@@ -2657,7 +2715,7 @@ final class AppState {
     func exportSelectionPreviews() {
         let selected = selectedAssetsWithExportablePreviews()
         guard !selected.isEmpty else {
-            push(targetIds.isEmpty ? "请先选择照片" : "没有可导出的预览图", "warning")
+            push(selectionTargetIds.isEmpty ? "请先选择照片" : "没有可导出的预览图", "warning")
             return
         }
         let panel = NSOpenPanel()
@@ -3031,7 +3089,8 @@ final class AppState {
         // matching the prototype's keyword sidebar order.
         var order: [String] = []
         var counts: [String: Int] = [:]
-        for a in assets where !a.deleted {
+        let pairing = assetPairing
+        for a in assets where !a.deleted && !pairing.isHiddenCompanion(a.id) {
             for k in a.keywords {
                 if counts[k] == nil { order.append(k) }
                 counts[k, default: 0] += 1
@@ -3081,7 +3140,7 @@ final class AppState {
     var captureDateGroups: [CaptureDateBucket] {
         _ = listInputsVersion
         if let cached = captureDateGroupsCache { return cached }
-        let grouped = CaptureDates.groups(assets)
+        let grouped = CaptureDates.groups(presentedAssets())
         captureDateGroupsCache = grouped
         return grouped
     }
@@ -3146,13 +3205,15 @@ final class AppState {
         if let cache = libraryCountsCache { return cache }
         var counts = LibraryCounts()
         let cutoff = recentCutoff
+        let pairing = assetPairing
         for a in assets where !a.deleted {
+            if a.status == .missing || a.status == .offline { counts.missingOffline += 1 }
+            guard !pairing.isHiddenCompanion(a.id) else { continue }
             counts.all += 1
             if a.importedAt > cutoff { counts.recent += 1 }
             if a.rating == 0 && a.flag != .reject { counts.unrated += 1 }
             if a.flag == .pick { counts.picks += 1 }
             if a.flag == .reject { counts.rejected += 1 }
-            if a.status == .missing || a.status == .offline { counts.missingOffline += 1 }
             if a.hasGPS { counts.places += 1 }
             if a.faces > 0 { counts.people += 1 }
         }
@@ -3166,7 +3227,8 @@ final class AppState {
     private func countMetadataValues(_ keyPath: KeyPath<Asset, String>) -> [KeywordCount] {
         var order: [String] = []
         var counts: [String: Int] = [:]
-        for asset in assets where !asset.deleted {
+        let pairing = assetPairing
+        for asset in assets where !asset.deleted && !pairing.isHiddenCompanion(asset.id) {
             let value = asset[keyPath: keyPath].trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty else { continue }
             if counts[value] == nil { order.append(value) }
@@ -3211,7 +3273,7 @@ final class AppState {
         _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = folderTreeCountCache { return cache }
         let items = folderTree
-        let counts = FolderTreeService.counts(for: items, assets: assets)
+        let counts = FolderTreeService.counts(for: items, assets: presentedAssets())
         folderTreeCountCache = counts
         return counts
     }
@@ -3342,7 +3404,7 @@ final class AppState {
     private var sidebarCountIndex: SidebarCountIndex {
         _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = sidebarCountIndexCache { return cache }
-        let live = assets.filter { !$0.deleted }
+        let live = presentedAssets()
         let liveIds = Set(live.map(\.id))
         var index = SidebarCountIndex()
         for asset in live {
@@ -3448,6 +3510,9 @@ final class AppState {
         // Observed inputs are read once, outside the per-asset predicates, and live +
         // collection membership is one pass: no intermediate copy of every asset.
         let selection = self.selection
+        // Missing/offline is file-level: a lost JPEG must show even when its RAW is fine.
+        let pairing = selection.type == .lib && selection.id == "missing" ? .empty : assetPairing
+        let live: (Asset) -> Bool = { !$0.deleted && !pairing.isHiddenCompanion($0.id) }
         let belongs: (Asset) -> Bool
         switch selection.type {
         case .folder:
@@ -3462,7 +3527,7 @@ final class AppState {
             belongs = { memberIds.contains($0.id) }
         case .smart:
             guard let sa = smartAlbums.first(where: { $0.id == selection.id }) else { return [] }
-            return SmartMatcher.match(assets.filter { !$0.deleted }, sa.rule)
+            return SmartMatcher.match(assets.filter(live), sa.rule)
         case .keyword:
             belongs = { $0.keywords.contains(selection.id) }
         case .project:
@@ -3490,10 +3555,10 @@ final class AppState {
             case "people":
                 belongs = { $0.faces > 0 }
             default:
-                return assets.filter { !$0.deleted }
+                return assets.filter(live)
             }
         }
-        return assets.filter { !$0.deleted && belongs($0) }
+        return assets.filter { live($0) && belongs($0) }
     }
 
     // ---------- apply filter bar + search + sort ----------
@@ -3529,8 +3594,10 @@ final class AppState {
         let filters = self.filters
         let sort = self.sort
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pairing = assetPairing
         let indexedSearchIds: Set<String>? = if q.count >= 3, let store {
-            Set(store.search(q))
+            // a hit on a hidden JPEG surfaces its RAW's tile
+            Set(store.search(q).flatMap { [$0] + (pairing.primaryByCompanion[$0].map { [$0] } ?? []) })
         } else {
             nil
         }
@@ -3769,11 +3836,15 @@ final class AppState {
     }
 
     // ---------- mutations ----------
-    private var targetIds: Set<String> {
+    /// What the user selected (one id per tile).
+    private var selectionTargetIds: Set<String> {
         if !selectedIds.isEmpty { return selectedIds }
         if let p = primaryId { return [p] }
         return []
     }
+
+    /// Files an edit or file operation acts on: the selection plus paired JPEG/HEIC files.
+    private var targetIds: Set<String> { withCompanions(selectionTargetIds) }
 
     var hasSelection: Bool { onboarded && !targetIds.isEmpty }
     var canApplySelectionToAlbum: Bool { hasSelection }
@@ -3804,7 +3875,7 @@ final class AppState {
     }
 
     private var selectedAssetsContainPreviewReference: Bool {
-        targetIds.contains { id in
+        selectionTargetIds.contains { id in
             guard let index = assetIndex[id] else { return false }
             let asset = assets[index]
             guard !asset.deleted && !asset.isDemo else { return false }
@@ -3831,12 +3902,14 @@ final class AppState {
     }
 
     @discardableResult
-    func mutateAsset(_ id: String, scope: AssetEditScope = .any,
+    func mutateAsset(_ id: String, scope: AssetEditScope = .any, withCompanions: Bool = false,
                      _ transform: (inout Asset) -> Void) -> Bool {
-        guard let i = assetIndex[id] else { return false }
+        let ids = withCompanions ? self.withCompanions([id]) : [id]
+        let offsets = ids.compactMap { assetIndex[$0] }
+        guard !offsets.isEmpty else { return false }
         var updated = assets
-        transform(&updated[i])
-        guard persist([id], in: updated) else { return false }
+        for offset in offsets { transform(&updated[offset]) }
+        guard persist(ids, in: updated) else { return false }
         replaceAssetsForMutation(updated, scope: scope)
         ensurePrimaryValid()
         return true
@@ -4178,8 +4251,9 @@ final class AppState {
     }
 
     private func orderedTargetAssetIds() -> [String] {
-        let ids = targetIds
-        return list.map(\.id).filter { ids.contains($0) }
+        let ids = selectionTargetIds
+        let companions = assetPairing.companionsByPrimary
+        return list.map(\.id).filter { ids.contains($0) }.flatMap { [$0] + (companions[$0] ?? []) }
     }
 
     private func saveManualAlbum(_ album: Album, sortOrder: Int) -> Bool {

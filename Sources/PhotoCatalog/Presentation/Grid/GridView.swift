@@ -29,12 +29,14 @@ struct GridView: View {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: metrics.spacing) {
                         ForEach(list) { asset in
                             let stack = app.stackInfo(for: asset)
+                            let pair = app.companions(of: asset)
                             GridCell(asset: asset, size: metrics.cellSize,
                                      selected: app.selectedIds.contains(asset.id),
                                      isPrimary: asset.id == app.primaryId,
                                      showInfo: app.showInfo,
                                      stackCount: stack?.count,
                                      stackCollapsed: stack?.collapsed == true,
+                                     pairLabel: Self.pairLabel(pair),
                                      onToggleStack: { app.toggleStack(containing: asset.id) })
                                 .equatable()
                                 .onTapGesture(count: 2) { app.openLoupe(asset.id) }
@@ -47,7 +49,7 @@ struct GridView: View {
                                 // one element per photo: tap gestures alone are
                                 // invisible to VoiceOver, making the grid unusable
                                 .accessibilityElement(children: .ignore)
-                                .accessibilityLabel(Self.accessibilityLabel(asset, stack: stack))
+                                .accessibilityLabel(Self.accessibilityLabel(asset, stack: stack, pair: pair))
                                 .accessibilityAddTraits(app.selectedIds.contains(asset.id)
                                     ? [.isButton, .isSelected] : .isButton)
                                 .accessibilityAction {
@@ -72,10 +74,18 @@ struct GridView: View {
 
     private static let inset: CGFloat = 16
 
+    /// "JPG" for a RAW shown with its paired JPEG (nil when unpaired).
+    static func pairLabel(_ companions: [Asset]) -> String? {
+        guard !companions.isEmpty else { return nil }
+        return companions.map { URL(fileURLWithPath: $0.localPath ?? $0.filename).pathExtension.uppercased() }
+            .joined(separator: "+")
+    }
+
     /// Spoken summary matching the cell's visible badges.
-    private static func accessibilityLabel(_ asset: Asset,
-                                           stack: (count: Int, collapsed: Bool)?) -> String {
+    private static func accessibilityLabel(_ asset: Asset, stack: (count: Int, collapsed: Bool)?,
+                                           pair: [Asset]) -> String {
         var parts = [asset.filename, asset.isRaw ? "\(asset.type) RAW" : asset.type]
+        if let label = pairLabel(pair) { parts.append("含 \(label)") }
         parts.append(asset.rating > 0 ? "\(asset.rating) 星" : "未评分")
         switch asset.flag {
         case .pick: parts.append("精选")
@@ -98,6 +108,7 @@ struct GridCell: View {
     let showInfo: Bool
     let stackCount: Int?
     let stackCollapsed: Bool
+    let pairLabel: String?
     let onToggleStack: () -> Void
     @State private var hover = false
 
@@ -182,6 +193,13 @@ struct GridCell: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .foregroundStyle(selected ? Theme.canvasText : Theme.canvasText2)
+            if let pairLabel {
+                Text("+\(pairLabel)")
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(Theme.canvasText3)
+                    .fixedSize()
+                    .help("RAW + \(pairLabel) 显示为一张照片")
+            }
             Spacer(minLength: 0)
             if asset.rating > 0 {
                 StarsView(value: asset.rating, size: 9, gap: 1, filledOnly: true)
@@ -265,7 +283,8 @@ extension GridCell: Equatable {
         l.isPrimary == r.isPrimary &&
         l.showInfo == r.showInfo &&
         l.stackCount == r.stackCount &&
-        l.stackCollapsed == r.stackCollapsed
+        l.stackCollapsed == r.stackCollapsed &&
+        l.pairLabel == r.pairLabel
     }
 }
 

@@ -16,6 +16,7 @@ appearance (Settings → 外观), a neutral dark photo canvas in every mode, and
 
 - **Main window** — native split view: source-list sidebar, unified toolbar (view mode, filter, sort, import / export, catalog actions, search), optional filter bar, photo grid, collapsible Inspector, and a status bar carrying the thumbnail-size slider.
 - **Sidebar** — 资料库 (全部 / 最近导入 / 未评分 / 精选 / 被拒绝 / 缺失·离线 / 重复文件), 文件夹, 相册, 智能相册, 关键词 — all with live counts.
+- **RAW+JPEG pairs** — a RAW and its same-name JPEG/HEIC in one folder show as one photo; ratings, flags, keywords, time shifts, deletion and batch rename act on both files (Settings → 导入 to list them separately).
 - **Grid view** — borderless photo tiles that fill each row, adjustable thumbnail size, offline/missing badges, color labels, flags, star ratings, accent-ring multi-select.
 - **Loupe** — single-photo view with bottom HUD and a filmstrip of the current collection.
 - **Compare** — 2–4 photos side by side, per-photo rating/flags, "选为最佳" winner.
