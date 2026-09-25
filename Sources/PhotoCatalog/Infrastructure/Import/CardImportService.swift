@@ -12,18 +12,28 @@ struct CardVolume: Identifiable, Hashable, Sendable {
     var id: String { url.path }
 }
 
-/// One photo on a card, as listed before import.
+/// One photo on a card or a connected camera, as listed before import.
 struct CardFile: Identifiable, Hashable, Sendable {
     let url: URL
     let size: Int64
     /// File time: cameras stamp it at capture, so it groups by day without reading metadata.
     let modified: Date
     let isRaw: Bool
+    /// Set for a photo on a camera or phone: `url` then only names it (see `CameraDevicePaths`).
+    var deviceID: String?
     /// The catalog already holds a photo of this size with the same name or capture time.
     var alreadyImported = false
 
     var id: String { url.path }
     var name: String { url.lastPathComponent }
+
+    /// The same device photo at its staging path under `staging`.
+    func staged(in staging: URL) -> CardFile {
+        var copy = CardFile(url: CameraDevicePaths.staged(url, in: staging), size: size, modified: modified,
+                            isRaw: isRaw, deviceID: deviceID)
+        copy.alreadyImported = alreadyImported
+        return copy
+    }
     /// RAW and JPEG of one shot share a folder and base name; they are renamed together.
     var pairKey: String { url.deletingPathExtension().path.lowercased() }
 }
@@ -87,6 +97,16 @@ enum CardImportService {
                 bySize[size, default: []].append((asset.filename.lowercased(), asset.date))
             }
         }
+
+        /// A catalog photo of exactly this size with the same name or taken the same second;
+        /// the capture time is only asked for when a size matches.
+        func contains(name: String, size: Int64, captured: @autoclosure () -> Date?) -> Bool {
+            guard let candidates = bySize[size] else { return false }
+            let lowered = name.lowercased()
+            if candidates.contains(where: { $0.name == lowered }) { return true }
+            guard let captured = captured() else { return false }
+            return candidates.contains { abs($0.date.timeIntervalSince(captured)) < 1 }
+        }
     }
 
     /// Photos under `root`, oldest first. Only files matching a catalog photo's exact size have
@@ -100,14 +120,8 @@ enum CardImportService {
                 || ["cr2", "cr3", "nef", "arw", "raf", "orf", "rw2", "dng"].contains(ext)
             var file = CardFile(url: url, size: size, modified: values?.contentModificationDate ?? .distantPast,
                                 isRaw: isRaw)
-            if let candidates = catalog.bySize[size] {
-                let name = url.lastPathComponent.lowercased()
-                file.alreadyImported = candidates.contains { $0.name == name }
-                    || {
-                        let captured = MetadataReader.read(url).captureDate
-                        return candidates.contains { abs($0.date.timeIntervalSince(captured)) < 1 }
-                    }()
-            }
+            file.alreadyImported = catalog.contains(name: url.lastPathComponent, size: size,
+                                                    captured: MetadataReader.read(url).captureDate)
             return file
         }
         .sorted { ($0.modified, $0.name) < ($1.modified, $1.name) }

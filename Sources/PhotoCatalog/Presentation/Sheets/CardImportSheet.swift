@@ -1,5 +1,5 @@
 // ============================================================
-//  Memory-card import — pick photos by day, copy them off, catalog the copies
+//  Card and camera import — pick photos by day, copy them off, catalog the copies
 // ============================================================
 import SwiftUI
 import AppKit
@@ -9,21 +9,34 @@ struct CardImportSheet: View {
     @Environment(AppState.self) private var app
 
     @State private var card: CardVolume?
+    /// A camera or phone on a cable, instead of a card.
+    @State private var device: CameraDevice?
     /// A folder picked instead of a card (a camera in mass-storage mode, a card reader's copy…).
     @State private var customSource: URL?
+    /// Why a device lists nothing (locked, gone).
+    @State private var deviceProblem: String?
+    @State private var importStarted = false
     @State private var options: CardImportOptions
     @State private var files: [CardFile] = []
     @State private var scanning = false
     @State private var selection: Set<String> = []
     @State private var hideImported = false
 
-    init(card: CardVolume?, options: CardImportOptions) {
-        _card = State(initialValue: card)
+    init(card: CardVolume?, device: CameraDevice?, options: CardImportOptions) {
+        _card = State(initialValue: device == nil ? card : nil)
+        _device = State(initialValue: device)
         _options = State(initialValue: options)
     }
 
-    private var sourceRoot: URL? { customSource ?? card?.dcim }
-    private var sourceName: String { customSource?.lastPathComponent ?? card?.name ?? L("选择来源") }
+    private var sourceRoot: URL? { device == nil ? customSource ?? card?.dcim : nil }
+    private var sourceKey: String? { device.map { "device:\($0.id)" } ?? sourceRoot?.path }
+    private var sourceName: String {
+        device?.name ?? customSource?.lastPathComponent ?? card?.name ?? L("选择来源")
+    }
+    private var sourceSymbol: String {
+        if let device { return device.isPhone ? "iphone" : "camera" }
+        return customSource == nil ? "sdcard" : "folder"
+    }
     private var chosen: [CardFile] { files.filter { selection.contains($0.id) } }
 
     var body: some View {
@@ -44,27 +57,38 @@ struct CardImportSheet: View {
         .font(.system(size: 13))
         .foregroundStyle(Theme.text)
         .background(Theme.bgPanel)
-        .task(id: sourceRoot) { await scan() }
+        .task(id: sourceKey) { await scan() }
+        .onDisappear {
+            // an import keeps the session until it finishes
+            if let device, !importStarted { CameraDeviceBrowser.shared.close(device) }
+        }
     }
 
     // ---- source ----
     private var head: some View {
         HStack(spacing: 12) {
-            Image(systemName: "sdcard").foregroundStyle(Theme.accent)
-            Text("从存储卡导入").font(.system(size: 17, weight: .semibold))
+            Image(systemName: device == nil ? "sdcard" : sourceSymbol).foregroundStyle(Theme.accent)
+            Text(device == nil ? L("从存储卡导入") : L("从设备导入")).font(.system(size: 17, weight: .semibold))
             Menu {
+                ForEach(app.cameraDevices) { camera in
+                    Button(camera.name) { choose(device: camera) }
+                }
                 ForEach(app.cardVolumes) { volume in
                     Button(volume.name) {
+                        choose(device: nil)
                         card = volume
                         customSource = nil
                     }
                 }
-                if !app.cardVolumes.isEmpty { Divider() }
+                if !app.cardVolumes.isEmpty || !app.cameraDevices.isEmpty { Divider() }
                 Button("选择文件夹…") {
-                    if let url = chooseFolder(prompt: L("选择来源"), start: nil) { customSource = url }
+                    if let url = chooseFolder(prompt: L("选择来源"), start: nil) {
+                        choose(device: nil)
+                        customSource = url
+                    }
                 }
             } label: {
-                Label(sourceName, systemImage: customSource == nil ? "sdcard" : "folder")
+                Label(sourceName, systemImage: sourceSymbol)
             }
             .fixedSize()
             Spacer()
@@ -75,16 +99,34 @@ struct CardImportSheet: View {
         .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 
+    /// Switches the source; leaving a device ends its session.
+    private func choose(device next: CameraDevice?) {
+        if let device, device != next { CameraDeviceBrowser.shared.close(device) }
+        device = next
+    }
+
     private func scan() async {
-        guard let root = sourceRoot else {
+        let key = sourceKey
+        deviceProblem = nil
+        guard key != nil else {
             files = []
             selection = []
             return
         }
         scanning = true
+        files = []
         let index = CardImportService.CatalogIndex(app.assets)
-        let found = await Task.detached(priority: .userInitiated) { CardImportService.scan(root, catalog: index) }.value
-        guard root == sourceRoot else { return }
+        var found: [CardFile] = []
+        if let device {
+            switch await CameraDeviceBrowser.shared.listing(for: device, catalog: index) {
+            case .files(let listed): found = listed
+            case .locked: deviceProblem = L("请解锁「\(device.name)」，并在设备上选择“信任”这台 Mac。")
+            case .unavailable: deviceProblem = L("无法读取「\(device.name)」。请重新连接后再试。")
+            }
+        } else if let root = sourceRoot {
+            found = await Task.detached(priority: .userInitiated) { CardImportService.scan(root, catalog: index) }.value
+        }
+        guard key == sourceKey else { return }
         files = found
         selection = Set(found.filter { !$0.alreadyImported }.map(\.id))
         scanning = false
@@ -125,11 +167,14 @@ struct CardImportSheet: View {
 
     @ViewBuilder
     private var grid: some View {
-        if sourceRoot == nil {
+        if let deviceProblem {
+            ContentUnavailableView(sourceName, systemImage: sourceSymbol, description: Text(deviceProblem))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if sourceKey == nil {
             ContentUnavailableView {
-                Label("未检测到存储卡", systemImage: "sdcard")
+                Label("未检测到存储卡或相机", systemImage: "sdcard")
             } description: {
-                Text("插入存储卡，或选择一个包含照片的文件夹。")
+                Text("插入存储卡、用数据线连接相机或 iPhone，或选择一个包含照片的文件夹。")
             } actions: {
                 Button("选择文件夹…") {
                     if let url = chooseFolder(prompt: L("选择来源"), start: nil) { customSource = url }
@@ -280,8 +325,13 @@ struct CardImportSheet: View {
             Spacer()
             ghostButton(nil, L("取消")) { app.sheet = nil }
             Button {
+                importStarted = true
                 app.sheet = nil
-                app.importFromCard(customSource == nil ? card : nil, files: chosen, options: options)
+                if let device {
+                    app.importFromDevice(device, files: chosen, options: options)
+                } else {
+                    app.importFromCard(customSource == nil ? card : nil, files: chosen, options: options)
+                }
             } label: {
                 Label("导入 \(chosen.count) 张", systemImage: "square.and.arrow.down")
                     .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
@@ -348,7 +398,7 @@ private struct CardThumbCell: View {
         .onTapGesture(perform: toggle)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-        .task(id: file.id) { image = await CardThumbnailLoader.shared.thumbnail(for: file.url) }
+        .task(id: file.id) { image = await CardThumbnailLoader.shared.thumbnail(for: file) }
     }
 
     private func badge(_ text: String) -> some View {
@@ -371,8 +421,15 @@ private final class CardThumbnailLoader {
         return cache
     }()
 
-    func thumbnail(for url: URL) async -> CGImage? {
+    func thumbnail(for file: CardFile) async -> CGImage? {
+        let url = file.url
         if let hit = cache.object(forKey: url as NSURL) { return hit.image }
+        if file.deviceID != nil {
+            // a camera's embedded preview, sent over the cable
+            let image = await CameraDeviceBrowser.shared.thumbnail(for: url)
+            if let image { cache.setObject(ImageBox(image), forKey: url as NSURL) }
+            return image
+        }
         let box = await ThumbnailRepairQueue.run(.visible) { () -> ImageBox? in
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                   let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [

@@ -19,6 +19,13 @@ enum ManagedArchiveRule: String, Sendable, CaseIterable {
 /// Turns a file an import found into the file to catalog — a card import copies it off first.
 protocol ImportFilePreparer: Sendable {
     func prepare(_ source: URL) throws -> URL
+    /// Whether `source` can be imported. A preparer that fetches files (from a camera) knows
+    /// its sources without them being on disk yet.
+    func isAvailable(_ source: URL) -> Bool
+}
+
+extension ImportFilePreparer {
+    func isAvailable(_ source: URL) -> Bool { FileManager.default.fileExists(atPath: source.path) }
 }
 
 struct ImportProgress: Sendable {
@@ -145,7 +152,7 @@ final class ImportCoordinator: @unchecked Sendable {
             // A detached import can run for hours; drain Foundation/ImageIO temporaries
             // per file, before reporting progress or blocking at the next pause point.
             autoreleasepool {
-                guard FileManager.default.fileExists(atPath: url.path) else {
+                guard preparer?.isAvailable(url) ?? FileManager.default.fileExists(atPath: url.path) else {
                     prog.failed += 1
                     prog.latestAsset = nil
                     prog.latestFailure = ImportFailure(url: url, reason: L("文件不存在或不可访问"))

@@ -35,7 +35,7 @@ struct Sidebar: View {
         List(selection: selection) {
             Section("资料库", isExpanded: $libraryExpanded) { librarySection }
             Section("筛选", isExpanded: $reviewExpanded) { reviewSection }
-            if !app.cardVolumes.isEmpty {
+            if !app.cardVolumes.isEmpty || !app.cameraDevices.isEmpty {
                 Section("设备") { deviceSection }
             }
             if !app.hasCatalogPreview {
@@ -102,7 +102,17 @@ struct Sidebar: View {
     }
 
     /// Mounted memory cards: click to import, the eject button to unmount.
+    @ViewBuilder
     private var deviceSection: some View {
+        ForEach(app.cameraDevices) { device in
+            Button { app.showDeviceImport(device) } label: {
+                Label(device.name, systemImage: device.isPhone ? "iphone" : "camera")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("从「\(device.name)」导入照片")
+        }
         ForEach(app.cardVolumes) { card in
             HStack(spacing: 6) {
                 Button { app.showCardImport(card) } label: {

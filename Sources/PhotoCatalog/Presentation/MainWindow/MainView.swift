@@ -88,7 +88,7 @@ struct MainView: View {
                               inView: Set(app.list.map(\.id)))
             }
         case "cardImport":
-            CardImportSheet(card: app.cardImportVolume, options: app.cardImportOptions)
+            CardImportSheet(card: app.cardImportVolume, device: app.cardImportDevice, options: app.cardImportOptions)
         case "renderedExport":
             let items = app.renderedExportItems()
             RenderedExportSheet(settings: app.renderedExportSettings, folder: app.renderedExportFolder,

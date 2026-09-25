@@ -1928,48 +1928,128 @@ final class AppState {
             return
         }
         cardImportVolume = card ?? cardVolumes.first
+        cardImportDevice = card == nil && cardImportVolume == nil ? cameraDevices.first : nil
         sheet = "cardImport"
     }
 
     /// Copies the chosen card photos into the destination (organized, renamed, backed up) and
     /// catalogs the copies as a referenced source. The card itself is never referenced.
     func importFromCard(_ card: CardVolume?, files: [CardFile], options: CardImportOptions) {
+        guard let root = prepareCopyImport(files: files, options: options) else { return }
+        runCopyImport(from: card?.name ?? L("存储卡"), urls: files.map(\.url), root: root,
+                      preparer: CardCopier(options: options, files: files)) { [weak self] failed in
+            guard let self, options.ejectAfter, let card, failed == 0 else { return }
+            do {
+                try NSWorkspace.shared.unmountAndEjectDevice(at: card.url)
+                self.push("已推出「\(card.name)」", "eject")
+            } catch {
+                self.push("无法推出「\(card.name)」：\(error.localizedDescription)", "warning")
+            }
+        }
+    }
+
+    // ---------- camera / phone import ----------
+    /// Cameras and phones on a cable (PTP), which don't mount as volumes.
+    var cameraDevices: [CameraDevice] = []
+    /// The camera the import dialog opens on, instead of a card.
+    var cardImportDevice: CameraDevice?
+    @ObservationIgnored private var deviceBrowsingStarted: Date?
+
+    /// Starts watching for cameras and phones. Only the app calls this; checks never touch devices.
+    func startDeviceBrowsing() {
+        guard deviceBrowsingStarted == nil else { return }
+        deviceBrowsingStarted = .now
+        let browser = CameraDeviceBrowser.shared
+        browser.onChange = { [weak self] devices in
+            guard let self else { return }
+            let added = devices.filter { !self.cameraDevices.contains($0) }
+            self.cameraDevices = devices
+            // devices already connected at launch are listed, not announced
+            let settled = self.deviceBrowsingStarted.map { Date().timeIntervalSince($0) > 3 } ?? true
+            if settled, let device = added.first {
+                self.push("检测到「\(device.name)」· 可从侧边栏“设备”导入", device.isPhone ? "iphone" : "camera")
+            }
+        }
+        browser.start()
+    }
+
+    func showDeviceImport(_ device: CameraDevice) {
         guard !importing else {
             sheet = "import"
             push("已有导入任务正在运行", "warning")
             return
         }
-        guard !files.isEmpty else { return }
-        cardImportOptions = options
-        openOrCreateCatalog()
-        guard let coordinator, let store else { return }
-        let root = options.destination
+        cardImportDevice = device
+        cardImportVolume = nil
+        sheet = "cardImport"
+    }
+
+    /// Downloads the chosen photos from a camera or phone and copies them into the destination
+    /// like card photos. Each download is staged on the destination's volume — so placing it is
+    /// a clone rather than a second copy — and removed once it is in place.
+    func importFromDevice(_ device: CameraDevice, files: [CardFile], options: CardImportOptions) {
+        guard let root = prepareCopyImport(files: files, options: options) else { return }
+        let staging: URL
         do {
-            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            staging = try FileManager.default.url(for: .itemReplacementDirectory, in: .userDomainMask,
+                                                  appropriateFor: root, create: true)
         } catch {
             push("无法创建目标文件夹：\(error.localizedDescription)", "warning")
             return
         }
+        let staged = files.map { $0.staged(in: staging) }
+        let sources = CameraDeviceBrowser.shared.sources(for: files) { CameraDevicePaths.staged($0.url, in: staging).path }
+        let fetcher = DeviceFileFetcher(sources: sources, copier: CardCopier(options: options, files: staged))
+        runCopyImport(from: device.name, urls: staged.map(\.url), root: root, preparer: fetcher) { failed in
+            try? FileManager.default.removeItem(at: staging)
+            if options.ejectAfter, failed == 0 { CameraDeviceBrowser.shared.eject(device) }
+            CameraDeviceBrowser.shared.close(device)
+        }
+    }
+
+    /// The common start of a copy import: nothing else importing, a catalog, the destination.
+    private func prepareCopyImport(files: [CardFile], options: CardImportOptions) -> URL? {
+        guard !importing else {
+            sheet = "import"
+            push("已有导入任务正在运行", "warning")
+            return nil
+        }
+        guard !files.isEmpty else { return nil }
+        cardImportOptions = options
+        openOrCreateCatalog()
+        guard coordinator != nil, store != nil else { return nil }
+        do {
+            try FileManager.default.createDirectory(at: options.destination, withIntermediateDirectories: true)
+        } catch {
+            push("无法创建目标文件夹：\(error.localizedDescription)", "warning")
+            return nil
+        }
+        return options.destination
+    }
+
+    /// Imports files that `preparer` copies into `root`, cataloging the copies as a referenced
+    /// source; `finished` gets the number of files that failed.
+    private func runCopyImport(from sourceName: String, urls: [URL], root: URL, preparer: any ImportFilePreparer,
+                               finished: @escaping @MainActor (Int) -> Void) {
+        guard let coordinator, let store else { return }
         let sourceId = coordinator.sourceId(forFolder: root)
         let existingIds = Set(assets.map { $0.id })
-        // an interrupted import resumes from the copies, never from a card that may be gone
+        // an interrupted import resumes from the copies, never from a card or camera that may be gone
         let run = ImportRun(source: root, mode: .referenced)
         guard startPersistedImport(run, store: store), let control = importControl else { return }
         let vision = visionEnabled
         let previewSize = previewMaxPixel
         let readXMP = readXMPSidecar
-        let copier = CardCopier(options: options, files: files)
-        let urls = files.map(\.url)
         cancelBackfill()
-        push("正在从「\(card?.name ?? L("存储卡"))」导入 \(files.count) 张照片…", "importIcon")
+        push("正在从「\(sourceName)」导入 \(urls.count) 张照片…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: root)
         Task { [weak self, coordinator, store, root, vision, previewSize, readXMP, bookmark, existingIds, sourceId, run,
-                control, copier, urls, card] in
+                control, preparer, urls] in
             let imported = await Task.detached(priority: .userInitiated) {
-                [coordinator, root, vision, previewSize, readXMP, control, copier, urls] in
+                [coordinator, root, vision, previewSize, readXMP, control, preparer, urls] in
                 coordinator.importFiles(urls, from: root, mode: .referenced, autoTag: vision, readSidecar: readXMP,
                                         previewMaxPixel: previewSize, control: control,
-                                        preparer: copier) { progress in
+                                        preparer: preparer) { progress in
                     Task { @MainActor [weak self] in
                         self?.recordImportProgress(progress, for: run.id, store: store)
                     }
@@ -1979,14 +2059,7 @@ final class AppState {
             self.finishImport(folder: root, imported: imported, existingIds: existingIds,
                               store: store, bookmark: bookmark, mode: .referenced, runId: run.id,
                               sourceId: sourceId, persistSourceRoot: true)
-            if options.ejectAfter, let card, self.importRun?.failed == 0 {
-                do {
-                    try NSWorkspace.shared.unmountAndEjectDevice(at: card.url)
-                    self.push("已推出「\(card.name)」", "eject")
-                } catch {
-                    self.push("无法推出「\(card.name)」：\(error.localizedDescription)", "warning")
-                }
-            }
+            finished(self.importRun?.failed ?? 0)
         }
     }
 

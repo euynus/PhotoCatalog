@@ -60,6 +60,7 @@ struct PhotoCatalogApp: App {
                 .frame(minWidth: 1080, minHeight: 680)
                 .onAppear {
                     app.startDeferredCatalogLoadingIfNeeded()
+                    app.startDeviceBrowsing()
                     delegate.openCatalogURL = { url in
                         app.openCatalogFromSystem(url)
                     }

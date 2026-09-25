@@ -828,10 +828,10 @@
 "已选 %lld / %lld 张 · " = "%lld of %lld selected · ";
 "推出存储卡" = "Eject the memory card";
 "插入" = "Insert";
-"插入存储卡，或选择一个包含照片的文件夹。" = "Insert a memory card, or choose a folder that contains photos.";
+"插入存储卡、用数据线连接相机或 iPhone，或选择一个包含照片的文件夹。" = "Insert a memory card, connect a camera or iPhone with a cable, or choose a folder that contains photos.";
 "整理方式" = "Organize";
 "文件命名" = "File Naming";
-"未检测到存储卡" = "No Memory Card Detected";
+"未检测到存储卡或相机" = "No Memory Card or Camera Detected";
 "未选择" = "Not chosen";
 "模板" = "Template";
 "正在读取「%@」…" = "Reading “%@”…";
@@ -1112,3 +1112,9 @@
 "绿" = "Green";
 "蓝" = "Blue";
 "黄" = "Yellow";
+/* Camera and phone import */
+"存储卡" = "memory card";
+"从设备导入" = "Import from Device";
+"检测到「%@」· 可从侧边栏“设备”导入" = "“%@” connected · Import it from Devices in the sidebar";
+"请解锁「%@」，并在设备上选择“信任”这台 Mac。" = "Unlock “%@” and choose to trust this Mac on the device.";
+"无法读取「%@」。请重新连接后再试。" = "Couldn't read “%@”. Reconnect it and try again.";
