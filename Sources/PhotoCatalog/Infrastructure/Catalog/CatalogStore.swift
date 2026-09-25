@@ -503,12 +503,33 @@ final class CatalogStore: @unchecked Sendable {
     }
 
     func loadAssets() throws -> [Asset] {
-        // soft-deleted rows are never shown; skip materializing them (uses idx_assets_deleted)
+        // Read the table in its own order and sort in memory: ORDER BY via the capture-date
+        // index fetched every row with a random seek into the table — random reads across the
+        // whole file, most of a 10-20 s cold load at 500k photos. Soft-deleted rows are skipped.
+        Self.readAhead(db.path)
         let decoder = AssetRowDecoder(columns: Self.columnNames)
-        return try db.queryRows(
-            "SELECT \(Self.columns) FROM assets WHERE deleted=0 ORDER BY capture_date DESC;",
+        let loaded = try db.queryRows(
+            "SELECT \(Self.columns) FROM assets NOT INDEXED WHERE deleted=0;",
             transform: decoder.asset(from:)
         )
+        // newest first, as the library shows by default; ties in a stable id order
+        let dates = loaded.map { $0.date.timeIntervalSince1970 }
+        var order = Array(loaded.indices)
+        order.sort { dates[$0] != dates[$1] ? dates[$0] > dates[$1] : loaded[$0].id > loaded[$1].id }
+        return order.map { loaded[$0] }
+    }
+
+    /// Reads the database file front to back, so the table scan that follows hits the page
+    /// cache. Catalogs grow by imports, which interleave table, index and search pages across
+    /// the file; the scan then made scattered 4 KB reads (~80 MB/s, 6 s at 500k photos cold),
+    /// while one sequential pass runs at the disk's full speed (~1 s for 900 MB).
+    private static func readAhead(_ path: String) {
+        let fd = open(path, O_RDONLY)
+        guard fd >= 0 else { return }
+        defer { close(fd) }
+        _ = fcntl(fd, F_RDAHEAD, 1)
+        var buffer = [UInt8](repeating: 0, count: 8 << 20)
+        while buffer.withUnsafeMutableBytes({ read(fd, $0.baseAddress, $0.count) }) > 0 {}
     }
 
     private static let columnNames = columns.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

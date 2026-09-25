@@ -41,7 +41,7 @@ enum ScaleCheck {
         let (_, applyTime) = timed { app.applyLoadedCatalogForScaleCheck(live, from: store) }
         report("apply catalog: \(applyTime) ms, \(delta(footprint(), beforeApply)) MB")
 
-        // PC_SCALE_LOOP=rate|name|keywords|dates|keyword-edit repeats one operation for 20 s, to sample it
+        // PC_SCALE_LOOP=rate|name|keywords|dates|hydrate|apply|keyword-edit repeats one operation for 20 s, to sample it
         if let loop = ProcessInfo.processInfo.environment["PC_SCALE_LOOP"] {
             let ids = app.list.prefix(1000).map(\.id)
             let end = Date().addingTimeInterval(20)
@@ -60,6 +60,12 @@ enum ScaleCheck {
                 case "dates":
                     app.assets = app.assets
                     _ = app.captureDateGroups.count
+                case "hydrate":
+                    _ = try? store.loadAssets()
+                case "apply":
+                    let fresh = AppState.selfCheckFixture(store: store)
+                    fresh.runsBackgroundMaintenance = false
+                    fresh.applyLoadedCatalogForScaleCheck(live, from: store)
                 case "keyword-edit":
                     app.selectedIds = Set(ids)
                     app.addKeyword("循环\(rounds)")
