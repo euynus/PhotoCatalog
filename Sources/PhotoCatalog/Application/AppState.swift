@@ -19,7 +19,7 @@ private enum DeferredCatalogLoadOutcome: Sendable {
 }
 
 private enum DeferredCatalogHydrationOutcome: Sendable {
-    case success([Asset])
+    case success([Asset], AppState.CatalogDerivedData)
     case failure
 }
 
@@ -1217,7 +1217,7 @@ final class AppState {
         return nil
     }
 
-    private func applyLoadedCatalog(_ real: [Asset], from store: CatalogStore) {
+    private func applyLoadedCatalog(_ real: [Asset], from store: CatalogStore, derived: CatalogDerivedData? = nil) {
         guard !real.isEmpty else {
             assets = []
             albums = []
@@ -1242,14 +1242,16 @@ final class AppState {
         let checked = repaired.assets
         if !repaired.changed.isEmpty { try? store.upsert(repaired.changed) }
         assets = checked
-        for (fid, items) in Dictionary(grouping: checked, by: { $0.folderId }) where
-            !folders.contains(where: { $0.id == fid }) {
-            folders.append(Folder(id: fid, name: items.first?.folderName ?? fid,
-                                  status: folderStatus(for: fid, in: checked)))
+        // computed off the main thread from this very array; a repair makes it stale
+        if let derived, repaired.changed.isEmpty { seedDerivedCaches(derived) }
+        let summaries = Self.folderSummaries(checked)
+        let known = Set(folders.map(\.id))
+        for (fid, summary) in summaries.sorted(by: { $0.key < $1.key }) where !known.contains(fid) {
+            folders.append(Folder(id: fid, name: summary.name, status: summary.status))
         }
         for index in folders.indices where
             sourceManagementModesById[folders[index].id] == ImportMode.managed.rawValue {
-            let status = folderStatus(for: folders[index].id, in: checked)
+            let status = summaries[folders[index].id]?.status ?? folders[index].status
             folders[index].status = status
             try? store.updateSourceRootStatus(id: folders[index].id, status: status)
         }
@@ -1323,23 +1325,26 @@ final class AppState {
                 self.coordinator = ImportCoordinator(store: store)
                 self.applyCatalogPreview(page)
 
+                let pairsRawJpeg = self.pairRawAndJpeg
+                let recentCutoff = self.recentCutoff
                 let hydration = await Task.detached(priority: .userInitiated) {
                     do {
-                        return DeferredCatalogHydrationOutcome.success(
-                            try store.loadAssets().filter { !$0.isDemo && !$0.deleted }
-                        )
+                        let live = try store.loadAssets().filter { !$0.isDemo && !$0.deleted }
+                        let derived = CatalogDerivedData.derive(from: live, pairsRawJpeg: pairsRawJpeg,
+                                                                recentCutoff: recentCutoff)
+                        return DeferredCatalogHydrationOutcome.success(live, derived)
                     } catch {
                         return DeferredCatalogHydrationOutcome.failure
                     }
                 }.value
                 guard self.catalogLoadGeneration == generation, !Task.isCancelled else { return }
                 switch hydration {
-                case .success(let assets):
+                case .success(let assets, let derived):
                     self.catalogLoadTask = nil
                     self.setActiveCatalog(url)
                     self.refreshStatusMetrics()
                     self.loadingCatalogTotalCount = nil
-                    self.applyLoadedCatalog(assets, from: store)
+                    self.applyLoadedCatalog(assets, from: store, derived: derived)
                     self.hasCatalogPreview = false
                     self.isLoadingCatalog = false
                     self.loadingCatalogURL = nil
@@ -2646,22 +2651,37 @@ final class AppState {
     }
 
     private func updateFolderStatusesFromAssets() {
+        let summaries = Self.folderSummaries(assets)
         for i in folders.indices {
-            let status = folderStatus(for: folders[i].id, in: assets)
+            // a folder with no photos keeps the status it had
+            guard let status = summaries[folders[i].id]?.status else { continue }
             if folders[i].status != status {
                 folders[i].status = status
             }
         }
     }
 
-    private func folderStatus(for folderId: String, in sourceAssets: [Asset]) -> String {
-        let statuses = sourceAssets
-            .filter { !$0.deleted && !$0.isDemo && $0.folderId == folderId }
-            .map(\.status)
-        if statuses.contains(.offline) { return "offline" }
-        if statuses.contains(.missing) { return "missing" }
-        if !statuses.isEmpty { return "online" }
-        return folders.first(where: { $0.id == folderId })?.status ?? "online"
+    /// Each source folder's name and worst original status (offline, then missing, else
+    /// online), in one pass — per-folder scans were 20M comparisons at 500k photos.
+    private static func folderSummaries(_ sourceAssets: [Asset]) -> [String: (name: String, status: String)] {
+        func rank(_ status: AssetStatus) -> Int {
+            switch status {
+            case .offline: 2
+            case .missing: 1
+            case .ready: 0
+            }
+        }
+        var worst: [String: (name: String, status: AssetStatus)] = [:]
+        for asset in sourceAssets where !asset.deleted && !asset.isDemo {
+            if let current = worst[asset.folderId] {
+                if rank(asset.status) > rank(current.status) { worst[asset.folderId] = (current.name, asset.status) }
+            } else {
+                worst[asset.folderId] = (asset.folderName, asset.status)
+            }
+        }
+        return worst.mapValues { summary in
+            (summary.name, summary.status == .offline ? "offline" : summary.status == .missing ? "missing" : "online")
+        }
     }
 
     private func startVolumeMonitor() {
@@ -3978,17 +3998,58 @@ final class AppState {
     // ---------- keyword sidebar list ----------
     private var keywordCounts: (order: [String], counts: [String: Int]) {
         if let cache = keywordCountsCache { return cache }
+        let result = Self.keywordCounts(of: assets, pairing: assetPairing)
+        keywordCountsCache = result
+        return result
+    }
+
+    nonisolated static func keywordCounts(of assets: [Asset], pairing: AssetPairing)
+        -> (order: [String], counts: [String: Int]) {
         var order: [String] = []
         var counts: [String: Int] = [:]
-        let pairing = assetPairing
         for a in assets where !a.deleted && !pairing.isHiddenCompanion(a.id) {
             for k in a.keywords {
                 if counts[k] == nil { order.append(k) }
                 counts[k, default: 0] += 1
             }
         }
-        keywordCountsCache = (order, counts)
         return (order, counts)
+    }
+
+    /// What the sidebar and inspector derive from a whole catalog, computed on the loading
+    /// thread so a 500k-photo catalog doesn't freeze the first render for seconds.
+    struct CatalogDerivedData: @unchecked Sendable {
+        let pairing: AssetPairing
+        let indexById: [String: Int]
+        let keywordCounts: (order: [String], counts: [String: Int])
+        let captureDateGroups: [CaptureDateBucket]
+        let projects: [KeywordCount]
+        let clients: [KeywordCount]
+        let libraryCounts: LibraryCounts
+
+        nonisolated static func derive(from assets: [Asset], pairsRawJpeg: Bool, recentCutoff: Date) -> CatalogDerivedData {
+            let pairing = pairsRawJpeg ? AssetPairing.rawJpeg(assets) : .empty
+            var indexById = [String: Int](minimumCapacity: assets.count)
+            for (offset, asset) in assets.enumerated() { indexById[asset.id] = offset }
+            return CatalogDerivedData(
+                pairing: pairing, indexById: indexById,
+                keywordCounts: AppState.keywordCounts(of: assets, pairing: pairing),
+                captureDateGroups: CaptureDates.groups(assets.filter { !$0.deleted && !pairing.isHiddenCompanion($0.id) }),
+                projects: AppState.metadataCounts(assets, pairing: pairing, \.project),
+                clients: AppState.metadataCounts(assets, pairing: pairing, \.client),
+                libraryCounts: AppState.libraryCounts(assets, pairing: pairing, recentCutoff: recentCutoff))
+        }
+    }
+
+    /// Seeds the derived caches for the catalog just installed (only valid for that exact array).
+    private func seedDerivedCaches(_ derived: CatalogDerivedData) {
+        assetIndexCache = derived.indexById
+        if pairRawAndJpeg { assetPairingCache = (structureVersion, derived.pairing) }
+        keywordCountsCache = derived.keywordCounts
+        captureDateGroupsCache = derived.captureDateGroups
+        projectListCache = derived.projects
+        clientListCache = derived.clients
+        libraryCountsCache = derived.libraryCounts
     }
 
     var keywordList: [KeywordCount] {
@@ -4008,12 +4069,14 @@ final class AppState {
     var keywordSuggestionPool: [String] {
         _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = keywordSuggestionPoolCache { return cache }
+        // the distinct keywords the counts already know, not every photo's list again
+        // (normalizing 1.2M keyword lists took 1.4 s at 500k photos)
+        let (order, counts) = keywordCounts
         var seen = Set<String>()
         var result: [String] = []
-        for asset in assets where !asset.deleted {
-            for keyword in KeywordService.normalize(asset.keywords) where seen.insert(keyword).inserted {
-                result.append(keyword)
-            }
+        for keyword in KeywordService.normalize(order.filter { (counts[$0] ?? 0) > 0 })
+        where seen.insert(keyword).inserted {
+            result.append(keyword)
         }
         for keyword in DemoData.keywordPool where seen.insert(keyword).inserted {
             result.append(keyword)
@@ -4104,9 +4167,16 @@ final class AppState {
         _ = isLoadingCatalog
         _ = loadingCatalogTotalCount
         if let cache = libraryCountsCache { return cache }
+        var counts = Self.libraryCounts(assets, pairing: assetPairing, recentCutoff: recentCutoff)
+        if isLoadingCatalog, let loadingCatalogTotalCount {
+            counts.all = loadingCatalogTotalCount
+        }
+        libraryCountsCache = counts
+        return counts
+    }
+
+    nonisolated static func libraryCounts(_ assets: [Asset], pairing: AssetPairing, recentCutoff cutoff: Date) -> LibraryCounts {
         var counts = LibraryCounts()
-        let cutoff = recentCutoff
-        let pairing = assetPairing
         for a in assets where !a.deleted {
             if a.status == .missing || a.status == .offline { counts.missingOffline += 1 }
             guard !pairing.isHiddenCompanion(a.id) else { continue }
@@ -4118,19 +4188,22 @@ final class AppState {
             if a.hasGPS { counts.places += 1 }
             if a.faces > 0 { counts.people += 1 }
         }
-        if isLoadingCatalog, let loadingCatalogTotalCount {
-            counts.all = loadingCatalogTotalCount
-        }
-        libraryCountsCache = counts
         return counts
     }
 
     private func countMetadataValues(_ keyPath: KeyPath<Asset, String>) -> [KeywordCount] {
+        Self.metadataCounts(assets, pairing: assetPairing, keyPath)
+    }
+
+    nonisolated static func metadataCounts(_ assets: [Asset], pairing: AssetPairing,
+                                           _ keyPath: KeyPath<Asset, String>) -> [KeywordCount] {
         var order: [String] = []
         var counts: [String: Int] = [:]
-        let pairing = assetPairing
-        for asset in assets where !asset.deleted && !pairing.isHiddenCompanion(asset.id) {
-            let value = asset[keyPath: keyPath].trimmingCharacters(in: .whitespacesAndNewlines)
+        for asset in assets where !asset.deleted {
+            let raw = asset[keyPath: keyPath]
+            // most photos have no value: skip them before any lookup or Foundation call
+            guard !raw.isEmpty, !pairing.isHiddenCompanion(asset.id) else { continue }
+            let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty else { continue }
             if counts[value] == nil { order.append(value) }
             counts[value, default: 0] += 1
@@ -4638,6 +4711,14 @@ final class AppState {
                 compareIds = []
                 winner = nil
             }
+            return
+        }
+        if primaryId == nil && selectedIds.isEmpty && (view != .compare || compareIds.isEmpty) {
+            // nothing to validate (e.g. a catalog just loaded): skip building the position index
+            primaryId = ids[0].id
+            selectedIds = [ids[0].id]
+            anchorId = ids[0].id
+            if view == .compare { compareIds = [ids[0].id] }
             return
         }
         let positions = listPositions

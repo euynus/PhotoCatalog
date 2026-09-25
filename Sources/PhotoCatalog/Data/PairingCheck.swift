@@ -68,6 +68,16 @@ enum PairingCheck {
                "a RAW and its same-name JPEG are one tile and one photo; two RAWs never pair")
         assert(app.companions(of: raw).map(\.id) == [jpeg.id], "the RAW owns its JPEG companion")
 
+        // the bundle derived on the loading thread matches what the getters compute
+        let derived = AppState.CatalogDerivedData.derive(from: app.assets, pairsRawJpeg: true,
+                                                         recentCutoff: app.recentCutoff)
+        assert(derived.pairing.primaryByCompanion == app.assetPairing.primaryByCompanion
+               && derived.libraryCounts == app.libraryCounts
+               && derived.projects == app.projectList && derived.clients == app.clientList
+               && derived.captureDateGroups.map { "\($0.id)=\($0.count)" } == app.captureDateGroups.map { "\($0.id)=\($0.count)" }
+               && derived.indexById.count == app.assets.count,
+               "background-derived catalog data equals the lazily computed caches")
+
         app.setPrimary(raw.id)
         _ = app.handleKey("4", hasCommand: false)
         let rated = Dictionary(uniqueKeysWithValues: app.assets.map { ($0.id, $0.rating) })
