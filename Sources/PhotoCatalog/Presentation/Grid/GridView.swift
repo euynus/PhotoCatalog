@@ -60,6 +60,9 @@ struct GridView: View {
                                 .accessibilityAction(named: stack?.collapsed == true ? "展开堆栈" : "折叠堆栈") {
                                     if stack != nil { app.toggleStack(containing: asset.id) }
                                 }
+                                // drag the original out to Finder, an editor, Mail…
+                                .onDrag { Self.dragProvider(for: asset) }
+                                .contextMenu { PhotoContextMenu(asset: asset, pairedJPEGPath: pair.first?.localPath) }
                         }
                     }
                     .padding(Self.inset)
@@ -73,6 +76,13 @@ struct GridView: View {
     }
 
     private static let inset: CGFloat = 16
+
+    private static func dragProvider(for asset: Asset) -> NSItemProvider {
+        guard asset.status == .ready, let path = asset.localPath,
+              let provider = NSItemProvider(contentsOf: URL(fileURLWithPath: path)) else { return NSItemProvider() }
+        provider.suggestedName = asset.filename
+        return provider
+    }
 
     /// "JPG" for a RAW shown with its paired JPEG (nil when unpaired).
     static func pairLabel(_ companions: [Asset]) -> String? {

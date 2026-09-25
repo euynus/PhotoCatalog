@@ -59,6 +59,11 @@ struct PhotoCatalogCommands: Commands {
                     .disabled(app.sheet != nil || !app.hasSelection)
             }
             Divider()
+            Button("用默认应用打开") { perform("照片.用默认应用打开") { app.openSelection() } }
+                .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals)
+            Button("在访达中显示") { perform("照片.在访达中显示") { app.revealSelectionInFinder() } }
+                .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals)
+            Divider()
             Toggle("评分后自动前进", isOn: Binding(get: { app.autoAdvance }, set: { app.autoAdvance = $0 }))
                 .help("评分、旗标或颜色后跳到下一张；按住 Shift 可单次前进")
             Button("移除被拒绝的照片…") { perform("照片.移除被拒绝的照片") { app.confirmRemoveRejected() } }

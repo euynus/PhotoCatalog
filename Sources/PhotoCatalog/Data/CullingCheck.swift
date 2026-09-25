@@ -49,6 +49,19 @@ enum CullingCheck {
                "a batch edit never moves the cursor")
         app.autoAdvance = false
 
+        app.setPrimary(ids[0])
+        app.prepareContextSelection(ids[2])
+        assert(app.selectedIds == [ids[2]], "right-clicking outside the selection targets that photo")
+        app.selectedIds = [ids[1], ids[2]]
+        app.prepareContextSelection(ids[2])
+        assert(app.selectedIds == [ids[1], ids[2]], "right-clicking inside the selection keeps it")
+
+        var own = app.assets[0]
+        own.localPath = "/tmp/pc-culling/own.CR3"
+        app.assets[0] = own
+        assert(!app.importDroppedItems([URL(fileURLWithPath: "/tmp/pc-culling/own.CR3")]),
+               "a catalog photo dragged back onto the grid is not imported")
+
         app.showInspector = true
         app.sidebarVisible = true
         _ = app.handleKey("tab", hasCommand: false)

@@ -101,6 +101,7 @@ private struct DetailTitles: ViewModifier {
 struct ContentColumn: View {
     @Environment(AppState.self) var app
     let assetRevision: Int
+    @State private var dropTargeted = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -112,6 +113,24 @@ struct ContentColumn: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bgContent)
+        .dropDestination(for: URL.self) { urls, _ in
+            app.importDroppedItems(urls)
+        } isTargeted: { dropTargeted = $0 }
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(Theme.accent, style: StrokeStyle(lineWidth: 3, dash: [8, 6]))
+                    .padding(8)
+                    .overlay {
+                        Label("松开以导入文件夹", systemImage: "square.and.arrow.down")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Theme.onAccent)
+                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .background(Theme.accentFill, in: Capsule())
+                    }
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     @ViewBuilder private var contentMain: some View {

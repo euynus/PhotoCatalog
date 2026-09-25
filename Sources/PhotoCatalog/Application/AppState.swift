@@ -1334,6 +1334,17 @@ final class AppState {
         panel.message = mode == .managed ? "选择文件夹（托管式：复制原件到目录库）"
                                          : "选择文件夹（引用式：原件保持不动）"
         guard panel.runModal() == .OK, let folder = panel.url else { return }
+        importFolder(folder)
+    }
+
+    /// Imports one folder with the current mode — from the open panel or a Finder drop.
+    func importFolder(_ folder: URL) {
+        guard !importing else {
+            sheet = "import"
+            push("已有导入任务正在运行", "warning")
+            return
+        }
+        let mode = importMode
         openOrCreateCatalog()
         guard let coordinator, let store else { return }
         let sourceId = coordinator.sourceId(forFolder: folder)
@@ -4359,6 +4370,64 @@ final class AppState {
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
         let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         return name.isEmpty ? nil : name
+    }
+
+    /// Handles a Finder drop: the catalog manages originals by folder, so folders import and
+    /// the catalog's own files (a photo dragged back onto the grid) are ignored.
+    @discardableResult
+    func importDroppedItems(_ urls: [URL]) -> Bool {
+        let known = Set(assets.compactMap(\.localPath))
+        let external = urls.filter { !known.contains($0.path) }
+        guard !external.isEmpty else { return false }
+        let folders = external.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+        guard let folder = folders.first else {
+            push("请拖入文件夹：目录库按文件夹管理原件", "info")
+            return false
+        }
+        if folders.count > 1 { push("一次导入一个文件夹，先导入「\(folder.lastPathComponent)」", "info") }
+        importFolder(folder)
+        return true
+    }
+
+    /// Right-click acts on the selection when the clicked photo is part of it, else on that photo.
+    func prepareContextSelection(_ id: String) {
+        if !selectedIds.contains(id) { setPrimary(id) }
+    }
+
+    /// Existing original files of the selection in grid order; paired JPEGs on request.
+    func selectionOriginalURLs(includingCompanions: Bool = false) -> [URL] {
+        let ids = includingCompanions ? targetIds : selectionTargetIds
+        let companions = includingCompanions ? assetPairing.companionsByPrimary : [:]
+        let fm = FileManager.default
+        return list.filter { ids.contains($0.id) }
+            .flatMap { [$0] + (companions[$0.id] ?? []).compactMap { id in assetIndex[id].map { assets[$0] } } }
+            .compactMap { $0.localPath }
+            .filter { fm.fileExists(atPath: $0) }
+            .map { URL(fileURLWithPath: $0) }
+    }
+
+    /// Opens the selection's originals — paired RAWs open as the RAW — in `app` or each file's default app.
+    func openSelection(with app: URL? = nil) {
+        let urls = selectionOriginalURLs()
+        guard !urls.isEmpty else {
+            push("所选照片没有可访问的原件", "warning")
+            return
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        if let app {
+            NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: configuration)
+        } else {
+            for url in urls { NSWorkspace.shared.open(url) }
+        }
+    }
+
+    func revealSelectionInFinder() {
+        let urls = selectionOriginalURLs(includingCompanions: true)
+        guard !urls.isEmpty else {
+            push("所选照片没有可访问的原件", "warning")
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
     }
 
     func revealInFinder(_ id: String) {
