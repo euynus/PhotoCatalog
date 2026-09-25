@@ -191,7 +191,9 @@ struct Filmstrip: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 8) {
-                    ForEach(photos) { a in
+                    // positions as item ids, like the grid: a new list doesn't re-index every photo
+                    ForEach(0..<photos.count, id: \.self) { position in
+                        let a = photos[position]
                         Hover { hover in
                             Button { app.setPrimary(a.id) } label: {
                                 VStack(spacing: 4) {
@@ -221,7 +223,7 @@ struct Filmstrip: View {
                             .accessibilityLabel(a.filename)
                             .accessibilityAddTraits(a.id == app.primaryId ? .isSelected : [])
                         }
-                        .id(a.id)
+                        .id(a.id)   // a position showing another photo starts fresh
                     }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
@@ -231,11 +233,16 @@ struct Filmstrip: View {
             .overlay(alignment: .top) { Rectangle().fill(Theme.canvasLine).frame(height: 1) }
             .environment(\.colorScheme, .dark)
             .onAppear {
-                if let id = app.primaryId { proxy.scrollTo(id, anchor: .center) }
+                if let position = primaryPosition { proxy.scrollTo(position, anchor: .center) }
             }
             .onChange(of: app.primaryId) {
-                if let id = app.primaryId { withAnimation { proxy.scrollTo(id, anchor: .center) } }
+                if let position = primaryPosition { withAnimation { proxy.scrollTo(position, anchor: .center) } }
             }
         }
+    }
+
+    private var primaryPosition: Int? {
+        guard let id = app.primaryId else { return nil }
+        return photos.assets.firstIndex { $0.id == id }
     }
 }

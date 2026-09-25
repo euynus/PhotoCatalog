@@ -27,7 +27,10 @@ struct GridView: View {
                                     count: metrics.columns)
                 ScrollView {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: metrics.spacing) {
-                        ForEach(photos) { asset in
+                        // Items are positions, not photo ids: after a sort or filter SwiftUI then
+                        // re-renders the visible cells instead of re-indexing 500k ids (~0.4 s).
+                        ForEach(0..<photos.count, id: \.self) { position in
+                            let asset = photos[position]
                             let stack = app.stackInfo(for: asset)
                             let pair = app.companions(of: asset)
                             GridCell(asset: asset, size: metrics.cellSize,
@@ -64,6 +67,8 @@ struct GridView: View {
                                 // drag the original out to Finder, an editor, Mail…
                                 .onDrag { Self.dragProvider(for: asset) }
                                 .contextMenu { PhotoContextMenu(asset: asset, pairedJPEGPath: pair.first?.localPath) }
+                                // a position showing another photo starts fresh (no stale thumbnail)
+                                .id(asset.id)
                         }
                     }
                     .padding(Self.inset)
