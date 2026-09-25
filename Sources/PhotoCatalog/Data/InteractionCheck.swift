@@ -5,8 +5,73 @@ enum InteractionCheck {
         MainActor.assumeIsolated {
             check()
             checkPhotoListIdentity()
+            checkListPositions()
         }
         print("--- interaction routing assertions passed ---")
+    }
+
+    /// Cursor and membership lookups find a few photos from the last position or with one
+    /// pass, and use the position index for batches; either way edits land in place.
+    @MainActor
+    private static func checkListPositions() {
+        let app = AppState.selfCheckFixture()
+        app.assets = Array(DemoData.assets.prefix(40)).map {
+            var asset = $0
+            asset.rating = 0
+            asset.flag = .none
+            return asset
+        }
+        app.duplicateGroupsCache = []
+        app.select(Selection(type: .lib, id: "all", name: "Position check"))
+        let ids = app.list.map(\.id)
+        func listMatchesCatalog() -> Bool {
+            let byId = Dictionary(uniqueKeysWithValues: app.assets.map { ($0.id, $0) })
+            return app.list.map(\.id) == ids
+                && app.list.allSatisfy { byId[$0.id]?.rating == $0.rating && byId[$0.id]?.flag == $0.flag }
+        }
+
+        app.setPrimary(ids[10])
+        _ = app.handleKey("right", hasCommand: false)
+        assert(app.primaryId == ids[11], "arrow keys step through the list")
+        _ = app.setRating(3)
+        assert(listMatchesCatalog() && app.list[11].rating == 3, "a rating lands on the photo just moved to")
+
+        app.selectedIds = [ids[2], ids[30], ids[39]]
+        app.primaryId = ids[30]
+        _ = app.setRating(2)
+        assert(listMatchesCatalog() && [2, 30, 39].allSatisfy { app.list[$0].rating == 2 },
+               "a few scattered edits are found by one pass")
+
+        app.selectedIds = Set(ids[12..<32])
+        app.primaryId = ids[12]
+        _ = app.setFlag(.pick)
+        assert(listMatchesCatalog() && (12..<32).allSatisfy { app.list[$0].flag == .pick },
+               "a batch edit lands in place")
+
+        app.setPrimary(ids[25])
+        _ = app.handleKey("left", hasCommand: false)
+        assert(app.primaryId == ids[24], "navigation starts from the current photo, never an old position")
+        app.setSort(Sort(field: .name, descending: true))
+        let resorted = app.list.map(\.id)
+        let moved = resorted.firstIndex(of: ids[24]) ?? 0
+        _ = app.handleKey("right", hasCommand: false)
+        assert(moved != 24 && app.primaryId == resorted[min(moved + 1, resorted.count - 1)],
+               "after a re-sort navigation follows the new order")
+        app.setSort(Sort())
+
+        var rated = Filters()
+        rated.minRating = 2
+        app.selectedIds = [ids[2], ids[5], ids[30]]
+        app.primaryId = ids[30]
+        app.setFilters(rated)
+        assert(app.selectedIds == [ids[2], ids[30]] && app.primaryId == ids[30],
+               "a filter keeps just the visible photos of a small selection")
+        app.setFilters(Filters())
+        app.selectedIds = Set(ids[0..<20])
+        app.primaryId = ids[2]
+        app.setFilters(rated)
+        assert(app.selectedIds == [ids[2], ids[11]] && app.primaryId == ids[2],
+               "and of a large one")
     }
 
     /// Views compare `photoList` by identity alone, so an unchanged identity must always mean

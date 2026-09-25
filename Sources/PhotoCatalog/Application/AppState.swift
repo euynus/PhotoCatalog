@@ -319,19 +319,36 @@ final class AppState {
         // position (O(edits)) after dropping the caches' references so no copy is forced.
         if collapsedStackIds.isEmpty, var visible = listCache, visible.signature == before,
            uncollapsedListCache?.signature == before {
-            // built once from the cached list (not via `list`, whose key already moved on)
+            // the index when this list has one, or is worth building for a batch (from the
+            // cached list, not via `list`, whose key already moved on); a few edits scan
             let positions = listPositionsCache.flatMap { $0.signature == before ? $0.positions : nil }
-                ?? Self.positions(of: visible.value)
+                ?? (edits.count > Self.listScanLimit ? Self.positions(of: visible.value) : nil)
+            let hint = listPositionHint
             listCache = nil
             uncollapsedListCache = nil
             visible.value.withUnsafeMutableBufferPointer { buffer in
-                for edit in edits {
-                    if let position = positions[edit.asset.id] { buffer[position] = edit.asset }
+                if let positions {
+                    for edit in edits {
+                        if let position = positions[edit.asset.id] { buffer[position] = edit.asset }
+                    }
+                    return
+                }
+                var pending = edits.map(\.asset)
+                if let hint, hint.position < buffer.count, buffer[hint.position].id == hint.id,
+                   let slot = pending.firstIndex(where: { $0.id == hint.id }) {
+                    buffer[hint.position] = pending.remove(at: slot)
+                }
+                guard !pending.isEmpty else { return }
+                for position in buffer.indices {
+                    let id = buffer[position].id
+                    guard let slot = pending.firstIndex(where: { $0.id == id }) else { continue }
+                    buffer[position] = pending.remove(at: slot)
+                    if pending.isEmpty { break }
                 }
             }
             listCache = (after, visible.value)
             uncollapsedListCache = (after, visible.value)
-            listPositionsCache = (after, positions)
+            if let positions { listPositionsCache = (after, positions) }
             return
         }
         let edited = Dictionary(edits.map { ($0.asset.id, $0.asset) }, uniquingKeysWith: { $1 })
@@ -4556,6 +4573,51 @@ final class AppState {
         return positions
     }
 
+    /// The last position a lookup found. Navigation and rating mostly ask about the photo
+    /// they just moved to, so this answers them without a scan; it is verified on every use.
+    @ObservationIgnored private var listPositionHint: (id: String, position: Int)?
+
+    /// Up to this many ids are located with one pass over `list` rather than the index:
+    /// the pass costs 13–25 ms at 500k photos, building the index ~110 ms.
+    private static let listScanLimit = 8
+
+    /// Where `id` sits in `list`: the index if this list already has one, else the hint,
+    /// else one pass.
+    private func listPosition(of id: String) -> Int? {
+        listPositions(of: CollectionOfOne(id))[id]
+    }
+
+    /// Positions in `list` of the ids it shows, the others omitted.
+    private func listPositions<C: Collection<String>>(of ids: C) -> [String: Int] {
+        guard !ids.isEmpty else { return [:] }
+        let current = list
+        let hasIndex = listPositionsCache?.signature == currentListSignature
+        if hasIndex || ids.count > Self.listScanLimit {
+            let index = listPositions
+            var found = [String: Int](minimumCapacity: ids.count)
+            for id in ids { if let position = index[id] { found[id] = position } }
+            return found
+        }
+        var found: [String: Int] = [:]
+        var wanted = Array(ids)
+        if let hint = listPositionHint, hint.position < current.count, current[hint.position].id == hint.id,
+           let slot = wanted.firstIndex(of: hint.id) {
+            found[hint.id] = hint.position
+            wanted.remove(at: slot)
+        }
+        if !wanted.isEmpty {
+            for (position, asset) in current.enumerated() {
+                let id = asset.id
+                guard wanted.contains(id) else { continue }
+                found[id] = position
+                wanted.removeAll { $0 == id }
+                if wanted.isEmpty { break }
+            }
+        }
+        if let primaryId, let position = found[primaryId] { listPositionHint = (primaryId, position) }
+        return found
+    }
+
     var list: [Asset] {
         let signature = currentListSignature
         if let cache = listCache, cache.signature == signature { return cache.value }
@@ -4733,7 +4795,13 @@ final class AppState {
             if view == .compare { compareIds = [ids[0].id] }
             return
         }
-        let positions = listPositions
+        var candidates = selectedIds
+        if let primaryId { candidates.insert(primaryId) }
+        if view == .compare {
+            candidates.formUnion(compareIds)
+            if let winner { candidates.insert(winner) }
+        }
+        let positions = listPositions(of: candidates)
         // selection must never retain assets hidden by the current collection/filter/search,
         // or batch edits (rating, flag, keyword, delete) would silently mutate off-screen photos.
         if selectedIds.contains(where: { positions[$0] == nil }) {
@@ -4758,7 +4826,7 @@ final class AppState {
     // ---------- selection ----------
     func selectCell(_ id: String, shift: Bool, meta: Bool) {
         if shift, let anchor = anchorId {
-            let positions = listPositions
+            let positions = listPositions(of: [anchor, id])
             if let i1 = positions[anchor], let i2 = positions[id] {
                 let lo = min(i1, i2), hi = max(i1, i2)
                 selectedIds = Set(list[lo...hi].lazy.map(\.id))
@@ -4840,7 +4908,7 @@ final class AppState {
             anchorId = nil
             return
         }
-        let positions = listPositions
+        let positions = listPositions(of: selectedIds.union(primaryId.map { [$0] } ?? []))
         if selectedIds.contains(where: { positions[$0] == nil }) {
             selectedIds = selectedIds.filter { positions[$0] != nil }
         }
@@ -5284,7 +5352,7 @@ final class AppState {
     private func orderedTargetAssetIds() -> [String] {
         let ids = selectionTargetIds
         let companions = assetPairing.companionsByPrimary
-        let positions = listPositions
+        let positions = listPositions(of: ids)
         return ids.compactMap { id in positions[id].map { (id, $0) } }.sorted { $0.1 < $1.1 }
             .flatMap { [$0.0] + (companions[$0.0] ?? []) }
     }
@@ -6017,7 +6085,7 @@ final class AppState {
     // ---------- compare ----------
     func enterCompare() {
         // order by display position so the chosen subset is deterministic
-        let positions = listPositions
+        let positions = listPositions(of: selectedIds)
         var ids = selectedIds.compactMap { id in positions[id].map { (id, $0) } }.sorted { $0.1 < $1.1 }.map(\.0)
         if ids.count < 2 { ids = list.prefix(3).map { $0.id } }
         compareIds = Array(ids.prefix(4))
@@ -6031,7 +6099,7 @@ final class AppState {
     func addToCompare(_ id: String) {
         guard compareIds.count < 4,
               !compareIds.contains(id),
-              listPositions[id] != nil else { return }
+              listPosition(of: id) != nil else { return }
         compareIds.append(id)
         syncCompareSelection()
     }
@@ -6269,7 +6337,7 @@ final class AppState {
     private func applyReviewKey(_ key: String, advance: Bool) -> Bool {
         guard !targetIds.isEmpty else { return false }
         let current = primaryId
-        let slot = current.flatMap { listPositions[$0] }
+        let slot = current.flatMap { listPosition(of: $0) }
         let applied: Bool
         switch key {
         case "0", "1", "2", "3", "4", "5":
@@ -6292,9 +6360,10 @@ final class AppState {
               view == .grid || view == .loupe else { return applied }
         let visibleList = list
         guard !visibleList.isEmpty else { return true }
-        let next = listPositions[current].map { advance ? $0 + 1 : $0 } ?? slot
-        let target = visibleList[min(visibleList.count - 1, next)].id
+        let next = min(visibleList.count - 1, listPosition(of: current).map { advance ? $0 + 1 : $0 } ?? slot)
+        let target = visibleList[next].id
         if target != primaryId { setPrimary(target) }
+        listPositionHint = (target, next)
         return true
     }
 
@@ -6312,7 +6381,7 @@ final class AppState {
 
     private func moveSelection(_ key: String) {
         let visibleList = list
-        guard let cur = listPositions[primaryId ?? ""] else { return }
+        guard let primaryId, let cur = listPosition(of: primaryId) else { return }
         var cols = 1
         if view == .grid {
             // same metrics as GridView so arrow nav lands on the right row
@@ -6327,6 +6396,7 @@ final class AppState {
         default: break
         }
         setPrimary(visibleList[next].id)
+        listPositionHint = (visibleList[next].id, next)
     }
 
     /// Updated by the grid so arrow-key navigation knows the column count.
