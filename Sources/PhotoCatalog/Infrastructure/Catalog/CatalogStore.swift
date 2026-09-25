@@ -105,7 +105,7 @@ struct AssetPage: Sendable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    private static let latestSchemaVersion = 17
+    static let latestSchemaVersion = 18
     let packageURL: URL
     let db: Database
 
@@ -248,6 +248,17 @@ final class CatalogStore: @unchecked Sendable {
         if current < 17 {
             try db.execChecked(Self.assetQueryIndexesDDL)
             try recordMigration(17)
+        }
+        if current < 18 {
+            // non-destructive develop adjustments; one JSON document per edited photo
+            try db.execChecked("""
+            CREATE TABLE IF NOT EXISTS develop_settings (
+              asset_id TEXT PRIMARY KEY,
+              settings TEXT NOT NULL,
+              updated_at TEXT
+            );
+            """)
+            try recordMigration(18)
         }
     }
 
@@ -819,6 +830,37 @@ final class CatalogStore: @unchecked Sendable {
     }
 
     // ---------- albums (§6.8 / §10.2) ----------
+    // ---------- develop settings ----------
+    func loadDevelopSettings() throws -> [String: DevelopSettings] {
+        let decoder = JSONDecoder()
+        var result: [String: DevelopSettings] = [:]
+        for row in try db.query("SELECT asset_id, settings FROM develop_settings;") {
+            guard let id = row.text("asset_id"), let json = row.text("settings"),
+                  let settings = try? decoder.decode(DevelopSettings.self, from: Data(json.utf8)) else { continue }
+            result[id] = settings
+        }
+        return result
+    }
+
+    /// Stores `settings` for each asset; neutral settings delete the row (the photo is as shot).
+    func saveDevelopSettings(_ settings: [String: DevelopSettings]) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        try db.transaction {
+            for (id, value) in settings {
+                if value.isNeutral {
+                    try db.run("DELETE FROM develop_settings WHERE asset_id=?;", [.text(id)])
+                } else {
+                    let json = String(decoding: try encoder.encode(value), as: UTF8.self)
+                    try db.run("""
+                    INSERT INTO develop_settings(asset_id, settings, updated_at) VALUES(?, ?, ?)
+                    ON CONFLICT(asset_id) DO UPDATE SET settings=excluded.settings, updated_at=excluded.updated_at;
+                    """, [.text(id), .text(json), .text(Self.iso(.now))])
+                }
+            }
+        }
+    }
+
     func loadAlbums() throws -> [Album] {
         let rows = try db.query("""
         SELECT id, name

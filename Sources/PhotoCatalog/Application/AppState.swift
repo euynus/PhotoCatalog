@@ -505,7 +505,53 @@ final class AppState {
     var compareIds: [String] = []
     var winner: String?
     /// nil = fit. Kept while stepping through photos so a burst can be checked at one spot.
+    /// Loupe and Develop share it.
     var loupeZoom: ImageZoom?
+
+    // ----- develop: non-destructive adjustments -----
+    /// Saved adjustments by asset id; photos without an entry are as shot.
+    var developSettings: [String: DevelopSettings] = [:]
+    struct DevelopDraft: Equatable { let assetId: String; var settings: DevelopSettings }
+    /// Settings while a slider drags — drives the live preview; saved on release.
+    var developDraft: DevelopDraft?
+    /// Before / after (\): show the photo as shot.
+    var developShowsOriginal = false
+    struct DevelopAsShot: Equatable { let temperature: Double; let tint: Double }
+    /// Camera-recorded RAW white balance, learned when a photo is first rendered.
+    var developAsShot: [String: DevelopAsShot] = [:]
+
+    func recordAsShotWhiteBalance(_ id: String, temperature: Double, tint: Double) {
+        let value = DevelopAsShot(temperature: temperature, tint: tint)
+        if developAsShot[id] != value { developAsShot[id] = value }
+    }
+
+    func developSettings(for id: String) -> DevelopSettings {
+        if let draft = developDraft, draft.assetId == id { return draft.settings }
+        return developSettings[id] ?? .neutral
+    }
+
+    func updateDevelopDraft(_ settings: DevelopSettings, for id: String) {
+        developDraft = DevelopDraft(assetId: id, settings: settings)
+    }
+
+    /// Saves adjustments for each id (persisted and undoable; neutral clears the photo's edit).
+    func commitDevelop(_ settings: [String: DevelopSettings], undoName: String) {
+        developDraft = nil
+        let before = Dictionary(uniqueKeysWithValues: settings.keys.map { ($0, developSettings[$0] ?? .neutral) })
+        guard before != settings else { return }
+        do {
+            try store?.saveDevelopSettings(settings)
+        } catch {
+            push("保存调整失败，更改未写入目录库", "warning")
+            return
+        }
+        for (id, value) in settings { developSettings[id] = value.isNeutral ? nil : value }
+        guard let undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { app in
+            MainActor.assumeIsolated { app.commitDevelop(before, undoName: undoName) }
+        }
+        undoManager.setActionName(undoName)
+    }
     /// Shared by every Compare panel, so zoom and pan stay linked across them.
     var compareZoom: ImageZoom?
 
@@ -520,6 +566,8 @@ final class AppState {
             loupeZoom = loupeZoom == nil ? .actualSize : nil
         case .compare:
             compareZoom = compareZoom == nil ? .actualSize : nil
+        case .develop:
+            loupeZoom = loupeZoom == nil ? .actualSize : nil
         case .analysis:
             return false
         }
@@ -579,7 +627,7 @@ final class AppState {
             filterOpen = false
             return true
         }
-        if view == .loupe, loupeZoom != nil {
+        if view == .loupe || view == .develop, loupeZoom != nil {
             loupeZoom = nil
             return true
         }
@@ -939,6 +987,7 @@ final class AppState {
     }
 
     private func restoreAlbums(from store: CatalogStore, assets: [Asset]) {
+        developSettings = (try? store.loadDevelopSettings()) ?? [:]
         albums = (try? store.loadAlbums()) ?? []
         let loadedSmartAlbums = (try? store.loadSmartAlbums()) ?? []
         smartAlbums = loadedSmartAlbums.map { album in
@@ -2999,6 +3048,7 @@ final class AppState {
         albums = DemoData.initialAlbums(a)
         smartAlbums = DemoData.initialSmartAlbums(a)
         folders = DemoData.folders
+        developSettings = [:]
         sourceRootPathsById = [:]
         sourceManagementModesById = [:]
         duplicateGroupsCache = DemoData.duplicateGroups
@@ -3014,6 +3064,7 @@ final class AppState {
 
     private func resetToEmptyCatalog() {
         duplicateRecomputeGeneration &+= 1
+        developSettings = [:]
         assets = []
         albums = []
         smartAlbums = []
@@ -4633,7 +4684,7 @@ final class AppState {
     }
 
     func switchView(_ v: ViewMode) {
-        if v == .analysis && isDuplicates {
+        if (v == .analysis || v == .develop) && isDuplicates {
             select(Selection(type: .lib, id: "all", name: "全部照片"))
         }
         if v == .compare { enterCompare() } else { view = v }
@@ -4814,6 +4865,11 @@ final class AppState {
             enterCompare()
         case "z":
             guard toggleZoom() else { return false }
+        case "d":
+            switchView(.develop)
+        case "\\":
+            guard view == .develop else { return false }
+            developShowsOriginal.toggle()
         case "a":
             switchView(.analysis)
         case "i":

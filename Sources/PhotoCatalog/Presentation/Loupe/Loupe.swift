@@ -20,7 +20,7 @@ struct Loupe: View {
             VStack(spacing: 0) {
                 stage(asset)
                 hud(asset, idx: idx, count: list.count)
-                filmstrip(list)
+                Filmstrip(list: list)
             }
             .background(Theme.canvas)
             .environment(\.colorScheme, .dark)
@@ -139,8 +139,52 @@ struct Loupe: View {
         .background(Theme.canvasSurface)
         .overlay(alignment: .top) { Rectangle().fill(Theme.canvasLine).frame(height: 1) }
     }
+}
 
-    private func filmstrip(_ list: [Asset]) -> some View {
+/// Reads the zoom itself so panning (which updates it continuously) re-renders only the photo.
+private struct LoupeZoomablePhoto: View {
+    @Environment(AppState.self) private var app
+    let asset: Asset
+
+    var body: some View {
+        ZoomablePhoto(asset: asset, zoom: app.loupeZoom) { app.loupeZoom = $0 }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(app.loupeZoom == nil ? 12 : 0)
+    }
+}
+
+private struct LoupeZoomButton: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let zoom = app.loupeZoom
+        Hover { hover in
+            Button { _ = app.toggleZoom() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: zoom == nil ? "plus.magnifyingglass" : "minus.magnifyingglass")
+                    Text(zoom.map { "\(Int(($0.scale * 100).rounded()))%" } ?? "适合")
+                        .monospacedDigit()
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.canvasText)
+                .padding(.horizontal, 7)
+                .frame(height: 28)
+                .background(hover ? Theme.canvasSurfaceHi : .clear, in: RoundedRectangle(cornerRadius: 4))
+            }
+            .buttonStyle(.plain)
+            .help(zoom == nil ? "放大到 1:1 (Z，或双击照片)" : "缩放以适合 (Z / Esc)")
+            .accessibilityLabel(zoom == nil ? "放大到 1:1" : "缩放以适合")
+        }
+        .fixedSize()
+    }
+}
+
+/// The current collection as a horizontal strip; shared by Loupe and Develop.
+struct Filmstrip: View {
+    @Environment(AppState.self) var app
+    let list: [Asset]
+
+    var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 8) {
@@ -190,43 +234,5 @@ struct Loupe: View {
                 if let id = app.primaryId { withAnimation { proxy.scrollTo(id, anchor: .center) } }
             }
         }
-    }
-}
-
-/// Reads the zoom itself so panning (which updates it continuously) re-renders only the photo.
-private struct LoupeZoomablePhoto: View {
-    @Environment(AppState.self) private var app
-    let asset: Asset
-
-    var body: some View {
-        ZoomablePhoto(asset: asset, zoom: app.loupeZoom) { app.loupeZoom = $0 }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(app.loupeZoom == nil ? 12 : 0)
-    }
-}
-
-private struct LoupeZoomButton: View {
-    @Environment(AppState.self) private var app
-
-    var body: some View {
-        let zoom = app.loupeZoom
-        Hover { hover in
-            Button { _ = app.toggleZoom() } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: zoom == nil ? "plus.magnifyingglass" : "minus.magnifyingglass")
-                    Text(zoom.map { "\(Int(($0.scale * 100).rounded()))%" } ?? "适合")
-                        .monospacedDigit()
-                }
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Theme.canvasText)
-                .padding(.horizontal, 7)
-                .frame(height: 28)
-                .background(hover ? Theme.canvasSurfaceHi : .clear, in: RoundedRectangle(cornerRadius: 4))
-            }
-            .buttonStyle(.plain)
-            .help(zoom == nil ? "放大到 1:1 (Z，或双击照片)" : "缩放以适合 (Z / Esc)")
-            .accessibilityLabel(zoom == nil ? "放大到 1:1" : "缩放以适合")
-        }
-        .fixedSize()
     }
 }

@@ -128,7 +128,7 @@ enum PipelineCheck {
             let version = migrated.db.scalarInt("SELECT COALESCE(MAX(version),0) FROM schema_migrations;")
             let backups = (try? fm.contentsOfDirectory(at: migrated.backupsURL,
                                                        includingPropertiesForKeys: nil)) ?? []
-            check(version == 17 && !migrated.search("tion Sea").isEmpty,
+            check(version == CatalogStore.latestSchemaVersion && !migrated.search("tion Sea").isEmpty,
                   "schema 15 migration rebuilds the substring search index")
             check(backups.contains { $0.lastPathComponent.hasPrefix("catalog-pre-migration-v15-") },
                   "schema 15 migration keeps a pre-migration backup")

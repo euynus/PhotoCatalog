@@ -23,9 +23,15 @@ struct MainView: View {
             ContentColumn(assetRevision: assetRevision)
                 .frame(minWidth: Theme.contentMinW)
                 .inspector(isPresented: inspectorPresented) {
-                    InspectorView(asset: app.primary, assetRevision: assetRevision)
-                        .inspectorColumnWidth(min: Theme.inspectorMinW, ideal: Theme.inspectorW,
-                                              max: Theme.inspectorMaxW)
+                    Group {
+                        if app.view == .develop {
+                            DevelopPanel(asset: app.primary)
+                        } else {
+                            InspectorView(asset: app.primary, assetRevision: assetRevision)
+                        }
+                    }
+                    .inspectorColumnWidth(min: Theme.inspectorMinW, ideal: Theme.inspectorW,
+                                          max: Theme.inspectorMaxW)
                 }
                 .modifier(DetailTitles())
                 .toolbar { MainToolbar() }
@@ -143,6 +149,7 @@ struct ContentColumn: View {
             case .grid: GridView(assetRevision: assetRevision)
             case .loupe: Loupe()
             case .compare: CompareView()
+            case .develop: DevelopView()
             case .analysis: CaptureAnalysisView()
             }
         }

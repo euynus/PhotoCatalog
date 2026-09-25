@@ -123,6 +123,7 @@ enum SelfCheck {
         PairingCheck.run()
         UndoCheck.run()
         CullingCheck.run()
+        DevelopCheck.run()
         ImportSafetyCheck.run()
         ImportPersistenceCheck.run()
         CaptureAnalysisCheck.run()
