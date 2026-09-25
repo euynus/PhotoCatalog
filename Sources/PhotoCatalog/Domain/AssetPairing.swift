@@ -33,10 +33,9 @@ struct AssetPairing: Sendable {
         for index in assets.indices {
             let asset = assets[index]
             guard !asset.deleted, let path = asset.localPath else { continue }
-            let url = URL(fileURLWithPath: path)
-            let ext = url.pathExtension.lowercased()
-            guard asset.isRaw || companionExtensions.contains(ext) else { continue }
-            groups[url.deletingPathExtension().path.lowercased(), default: []].append(index)
+            let (stem, ext) = PathString.splitExtension(path)
+            guard asset.isRaw || companionExtensions.contains(ext.lowercased()) else { continue }
+            groups[stem.lowercased(), default: []].append(index)
         }
         var companionsByPrimary: [String: [String]] = [:]
         var primaryByCompanion: [String: String] = [:]

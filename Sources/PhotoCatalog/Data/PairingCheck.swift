@@ -3,9 +3,30 @@ import Foundation
 /// RAW+JPEG pairs present as one photo and edit as one.
 enum PairingCheck {
     static func run() {
+        checkPathStrings()
         MainActor.assumeIsolated { checkPresentationAndEdits() }
         checkRenameKeepsPairs()
         print("--- RAW+JPEG pairing assertions passed ---")
+    }
+
+    /// The string path helpers used in catalog-wide loops agree with URL, without its disk access.
+    private static func checkPathStrings() {
+        for path in ["/Volumes/Photos/2024/2024-05-01/IMG_0001.CR3", "/a/b/c.tar.gz", "/a/.hidden", "/a/b/noext",
+                     "/c.jpg", "/a/b/c.JPG", "/Volumes/SOLIDIGM /Photos/x y.jpg"] {
+            let url = URL(fileURLWithPath: path, isDirectory: false)
+            let (stem, ext) = PathString.splitExtension(path)
+            assert(String(ext) == url.pathExtension && String(stem) == url.deletingPathExtension().path,
+                   "splitExtension agrees with URL for \(path)")
+            assert(PathString.directory(of: path) == url.deletingLastPathComponent().path
+                   && PathString.lastComponent(path) == url.lastPathComponent, "directory and name agree for \(path)")
+        }
+        assert(PathString.standardized("/a//b/./c/../d/") == "/a/b/d" && PathString.standardized("/a/b") == "/a/b",
+               "standardized resolves dot segments and keeps clean paths")
+        assert(PathString.standardized("/private/var/folders/x/T/a") == "/var/folders/x/T/a"
+               && PathString.standardized("/private/tmp") == "/tmp"
+               && PathString.standardized("/Volumes/Photos/2024/") == "/Volumes/Photos/2024",
+               "firmlinked /private paths compare equal to their short form")
+
     }
 
     @MainActor

@@ -33,7 +33,7 @@ enum FolderTreeService {
             for path in discovered.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending }) {
                 result.append(FolderTreeItem(id: subfolderId(for: path),
                                              sourceId: source.id,
-                                             name: URL(fileURLWithPath: path).lastPathComponent,
+                                             name: PathString.lastComponent(path),
                                              status: source.status,
                                              depth: discovered[path] ?? 1,
                                              directoryPath: path))
@@ -90,11 +90,11 @@ enum FolderTreeService {
 
     private static func normalizedDirectory(_ path: String?) -> String? {
         guard let path, !path.isEmpty else { return nil }
-        return normalizedPath(URL(fileURLWithPath: path).standardizedFileURL.path)
+        return normalizedPath(PathString.standardized(path))
     }
 
     private static func assetDirectoryPath(_ path: String) -> String {
-        normalizedPath(URL(fileURLWithPath: path).deletingLastPathComponent().standardizedFileURL.path)
+        normalizedPath(PathString.standardized(PathString.directory(of: path)))
     }
 
     private static func normalizedPath(_ path: String) -> String {
