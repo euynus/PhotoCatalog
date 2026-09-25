@@ -10,6 +10,11 @@ if let index = CommandLine.arguments.firstIndex(of: "--import-memory-check") {
     dispatchMain()
 }
 
+if let index = CommandLine.arguments.firstIndex(of: "--scale") {
+    let arguments = Array(CommandLine.arguments.dropFirst(index + 1))
+    exit(MainActor.assumeIsolated { ScaleCheck.run(arguments: arguments) })
+}
+
 if CommandLine.arguments.contains("--selfcheck") {
     SelfCheck.run()
     Task { @MainActor in

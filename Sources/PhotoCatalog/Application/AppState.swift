@@ -2413,6 +2413,7 @@ final class AppState {
     }
 
     func detectMissingRealAssets() {
+        guard runsBackgroundMaintenance else { return }
         guard let store else {
             isCheckingOriginals = false
             updateFolderStatusesFromAssets()
@@ -2838,7 +2839,7 @@ final class AppState {
     /// chunks, honors cancellation, and re-checks Low Power Mode mid-run rather than
     /// only once at the start.
     func backfillThumbnails() {
-        guard let coordinator, !isBackfilling else { return }
+        guard runsBackgroundMaintenance, let coordinator, !isBackfilling else { return }
         // battery saver: skip background work under Low Power Mode (§17.5)
         if reduceBackgroundOnLowPower, ProcessInfo.processInfo.isLowPowerModeEnabled { return }
         let real = thumbnailMaintenanceAssets
@@ -3678,6 +3679,7 @@ final class AppState {
 
     /// Recompute duplicates off the main thread (dHash reads thumbnails from disk).
     func recomputeDuplicates() {
+        guard runsBackgroundMaintenance else { return }
         duplicateRecomputeGeneration &+= 1
         let generation = duplicateRecomputeGeneration
         let live = assets.filter { !$0.isDemo && !$0.deleted }
@@ -4513,6 +4515,15 @@ final class AppState {
     }
 
     // Self-checks must exercise interactions, not the launch-loading guard.
+    /// Off for benchmarks: thumbnail backfill, the availability scan and duplicate grouping
+    /// would compete with what is being timed (and flag synthetic photos as missing).
+    @ObservationIgnored var runsBackgroundMaintenance = true
+
+    /// The post-load step of opening a catalog, for the large-catalog benchmark.
+    func applyLoadedCatalogForScaleCheck(_ loaded: [Asset], from store: CatalogStore) {
+        applyLoadedCatalog(loaded, from: store)
+    }
+
     /// A fixture backed by a scratch catalog, for checks of catalog-persisted features. It never
     /// goes through openCatalog, which would remember the scratch catalog in preferences.
     static func selfCheckFixture(store: CatalogStore) -> AppState {
