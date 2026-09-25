@@ -23,6 +23,18 @@ enum DiagnosticsCheck {
         let found = CrashReports.find(bundleID: "com.photocatalog.app", since: mark, in: folder).map(\.lastPathComponent)
         assert(found == ["PhotoCatalog-newer.ips", "PhotoCatalog-new.ips"],
                "only this app's new crash reports are found, newest first")
+        checkVersions()
         print("--- diagnostics assertions passed ---")
+    }
+}
+
+extension DiagnosticsCheck {
+    /// Release versions compare number by number, whatever their length or "v" prefix.
+    static func checkVersions() {
+        assert(UpdateChecker.isNewer("1.10", than: "1.9") && UpdateChecker.isNewer("2", than: "1.9.9")
+               && UpdateChecker.isNewer("1.0.1", than: "1.0") && !UpdateChecker.isNewer("1.0", than: "1")
+               && !UpdateChecker.isNewer("1.2", than: "1.10"), "release versions compare numerically")
+        let release = UpdateChecker.Release(tagName: "v1.3", htmlURL: URL(string: "https://example.com")!)
+        assert(release.version == "1.3", "a leading v is not part of the version")
     }
 }

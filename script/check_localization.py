@@ -56,7 +56,7 @@ STR_HINT = re.compile(r'(formatted\(|name|Name|lastPathComponent|title|Title|lab
                       r'folder|localizedDescription|describing|first|trimmed|target|\bold\b|baseName|cacheText|'
                       r'importDay|sourceName|selection|Search|search|text|Text|path|Path|preset|filename|camera|'
                       r'lens|verb|join|\bid\b|\.id\b|person|message|album|card|url|display|type|format|symbol|'
-                      r'String\()')
+                      r'[vV]ersion|String\()')
 SPEC_OVERRIDES = {
     'missingOriginals': '%lld', 'missingThumbnails': '%lld', 'missingPreviews': '%lld',
     'unavailableSourceRoots': '%lld', 'activeJobs': '%lld', 'failedJobs': '%lld',

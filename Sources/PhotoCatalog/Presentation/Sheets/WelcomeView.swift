@@ -12,7 +12,7 @@ struct WelcomeView: View {
                 Icon("aperture", size: 22).foregroundStyle(Theme.accent)
                 Text("PhotoCatalog").font(.system(size: 18, weight: .semibold))
                 Spacer()
-                Text("版本 1.0").foregroundStyle(Theme.text3)
+                Text("版本 \(AppState.appVersion)").foregroundStyle(Theme.text3)
             }
             .padding(.horizontal, 18).padding(.vertical, 14)
             .background(Theme.bgPanel)

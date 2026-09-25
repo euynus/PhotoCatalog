@@ -3028,6 +3028,35 @@ final class AppState {
              report.failed > 0 || persistenceFailed ? "warning" : "check")
     }
 
+    // ---------- updates ----------
+    /// The version in the app bundle ("1.0" outside one).
+    static var appVersion: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0" }
+
+    /// Looks for a newer release on request and offers its download page.
+    func checkForUpdates() {
+        Task { [weak self] in
+            let outcome = await UpdateChecker.check(currentVersion: Self.appVersion)
+            guard self != nil else { return }
+            let alert = NSAlert()
+            switch outcome {
+            case .newer(let release):
+                alert.messageText = L("PhotoCatalog \(release.version) 已发布")
+                alert.informativeText = L("当前版本 \(Self.appVersion)。下载新版本后替换应用程序文件夹中的旧版本即可。")
+                alert.addButton(withTitle: L("前往下载"))
+                alert.addButton(withTitle: L("稍后"))
+                if alert.runModal() == .alertFirstButtonReturn { NSWorkspace.shared.open(release.htmlURL) }
+            case .upToDate:
+                alert.messageText = L("PhotoCatalog 已是最新版本")
+                alert.informativeText = L("当前版本 \(Self.appVersion)。")
+                alert.runModal()
+            case .unavailable:
+                alert.messageText = L("暂时无法检查更新")
+                alert.informativeText = L("请检查网络连接后再试。")
+                alert.runModal()
+            }
+        }
+    }
+
     // ---------- crash reports ----------
     /// After an unexpected quit, points to the report macOS saved. Only the app calls this.
     func checkForCrashReport() {

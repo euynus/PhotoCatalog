@@ -5,6 +5,9 @@ MODE="${1:-run}"
 APP_NAME="PhotoCatalog"
 BUNDLE_ID="com.photocatalog.app"
 MIN_SYSTEM_VERSION="14.0"
+# release version; the build number counts commits so every build sorts after the one before
+APP_VERSION="${APP_VERSION:-1.0}"
+BUILD_NUMBER="$(git -C "$(dirname "$0")/.." rev-list --count HEAD 2>/dev/null || echo 1)"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -103,6 +106,10 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$BUNDLE_ID</string>
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$APP_VERSION</string>
+  <key>CFBundleVersion</key>
+  <string>$BUILD_NUMBER</string>
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleLocalizations</key>

@@ -1066,7 +1066,7 @@
 "当前目录库" = "Current Catalog";
 "最近打开" = "Recent";
 "添加照片文件夹…" = "Add Photo Folder…";
-"版本 1.0" = "Version 1.0";
+"版本 %@" = "Version %@";
 "还没有最近目录库" = "No recent catalogs yet";
 
 /* Presentation/Sidebar/Sidebar.swift */
@@ -1122,3 +1122,13 @@
 /* Crash reports */
 "PhotoCatalog 上次意外退出" = "PhotoCatalog Quit Unexpectedly Last Time";
 "macOS 保存了一份崩溃报告，只在这台 Mac 上。把它发给开发者有助于修复问题。" = "macOS saved a crash report, kept only on this Mac. Sending it to the developer helps fix the problem.";
+
+/* Updates */
+"检查更新…" = "Check for Updates…";
+"PhotoCatalog %@ 已发布" = "PhotoCatalog %@ Is Available";
+"当前版本 %@。下载新版本后替换应用程序文件夹中的旧版本即可。" = "You have version %@. Download the new version and replace the old one in your Applications folder.";
+"前往下载" = "Download";
+"PhotoCatalog 已是最新版本" = "PhotoCatalog Is Up to Date";
+"当前版本 %@。" = "You have version %@.";
+"暂时无法检查更新" = "Can't Check for Updates Right Now";
+"请检查网络连接后再试。" = "Check your internet connection and try again.";

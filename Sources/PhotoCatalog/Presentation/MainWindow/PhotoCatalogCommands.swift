@@ -13,6 +13,9 @@ struct PhotoCatalogCommands: Commands {
         // 目录库 ▸ 新建目录库 whenever a text field has focus (the key
         // monitor passes typing through), opening a stray duplicate window.
         CommandGroup(replacing: .newItem) {}
+        CommandGroup(after: .appInfo) {
+            Button("检查更新…") { perform("应用.检查更新") { app.checkForUpdates() } }
+        }
 
         CommandMenu("目录库") {
             Button("新建目录库…") { perform("目录库.新建目录库") { app.createCatalog() } }
