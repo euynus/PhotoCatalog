@@ -3438,49 +3438,55 @@ final class AppState {
 
     // ---------- base collection from sidebar ----------
     var baseList: [Asset] {
-        let live = assets.filter { !$0.deleted }
+        // Observed inputs are read once, outside the per-asset predicates, and live +
+        // collection membership is one pass: no intermediate copy of every asset.
+        let selection = self.selection
+        let belongs: (Asset) -> Bool
         switch selection.type {
         case .folder:
             if let item = folderTree.first(where: { $0.id == selection.id }) {
-                return live.filter { FolderTreeService.matches($0, item: item) }
+                belongs = { FolderTreeService.matches($0, item: item) }
+            } else {
+                belongs = { $0.folderId == selection.id }
             }
-            return live.filter { $0.folderId == selection.id }
         case .album:
             guard let al = albums.first(where: { $0.id == selection.id }) else { return [] }
             let memberIds = Set(al.assetIds)
-            return live.filter { memberIds.contains($0.id) }
+            belongs = { memberIds.contains($0.id) }
         case .smart:
             guard let sa = smartAlbums.first(where: { $0.id == selection.id }) else { return [] }
-            return SmartMatcher.match(live, sa.rule)
+            return SmartMatcher.match(assets.filter { !$0.deleted }, sa.rule)
         case .keyword:
-            return live.filter { $0.keywords.contains(selection.id) }
+            belongs = { $0.keywords.contains(selection.id) }
         case .project:
-            return live.filter { $0.project == selection.id }
+            belongs = { $0.project == selection.id }
         case .client:
-            return live.filter { $0.client == selection.id }
+            belongs = { $0.client == selection.id }
         case .captureDate:
             guard let range = CaptureDates.interval(for: selection.id) else { return [] }
-            return live.filter { CaptureDates.contains($0.date, in: range) }
+            belongs = { CaptureDates.contains($0.date, in: range) }
         case .lib:
             switch selection.id {
             case "recent":
-                return live.filter { $0.importedAt > recentCutoff }
+                let cutoff = recentCutoff
+                belongs = { $0.importedAt > cutoff }
             case "unrated":
-                return live.filter { $0.rating == 0 && $0.flag != .reject }
+                belongs = { $0.rating == 0 && $0.flag != .reject }
             case "picks":
-                return live.filter { $0.flag == .pick }
+                belongs = { $0.flag == .pick }
             case "rejected":
-                return live.filter { $0.flag == .reject }
+                belongs = { $0.flag == .reject }
             case "missing":
-                return live.filter { $0.status == .missing || $0.status == .offline }
+                belongs = { $0.status == .missing || $0.status == .offline }
             case "places":
-                return live.filter(\.hasGPS)
+                belongs = { $0.hasGPS }
             case "people":
-                return live.filter { $0.faces > 0 }
+                belongs = { $0.faces > 0 }
             default:
-                return live
+                return assets.filter { !$0.deleted }
             }
         }
+        return assets.filter { !$0.deleted && belongs($0) }
     }
 
     // ---------- apply filter bar + search + sort ----------
@@ -3511,6 +3517,10 @@ final class AppState {
     }
 
     private func computeList() -> [Asset] {
+        // Snapshot observed properties: reading them inside the per-asset filter and the
+        // sort comparator paid observation bookkeeping tens of thousands of times.
+        let filters = self.filters
+        let sort = self.sort
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
         let indexedSearchIds: Set<String>? = if q.count >= 3, let store {
             Set(store.search(q))
@@ -3520,7 +3530,8 @@ final class AppState {
         let cameraQuery = filters.camera.trimmingCharacters(in: .whitespacesAndNewlines)
         let lensQuery = filters.lens.trimmingCharacters(in: .whitespacesAndNewlines)
         let dateInterval = filters.captureDateInterval()
-        var l = baseList.filter { a in
+        let base = baseList
+        let l = filters.isEmpty && q.isEmpty ? base : base.filter { a in
             if filters.minRating > 0 && a.rating < filters.minRating { return false }
             if filters.flag != "any" && a.flag.rawValue != filters.flag { return false }
             if filters.color != "any" && a.colorLabel?.rawValue != filters.color { return false }
@@ -3548,29 +3559,39 @@ final class AppState {
             }
             return true
         }
-        let dir = sort.descending ? -1 : 1
-        l.sort { a, b in
-            switch sort.field {
-            case .name:
-                let cmp = a.filename.localizedCompare(b.filename)
-                return dir < 0 ? cmp == .orderedDescending : cmp == .orderedAscending
-            case .capture:
-                return compare(a.date.timeIntervalSince1970, b.date.timeIntervalSince1970, dir)
-            case .imported:
-                return compare(a.importedAt.timeIntervalSince1970, b.importedAt.timeIntervalSince1970, dir)
-            case .rating:
-                return compare(Double(a.rating), Double(b.rating), dir)
-            case .size:
-                return compare(a.fileMB, b.fileMB, dir)
-            }
-        }
-        return l
+        return Self.sorted(l, by: sort)
     }
 
-    private func compare(_ a: Double, _ b: Double, _ dir: Int) -> Bool {
-        if a == b { return false }
-        return dir < 0 ? a > b : a < b
+    /// Sorts indices by precomputed keys rather than moving whole `Asset` values
+    /// (hundreds of bytes each). Ties keep collection order, as the stable sort did.
+    nonisolated static func sorted(_ assets: [Asset], by sort: Sort) -> [Asset] {
+        let descending = sort.descending
+        var order = Array(assets.indices)
+        if sort.field == .name {
+            let names = assets.map(\.filename)
+            order.sort { i, j in
+                switch names[i].localizedCompare(names[j]) {
+                case .orderedSame: return i < j
+                case .orderedAscending: return !descending
+                case .orderedDescending: return descending
+                }
+            }
+        } else {
+            let keys: [Double] = switch sort.field {
+            case .capture: assets.map { $0.date.timeIntervalSince1970 }
+            case .imported: assets.map { $0.importedAt.timeIntervalSince1970 }
+            case .rating: assets.map { Double($0.rating) }
+            case .size: assets.map(\.fileMB)
+            case .name: []
+            }
+            order.sort { i, j in
+                if keys[i] == keys[j] { return i < j }
+                return descending ? keys[i] > keys[j] : keys[i] < keys[j]
+            }
+        }
+        return order.map { assets[$0] }
     }
+
 
     var primary: Asset? {
         _ = listInputsVersion
