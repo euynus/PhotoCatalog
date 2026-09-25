@@ -105,7 +105,7 @@ struct AssetPage: Sendable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    static let latestSchemaVersion = 19
+    static let latestSchemaVersion = 20
     let packageURL: URL
     let db: Database
 
@@ -281,6 +281,25 @@ final class CatalogStore: @unchecked Sendable {
             """)
             try recordMigration(19)
         }
+        if current < 20 {
+            // Key each search row by its asset's rowid. Deleting by the UNINDEXED asset_id
+            // column scanned the whole index on every upsert — quadratic imports and edits in
+            // big catalogs (~100 rows/s at 50k photos). Nothing here VACUUMs (which could
+            // renumber assets' rowids); rebuild asset_search if that ever changes.
+            try db.execChecked("DROP TABLE IF EXISTS asset_search;")
+            try db.execChecked(Self.assetSearchDDL)
+            try db.execChecked("""
+            INSERT INTO asset_search(rowid, asset_id, content)
+            SELECT rowid, id,
+                   COALESCE(filename, '') || ' ' || COALESCE(title, '') || ' '
+                   || COALESCE(caption, '') || ' ' || COALESCE(keywords, '') || ' '
+                   || COALESCE(camera, '') || ' ' || COALESCE(lens, '') || ' '
+                   || COALESCE(location, '') || ' ' || COALESCE(project, '') || ' '
+                   || COALESCE(client, '')
+            FROM assets;
+            """)
+            try recordMigration(20)
+        }
     }
 
     private func recordMigration(_ version: Int) throws {
@@ -420,9 +439,12 @@ final class CatalogStore: @unchecked Sendable {
         try db.transaction {
             for a in assets {
                 try db.run(sql, Self.params(a))
-                // keep the FTS index in sync
-                try db.run("DELETE FROM asset_search WHERE asset_id=?;", [.text(a.id)])
-                try db.run("INSERT INTO asset_search(asset_id, content) VALUES(?,?);", [
+                // keep the FTS index in sync; its rows share the asset's rowid (schema v20)
+                guard let rowid = try db.queryMap("SELECT rowid AS r FROM assets WHERE id=?;", [.text(a.id)],
+                                                  transform: { $0.int("r") }).first else { continue }
+                try db.run("DELETE FROM asset_search WHERE rowid=?;", [.int(rowid)])
+                try db.run("INSERT INTO asset_search(rowid, asset_id, content) VALUES(?,?,?);", [
+                    .int(rowid),
                     .text(a.id),
                     .text(Self.searchContent(a)),
                 ])
