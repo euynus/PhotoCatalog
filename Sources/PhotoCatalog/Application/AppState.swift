@@ -302,6 +302,13 @@ final class AppState {
     var importPostColorLabel = UserDefaults.standard.string(forKey: "pc_importPostColorLabel") ?? "" {
         didSet { UserDefaults.standard.set(importPostColorLabel, forKey: "pc_importPostColorLabel") }
     }
+    /// Metadata template applied to every import (§ roadmap 4.2).
+    var importAuthor = UserDefaults.standard.string(forKey: "pc_importAuthor") ?? "" {
+        didSet { UserDefaults.standard.set(importAuthor, forKey: "pc_importAuthor") }
+    }
+    var importCopyright = UserDefaults.standard.string(forKey: "pc_importCopyright") ?? "" {
+        didSet { UserDefaults.standard.set(importCopyright, forKey: "pc_importCopyright") }
+    }
     var importPostAlbumName = UserDefaults.standard.string(forKey: "pc_importPostAlbumName") ?? "" {
         didSet { UserDefaults.standard.set(importPostAlbumName, forKey: "pc_importPostAlbumName") }
     }
@@ -1826,7 +1833,8 @@ final class AppState {
     private func applyPostImportMetadata(to fresh: [Asset]) -> [Asset] {
         let actions = ImportPostActions(
             keywords: ImportPostActionService.normalizeKeywords(importPostKeywords),
-            colorLabel: ColorLabel(rawValue: importPostColorLabel))
+            colorLabel: ColorLabel(rawValue: importPostColorLabel),
+            author: importAuthor, copyright: importCopyright)
         return ImportPostActionService.apply(to: fresh, actions: actions)
     }
 

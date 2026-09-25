@@ -95,6 +95,15 @@ struct ImportSheet: View {
                     app.importDuplicateStrategy = ImportDuplicateStrategy(rawValue: $0) ?? .groupExact
                 })
             }
+            HStack {
+                Text("元数据模板").foregroundStyle(Theme.text2)
+                Spacer()
+                TextField("作者", text: $app.importAuthor)
+                    .textFieldStyle(.roundedBorder).frame(width: 150)
+                TextField("版权，如 © {year} 名字", text: $app.importCopyright)
+                    .textFieldStyle(.roundedBorder).frame(width: 210)
+            }
+            .help("导入时写入每张照片；{year} 替换为拍摄年份")
             HStack(spacing: 24) {
                 Toggle("读取 XMP sidecar", isOn: $app.readXMPSidecar)
                 Toggle("Vision 分析", isOn: $app.visionEnabled)

@@ -44,6 +44,7 @@ Beyond the UI, the app has a working file→catalog pipeline:
 - **Backup** — checkpointed catalog copy (click the status-bar backup item).
 - **Missing detection** — originals are re-checked on launch and flagged `missing` if gone.
 - **Managed import** — optionally copy originals into `Originals/YYYY/MM/DD` (Settings → 导入模式).
+- **Metadata template** — author and copyright (with `{year}` from the capture date) applied to every import, alongside post-import keywords, color label and album.
 - **XMP sidecars** — read on import and written on export / on demand (rating, label, keywords, title, caption).
 - **Similar-photo detection** — perceptual dHash + Hamming distance adds 疑似重复 groups.
 - **FSEvents watching** — referenced folders are watched; new files import and removed files flag missing automatically.

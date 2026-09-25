@@ -171,6 +171,12 @@ struct SettingsSheet: View {
                 row("导入后相册") {
                     settingsTextField("相册名", text: $app.importPostAlbumName)
                 }
+                row("作者") {
+                    settingsTextField("导入时写入，留空则不改", text: $app.importAuthor)
+                }
+                row("版权") {
+                    settingsTextField("如 © {year} 你的名字", text: $app.importCopyright)
+                }
                 Toggle(isOn: $app.visionEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("导入时 Vision 分析（场景标签 + 人脸）").font(.system(size: 13)).foregroundStyle(Theme.text)

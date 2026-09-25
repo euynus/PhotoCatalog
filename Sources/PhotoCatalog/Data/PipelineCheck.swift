@@ -416,6 +416,12 @@ enum PipelineCheck {
             actions: ImportPostActions(keywords: postKeywords, colorLabel: .green))
         check(postAssets.first?.keywords == ["客户精选", "旅行"] && postAssets.first?.colorLabel == .green,
               "import post actions apply keywords and color label")
+        let templated = ImportPostActionService.apply(
+            to: [assets[0]],
+            actions: ImportPostActions(keywords: [], colorLabel: nil, author: " 摄影师 ", copyright: "© {year} 摄影师"))
+        let captureYear = Calendar.captureWallClock.component(.year, from: assets[0].date)
+        check(templated.first?.author == "摄影师" && templated.first?.copyright == "© \(captureYear) 摄影师",
+              "the import metadata template sets author and copyright, {year} from the capture date")
         let postHierarchy = ImportPostActionService.normalizeKeywords("旅行/日本/东京")
         check(postHierarchy == ["旅行", "旅行/日本", "旅行/日本/东京"],
               "import post actions expand hierarchical keywords")
