@@ -656,7 +656,16 @@ final class AppState {
     /// Photos with pixels to render: a local original, or at least a local preview.
     func canDevelop(_ asset: Asset) -> Bool {
         if asset.status == .ready, asset.localPath != nil { return true }
-        return !asset.preview.isEmpty && !asset.preview.hasPrefix("http")
+        return Self.isLocalReference(asset.preview)
+    }
+
+    /// A preview or thumbnail file on disk, not a demo photo's web address. Compares bytes:
+    /// `String.hasPrefix` was a real cost when checked for every photo of a large selection.
+    nonisolated static func isLocalReference(_ path: String) -> Bool {
+        var bytes = path.utf8.makeIterator()
+        guard let first = bytes.next() else { return false }
+        return !(first == UInt8(ascii: "h") && bytes.next() == UInt8(ascii: "t")
+                 && bytes.next() == UInt8(ascii: "t") && bytes.next() == UInt8(ascii: "p"))
     }
 
     /// R: opens the crop tool (from any view) or closes it.
@@ -718,13 +727,16 @@ final class AppState {
                                       develop: developSettingsVersion, inDevelop: inDevelop)
         if let cache = selectionSummaryCache, cache.key == key { return cache.value }
         var summary = SelectionSummary()
+        // local copies: an observed property read per photo paid observation bookkeeping
+        // each time, which dominated a 500k-photo selection with its originals offline
+        let assets = self.assets
+        let developSettings = self.developSettings
         let index = assetIndex
         let companions = assetPairing.companionsByPrimary
         let targets = selectionTargetIds
         func isLocalOriginal(_ asset: Asset) -> Bool {
             !asset.deleted && !asset.isDemo && asset.status == .ready && asset.localPath != nil
         }
-        func isLocalReference(_ path: String) -> Bool { !path.isEmpty && !path.hasPrefix("http") }
         func isDevelopable(_ id: String) -> Bool {
             index[id].map { !assets[$0].deleted && canDevelop(assets[$0]) } ?? false
         }
@@ -751,10 +763,11 @@ final class AppState {
                       companions[id]?.contains(where: { index[$0].map { isLocalOriginal(assets[$0]) } ?? false }) == true {
                 summary.hasLocalOriginal = true
             }
-            if !asset.isDemo, local || isLocalReference(asset.preview) || isLocalReference(asset.thumb) {
+            if !summary.hasPreviewReference, !asset.isDemo,
+               local || Self.isLocalReference(asset.preview) || Self.isLocalReference(asset.thumb) {
                 summary.hasPreviewReference = true
             }
-            if !inDevelop, canDevelop(asset) { summary.hasDevelopable = true }
+            if !inDevelop, !summary.hasDevelopable, canDevelop(asset) { summary.hasDevelopable = true }
             if summary.hasLocalOriginal && summary.hasPrimaryOriginal && summary.hasPreviewReference
                 && (inDevelop || summary.hasDevelopable) { break }
         }
