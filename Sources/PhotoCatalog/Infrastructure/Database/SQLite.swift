@@ -30,6 +30,27 @@ extension Row {
     func bool(_ k: String) -> Bool { (int(k) ?? 0) != 0 }
 }
 
+/// Direct column access to the current row, for decoders too hot to build a dictionary per
+/// row. Valid only inside the `queryRows` callback.
+struct SQLiteRow {
+    fileprivate let stmt: OpaquePointer
+
+    func isNull(_ column: Int32) -> Bool { sqlite3_column_type(stmt, column) == SQLITE_NULL }
+    func int(_ column: Int32) -> Int { Int(sqlite3_column_int64(stmt, column)) }
+    func double(_ column: Int32) -> Double { sqlite3_column_double(stmt, column) }
+
+    /// The column's UTF-8 bytes (text is read before its length, as SQLite requires).
+    func bytes(_ column: Int32) -> UnsafeBufferPointer<UInt8> {
+        guard let text = sqlite3_column_text(stmt, column) else { return UnsafeBufferPointer(start: nil, count: 0) }
+        return UnsafeBufferPointer(start: text, count: Int(sqlite3_column_bytes(stmt, column)))
+    }
+
+    /// A native Swift string (nil for NULL).
+    func text(_ column: Int32) -> String? {
+        isNull(column) ? nil : String(decoding: bytes(column), as: UTF8.self)
+    }
+}
+
 enum DBError: Error, CustomStringConvertible {
     case open(String), prepare(String), step(String)
     var description: String {
@@ -140,6 +161,23 @@ final class Database: @unchecked Sendable {
                     return try transform(row)
                 }
                 if let value { values.append(value) }
+            }
+        }
+    }
+
+    /// Like `queryMap`, but hands the transform raw column access instead of a dictionary.
+    func queryRows<T>(_ sql: String, _ params: [SQLValue] = [],
+                      transform: (SQLiteRow) throws -> T?) throws -> [T] {
+        try locked {
+            let stmt = try preparedStatement(sql, params)
+            defer { sqlite3_reset(stmt); sqlite3_clear_bindings(stmt) }
+            var values: [T] = []
+            let row = SQLiteRow(stmt: stmt)
+            while true {
+                let rc = sqlite3_step(stmt)
+                if rc == SQLITE_DONE { return values }
+                guard rc == SQLITE_ROW else { throw DBError.step(String(cString: sqlite3_errmsg(db))) }
+                if let value = try transform(row) { values.append(value) }
             }
         }
     }

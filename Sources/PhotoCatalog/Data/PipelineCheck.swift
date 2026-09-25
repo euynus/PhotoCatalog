@@ -982,6 +982,32 @@ enum PipelineCheck {
         check(VolumeMonitor.status(forInaccessible: "/Users/me/gone_\(UUID().uuidString).jpg") == .missing,
               "internal gone → missing")
 
+        // 21a. the whole-catalog decoder (raw columns, shared strings) matches the row decoder
+        _ = try? store.upsert(assets.prefix(3).enumerated().map { index, base in
+            var asset = base
+            asset.keywords = KeywordService.normalize(["旅行/日本/东京", "quote\"inside", "人像"].prefix(index + 1).map { $0 })
+            asset.gps = (30.5, 114.25)
+            asset.author = "一位很长名字的摄影师 · Studio"
+            return asset
+        })
+        let fast = ((try? store.loadAssets()) ?? []).sorted { $0.id < $1.id }
+        let reference = ((try? store.loadAssetPage(limit: 1_000_000).assets) ?? []).sorted { $0.id < $1.id }
+        func fields(_ a: Asset) -> String {
+            "\(a.id)|\(a.pid)|\(a.ori)|\(a.thumb)|\(a.preview)|\(a.filename)|\(a.type)|\(a.isRaw)|\(a.folderId)|"
+                + "\(a.folderName)|\(a.date.timeIntervalSince1970)|\(a.width)|\(a.height)|\(a.orientation)|\(a.camera)|"
+                + "\(a.lens)|\(a.focal)|\(a.aperture)|\(a.shutter)|\(a.iso)|\(a.colorSpace)|\(a.hasICCProfile)|\(a.fileMB)|"
+                + "\(String(describing: a.fileModifiedAt))|\(String(describing: a.fileCreatedAt))|\(a.rating)|\(a.flag)|"
+                + "\(String(describing: a.colorLabel))|\(a.keywords)|\(a.title)|\(a.caption)|\(a.author)|\(a.copyright)|"
+                + "\(a.makerNotes)|\(a.project)|\(a.client)|\(a.location)|\(a.gps.0),\(a.gps.1)|"
+                + "\(String(describing: a.gpsAltitude))|\(a.status)|\(a.importedAt.timeIntervalSince1970)|\(a.deleted)|"
+                + "\(String(describing: a.localPath))|\(a.captureDateSource)|\(String(describing: a.contentHash))|"
+                + "\(String(describing: a.quickHash))|\(a.isDemo)|\(a.faces)|\(String(describing: a.perceptualHash))"
+        }
+        let mismatch = zip(fast, reference).first { fields($0) != fields($1) }
+        check(fast.count == reference.count && !fast.isEmpty && mismatch == nil,
+              "the fast catalog decoder reads every field exactly like the row decoder"
+              + (mismatch.map { " (first difference: \(fields($0.0)) vs \(fields($0.1)))" } ?? ""))
+
         // 21. memory-card import: detect already-imported photos, copy with pairs renamed together,
         // sidecars and a backup alongside, then catalog the copies
         let card = tmp.appendingPathComponent("CARD/DCIM/100CANON", isDirectory: true)

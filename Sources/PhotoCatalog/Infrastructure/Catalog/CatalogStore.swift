@@ -504,10 +504,154 @@ final class CatalogStore: @unchecked Sendable {
 
     func loadAssets() throws -> [Asset] {
         // soft-deleted rows are never shown; skip materializing them (uses idx_assets_deleted)
-        try db.queryMap(
+        let decoder = AssetRowDecoder(columns: Self.columnNames)
+        return try db.queryRows(
             "SELECT \(Self.columns) FROM assets WHERE deleted=0 ORDER BY capture_date DESC;",
-            transform: Self.asset(from:)
+            transform: decoder.asset(from:)
         )
+    }
+
+    private static let columnNames = columns.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// Decodes whole-catalog loads from raw columns (no dictionary per row) into native strings —
+    /// keywords decoded by JSONSerialization were bridged NSStrings, many times slower to hash
+    /// and compare — and shares values that repeat across photos (folders, lenses, keyword
+    /// sets…) instead of allocating each again.
+    private final class AssetRowDecoder {
+        private var strings: [String: String] = [:]
+        private var keywordSets: [String: [String]] = [:]
+        private var cameras: [String: String] = [:]
+        private let id, pid, ori, thumb, preview, filename, type, isRaw, folderId, folderName,
+                    captureDate, width, height, orientation, camera, lens, focal, aperture, shutter, iso,
+                    colorSpace, hasICCProfile, fileMB, rating, flag, colorLabel, keywords, title, caption,
+                    author, copyright, makerNotes, project, client, location, gpsLat, gpsLon, gpsAltitude,
+                    status, importedAt, deleted, isDemo, localPath, captureDateSource, contentHash,
+                    quickHash, faces, fileModifiedAt, fileCreatedAt, perceptualHash: Int32
+
+        init(columns: [String]) {
+            let index = Dictionary(uniqueKeysWithValues: columns.enumerated().map { ($1, Int32($0)) })
+            func c(_ name: String) -> Int32 { index[name] ?? -1 }
+            id = c("id"); pid = c("pid"); ori = c("ori"); thumb = c("thumb"); preview = c("preview")
+            filename = c("filename"); type = c("type"); isRaw = c("is_raw"); folderId = c("folder_id")
+            folderName = c("folder_name"); captureDate = c("capture_date"); width = c("width")
+            height = c("height"); orientation = c("orientation"); camera = c("camera"); lens = c("lens")
+            focal = c("focal"); aperture = c("aperture"); shutter = c("shutter"); iso = c("iso")
+            colorSpace = c("color_space"); hasICCProfile = c("has_icc_profile"); fileMB = c("file_mb")
+            rating = c("rating"); flag = c("flag"); colorLabel = c("color_label"); keywords = c("keywords")
+            title = c("title"); caption = c("caption"); author = c("author"); copyright = c("copyright")
+            makerNotes = c("maker_notes"); project = c("project"); client = c("client"); location = c("location")
+            gpsLat = c("gps_lat"); gpsLon = c("gps_lon"); gpsAltitude = c("gps_altitude"); status = c("status")
+            importedAt = c("imported_at"); deleted = c("deleted"); isDemo = c("is_demo"); localPath = c("local_path")
+            captureDateSource = c("capture_date_source"); contentHash = c("content_hash")
+            quickHash = c("quick_hash"); faces = c("faces"); fileModifiedAt = c("file_modified_at")
+            fileCreatedAt = c("file_created_at"); perceptualHash = c("perceptual_hash")
+        }
+
+        func asset(from row: SQLiteRow) -> Asset? {
+            guard let assetId = row.text(id) else { return nil }
+            let rawCamera = row.text(camera) ?? ""
+            let cameraName = cameras[rawCamera] ?? {
+                let normalized = shared(MetadataReader.normalizedCameraName(rawCamera))
+                cameras[rawCamera] = normalized
+                return normalized
+            }()
+            func date(_ column: Int32) -> Date? {
+                row.isNull(column) ? nil : Date(timeIntervalSince1970: row.double(column))
+            }
+            return Asset(
+                id: assetId, pid: row.int(pid), ori: row.text(ori) ?? "l",
+                thumb: row.text(thumb) ?? "", preview: row.text(preview) ?? "",
+                filename: row.text(filename) ?? "", type: row.text(type) ?? "",
+                isRaw: row.int(isRaw) != 0, folderId: sharedText(row, folderId),
+                folderName: sharedText(row, folderName),
+                date: Date(timeIntervalSince1970: row.double(captureDate)),
+                width: row.int(width), height: row.int(height),
+                orientation: row.isNull(orientation) ? 1 : row.int(orientation),
+                camera: cameraName, lens: sharedText(row, lens),
+                focal: row.int(focal), aperture: row.double(aperture),
+                shutter: row.text(shutter) ?? "", iso: row.int(iso),
+                colorSpace: sharedText(row, colorSpace),
+                hasICCProfile: row.int(hasICCProfile) != 0,
+                fileMB: row.double(fileMB),
+                fileModifiedAt: date(fileModifiedAt), fileCreatedAt: date(fileCreatedAt),
+                rating: row.int(rating),
+                flag: Flag(rawValue: row.text(flag) ?? "none") ?? .none,
+                colorLabel: row.text(colorLabel).flatMap { ColorLabel(rawValue: $0) },
+                keywords: keywordSet(row), title: row.text(title) ?? "", caption: row.text(caption) ?? "",
+                author: sharedText(row, author), copyright: sharedText(row, copyright),
+                makerNotes: row.text(makerNotes) ?? "",
+                project: sharedText(row, project), client: sharedText(row, client),
+                location: row.text(location) ?? "",
+                gps: (row.double(gpsLat), row.double(gpsLon)),
+                gpsAltitude: row.isNull(gpsAltitude) ? nil : row.double(gpsAltitude),
+                status: AssetStatus(rawValue: row.text(status) ?? "ready") ?? .ready,
+                importedAt: Date(timeIntervalSince1970: row.double(importedAt)),
+                deleted: row.int(deleted) != 0,
+                localPath: row.text(localPath),
+                captureDateSource: row.isNull(captureDateSource)
+                    ? "EXIF · DateTimeOriginal" : sharedText(row, captureDateSource),
+                contentHash: row.text(contentHash), quickHash: row.text(quickHash),
+                isDemo: row.int(isDemo) != 0, faces: row.int(faces),
+                perceptualHash: row.isNull(perceptualHash) ? nil : UInt64(bitPattern: Int64(row.int(perceptualHash))))
+        }
+
+        private func shared(_ value: String) -> String {
+            if let existing = strings[value] { return existing }
+            strings[value] = value
+            return value
+        }
+
+        private func sharedText(_ row: SQLiteRow, _ column: Int32) -> String {
+            let bytes = row.bytes(column)
+            // up to 15 UTF-8 bytes live inline in the String itself: nothing to share
+            return bytes.count <= 15 ? String(decoding: bytes, as: UTF8.self) : shared(String(decoding: bytes, as: UTF8.self))
+        }
+
+        private func keywordSet(_ row: SQLiteRow) -> [String] {
+            let bytes = row.bytes(keywords)
+            guard bytes.count > 2 else { return [] }   // NULL, "" or "[]"
+            let raw = String(decoding: bytes, as: UTF8.self)
+            if let known = keywordSets[raw] { return known }
+            let parsed = (Self.parseKeywords(bytes) ?? Self.parseKeywordsSlowly(raw)).map(shared)
+            keywordSets[raw] = parsed
+            return parsed
+        }
+
+        /// The compact arrays the catalog writes, `["a","b\/c"]`, straight from bytes; nil for
+        /// anything else (other escapes, spacing), which goes through JSONSerialization.
+        static func parseKeywords(_ bytes: UnsafeBufferPointer<UInt8>) -> [String]? {
+            let quote: UInt8 = 0x22, backslash: UInt8 = 0x5C, slash: UInt8 = 0x2F, comma: UInt8 = 0x2C
+            guard bytes.count >= 4, bytes[0] == 0x5B, bytes[1] == quote,
+                  bytes[bytes.count - 2] == quote, bytes[bytes.count - 1] == 0x5D else { return nil }
+            var result: [String] = []
+            var current: [UInt8] = []
+            let end = bytes.count - 2
+            var i = 2
+            while i < end {
+                let byte = bytes[i]
+                if byte == backslash {
+                    guard i + 1 < end, bytes[i + 1] == slash else { return nil }
+                    current.append(slash)
+                    i += 2
+                } else if byte == quote {
+                    guard i + 2 < end, bytes[i + 1] == comma, bytes[i + 2] == quote else { return nil }
+                    result.append(String(decoding: current, as: UTF8.self))
+                    current.removeAll(keepingCapacity: true)
+                    i += 3
+                } else {
+                    current.append(byte)
+                    i += 1
+                }
+            }
+            result.append(String(decoding: current, as: UTF8.self))
+            return result
+        }
+
+        /// JSONSerialization hands back bridged strings; copy them into native ones.
+        static func parseKeywordsSlowly(_ raw: String) -> [String] {
+            let parsed = (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) as? [String] ?? []
+            return parsed.map { String(decoding: Array($0.utf8), as: UTF8.self) }
+        }
     }
 
     /// Returns a stable page and the full match count from one read transaction.
