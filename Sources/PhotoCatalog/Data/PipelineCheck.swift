@@ -982,6 +982,52 @@ enum PipelineCheck {
         check(VolumeMonitor.status(forInaccessible: "/Users/me/gone_\(UUID().uuidString).jpg") == .missing,
               "internal gone → missing")
 
+        // 21. memory-card import: detect already-imported photos, copy with pairs renamed together,
+        // sidecars and a backup alongside, then catalog the copies
+        let card = tmp.appendingPathComponent("CARD/DCIM/100CANON", isDirectory: true)
+        try? fm.createDirectory(at: card, withIntermediateDirectories: true)
+        let shot = [kCGImagePropertyExifDateTimeOriginal: "2024:03:09 10:15:00"] as [CFString: Any]
+        writeTestImage(to: card.appendingPathComponent("IMG_7001.JPG"), width: 320, height: 200, seed: 71, exif: shot)
+        writeTestImage(to: card.appendingPathComponent("IMG_7001.TIF"), width: 320, height: 200, seed: 72, exif: shot)
+        writeTestImage(to: card.appendingPathComponent("IMG_7002.JPG"), width: 320, height: 200, seed: 73, exif: shot)
+        try? Data("<x:xmpmeta/>".utf8).write(to: card.appendingPathComponent("IMG_7001.xmp"))
+        let knownURL = card.appendingPathComponent("IMG_7002.JPG")
+        let knownBytes = (try? knownURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        var known = assets[0]
+        known.filename = "IMG_7002.JPG"
+        known.fileMB = Double(knownBytes) / (1024 * 1024)
+        let cardFiles = CardImportService.scan(card.deletingLastPathComponent(),
+                                               catalog: CardImportService.CatalogIndex([known]))
+        check(cardFiles.count == 3 && cardFiles.filter(\.alreadyImported).map(\.name) == ["IMG_7002.JPG"],
+              "card scan lists photos and spots one already in the catalog by size and name")
+
+        let library = tmp.appendingPathComponent("CardLibrary", isDirectory: true)
+        let cardBackup = tmp.appendingPathComponent("CardBackup", isDirectory: true)
+        var cardOptions = CardImportOptions(destination: library)
+        cardOptions.rename = true
+        cardOptions.renameTemplate = "{date}_{seq}"
+        cardOptions.sequenceStart = 5
+        cardOptions.backupEnabled = true
+        cardOptions.backup = cardBackup
+        let toImport = cardFiles.filter { !$0.alreadyImported }
+        let copier = CardCopier(options: cardOptions, files: toImport)
+        let cardAssets = coordinator.importFiles(toImport.map(\.url), from: library, mode: .referenced,
+                                                 readSidecar: false, preparer: copier)
+        let dayFolder = library.appendingPathComponent("2024/2024-03-09")
+        let copiedNames = Set((try? fm.contentsOfDirectory(atPath: dayFolder.path)) ?? [])
+        check(copiedNames == ["20240309_0005.JPG", "20240309_0005.TIF", "20240309_0005.xmp"],
+              "a pair lands in its capture-day folder under one renamed base, sidecar included")
+        check(cardAssets.count == 2 && cardAssets.allSatisfy { $0.localPath?.hasPrefix(dayFolder.path) == true },
+              "the catalog references the copies, never the card")
+        let backedUp = (try? fm.contentsOfDirectory(atPath: cardBackup.path))?.first
+            .flatMap { try? fm.contentsOfDirectory(atPath: cardBackup.appendingPathComponent($0).path) } ?? []
+        check(Set(backedUp) == ["20240309_0005.JPG", "20240309_0005.TIF"], "a backup copy is written alongside")
+        let again = CardCopier(options: cardOptions, files: toImport)
+        let recopied = try? again.copy(card.appendingPathComponent("IMG_7001.JPG"))
+        check(recopied?.lastPathComponent == "20240309_0005.JPG"
+              && ((try? fm.contentsOfDirectory(atPath: dayFolder.path))?.count ?? 0) == 3,
+              "copying the same photo again reuses the copy instead of duplicating it")
+
         try? fm.removeItem(at: tmp)
         print(failures == 0 ? "--- pipeline OK ---" : "--- \(failures) FAILURE(S) ---")
         exit(failures == 0 ? 0 : 1)

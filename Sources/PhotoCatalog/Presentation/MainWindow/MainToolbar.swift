@@ -91,11 +91,17 @@ private struct ImportButton: View {
     @Environment(AppState.self) private var app
 
     var body: some View {
-        Button { app.addFolder() } label: {
+        Menu {
+            Button("导入照片文件夹…") { app.addFolder() }
+            Button("从存储卡导入…") { app.showCardImport() }
+        } label: {
             Label("导入", systemImage: "square.and.arrow.down")
+        } primaryAction: {
+            // a card waiting in the reader is what the user most likely wants to import
+            if app.cardVolumes.isEmpty { app.addFolder() } else { app.showCardImport() }
         }
         .labelStyle(.titleAndIcon)
-        .help("导入 / 添加文件夹 (⇧⌘I)")
+        .help(app.cardVolumes.isEmpty ? "导入 / 添加文件夹 (⇧⌘I)" : "从存储卡导入 · 按住查看更多导入方式")
     }
 }
 

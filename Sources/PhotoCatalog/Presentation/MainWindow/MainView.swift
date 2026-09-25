@@ -80,6 +80,8 @@ struct MainView: View {
             })
         case "settings":
             SettingsSheet()
+        case "cardImport":
+            CardImportSheet(card: app.cardImportVolume, options: app.cardImportOptions)
         case "renderedExport":
             let items = app.renderedExportItems()
             RenderedExportSheet(settings: app.renderedExportSettings, folder: app.renderedExportFolder,

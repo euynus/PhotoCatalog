@@ -35,6 +35,9 @@ struct Sidebar: View {
         List(selection: selection) {
             Section("资料库", isExpanded: $libraryExpanded) { librarySection }
             Section("筛选", isExpanded: $reviewExpanded) { reviewSection }
+            if !app.cardVolumes.isEmpty {
+                Section("设备") { deviceSection }
+            }
             if !app.hasCatalogPreview {
                 Section(isExpanded: $collectionsExpanded) {
                     collectionSection
@@ -93,6 +96,26 @@ struct Sidebar: View {
         row("star", "未评分", .lib, "unrated", badge: pendingBadge ?? Text(c.unrated.formatted()))
         row("flag", "精选", .lib, "picks", badge: pendingBadge ?? Text(c.picks.formatted()))
         row("reject", "被拒绝", .lib, "rejected", badge: pendingBadge ?? Text(c.rejected.formatted()))
+    }
+
+    /// Mounted memory cards: click to import, the eject button to unmount.
+    private var deviceSection: some View {
+        ForEach(app.cardVolumes) { card in
+            HStack(spacing: 6) {
+                Button { app.showCardImport(card) } label: {
+                    Label(card.name, systemImage: "sdcard")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("从「\(card.name)」导入照片")
+                Button { app.ejectCard(card) } label: { Image(systemName: "eject") }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.text3)
+                    .help("推出")
+                    .accessibilityLabel("推出 \(card.name)")
+            }
+        }
     }
 
     @ViewBuilder

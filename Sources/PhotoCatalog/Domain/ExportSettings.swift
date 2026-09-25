@@ -185,26 +185,8 @@ extension ExportSettings {
     /// The file name (without extension) for one photo.
     func fileName(original: String, sequence: Int, date: Date, camera: String, title: String,
                   rating: Int) -> String {
-        let dateFormat = DateFormatter()
-        dateFormat.dateFormat = "yyyyMMdd"
-        dateFormat.locale = Locale(identifier: "en_US_POSIX")
-        dateFormat.timeZone = .captureWallClock
-        let timeFormat = DateFormatter()
-        timeFormat.dateFormat = "HHmmss"
-        timeFormat.locale = Locale(identifier: "en_US_POSIX")
-        timeFormat.timeZone = .captureWallClock
-        let name = fileNameTemplate
-            .replacingOccurrences(of: "{original}", with: original)
-            .replacingOccurrences(of: "{seq}", with: String(format: "%04d", sequence))
-            .replacingOccurrences(of: "{date}", with: dateFormat.string(from: date))
-            .replacingOccurrences(of: "{time}", with: timeFormat.string(from: date))
-            .replacingOccurrences(of: "{camera}", with: camera)
-            .replacingOccurrences(of: "{title}", with: title)
-            .replacingOccurrences(of: "{rating}", with: "\(rating)星")
-        let illegal = CharacterSet(charactersIn: "/\\:?%*|\"<>").union(.newlines)
-        let cleaned = name.components(separatedBy: illegal).joined(separator: "-")
-            .trimmingCharacters(in: .whitespaces)
-        return cleaned.isEmpty ? original : cleaned
+        FileNameTemplate.render(fileNameTemplate, original: original, sequence: sequence, date: date,
+                                camera: camera, title: title, rating: rating)
     }
 }
 

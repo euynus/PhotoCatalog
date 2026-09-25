@@ -30,6 +30,8 @@ struct PhotoCatalogCommands: Commands {
             }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(app.sheet != nil)
+            Button("从存储卡导入…") { perform("目录库.从存储卡导入") { app.showCardImport() } }
+                .disabled(app.sheet != nil || !app.onboarded)
             Divider()
             Button("设置…") { perform("目录库.设置") { app.showSettings() } }
                 .keyboardShortcut(",", modifiers: .command)
