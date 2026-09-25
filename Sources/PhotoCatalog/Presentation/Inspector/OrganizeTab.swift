@@ -160,7 +160,7 @@ struct OrganizeTab: View {
         let clientChanged = client != seeded.client
         guard titleChanged || captionChanged || projectChanged || clientChanged else { return }
         let d = drafts
-        app.mutate(editTargets) {
+        app.mutate(editTargets, undoName: "编辑照片信息") {
             if titleChanged { $0.title = d.title }
             if captionChanged { $0.caption = d.caption }
             if projectChanged { $0.project = project }

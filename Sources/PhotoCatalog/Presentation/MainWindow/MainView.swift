@@ -6,6 +6,7 @@ import AppKit
 
 struct MainView: View {
     @Environment(AppState.self) var app
+    @Environment(\.undoManager) private var undoManager
     // Local echo of app.search — committed debounced so each keystroke doesn't
     // pay a synchronous full-library filter + sort.
     @State private var searchText = ""
@@ -31,7 +32,11 @@ struct MainView: View {
         .disabled(app.isLoadingCatalog)
         .accessibilityHidden(app.isLoadingCatalog && !app.hasCatalogPreview)
         .sheet(isPresented: sheetPresented) { sheetContent }
-        .onAppear { searchText = app.search }
+        .onAppear {
+            searchText = app.search
+            app.undoManager = undoManager
+        }
+        .onChange(of: undoManager.map(ObjectIdentifier.init)) { app.undoManager = undoManager }
         .onChange(of: app.search) { if app.search != searchText { searchText = app.search } }
         .task(id: searchText) {
             // the do/catch matters: .task(id:) cancels on each keystroke and a

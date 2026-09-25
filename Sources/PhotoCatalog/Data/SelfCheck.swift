@@ -121,6 +121,7 @@ enum SelfCheck {
         checkThemeContrast()
         InteractionCheck.run()
         PairingCheck.run()
+        UndoCheck.run()
         ImportSafetyCheck.run()
         ImportPersistenceCheck.run()
         CaptureAnalysisCheck.run()

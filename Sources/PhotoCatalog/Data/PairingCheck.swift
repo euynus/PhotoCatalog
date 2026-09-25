@@ -45,6 +45,17 @@ enum PairingCheck {
                "rating the tile writes both files of the pair")
         assert(app.libraryCounts.unrated == 3, "counts follow the photo, not its files")
 
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        app.undoManager = undo
+        undo.beginUndoGrouping()
+        _ = app.handleKey("2", hasCommand: false)
+        undo.endUndoGrouping()
+        undo.undo()
+        assert(app.assets.filter { [raw.id, jpeg.id].contains($0.id) }.allSatisfy { $0.rating == 4 },
+               "undoing a paired rating restores both files")
+        app.undoManager = nil
+
         app.addKeyword("pairing")
         assert(app.assets.filter { $0.keywords.contains("pairing") }.map(\.id).sorted()
                == [raw.id, jpeg.id].sorted(), "keywords reach the companion")

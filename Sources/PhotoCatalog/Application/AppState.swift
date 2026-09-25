@@ -183,6 +183,35 @@ final class AppState {
         fileprivate let isLoading: Bool
     }
 
+    /// The window's undo manager (set by the main view), so ⌘Z, the Edit menu's titles and
+    /// text-field undo all behave like any Mac app.
+    @ObservationIgnored weak var undoManager: UndoManager? {
+        didSet { undoManager?.levelsOfUndo = 100 }
+    }
+
+    /// Records how to put `before` back. Undoing registers the reverse, which is what redo replays.
+    private func registerUndo(restoring before: [Asset], actionName: String?) {
+        guard let actionName, let undoManager, !before.isEmpty else { return }
+        undoManager.registerUndo(withTarget: self) { app in
+            MainActor.assumeIsolated { app.restoreSnapshot(before, actionName: actionName) }
+        }
+        undoManager.setActionName(actionName)
+    }
+
+    private func restoreSnapshot(_ snapshot: [Asset], actionName: String) {
+        let index = assetIndex
+        let current = snapshot.compactMap { index[$0.id].map { assets[$0] } }
+        var updated = assets
+        for asset in snapshot { if let offset = index[asset.id] { updated[offset] = asset } }
+        guard persist(Set(snapshot.map(\.id)), in: updated) else { return }
+        let deletionChanged = zip(current, snapshot).contains { $0.deleted != $1.deleted }
+        replaceAssetsForMutation(updated)
+        ensurePrimaryValid()
+        enqueueAutomaticXMPWrite(snapshot.filter { !$0.isDemo && !$0.deleted })
+        if deletionChanged { recomputeDuplicates() }
+        registerUndo(restoring: current, actionName: actionName)
+    }
+
     private func replaceAssetsForMutation(_ updated: [Asset], scope: AssetEditScope = .any) {
         nextAssetEditScope = scope
         assets = updated
@@ -2051,7 +2080,7 @@ final class AppState {
         guard totalMinutes != 0 else { return }
         let ids = targetIds
         guard !ids.isEmpty else { return }
-        guard mutate(ids, {
+        guard mutate(ids, undoName: "调整拍摄时间", {
             $0.date = $0.date.addingTimeInterval(Double(totalMinutes) * 60)
             $0.captureDateSource = "手动调整"
         }) else { return }
@@ -2063,7 +2092,7 @@ final class AppState {
     func setCaptureDate(_ date: Date) {
         let ids = targetIds
         guard !ids.isEmpty else { return }
-        guard mutate(ids, {
+        guard mutate(ids, undoName: "设置拍摄时间", {
             $0.date = date
             $0.captureDateSource = "手动设置"
         }) else { return }
@@ -3918,28 +3947,34 @@ final class AppState {
 
     /// Apply an in-place edit to the current selection (or an explicit set).
     @discardableResult
-    func mutate(_ ids: Set<String>? = nil, _ transform: (inout Asset) -> Void) -> Bool {
+    func mutate(_ ids: Set<String>? = nil, undoName: String? = nil,
+                _ transform: (inout Asset) -> Void) -> Bool {
         let target = ids ?? targetIds
         guard !target.isEmpty else { return false }
         var updated = assets
+        var before: [Asset] = []
         for i in updated.indices where target.contains(updated[i].id) {
+            before.append(updated[i])
             transform(&updated[i])
         }
         guard persist(target, in: updated) else { return false }
         replaceAssetsForMutation(updated)
         ensurePrimaryValid()
+        registerUndo(restoring: before, actionName: undoName)
         return true
     }
 
     @discardableResult
     func mutateAsset(_ id: String, scope: AssetEditScope = .any, withCompanions: Bool = false,
-                     _ transform: (inout Asset) -> Void) -> Bool {
+                     undoName: String? = nil, _ transform: (inout Asset) -> Void) -> Bool {
         let ids = withCompanions ? self.withCompanions([id]) : [id]
         let offsets = ids.compactMap { assetIndex[$0] }
         guard !offsets.isEmpty else { return false }
         var updated = assets
+        let before = offsets.map { assets[$0] }
         for offset in offsets { transform(&updated[offset]) }
         guard persist(ids, in: updated) else { return false }
+        registerUndo(restoring: before, actionName: undoName)
         replaceAssetsForMutation(updated, scope: scope)
         ensurePrimaryValid()
         return true
@@ -3947,24 +3982,25 @@ final class AppState {
 
     @discardableResult
     func setRating(_ n: Int) -> Bool {
-        mutateIndexedMetadata({ $0.rating = n }) { store, ids in
+        mutateIndexedMetadata(undoName: "评分", { $0.rating = n }) { store, ids in
             try store.updateRatings(n, assetIDs: ids)
         }
     }
     @discardableResult
     func setFlag(_ f: Flag) -> Bool {
-        mutateIndexedMetadata({ $0.flag = f }) { store, ids in
+        mutateIndexedMetadata(undoName: "旗标", { $0.flag = f }) { store, ids in
             try store.updateFlags(f, assetIDs: ids)
         }
     }
     @discardableResult
     func setColor(_ c: ColorLabel?) -> Bool {
-        mutateIndexedMetadata({ $0.colorLabel = c }) { store, ids in
+        mutateIndexedMetadata(undoName: "颜色标签", { $0.colorLabel = c }) { store, ids in
             try store.updateColorLabels(c, assetIDs: ids)
         }
     }
 
     private func mutateIndexedMetadata(
+        undoName: String,
         _ transform: (inout Asset) -> Void,
         persist: (CatalogStore, Set<String>) throws -> Void
     ) -> Bool {
@@ -3988,6 +4024,7 @@ final class AppState {
                 return false
             }
         }
+        registerUndo(restoring: edits.map { assets[$0.offset] }, actionName: undoName)
         applyAssetEdits(edits, scope: .review)
         ensurePrimaryValid()
         enqueueAutomaticXMPWrite(changed)
@@ -4366,20 +4403,20 @@ final class AppState {
     func addKeyword(_ kw: String) {
         let keywords = KeywordService.normalize(kw)
         guard !keywords.isEmpty else { return }
-        mutate {
+        mutate(undoName: "添加关键词") {
             for keyword in keywords where !$0.keywords.contains(keyword) {
                 $0.keywords.append(keyword)
             }
         }
     }
     func removeKeyword(_ kw: String) {
-        mutate { $0.keywords.removeAll { $0 == kw } }
+        mutate(undoName: "移除关键词") { $0.keywords.removeAll { $0 == kw } }
     }
 
     func removeSelected() {
         let ids = targetIds
         guard !ids.isEmpty else { return }
-        guard mutate(ids, { $0.deleted = true }) else { return }
+        guard mutate(ids, undoName: "从目录库移除", { $0.deleted = true }) else { return }
         purgeCacheFiles(forAssetIds: ids)
         push("已从目录库移除 \(ids.count) 张（原件保留）", "trash")
         selectedIds = []

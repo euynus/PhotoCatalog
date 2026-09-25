@@ -117,7 +117,7 @@ struct Loupe: View {
                     .help("\(asset.camera) · \(exposureSummary(asset))")
                 HStack(spacing: 8) {
                     StarsView(value: asset.rating, size: 13, gap: 2) { n in
-                        app.mutateAsset(asset.id, scope: .review, withCompanions: true) { $0.rating = asset.rating == n ? 0 : n }
+                        app.mutateAsset(asset.id, scope: .review, withCompanions: true, undoName: "评分") { $0.rating = asset.rating == n ? 0 : n }
                     }
                     FlagPill(flag: asset.flag, size: 12).frame(width: 14)
                     ColorDot(label: asset.colorLabel, size: 10).frame(width: 10)
