@@ -3089,6 +3089,184 @@ final class AppState {
         exportPresets.removeAll { $0.name == preset.name }
     }
 
+    // ---------- rendered export (Lightroom's Export dialog) ----------
+    /// The dialog reopens with the settings and folder last used.
+    var renderedExportSettings: ExportSettings = AppState.loadJSON(ExportSettings.self, forKey: "pc_renderedExportSettings")
+        ?? ExportSettings() {
+        didSet { AppState.store(renderedExportSettings, forKey: "pc_renderedExportSettings") }
+    }
+    var renderedExportFolder: String = UserDefaults.standard.string(forKey: "pc_renderedExportFolder")
+        ?? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("PhotoCatalog 导出").path ?? NSHomeDirectory() {
+        didSet { UserDefaults.standard.set(renderedExportFolder, forKey: "pc_renderedExportFolder") }
+    }
+    var renderedExportPresets: [RenderedExportPreset] =
+        AppState.loadJSON([RenderedExportPreset].self, forKey: "pc_renderedExportPresets") ?? [] {
+        didSet { AppState.store(renderedExportPresets, forKey: "pc_renderedExportPresets") }
+    }
+    var allRenderedExportPresets: [RenderedExportPreset] { RenderedExportPreset.builtIns + renderedExportPresets }
+
+    struct RenderedExportJob: Sendable {
+        let items: [RenderedExportItem]
+        let settings: ExportSettings
+        let folder: URL
+    }
+    struct RenderedExportProgress: Equatable {
+        var done: Int
+        let total: Int
+        var queued: Int
+    }
+    /// The job being written first, then the ones waiting behind it.
+    @ObservationIgnored private var renderedExportJobs: [RenderedExportJob] = []
+    var renderedExportProgress: RenderedExportProgress?
+    @ObservationIgnored private let renderedExportCancellation = ExportCancellation()
+    /// A serial queue of its own: RAW decodes must stay off the Swift cooperative pool, and
+    /// one photo at a time bounds memory for 16-bit full-resolution renders.
+    private static let renderedExportQueue = DispatchQueue(label: "PhotoCatalog.rendered-export", qos: .utility)
+
+    /// Photos the export dialog would write: selected photos with a local original, in view order.
+    func renderedExportItems() -> [RenderedExportItem] {
+        let ids = selectionTargetIds
+        guard !ids.isEmpty else { return [] }
+        var ordered = list.filter { ids.contains($0.id) }
+        let listed = Set(ordered.map(\.id))
+        ordered += ids.subtracting(listed).sorted().compactMap { id in assetIndex[id].map { assets[$0] } }
+        return ordered.compactMap { asset in
+            guard asset.status == .ready, !asset.isDemo, !asset.deleted, let path = asset.localPath else { return nil }
+            return RenderedExportItem(assetId: asset.id, sourcePath: path, isRaw: asset.isRaw,
+                                      develop: developSettings[asset.id] ?? .neutral,
+                                      originalSize: CGSize(width: asset.width, height: asset.height),
+                                      baseName: (asset.filename as NSString).deletingPathExtension,
+                                      date: asset.date, camera: asset.camera, title: asset.title,
+                                      caption: asset.caption, keywords: asset.keywords, rating: asset.rating,
+                                      author: asset.author, copyright: asset.copyright)
+        }
+    }
+
+    /// Menu state: stops at the first photo with a local original.
+    var canRenderedExport: Bool {
+        guard onboarded, sheet == nil, view != .analysis else { return false }
+        return selectionTargetIds.contains { id in
+            assetIndex[id].map { assets[$0].status == .ready && !assets[$0].isDemo && assets[$0].localPath != nil } ?? false
+        }
+    }
+
+    /// ⇧⌘E: the export dialog for the selection.
+    func showRenderedExport() {
+        guard canRenderedExport else {
+            push(selectionTargetIds.isEmpty ? "请先选择照片" : "选中的照片没有可用的本地原件", "warning")
+            return
+        }
+        sheet = "renderedExport"
+    }
+
+    /// Queues an export of the selection; jobs run one after another in the background.
+    func startRenderedExport(settings: ExportSettings, folder: URL) {
+        let items = renderedExportItems()
+        guard !items.isEmpty else {
+            push("没有可导出的照片（需要本地原件）", "warning")
+            return
+        }
+        renderedExportSettings = settings
+        renderedExportFolder = folder.path
+        let subfolder = settings.subfolder.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-")
+        let destination = subfolder.isEmpty ? folder : folder.appendingPathComponent(subfolder, isDirectory: true)
+        renderedExportJobs.append(RenderedExportJob(items: items, settings: settings, folder: destination))
+        if renderedExportJobs.count == 1 {
+            runNextRenderedExport()
+        } else {
+            renderedExportProgress?.queued = renderedExportJobs.count - 1
+            push("已加入导出队列 · 前面还有 \(renderedExportJobs.count - 1) 个任务", "export")
+        }
+    }
+
+    /// Stops the running export after the photo in progress and drops the queued ones.
+    func cancelRenderedExport() {
+        guard !renderedExportJobs.isEmpty else { return }
+        renderedExportJobs.removeSubrange(1...)
+        renderedExportProgress?.queued = 0
+        renderedExportCancellation.cancel()
+    }
+
+    private func runNextRenderedExport() {
+        guard let job = renderedExportJobs.first else {
+            renderedExportProgress = nil
+            return
+        }
+        renderedExportProgress = RenderedExportProgress(done: 0, total: job.items.count,
+                                                        queued: renderedExportJobs.count - 1)
+        let cancellation = renderedExportCancellation
+        cancellation.reset()
+        Self.renderedExportQueue.async { [weak self] in
+            var reserved = Set<String>()
+            var written: [URL] = [], skipped = 0, failures: [String] = []
+            var folderReady = true
+            do {
+                try FileManager.default.createDirectory(at: job.folder, withIntermediateDirectories: true)
+            } catch {
+                failures.append("无法创建导出文件夹：\(error.localizedDescription)")
+                folderReady = false
+            }
+            for (index, item) in job.items.enumerated() where folderReady {
+                if cancellation.isCancelled { break }
+                switch RenderedExportService.export(item, sequence: job.settings.sequenceStart + index,
+                                                    settings: job.settings, to: job.folder, reserved: &reserved) {
+                case .written(let url): written.append(url)
+                case .skipped: skipped += 1
+                case .failed(let reason): failures.append(reason)
+                }
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { self?.renderedExportProgress?.done = index + 1 }
+                }
+            }
+            let cancelled = cancellation.isCancelled
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.finishRenderedExport(job, written: written, skipped: skipped, failures: failures,
+                                               cancelled: cancelled)
+                }
+            }
+        }
+    }
+
+    private func finishRenderedExport(_ job: RenderedExportJob, written: [URL], skipped: Int, failures: [String],
+                                      cancelled: Bool) {
+        if !renderedExportJobs.isEmpty { renderedExportJobs.removeFirst() }
+        var message = cancelled ? "导出已取消 · 已写入 \(written.count) 张" : "已导出 \(written.count) 张照片"
+        if skipped > 0 { message += " · \(skipped) 张已存在而跳过" }
+        if let first = failures.first { message += " · \(failures.count) 张失败（\(first)）" }
+        push(message, failures.isEmpty ? "export" : "warning")
+        if job.settings.revealInFinder, !written.isEmpty, !cancelled {
+            // selecting thousands of files is slow in Finder; open the folder instead
+            if written.count <= 50 {
+                NSWorkspace.shared.activateFileViewerSelecting(written)
+            } else {
+                NSWorkspace.shared.open(job.folder)
+            }
+        }
+        runNextRenderedExport()
+    }
+
+    func saveRenderedExportPreset(name: String, settings: ExportSettings) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        if let index = renderedExportPresets.firstIndex(where: { $0.name == name }) {
+            renderedExportPresets[index].settings = settings
+        } else {
+            renderedExportPresets.append(RenderedExportPreset(id: UUID().uuidString, name: name, settings: settings))
+        }
+        push("已存储导出预设“\(name)”", "square.and.arrow.down")
+    }
+
+    func deleteRenderedExportPreset(_ id: String) {
+        renderedExportPresets.removeAll { $0.id == id }
+    }
+
+    private static func loadJSON<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
+        UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(type, from: $0) }
+    }
+
     // ---------- export originals (§6.11) ----------
     func exportSelection() {
         let ids = targetIds
@@ -5098,7 +5276,7 @@ final class AppState {
                 }
             case "e":
                 if hasShift {
-                    exportSelectionPreviews()
+                    showRenderedExport()
                 } else {
                     exportSelection()
                 }

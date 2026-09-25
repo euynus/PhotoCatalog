@@ -16,6 +16,7 @@ struct StatusBar: View {
             ManagementModeLabel()
             Spacer(minLength: 8)
             ImportProgressLabel()
+            ExportProgressLabel()
             OriginalsCheckLabel()
             MaintenanceLabels()
             if app.view == .grid && !app.isDuplicates && !app.isPlaces {
@@ -110,6 +111,31 @@ private struct ImportProgressLabel: View {
             return run.total > 0 ? "已暂停 \(run.percent)%" : "已暂停"
         }
         return run.total > 0 ? "导入 \(run.percent)%" : "正在扫描…"
+    }
+}
+
+private struct ExportProgressLabel: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        if let progress = app.renderedExportProgress {
+            HStack(spacing: 5) {
+                ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
+                    .tint(Theme.accent)
+                    .frame(width: 54)
+                Text("导出 \(progress.done)/\(progress.total)" + (progress.queued > 0 ? " · 队列 \(progress.queued)" : ""))
+                    .monospacedDigit()
+                Button { app.cancelRenderedExport() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.text3)
+                .help("取消导出")
+                .accessibilityLabel("取消导出")
+            }
+            .foregroundStyle(Theme.accent)
+            .fixedSize()
+        }
     }
 }
 

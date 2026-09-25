@@ -108,7 +108,7 @@ final class ThumbnailService: @unchecked Sendable {
         try? FileManager.default.createDirectory(at: out.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
         let rendered = autoreleasepool {
-            DevelopRenderer.Source(url: source, isRaw: isRaw, maxPixel: kind.maxPixel)?
+            DevelopRenderer.Source(url: source, isRaw: isRaw, maxPixel: kind.maxPixel, interactive: false)?
                 .image(settings)
                 .flatMap(DevelopRenderer.render)
         }

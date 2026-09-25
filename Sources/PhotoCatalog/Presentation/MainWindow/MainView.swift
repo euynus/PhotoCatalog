@@ -80,6 +80,10 @@ struct MainView: View {
             })
         case "settings":
             SettingsSheet()
+        case "renderedExport":
+            let items = app.renderedExportItems()
+            RenderedExportSheet(settings: app.renderedExportSettings, folder: app.renderedExportFolder,
+                                sample: items.first, count: items.count)
         case "developTransfer":
             DevelopTransferSheet(mode: app.developTransferMode,
                                  fields: app.developTransferMode == .preset

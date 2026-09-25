@@ -73,6 +73,7 @@ struct PhotoContextMenu: View {
         }
 
         Divider()
+        Button("导出…") { act { app.showRenderedExport() } }
         Button("加入相册…") { act { app.addSelectionToAlbum() } }
         Button("从目录库移除…", role: .destructive) { act { app.confirmDeleteSelected() } }
     }

@@ -30,7 +30,7 @@ appearance (Settings → 外观), a neutral dark photo canvas in every mode, and
 - **Import / scan** — animated scan→import progress with a 5-stat panel and a thumbnail wall.
 - **First-launch / Welcome** — catalog creation card with recents.
 - **Interactions** — click / ⌘-click / ⇧-click selection, live search, filter bar, sort, toasts, and keyboard shortcuts:
-  `1–5` rate · `0` clear · `P/X/U` flags · `6–9` color (hold `Shift` to move on to the next photo; 照片 → 评分后自动前进 makes it the default) · `Tab` hide side panels · `G/E/C/D/A` views (`D` develop, `\` before/after, `R` crop, `Return`/`Esc` to finish) · `⌘[`/`⌘]` rotate · `⇧⌘C`/`⇧⌘V`/`⇧⌘S` copy / paste / sync develop settings · `Z` zoom 1:1 (double-click too; linked across Compare) · `⌘Z/⇧⌘Z` undo/redo catalog edits · arrows navigate · `Return` loupe · `Esc` close panels · `F` filters · `I` thumbnail info · `⌘F` search · `⌘I` inspector · `⌘N/⌘O` catalog · `⇧⌘I` import · `⌘E` export · `⇧⌘E` preview export · `⌘R` rescan · `⌘B` backup · `⌘,` settings · `⌘+/-/0` thumbnail size · `⌫` remove · `⌘⌫` trash originals.
+  `1–5` rate · `0` clear · `P/X/U` flags · `6–9` color (hold `Shift` to move on to the next photo; 照片 → 评分后自动前进 makes it the default) · `Tab` hide side panels · `G/E/C/D/A` views (`D` develop, `\` before/after, `R` crop, `Return`/`Esc` to finish) · `⌘[`/`⌘]` rotate · `⇧⌘C`/`⇧⌘V`/`⇧⌘S` copy / paste / sync develop settings · `Z` zoom 1:1 (double-click too; linked across Compare) · `⌘Z/⇧⌘Z` undo/redo catalog edits · arrows navigate · `Return` loupe · `Esc` close panels · `F` filters · `I` thumbnail info · `⌘F` search · `⌘I` inspector · `⌘N/⌘O` catalog · `⇧⌘I` import · `⇧⌘E` export (rendered) · `⌘E` export originals · `⌘R` rescan · `⌘B` backup · `⌘,` settings · `⌘+/-/0` thumbnail size · `⌫` remove · `⌘⌫` trash originals.
 
 ### Real catalog backend (PRD Infrastructure layer, §11)
 
@@ -40,7 +40,7 @@ Beyond the UI, the app has a working file→catalog pipeline:
 - **Import checkpoints** — session/job creation and state transitions use transactions. Persistence failures stop subsequent files and report partial saves; already-copied originals and caches are not automatically removed.
 - **SQLite persistence** — a `.photolibrary` package (`catalog.sqlite` + `manifest.json` + `Cache/` + `Backups/`) via the system SQLite library; user edits (rating/flag/color/keywords/title/caption) write through and survive relaunch.
 - **Exact duplicate detection** — size-bucketed SHA-256 content hashing.
-- **Export** — copy selected originals to a chosen folder (preserving mtime) + JSON metadata sidecar.
+- **Export** (`⇧⌘E`) — renders the selection with its Develop adjustments to JPEG, HEIC or TIFF (8/16-bit): resize by long/short edge or a box, quality, sRGB / Display P3 / Adobe RGB, file-name templates (`{original}` `{seq}` `{date}` `{time}` `{camera}` `{title}` `{rating}`), metadata (all / copyright only / none, optional location removal, catalog title/caption/keywords/rating included), text watermark, collision handling. Built-in and saved export presets; exports queue and run one after another in the background with progress and cancel in the status bar. `⌘E` still copies untouched originals (preserving mtime) + JSON metadata sidecar.
 - **Backup** — checkpointed catalog copy (click the status-bar backup item).
 - **Missing detection** — originals are re-checked on launch and flagged `missing` if gone.
 - **Managed import** — optionally copy originals into `Originals/YYYY/MM/DD` (Settings → 导入模式).

@@ -39,11 +39,13 @@ enum DevelopRenderer {
             let exposure: Double
         }
 
-        /// `maxPixel` bounds the long edge (nil = full resolution).
-        init?(url: URL, isRaw: Bool, maxPixel: Int?) {
+        /// `maxPixel` bounds the long edge (nil = full resolution). `interactive` sources keep
+        /// the RAW stage for fast slider drags; one-shot renders (export, thumbnails) skip it.
+        init?(url: URL, isRaw: Bool, maxPixel: Int?, interactive: Bool = true) {
             self.url = url
             self.isRaw = isRaw
-            cachesRawStage = maxPixel != nil   // a full-resolution half-float stage would be ~190 MB
+            // a full-resolution half-float stage would be ~190 MB
+            cachesRawStage = interactive && maxPixel != nil
             if isRaw, let raw = CIRAWFilter(imageURL: url) {
                 let native = raw.nativeSize
                 let longEdge = max(native.width, native.height)

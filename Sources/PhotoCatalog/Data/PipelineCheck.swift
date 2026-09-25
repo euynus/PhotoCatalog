@@ -329,6 +329,18 @@ enum PipelineCheck {
             check(rotated.flatMap(pixelSize) == thumbSize.map { CGSize(width: $0.height, height: $0.width) }
                   && thumbSize.map { $0.width != $0.height } == true,
                   "a quarter turn renders from the cached thumbnail with its sides swapped")
+
+            var exportSettings = ExportSettings()
+            exportSettings.resize = .longEdge
+            exportSettings.edge = 512
+            let rawItem = RenderedExportItem(
+                assetId: cr3Asset.id, sourcePath: localPath, isRaw: true, develop: turned,
+                originalSize: CGSize(width: cr3Asset.width, height: cr3Asset.height), baseName: "CR3", date: cr3Asset.date,
+                camera: cr3Asset.camera, title: "", caption: "", keywords: [], rating: 0, author: "", copyright: "")
+            let exported = RenderedExportService.render(rawItem, settings: exportSettings)
+            check(exported.map { max($0.width, $0.height) == 512 } == true
+                  && exported.map { ($0.width > $0.height) == ((thumbSize?.height ?? 0) > (thumbSize?.width ?? 0)) } == true,
+                  "a CR3 exports at the requested size with its develop rotation")
         } else {
             check(false, "CR3 black preview cache regenerates from original")
             check(false, "CR3 black thumbnail cache regenerates from preview fallback")

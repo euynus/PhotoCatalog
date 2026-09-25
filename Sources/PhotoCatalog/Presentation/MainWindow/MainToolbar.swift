@@ -103,11 +103,20 @@ private struct ExportButton: View {
     @Environment(AppState.self) private var app
 
     var body: some View {
-        Button { app.exportSelection() } label: {
-            Label("导出选中原件", systemImage: "square.and.arrow.up")
+        Menu {
+            Button("导出…") { app.showRenderedExport() }
+                .disabled(!app.canRenderedExport)
+            Button("导出选中原件…") { app.exportSelection() }
+                .disabled(!app.canExportOriginalSelection)
+            Button("导出选中预览图…") { app.exportSelectionPreviews() }
+                .disabled(!app.canExportPreviewSelection)
+        } label: {
+            Label("导出", systemImage: "square.and.arrow.up")
+        } primaryAction: {
+            app.showRenderedExport()
         }
-        .disabled(!app.canExportOriginalSelection)
-        .help("导出选中原件 (⌘E)")
+        .disabled(!app.canRenderedExport && !app.canExportOriginalSelection)
+        .help("导出 (⇧⌘E) · 按住查看更多导出方式")
     }
 }
 

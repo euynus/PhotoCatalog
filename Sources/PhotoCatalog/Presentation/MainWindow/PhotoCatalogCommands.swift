@@ -96,11 +96,13 @@ struct PhotoCatalogCommands: Commands {
             Button("移除被拒绝的照片…") { perform("照片.移除被拒绝的照片") { app.confirmRemoveRejected() } }
                 .disabled(app.sheet != nil || !app.onboarded || app.view == .analysis)
             Divider()
+            Button("导出…") { perform("照片.导出") { app.showRenderedExport() } }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(!app.canRenderedExport)
             Button("导出选中原件…") { perform("照片.导出选中原件") { app.exportSelection() } }
                 .keyboardShortcut("e", modifiers: .command)
                 .disabled(app.sheet != nil || !app.canExportOriginalSelection)
             Button("导出选中预览图…") { perform("照片.导出选中预览图") { app.exportSelectionPreviews() } }
-                .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(app.sheet != nil || !app.canExportPreviewSelection)
             Divider()
             Button("加入相册…") { perform("照片.加入相册") { app.addSelectionToAlbum() } }
