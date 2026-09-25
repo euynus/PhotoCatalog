@@ -27,6 +27,12 @@ enum PairingCheck {
                && PathString.standardized("/Volumes/Photos/2024/") == "/Volumes/Photos/2024",
                "firmlinked /private paths compare equal to their short form")
 
+        let names = ["img_10.jpg", "IMG_9.JPG", "IMG_0009b.jpg", "a.jpg", "a1.jpg", "aa.jpg", "_x.jpg",
+                     "20240309_0005.JPG", "20240309_0004.JPG", "Z.jpg", "b.jpg", "IMG_0100.CR3"]
+        let sorted = names.sorted { FileNameSortKey($0) < FileNameSortKey($1) }
+        assert(sorted == ["_x.jpg", "20240309_0004.JPG", "20240309_0005.JPG", "a.jpg", "a1.jpg", "aa.jpg", "b.jpg",
+                          "IMG_9.JPG", "IMG_0009b.jpg", "img_10.jpg", "IMG_0100.CR3", "Z.jpg"],
+               "file names sort like the Finder: numbers by value, case ignored")
     }
 
     @MainActor

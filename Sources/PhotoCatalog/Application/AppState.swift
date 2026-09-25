@@ -4363,13 +4363,10 @@ final class AppState {
         let descending = sort.descending
         var order = Array(assets.indices)
         if sort.field == .name {
-            let names = assets.map(\.filename)
+            let keys = assets.map { FileNameSortKey($0.filename) }
             order.sort { i, j in
-                switch names[i].localizedCompare(names[j]) {
-                case .orderedSame: return i < j
-                case .orderedAscending: return !descending
-                case .orderedDescending: return descending
-                }
+                if keys[i] == keys[j] { return i < j }
+                return descending ? keys[j] < keys[i] : keys[i] < keys[j]
             }
         } else {
             let keys: [Double] = switch sort.field {
