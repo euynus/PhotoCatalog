@@ -568,8 +568,14 @@ final class AppState {
 
     // ----- selection / view -----
     var selection = Selection(type: .lib, id: "all", name: "全部照片")
-    var selectedIds: Set<String> = []
-    var primaryId: String?
+    var selectedIds: Set<String> = [] {
+        didSet { selectionVersion &+= 1 }
+    }
+    var primaryId: String? {
+        didSet { selectionVersion &+= 1 }
+    }
+    /// Bumped on every selection change; keys the selection summary.
+    @ObservationIgnored private var selectionVersion = 0
     var view: ViewMode = .grid {
         didSet { if view != .develop { developCropping = false } }
     }
@@ -600,7 +606,10 @@ final class AppState {
 
     // ----- develop: non-destructive adjustments -----
     /// Saved adjustments by asset id; photos without an entry are as shot.
-    var developSettings: [String: DevelopSettings] = [:]
+    var developSettings: [String: DevelopSettings] = [:] {
+        didSet { developSettingsVersion &+= 1 }
+    }
+    @ObservationIgnored private var developSettingsVersion = 0
     struct DevelopDraft: Equatable { let assetId: String; var settings: DevelopSettings }
     /// Settings while a slider drags — drives the live preview; saved on release.
     var developDraft: DevelopDraft?
@@ -652,8 +661,88 @@ final class AppState {
     /// Menu state: stops at the first photo that can take an edit.
     var canTransformSelection: Bool {
         guard onboarded, sheet == nil, view != .analysis else { return false }
-        let ids = view == .develop ? Set(primaryId.map { [$0] } ?? []) : selectionTargetIds
-        return ids.contains { id in assetIndex[id].map { canDevelop(assets[$0]) } ?? false }
+        return selectionSummary.hasDevelopable
+    }
+
+    // ---------- selection summary ----------
+    /// What the selection holds, for enabling menus and buttons. The menu bar re-reads every
+    /// item's state on each change; scanning a 500k-photo selection per item took seconds, so
+    /// this is one pass per change of the selection, catalog or develop edits — and usually
+    /// stops at the first photo, once every flag it can set is known.
+    struct SelectionSummary: Equatable {
+        /// A photo still in the catalog (location edits).
+        var hasLive = false
+        /// A photo with pixels to render — original or local preview (rotate, paste, presets).
+        var hasDevelopable = false
+        /// A developable photo carrying adjustments (reset).
+        var hasDevelopEdit = false
+        /// A ready local original, paired files included (open, reveal, copy/export originals).
+        var hasLocalOriginal = false
+        /// A ready local original among the photos themselves (rendered export).
+        var hasPrimaryOriginal = false
+        /// A local preview, thumbnail or original to export as a preview.
+        var hasPreviewReference = false
+    }
+    private struct SelectionSummaryKey: Equatable {
+        let selection: Int
+        let assets: Int
+        let develop: Int
+        let inDevelop: Bool
+    }
+    @ObservationIgnored private var selectionSummaryCache: (key: SelectionSummaryKey, value: SelectionSummary)?
+
+    var selectionSummary: SelectionSummary {
+        // read what it depends on, so views re-evaluate when those change
+        _ = selectedIds.isEmpty
+        _ = primaryId
+        _ = developSettings.isEmpty
+        let inDevelop = view == .develop
+        let key = SelectionSummaryKey(selection: selectionVersion, assets: listInputsVersion,
+                                      develop: developSettingsVersion, inDevelop: inDevelop)
+        if let cache = selectionSummaryCache, cache.key == key { return cache.value }
+        var summary = SelectionSummary()
+        let index = assetIndex
+        let companions = assetPairing.companionsByPrimary
+        let targets = selectionTargetIds
+        func isLocalOriginal(_ asset: Asset) -> Bool {
+            !asset.deleted && !asset.isDemo && asset.status == .ready && asset.localPath != nil
+        }
+        func isLocalReference(_ path: String) -> Bool { !path.isEmpty && !path.hasPrefix("http") }
+        func isDevelopable(_ id: String) -> Bool {
+            index[id].map { !assets[$0].deleted && canDevelop(assets[$0]) } ?? false
+        }
+        if inDevelop {
+            // Develop edits the photo on screen, whatever else is selected
+            summary.hasDevelopable = primaryId.map(isDevelopable) ?? false
+            summary.hasDevelopEdit = summary.hasDevelopable && primaryId.map { developSettings[$0] != nil } == true
+        } else if developSettings.count < targets.count {
+            // edits are usually few: look them up instead of scanning the selection for one
+            summary.hasDevelopEdit = developSettings.keys.contains { targets.contains($0) && isDevelopable($0) }
+        } else {
+            summary.hasDevelopEdit = targets.contains { developSettings[$0] != nil && isDevelopable($0) }
+        }
+        for id in targets {
+            guard let offset = index[id] else { continue }
+            let asset = assets[offset]
+            guard !asset.deleted else { continue }
+            summary.hasLive = true
+            let local = isLocalOriginal(asset)
+            if local {
+                summary.hasLocalOriginal = true
+                summary.hasPrimaryOriginal = true
+            } else if !summary.hasLocalOriginal,
+                      companions[id]?.contains(where: { index[$0].map { isLocalOriginal(assets[$0]) } ?? false }) == true {
+                summary.hasLocalOriginal = true
+            }
+            if !asset.isDemo, local || isLocalReference(asset.preview) || isLocalReference(asset.thumb) {
+                summary.hasPreviewReference = true
+            }
+            if !inDevelop, canDevelop(asset) { summary.hasDevelopable = true }
+            if summary.hasLocalOriginal && summary.hasPrimaryOriginal && summary.hasPreviewReference
+                && (inDevelop || summary.hasDevelopable) { break }
+        }
+        selectionSummaryCache = (key, summary)
+        return summary
     }
 
     /// ⌘[ / ⌘]: a quarter turn, stored as an adjustment — the original is never rewritten.
@@ -819,7 +908,7 @@ final class AppState {
     }
 
     var canResetDevelopSelection: Bool {
-        canTransformSelection && developTargetIds.contains { developSettings[$0] != nil }
+        canTransformSelection && selectionSummary.hasDevelopEdit
     }
 
     /// Applies a transfer as one undoable step; returns how many photos it reached.
@@ -3335,9 +3424,7 @@ final class AppState {
     /// Menu state: stops at the first photo with a local original.
     var canRenderedExport: Bool {
         guard onboarded, sheet == nil, view != .analysis else { return false }
-        return selectionTargetIds.contains { id in
-            assetIndex[id].map { assets[$0].status == .ready && !assets[$0].isDemo && assets[$0].localPath != nil } ?? false
-        }
+        return selectionSummary.hasPrimaryOriginal
     }
 
     /// ⇧⌘E: the export dialog for the selection.
@@ -4699,7 +4786,7 @@ final class AppState {
     /// Files an edit or file operation acts on: the selection plus paired JPEG/HEIC files.
     private var targetIds: Set<String> { withCompanions(selectionTargetIds) }
 
-    var hasSelection: Bool { onboarded && !targetIds.isEmpty }
+    var hasSelection: Bool { onboarded && !selectionTargetIds.isEmpty }   // companions only follow photos
     var canApplySelectionToAlbum: Bool { hasSelection }
     var canExportOriginalSelection: Bool { canOperateOnSelectedOriginals }
     var canExportPreviewSelection: Bool { selectedAssetsContainPreviewReference }
@@ -4719,25 +4806,9 @@ final class AppState {
 
     // Capability checks are read while SwiftUI builds toolbars and menus. Keep
     // them metadata-only; the action revalidates paths before touching files.
-    private var selectedAssetsContainLocalOriginalReference: Bool {
-        targetIds.contains { id in
-            guard let index = assetIndex[id] else { return false }
-            let asset = assets[index]
-            return !asset.deleted && !asset.isDemo && asset.status == .ready && asset.localPath != nil
-        }
-    }
+    private var selectedAssetsContainLocalOriginalReference: Bool { selectionSummary.hasLocalOriginal }
 
-    private var selectedAssetsContainPreviewReference: Bool {
-        selectionTargetIds.contains { id in
-            guard let index = assetIndex[id] else { return false }
-            let asset = assets[index]
-            guard !asset.deleted && !asset.isDemo else { return false }
-            let hasLocalCacheReference = [asset.preview, asset.thumb].contains {
-                !$0.isEmpty && !$0.hasPrefix("http")
-            }
-            return hasLocalCacheReference || (asset.status == .ready && asset.localPath != nil)
-        }
-    }
+    private var selectedAssetsContainPreviewReference: Bool { selectionSummary.hasPreviewReference }
 
     /// Apply an in-place edit to the current selection (or an explicit set).
     @discardableResult
@@ -5283,7 +5354,7 @@ final class AppState {
         return Set(ids.filter { id in assetIndex[id].map { !assets[$0].deleted } ?? false })
     }
 
-    var canEditLocation: Bool { onboarded && sheet == nil && !locationTargetIds.isEmpty }
+    var canEditLocation: Bool { onboarded && sheet == nil && selectionSummary.hasLive }
 
     func showLocationEditor() {
         guard canEditLocation else { return }

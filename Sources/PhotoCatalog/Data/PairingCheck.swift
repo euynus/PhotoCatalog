@@ -4,7 +4,10 @@ import Foundation
 enum PairingCheck {
     static func run() {
         checkPathStrings()
-        MainActor.assumeIsolated { checkPresentationAndEdits() }
+        MainActor.assumeIsolated {
+            checkPresentationAndEdits()
+            checkSelectionSummary()
+        }
         checkRenameKeepsPairs()
         print("--- RAW+JPEG pairing assertions passed ---")
     }
@@ -97,6 +100,102 @@ enum PairingCheck {
         assert(!app.assets.contains { !$0.deleted && ($0.id == raw.id || $0.id == jpeg.id) }
                && app.assets.contains { !$0.deleted && $0.id == solo.id },
                "removing the photo removes both of its files")
+    }
+
+    /// Menu states come from one cached, early-exiting pass over the selection; they must agree
+    /// with a plain scan through selection, edit, catalog, pairing and view changes.
+    @MainActor
+    private static func checkSelectionSummary() {
+        let raws = DemoData.assets.filter(\.isRaw)
+        let jpegs = DemoData.assets.filter { !$0.isRaw }
+        func real(_ base: Asset, _ path: String, status: AssetStatus = .ready, preview: String? = nil) -> Asset {
+            Asset(id: base.id, pid: base.pid, ori: base.ori, thumb: base.thumb, preview: preview ?? base.preview,
+                  filename: PathString.lastComponent(path), type: base.type, isRaw: base.isRaw,
+                  folderId: base.folderId, folderName: base.folderName, date: base.date,
+                  width: base.width, height: base.height, orientation: base.orientation,
+                  camera: base.camera, lens: base.lens, focal: base.focal, aperture: base.aperture,
+                  shutter: base.shutter, iso: base.iso, colorSpace: base.colorSpace,
+                  hasICCProfile: base.hasICCProfile, fileMB: base.fileMB,
+                  fileModifiedAt: base.fileModifiedAt, fileCreatedAt: base.fileCreatedAt,
+                  rating: 0, flag: .none, colorLabel: nil, keywords: [], title: "", caption: "",
+                  author: "", copyright: "", makerNotes: "", project: "", client: "", location: "",
+                  gps: base.gps, gpsAltitude: nil, status: status, importedAt: base.importedAt,
+                  deleted: false, localPath: path, captureDateSource: base.captureDateSource,
+                  contentHash: nil, quickHash: nil, isDemo: false, faces: 0, perceptualHash: nil)
+        }
+        let offlineRaw = real(raws[0], "/tmp/pc-summary/IMG_0001.CR3", status: .offline)
+        let companion = real(jpegs[0], "/tmp/pc-summary/IMG_0001.jpg")
+        let solo = real(raws[1], "/tmp/pc-summary/IMG_0002.CR3")
+        let previewOnly = real(raws[2], "/tmp/pc-summary/IMG_0003.CR3", status: .missing,
+                               preview: "/tmp/pc-summary/cache/IMG_0003.jpg")
+        let demo = jpegs[1]   // a demo photo: remote preview, no original
+
+        let app = AppState.selfCheckFixture()
+        app.pairRawAndJpeg = true
+        app.assets = [offlineRaw, companion, solo, previewOnly, demo]
+        app.duplicateGroupsCache = []
+        app.select(Selection(type: .lib, id: "all", name: "Summary check"))
+
+        func expected() -> AppState.SelectionSummary {
+            let byId = Dictionary(app.assets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let ids = !app.selectedIds.isEmpty ? app.selectedIds : Set(app.primaryId.map { [$0] } ?? [])
+            let live = ids.compactMap { byId[$0] }.filter { !$0.deleted }
+            func local(_ a: Asset) -> Bool { !a.deleted && !a.isDemo && a.status == .ready && a.localPath != nil }
+            func localReference(_ path: String) -> Bool { !path.isEmpty && !path.hasPrefix("http") }
+            var summary = AppState.SelectionSummary()
+            summary.hasLive = !live.isEmpty
+            summary.hasPrimaryOriginal = live.contains(where: local)
+            summary.hasLocalOriginal = live.contains { local($0) || app.companions(of: $0).contains(where: local) }
+            summary.hasPreviewReference = live.contains {
+                !$0.isDemo && (local($0) || localReference($0.preview) || localReference($0.thumb))
+            }
+            let developable = (app.view == .develop ? app.primaryId.flatMap { byId[$0] }.map { [$0] } ?? [] : live)
+                .filter { !$0.deleted && app.canDevelop($0) }
+            summary.hasDevelopable = !developable.isEmpty
+            summary.hasDevelopEdit = developable.contains { app.developSettings[$0.id] != nil }
+            return summary
+        }
+        let selections: [(selected: Set<String>, primary: String?)] = [
+            ([], nil), ([], solo.id), ([offlineRaw.id], offlineRaw.id), ([previewOnly.id], previewOnly.id),
+            ([demo.id], demo.id), ([offlineRaw.id, previewOnly.id, demo.id], demo.id),
+            ([offlineRaw.id, solo.id, demo.id], offlineRaw.id),
+            ([offlineRaw.id, solo.id, previewOnly.id, demo.id], solo.id),
+        ]
+        func checkAll(_ situation: String) {
+            for (selected, primary) in selections {
+                app.selectedIds = selected
+                app.primaryId = primary
+                assert(app.selectionSummary == expected(), "selection summary matches a full scan \(situation)")
+            }
+        }
+        checkAll("as imported")
+        app.selectedIds = [offlineRaw.id]
+        app.primaryId = offlineRaw.id
+        let offline = app.selectionSummary
+        assert(offline.hasLocalOriginal && !offline.hasPrimaryOriginal && demo.isDemo && demo.localPath == nil,
+               "an offline RAW still reaches its local JPEG, but has no original of its own to render")
+
+        var edit = DevelopSettings()
+        edit.exposure = 0.5
+        app.commitDevelop([previewOnly.id: edit], undoName: "check")
+        checkAll("with one edit")
+        app.commitDevelop([solo.id: edit, offlineRaw.id: edit, demo.id: edit], undoName: "check")
+        checkAll("with more edits than selected photos")
+
+        app.selectedIds = [offlineRaw.id, solo.id, previewOnly.id, demo.id]
+        app.primaryId = demo.id
+        app.view = .develop
+        assert(app.selectionSummary == expected() && !app.selectionSummary.hasDevelopable,
+               "in Develop only the photo on screen decides develop commands")
+        app.primaryId = solo.id
+        assert(app.selectionSummary == expected() && app.selectionSummary.hasDevelopEdit,
+               "Develop follows the photo on screen")
+        app.view = .grid
+
+        if let index = app.assets.firstIndex(where: { $0.id == solo.id }) { app.assets[index].status = .offline }
+        checkAll("after a photo goes offline")
+        app.pairRawAndJpeg = false
+        checkAll("with pairing off")
     }
 
     private static func checkRenameKeepsPairs() {
