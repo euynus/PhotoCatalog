@@ -5129,6 +5129,72 @@ final class AppState {
         mutate(undoName: "移除关键词") { $0.keywords.removeAll { $0 == kw } }
     }
 
+    /// Photos carrying `keyword` or anything under it, across the whole catalog.
+    func photoIds(withKeyword keyword: String) -> Set<String> {
+        Set(assets.lazy.filter { !$0.deleted && $0.keywords.contains { KeywordService.isWithin($0, keyword) } }
+            .map(\.id))
+    }
+
+    /// Renames a keyword and its sub-keywords on every photo; an existing name merges them.
+    @discardableResult
+    func renameKeyword(_ old: String, to new: String) -> Bool {
+        // never into its own subtree ("旅行" → "旅行/日本" would nest every keyword under itself)
+        guard let target = KeywordService.normalize(new).last, target != old,
+              !target.hasPrefix(old + "/") else { return false }
+        let ids = photoIds(withKeyword: old)
+        guard !ids.isEmpty,
+              mutate(ids, undoName: "重命名关键词", { $0.keywords = KeywordService.replacing(old, with: target, in: $0.keywords) })
+        else { return false }
+        if selection.type == .keyword, KeywordService.isWithin(selection.id, old) {
+            let renamed = target + selection.id.dropFirst(old.count)
+            select(Selection(type: .keyword, id: renamed, name: renamed))
+        }
+        push("已将「\(old)」重命名为「\(target)」· \(ids.count) 张照片", "tag")
+        return true
+    }
+
+    /// Removes a keyword and its sub-keywords from every photo.
+    @discardableResult
+    func deleteKeyword(_ keyword: String) -> Bool {
+        let ids = photoIds(withKeyword: keyword)
+        guard !ids.isEmpty,
+              mutate(ids, undoName: "删除关键词", { $0.keywords = KeywordService.replacing(keyword, with: nil, in: $0.keywords) })
+        else { return false }
+        if selection.type == .keyword, KeywordService.isWithin(selection.id, keyword) {
+            select(Selection(type: .lib, id: "all", name: "全部照片"))
+        }
+        push("已从 \(ids.count) 张照片中删除关键词「\(keyword)」", "tag")
+        return true
+    }
+
+    /// Asks for a new name; typing an existing keyword merges into it.
+    func promptRenameKeyword(_ keyword: String) {
+        let alert = NSAlert()
+        alert.messageText = "重命名关键词「\(keyword)」"
+        alert.informativeText = "用于 \(photoIds(withKeyword: keyword).count) 张照片，下级关键词一并更新。输入已有的关键词即合并。"
+        let field = NSTextField(string: keyword)
+        field.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        alert.addButton(withTitle: "重命名")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != keyword else { return }
+        if !renameKeyword(keyword, to: name) { push("无法重命名为「\(name)」", "warning") }
+    }
+
+    func confirmDeleteKeyword(_ keyword: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "删除关键词「\(keyword)」？"
+        alert.informativeText = "将从 \(photoIds(withKeyword: keyword).count) 张照片中移除它及其下级关键词。可以撤销。"
+        alert.addButton(withTitle: "删除")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        deleteKeyword(keyword)
+    }
+
     func removeSelected() {
         let ids = targetIds
         guard !ids.isEmpty else { return }

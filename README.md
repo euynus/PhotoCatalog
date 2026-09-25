@@ -45,6 +45,7 @@ Beyond the UI, the app has a working file→catalog pipeline:
 - **Missing detection** — originals are re-checked on launch and flagged `missing` if gone.
 - **Managed import** — optionally copy originals into `Originals/YYYY/MM/DD` (Settings → 导入模式).
 - **Memory-card import** — cards (any mounted volume with a DCIM folder) appear under 设备 in the sidebar and in the Import menu. Pick photos by day (ones already in the catalog are marked and left unchecked), copy them into dated folders (年 / 年-月-日), optionally rename with a template (RAW+JPEG pairs keep one name), keep a backup copy in a second location, apply keywords / author / copyright, and eject when done. The catalog references the copies, never the card.
+- **Keyword management** — right-click a keyword in the sidebar to rename it (sub-keywords follow; typing an existing keyword merges the two) or delete it from every photo; both are undoable.
 - **Metadata template** — author and copyright (with `{year}` from the capture date) applied to every import, alongside post-import keywords, color label and album.
 - **XMP sidecars** — read on import and written on export / on demand (rating, label, keywords, title, caption).
 - **Similar-photo detection** — perceptual dHash + Hamming distance adds 疑似重复 groups.

@@ -210,6 +210,10 @@ struct Sidebar: View {
             DisclosureGroup("关键词") {
                 ForEach(app.keywordList) { item in
                     row("tag", item.name, .keyword, item.name, badge: Text(item.count.formatted()))
+                        .contextMenu {
+                            Button("重命名 / 合并…") { app.promptRenameKeyword(item.name) }
+                            Button("删除关键词…", role: .destructive) { app.confirmDeleteKeyword(item.name) }
+                        }
                 }
             }
         }
