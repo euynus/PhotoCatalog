@@ -7,7 +7,7 @@ struct CompareView: View {
     @Environment(AppState.self) var app
     @State private var trayOpen = false
 
-    private var assets: [Asset] { app.compareIds.compactMap { id in app.assets.first { $0.id == id } } }
+    private var assets: [Asset] { app.compareIds.compactMap { app.asset(id: $0) } }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,9 +59,12 @@ struct CompareView: View {
     }
 
     private var tray: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        // the first few candidates only: filtering the whole list scanned every photo
+        let excluded = Set(app.compareIds)
+        let candidates = Array(app.list.lazy.filter { !excluded.contains($0.id) }.prefix(24))
+        return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                ForEach(app.list.filter { !app.compareIds.contains($0.id) }.prefix(24)) { a in
+                ForEach(candidates) { a in
                     Hover { hover in
                         Button {
                             app.addToCompare(a.id)

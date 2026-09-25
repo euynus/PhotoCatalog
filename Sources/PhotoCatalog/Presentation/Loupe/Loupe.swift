@@ -20,7 +20,7 @@ struct Loupe: View {
             VStack(spacing: 0) {
                 stage(asset)
                 hud(asset, idx: idx, count: list.count)
-                Filmstrip(list: list)
+                Filmstrip(photos: app.photoList, assetRevision: app.assetRenderVersion)
             }
             .background(Theme.canvas)
             .environment(\.colorScheme, .dark)
@@ -182,13 +182,16 @@ private struct LoupeZoomButton: View {
 /// The current collection as a horizontal strip; shared by Loupe and Develop.
 struct Filmstrip: View {
     @Environment(AppState.self) var app
-    let list: [Asset]
+    let photos: PhotoList
+    /// Bumped by every catalog edit: refreshes stars and flags, which `photos` ignores.
+    let assetRevision: Int
 
     var body: some View {
+        let _ = assetRevision
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 8) {
-                    ForEach(list) { a in
+                    ForEach(photos) { a in
                         Hover { hover in
                             Button { app.setPrimary(a.id) } label: {
                                 VStack(spacing: 4) {

@@ -16,7 +16,7 @@ struct DevelopView: View {
                 ContentUnavailableView("没有可修图的照片", systemImage: "slider.horizontal.3")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            if !list.isEmpty { Filmstrip(list: list) }
+            if !list.isEmpty { Filmstrip(photos: app.photoList, assetRevision: app.assetRenderVersion) }
         }
         .background(Theme.canvas)
         .environment(\.colorScheme, .dark)

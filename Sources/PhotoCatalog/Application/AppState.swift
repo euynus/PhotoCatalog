@@ -4563,7 +4563,18 @@ final class AppState {
         uncollapsedListCache = (signature, matching)
         let value = PhotoStackService.visibleAssets(matching, stacks: photoStacks, collapsedStackIds: collapsedStackIds)
         listCache = (signature, value)
+        listIdentity &+= 1
         return value
+    }
+
+    /// Changes whenever `list` is rebuilt (other photos or another order may follow), but not
+    /// when edits are patched into the same positions.
+    @ObservationIgnored private var listIdentity = 0
+
+    /// `list` for SwiftUI collections, with a constant-time equality (see `PhotoList`).
+    var photoList: PhotoList {
+        let value = list
+        return PhotoList(assets: value, identity: listIdentity)
     }
 
     private var currentListSignature: ListSignature {
@@ -4580,6 +4591,7 @@ final class AppState {
               sort == Sort(), collapsedStackIds.isEmpty else { return }
         listCache = (currentListSignature, loadedAssets)
         uncollapsedListCache = (currentListSignature, loadedAssets)
+        listIdentity &+= 1
     }
 
     private func computeList() -> [Asset] {

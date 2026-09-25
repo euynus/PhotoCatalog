@@ -10,8 +10,8 @@ struct GridView: View {
 
     var body: some View {
         let _ = assetRevision
-        let list = app.list
-        if list.isEmpty {
+        let photos = app.photoList
+        if photos.isEmpty {
             GridEmptyState(selectionName: app.selection.name,
                            search: app.search,
                            activeFilterCount: app.filters.activeCount) {
@@ -27,7 +27,7 @@ struct GridView: View {
                                     count: metrics.columns)
                 ScrollView {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: metrics.spacing) {
-                        ForEach(list) { asset in
+                        ForEach(photos) { asset in
                             let stack = app.stackInfo(for: asset)
                             let pair = app.companions(of: asset)
                             GridCell(asset: asset, size: metrics.cellSize,

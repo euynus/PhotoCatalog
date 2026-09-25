@@ -2,8 +2,43 @@ import AppKit
 
 enum InteractionCheck {
     static func run() {
-        MainActor.assumeIsolated { check() }
+        MainActor.assumeIsolated {
+            check()
+            checkPhotoListIdentity()
+        }
         print("--- interaction routing assertions passed ---")
+    }
+
+    /// Views compare `photoList` by identity alone, so an unchanged identity must always mean
+    /// the same photos in the same order, while edits patched into place keep it.
+    @MainActor
+    private static func checkPhotoListIdentity() {
+        let app = AppState.selfCheckFixture()
+        app.assets = Array(DemoData.assets.prefix(12)).map {
+            var asset = $0
+            asset.rating = 0
+            return asset
+        }
+        app.duplicateGroupsCache = []
+        app.select(Selection(type: .lib, id: "all", name: "Photo list check"))
+        let before = app.photoList
+        guard let first = before.first else { return assertionFailure("the fixture lists photos") }
+        app.setPrimary(first.id)
+        _ = app.handleKey("4", hasCommand: false)
+        let rated = app.photoList
+        assert(rated == before && rated.map(\.id) == before.map(\.id)
+               && rated.first { $0.id == first.id }?.rating == 4,
+               "a rating patched into the list keeps its identity and shows the new value")
+
+        app.setSort(Sort(field: .name, descending: true))
+        let resorted = app.photoList
+        assert(resorted != rated, "a new order is a new list")
+        var filters = app.filters
+        filters.minRating = 4
+        app.setFilters(filters)
+        let filtered = app.photoList
+        assert(filtered != resorted && filtered.map(\.id) == [first.id], "a filtered list is a new list")
+        assert(app.photoList == filtered, "reading an unchanged list keeps its identity")
     }
 
     @MainActor
