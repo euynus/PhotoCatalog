@@ -70,11 +70,15 @@ enum CaptureDates {
     }
 
     static func groups(_ assets: [Asset]) -> [CaptureDateBucket] {
-        var days: [Date: Int] = [:]
-        for asset in assets where !asset.deleted && asset.date.timeIntervalSince1970.isFinite {
-            days[Calendar.captureWallClock.startOfDay(for: asset.date), default: 0] += 1
+        // Capture times are UTC wall clock, so a photo's day is integer arithmetic; a Calendar
+        // call per photo was most of the half second this took at 500k photos.
+        var days: [Int: Int] = [:]
+        for asset in assets where !asset.deleted {
+            let seconds = asset.date.timeIntervalSince1970
+            guard seconds.isFinite else { continue }
+            days[Int((seconds / 86_400).rounded(.down)), default: 0] += 1
         }
-        let counts = days.map { (key: key($0.key), count: $0.value) }
+        let counts = days.map { (key: key(Date(timeIntervalSince1970: Double($0.key) * 86_400)), count: $0.value) }
         return buckets(counts, depth: 0)
     }
 
