@@ -1118,3 +1118,7 @@
 "检测到「%@」· 可从侧边栏“设备”导入" = "“%@” connected · Import it from Devices in the sidebar";
 "请解锁「%@」，并在设备上选择“信任”这台 Mac。" = "Unlock “%@” and choose to trust this Mac on the device.";
 "无法读取「%@」。请重新连接后再试。" = "Couldn't read “%@”. Reconnect it and try again.";
+
+/* Crash reports */
+"PhotoCatalog 上次意外退出" = "PhotoCatalog Quit Unexpectedly Last Time";
+"macOS 保存了一份崩溃报告，只在这台 Mac 上。把它发给开发者有助于修复问题。" = "macOS saved a crash report, kept only on this Mac. Sending it to the developer helps fix the problem.";

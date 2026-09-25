@@ -3028,6 +3028,25 @@ final class AppState {
              report.failed > 0 || persistenceFailed ? "warning" : "check")
     }
 
+    // ---------- crash reports ----------
+    /// After an unexpected quit, points to the report macOS saved. Only the app calls this.
+    func checkForCrashReport() {
+        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        let key = "pc_crashReportsCheckedAt"
+        let checked = UserDefaults.standard.object(forKey: key) as? Date
+        UserDefaults.standard.set(Date(), forKey: key)
+        // the first launch with this check only sets the mark; older reports aren't news
+        guard let checked, let report = CrashReports.find(bundleID: bundleID, since: checked).first else { return }
+        let alert = NSAlert()
+        alert.messageText = L("PhotoCatalog 上次意外退出")
+        alert.informativeText = L("macOS 保存了一份崩溃报告，只在这台 Mac 上。把它发给开发者有助于修复问题。")
+        alert.addButton(withTitle: L("在访达中显示"))
+        alert.addButton(withTitle: L("好"))
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.activateFileViewerSelecting([report])
+        }
+    }
+
     // ---------- language ----------
     /// Stores the language and offers to relaunch, since the interface switches at launch.
     func changeLanguage(_ language: AppLanguage) {

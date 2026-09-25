@@ -61,6 +61,7 @@ struct PhotoCatalogApp: App {
                 .onAppear {
                     app.startDeferredCatalogLoadingIfNeeded()
                     app.startDeviceBrowsing()
+                    app.checkForCrashReport()
                     delegate.openCatalogURL = { url in
                         app.openCatalogFromSystem(url)
                     }
