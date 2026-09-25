@@ -23,9 +23,11 @@ enum PathString {
 
     /// "/a/b/c.JPG" → ("/a/b/c", "JPG"); no extension → (path, "").
     static func splitExtension(_ path: String) -> (stem: Substring, ext: Substring) {
-        let nameStart = path.lastIndex(of: "/").map { path.index(after: $0) } ?? path.startIndex
+        // scan UTF-8 bytes ("/" and "." are ASCII), not grapheme clusters
+        let utf8 = path.utf8
+        let nameStart = utf8.lastIndex(of: UInt8(ascii: "/")).map { utf8.index(after: $0) } ?? utf8.startIndex
         // a leading dot names a hidden file, not an extension
-        guard let dot = path[nameStart...].lastIndex(of: "."), dot > nameStart else { return (path[...], "") }
+        guard let dot = utf8[nameStart...].lastIndex(of: UInt8(ascii: ".")), dot > nameStart else { return (path[...], "") }
         return (path[..<dot], path[path.index(after: dot)...])
     }
 
