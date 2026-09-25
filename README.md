@@ -94,7 +94,7 @@ The built-in demo dataset is a **bit-faithful port** of the prototype's seeded R
 
 > **Implemented vs. remaining (vs. PRD).** Done: catalog persistence (SQLite + FTS5), folder authorization + recursive scan, referenced **and** managed import, Image I/O metadata, XMP sidecar read/write, thumbnail/preview generation + cache (rebuild/clear), missing **and** offline-volume detection, exact **and** perceptual duplicate detection, on-device Vision scene tagging + face detection (人物 collection), FSEvents incremental watching, batch rename, batch capture-time shift, export, backup + health check, Places (map) view, search/filter/sort, ratings/flags/keywords/albums/smart-albums, and a Settings panel (§17). Deferred product integrations: Apple Photos import bridge, plugin system, Sparkle auto-update, and a fully-normalized keyword table (keywords are stored per-asset + FTS-indexed today).
 
-> **Scalability status.** A 100,000-row CR3 catalog fixture is covered by real app launch, grid, indexed search, and memory checks. The current `AppState` still keeps all asset metadata resident in memory, so the PRD's 500,000-row performance tier is not yet validated; database-backed paging or projections remain required before claiming that scale.
+> **Scalability status.** Measured at 500,000 photos with a synthetic catalog (`--scale`, Release build, Apple silicon, warm file cache): the first photos appear within a second of launch and the whole catalog is usable in ~5 s. Filtering, sorting, searching and switching collections respond in 0.1–0.35 s, and rating a photo in ~50 ms. Asset metadata stays resident in memory in a compact copy-on-write form (~1 GB at 500k photos) rather than being paged from SQLite.
 
 ## Build & run
 
@@ -110,7 +110,13 @@ script/build_and_run.sh selfcheck  # headless demo dataset checks
 script/build_and_run.sh pipeline   # headless end-to-end import checks
 ./.build/debug/PhotoCatalog --selfcheck --benchmark  # optional 100k synthetic metadata benchmark
 ./.build/debug/PhotoCatalog --import-memory-check "/path/to/sample.CR3" 200
+./.build/release/PhotoCatalog --scale 500000 /tmp/scale.photolibrary  # large-catalog benchmark
 ```
+
+The scale benchmark generates a synthetic catalog of the given size once (later runs
+reuse it), then times loading, list changes, counts and edits and reports memory.
+Build Release first (`CONFIGURATION=release script/build_and_run.sh build`); it edits
+the benchmark catalog, so never point it at a real library.
 
 The import memory check reads the supplied image through distinct temporary
 symlinks, exercises the real import pipeline without the UI, and removes its
