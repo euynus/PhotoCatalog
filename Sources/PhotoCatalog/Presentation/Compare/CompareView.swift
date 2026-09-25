@@ -35,6 +35,7 @@ struct CompareView: View {
                     .help("最佳 · \(winner.filename)")
             }
             Spacer(minLength: 0)
+            CompareZoomButton()
             Hover { hover in
                 Button { trayOpen.toggle() } label: {
                     Icon(trayOpen ? "close" : "plus", size: 13, weight: .medium)
@@ -131,10 +132,7 @@ struct ComparePanel: View {
     let isWinner: Bool
     var body: some View {
         VStack(spacing: 0) {
-            Thumb(asset: asset, urlString: asset.preview, kind: .preview2048, radius: 2, contentMode: .fit)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(8)
-                .background(Theme.canvas)
+            CompareZoomablePhoto(asset: asset)
             foot
         }
         .background(Theme.canvas)
@@ -227,6 +225,45 @@ struct ComparePanel: View {
             }.buttonStyle(.plain).help(flag == .pick ? "精选" : "拒绝")
                 .accessibilityLabel(flag == .pick ? "精选" : "拒绝")
                 .accessibilityAddTraits(on ? .isSelected : [])
+        }
+    }
+}
+
+/// Every panel reads and writes the same zoom, so focus checks stay linked; as its own view
+/// a pan re-renders just the photos, not the panels' rating controls.
+private struct CompareZoomablePhoto: View {
+    @Environment(AppState.self) private var app
+    let asset: Asset
+
+    var body: some View {
+        ZoomablePhoto(asset: asset, zoom: app.compareZoom) { app.compareZoom = $0 }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(app.compareZoom == nil ? 8 : 0)
+            .background(Theme.canvas)
+    }
+}
+
+private struct CompareZoomButton: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let zoomed = app.compareZoom != nil
+        Hover { hover in
+            Button { _ = app.toggleZoom() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: zoomed ? "minus.magnifyingglass" : "plus.magnifyingglass")
+                    Text(zoomed ? "联动 1:1" : "适合")
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.canvasText)
+                .padding(.horizontal, 7)
+                .frame(height: 28)
+                .background(hover ? Theme.canvasSurfaceHi : .clear, in: RoundedRectangle(cornerRadius: 4))
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .help(zoomed ? "缩放以适合 (Z / Esc)" : "所有照片联动放大到 1:1 (Z，或双击任一照片)")
+            .accessibilityLabel(zoomed ? "缩放以适合" : "联动放大到 1:1")
         }
     }
 }

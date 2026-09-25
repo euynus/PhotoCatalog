@@ -51,10 +51,8 @@ struct Loupe: View {
 
     private func stage(_ asset: Asset) -> some View {
         ZStack {
-            // Keep the loader alive across navigation.
-            Thumb(asset: asset, urlString: asset.preview, kind: .preview2048, radius: 2, contentMode: .fit)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(12)
+            // Keep the loaders alive across navigation; zoom persists between photos.
+            LoupeZoomablePhoto(asset: asset)
 
             // offline badge
             if asset.status == .offline {
@@ -126,6 +124,7 @@ struct Loupe: View {
                 }
                 .fixedSize()
                 Rectangle().fill(Theme.canvasLine).frame(width: 1, height: 16)
+                LoupeZoomButton()
                 HStack(spacing: 2) {
                     navButton("chevronL", label: "上一张", disabled: idx == 0) { go(-1) }
                     navButton("chevronR", label: "下一张", disabled: idx == count - 1) { go(1) }
@@ -191,5 +190,43 @@ struct Loupe: View {
                 if let id = app.primaryId { withAnimation { proxy.scrollTo(id, anchor: .center) } }
             }
         }
+    }
+}
+
+/// Reads the zoom itself so panning (which updates it continuously) re-renders only the photo.
+private struct LoupeZoomablePhoto: View {
+    @Environment(AppState.self) private var app
+    let asset: Asset
+
+    var body: some View {
+        ZoomablePhoto(asset: asset, zoom: app.loupeZoom) { app.loupeZoom = $0 }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(app.loupeZoom == nil ? 12 : 0)
+    }
+}
+
+private struct LoupeZoomButton: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let zoom = app.loupeZoom
+        Hover { hover in
+            Button { _ = app.toggleZoom() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: zoom == nil ? "plus.magnifyingglass" : "minus.magnifyingglass")
+                    Text(zoom.map { "\(Int(($0.scale * 100).rounded()))%" } ?? "适合")
+                        .monospacedDigit()
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.canvasText)
+                .padding(.horizontal, 7)
+                .frame(height: 28)
+                .background(hover ? Theme.canvasSurfaceHi : .clear, in: RoundedRectangle(cornerRadius: 4))
+            }
+            .buttonStyle(.plain)
+            .help(zoom == nil ? "放大到 1:1 (Z，或双击照片)" : "缩放以适合 (Z / Esc)")
+            .accessibilityLabel(zoom == nil ? "放大到 1:1" : "缩放以适合")
+        }
+        .fixedSize()
     }
 }

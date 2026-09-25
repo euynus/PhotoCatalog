@@ -18,8 +18,8 @@ appearance (Settings → 外观), a neutral dark photo canvas in every mode, and
 - **Sidebar** — 资料库 (全部 / 最近导入 / 未评分 / 精选 / 被拒绝 / 缺失·离线 / 重复文件), 文件夹, 相册, 智能相册, 关键词 — all with live counts.
 - **RAW+JPEG pairs** — a RAW and its same-name JPEG/HEIC in one folder show as one photo; ratings, flags, keywords, time shifts, deletion and batch rename act on both files (Settings → 导入 to list them separately).
 - **Grid view** — borderless photo tiles that fill each row, adjustable thumbnail size, offline/missing badges, color labels, flags, star ratings, accent-ring multi-select.
-- **Loupe** — single-photo view with bottom HUD and a filmstrip of the current collection.
-- **Compare** — 2–4 photos side by side, per-photo rating/flags, "选为最佳" winner.
+- **Loupe** — single-photo view with bottom HUD and a filmstrip; zoom to 1:1 (double-click or `Z`), drag or pinch to pan, and the zoom holds while stepping through a burst. Full resolution decodes on demand, from the paired JPEG when there is one.
+- **Compare** — 2–4 photos side by side with linked 1:1 zoom and pan, per-photo rating/flags, "选为最佳" winner.
 - **Capture dates** — year/month/day navigation, relative-date presets, and inclusive custom date ranges that can be saved as smart albums.
 - **Capture analysis** — camera, lens, focal length, aperture, shutter and ISO distributions for filtered results or selected photos; cancellable background aggregation rejects stale results and reports missing metadata separately.
 - **Inspector** — header with focal length / aperture / shutter / ISO at a glance, then Info / Metadata (EXIF, GPS, maker notes) / Organize (rating, flags, color, keywords, title, caption) / History.
@@ -28,7 +28,7 @@ appearance (Settings → 外观), a neutral dark photo canvas in every mode, and
 - **Import / scan** — animated scan→import progress with a 5-stat panel and a thumbnail wall.
 - **First-launch / Welcome** — catalog creation card with recents.
 - **Interactions** — click / ⌘-click / ⇧-click selection, live search, filter bar, sort, toasts, and keyboard shortcuts:
-  `1–5` rate · `0` clear · `P/X/U` flags · `6–9` color · `G/E/C/A` views · arrows navigate · `Return` loupe · `Esc` close panels · `F` filters · `I` thumbnail info · `⌘F` search · `⌘I` inspector · `⌘N/⌘O` catalog · `⇧⌘I` import · `⌘E` export · `⇧⌘E` preview export · `⌘R` rescan · `⌘B` backup · `⌘,` settings · `⌘+/-/0` thumbnail size · `⌫` remove · `⌘⌫` trash originals.
+  `1–5` rate · `0` clear · `P/X/U` flags · `6–9` color · `G/E/C/A` views · `Z` zoom 1:1 (double-click too; linked across Compare) · arrows navigate · `Return` loupe · `Esc` close panels · `F` filters · `I` thumbnail info · `⌘F` search · `⌘I` inspector · `⌘N/⌘O` catalog · `⇧⌘I` import · `⌘E` export · `⇧⌘E` preview export · `⌘R` rescan · `⌘B` backup · `⌘,` settings · `⌘+/-/0` thumbnail size · `⌫` remove · `⌘⌫` trash originals.
 
 ### Real catalog backend (PRD Infrastructure layer, §11)
 

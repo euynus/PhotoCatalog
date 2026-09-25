@@ -37,7 +37,7 @@ enum InteractionCheck {
                "handled shortcuts are consumed exactly once, never repeated by the menu")
 
         calls = 0
-        let unhandled = event("z", keyCode: 6)
+        let unhandled = event("q", keyCode: 12)
         assert(route(unhandled) === unhandled && calls == 1,
                "unhandled events retain their identity after one handler call")
         let find = event("f", keyCode: 3, modifiers: .command)
@@ -121,6 +121,16 @@ enum InteractionCheck {
         assert(app.mutate([ids[0]]) { $0.deleted = true }
                && app.captureDateGroups.reduce(0) { $0 + $1.count } == datedBefore - 1,
                "structural edits still rebuild the capture-date tree")
+
+        app.view = .grid
+        app.selectCell(ids[1], shift: false, meta: false)
+        assert(app.handleKey("z", hasCommand: false) && app.view == .loupe && app.loupeZoom == .actualSize,
+               "Z from the grid opens the photo at 1:1")
+        assert(app.handleKey("right", hasCommand: false) && app.loupeZoom == .actualSize,
+               "stepping to the next photo keeps the zoom")
+        assert(app.handleKey("escape", hasCommand: false) && app.view == .loupe && app.loupeZoom == nil,
+               "Esc leaves zoom before leaving Loupe")
+        assert(app.handleKey("escape", hasCommand: false) && app.view == .grid, "a second Esc returns to the grid")
     }
 
     private static func event(_ characters: String, keyCode: UInt16,

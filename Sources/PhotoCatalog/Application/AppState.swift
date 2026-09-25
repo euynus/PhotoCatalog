@@ -462,6 +462,27 @@ final class AppState {
     // ----- compare -----
     var compareIds: [String] = []
     var winner: String?
+    /// nil = fit. Kept while stepping through photos so a burst can be checked at one spot.
+    var loupeZoom: ImageZoom?
+    /// Shared by every Compare panel, so zoom and pan stay linked across them.
+    var compareZoom: ImageZoom?
+
+    /// Z: fit ↔ 1:1 in Loupe and Compare; from the grid it opens the photo at 1:1.
+    func toggleZoom() -> Bool {
+        switch view {
+        case .grid:
+            guard let primaryId else { return false }
+            openLoupe(primaryId)
+            loupeZoom = .actualSize
+        case .loupe:
+            loupeZoom = loupeZoom == nil ? .actualSize : nil
+        case .compare:
+            compareZoom = compareZoom == nil ? .actualSize : nil
+        case .analysis:
+            return false
+        }
+        return true
+    }
 
     // ----- sheets / toasts -----
     var sheet: String? {
@@ -514,6 +535,14 @@ final class AppState {
         }
         if filterOpen {
             filterOpen = false
+            return true
+        }
+        if view == .loupe, loupeZoom != nil {
+            loupeZoom = nil
+            return true
+        }
+        if view == .compare, compareZoom != nil {
+            compareZoom = nil
             return true
         }
         if view != .grid {
@@ -3826,6 +3855,7 @@ final class AppState {
     func openLoupe(_ id: String) {
         primaryId = id
         selectedIds = [id]
+        loupeZoom = nil
         view = .loupe
     }
 
@@ -4690,6 +4720,8 @@ final class AppState {
             view = (view == .loupe) ? .grid : .loupe
         case "c":
             enterCompare()
+        case "z":
+            guard toggleZoom() else { return false }
         case "a":
             switchView(.analysis)
         case "i":
