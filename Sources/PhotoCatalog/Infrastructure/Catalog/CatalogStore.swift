@@ -105,7 +105,7 @@ struct AssetPage: Sendable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    static let latestSchemaVersion = 18
+    static let latestSchemaVersion = 19
     let packageURL: URL
     let db: Database
 
@@ -259,6 +259,27 @@ final class CatalogStore: @unchecked Sendable {
             );
             """)
             try recordMigration(18)
+        }
+        if current < 19 {
+            // faces found by on-device Vision; face_scans remembers photos already looked at,
+            // including those without faces
+            try db.execChecked("""
+            CREATE TABLE IF NOT EXISTS faces (
+              id TEXT PRIMARY KEY,
+              asset_id TEXT NOT NULL,
+              x REAL NOT NULL, y REAL NOT NULL, w REAL NOT NULL, h REAL NOT NULL,
+              quality REAL NOT NULL DEFAULT 0,
+              vector BLOB NOT NULL,
+              person TEXT,
+              confirmed INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_faces_asset ON faces(asset_id);
+            CREATE TABLE IF NOT EXISTS face_scans (
+              asset_id TEXT PRIMARY KEY,
+              scanned_at TEXT NOT NULL
+            );
+            """)
+            try recordMigration(19)
         }
     }
 
@@ -857,6 +878,58 @@ final class CatalogStore: @unchecked Sendable {
                     ON CONFLICT(asset_id) DO UPDATE SET settings=excluded.settings, updated_at=excluded.updated_at;
                     """, [.text(id), .text(json), .text(Self.iso(.now))])
                 }
+            }
+        }
+    }
+
+    // ---------- faces ----------
+    func loadFaces() throws -> [FaceRecord] {
+        try db.query("SELECT id, asset_id, x, y, w, h, quality, vector, person, confirmed FROM faces;").compactMap { row in
+            guard let id = row.text("id"), let assetId = row.text("asset_id"), let blob = row.blob("vector") else {
+                return nil
+            }
+            let vector = blob.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+            return FaceRecord(id: id, assetId: assetId,
+                              box: CGRect(x: row.double("x") ?? 0, y: row.double("y") ?? 0,
+                                          width: row.double("w") ?? 0, height: row.double("h") ?? 0),
+                              quality: Float(row.double("quality") ?? 0), vector: vector,
+                              person: row.text("person"), confirmed: (row.int("confirmed") ?? 0) != 0)
+        }
+    }
+
+    func loadFaceScannedAssetIds() throws -> Set<String> {
+        Set(try db.query("SELECT asset_id FROM face_scans;").compactMap { $0.text("asset_id") })
+    }
+
+    /// Records a scan of each asset (replacing earlier faces for it) in one transaction.
+    func saveFaceScans(_ scans: [String: [FaceRecord]]) throws {
+        let now = Self.iso(.now)
+        try db.transaction {
+            for (assetId, faces) in scans {
+                try db.run("DELETE FROM faces WHERE asset_id=?;", [.text(assetId)])
+                for face in faces {
+                    let blob = face.vector.withUnsafeBufferPointer { Data(buffer: $0) }
+                    try db.run("""
+                    INSERT INTO faces(id, asset_id, x, y, w, h, quality, vector, person, confirmed)
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """, [.text(face.id), .text(assetId), .double(face.box.minX), .double(face.box.minY),
+                          .double(face.box.width), .double(face.box.height), .double(Double(face.quality)),
+                          .blob(blob), face.person.map { .text($0) } ?? .null, .int(face.confirmed ? 1 : 0)])
+                }
+                try db.run("""
+                INSERT INTO face_scans(asset_id, scanned_at) VALUES(?, ?)
+                ON CONFLICT(asset_id) DO UPDATE SET scanned_at=excluded.scanned_at;
+                """, [.text(assetId), .text(now)])
+            }
+        }
+    }
+
+    /// Names (or with nil, un-names) faces.
+    func setFacePeople(_ changes: [String: (person: String?, confirmed: Bool)]) throws {
+        try db.transaction {
+            for (id, change) in changes {
+                try db.run("UPDATE faces SET person=?, confirmed=? WHERE id=?;",
+                           [change.person.map { .text($0) } ?? .null, .int(change.confirmed ? 1 : 0), .text(id)])
             }
         }
     }

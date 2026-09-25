@@ -1243,6 +1243,7 @@ final class AppState {
 
     private func restoreAlbums(from store: CatalogStore, assets: [Asset]) {
         developSettings = (try? store.loadDevelopSettings()) ?? [:]
+        loadFaces(from: store)
         albums = (try? store.loadAlbums()) ?? []
         let loadedSmartAlbums = (try? store.loadSmartAlbums()) ?? []
         smartAlbums = loadedSmartAlbums.map { album in
@@ -3632,6 +3633,7 @@ final class AppState {
         smartAlbums = DemoData.initialSmartAlbums(a)
         folders = DemoData.folders
         developSettings = [:]
+        clearFaces()
         sourceRootPathsById = [:]
         sourceManagementModesById = [:]
         duplicateGroupsCache = DemoData.duplicateGroups
@@ -3648,6 +3650,7 @@ final class AppState {
     private func resetToEmptyCatalog() {
         duplicateRecomputeGeneration &+= 1
         developSettings = [:]
+        clearFaces()
         assets = []
         albums = []
         smartAlbums = []
@@ -4510,6 +4513,14 @@ final class AppState {
     }
 
     // Self-checks must exercise interactions, not the launch-loading guard.
+    /// A fixture backed by a scratch catalog, for checks of catalog-persisted features. It never
+    /// goes through openCatalog, which would remember the scratch catalog in preferences.
+    static func selfCheckFixture(store: CatalogStore) -> AppState {
+        let app = selfCheckFixture()
+        app.store = store
+        return app
+    }
+
     static func selfCheckFixture() -> AppState {
         let app = AppState(arguments: [], deferCatalogLoading: true)
         app.deferredCatalogArguments = nil
@@ -5222,6 +5233,323 @@ final class AppState {
         return applied
     }
 
+    // ---------- people: faces found on device, grouped and named ----------
+    /// Faces by id, loaded with the catalog; views observe `facesRevision`.
+    @ObservationIgnored private(set) var faces: [String: FaceRecord] = [:]
+    @ObservationIgnored private var faceScannedAssetIds: Set<String> = []
+    var facesRevision = 0
+    /// Unnamed faces in likely-one-person groups, largest first.
+    var faceClusters: [FaceCluster] = []
+    /// Progress while photos are being analysed.
+    var faceAnalysis: (done: Int, total: Int)?
+    @ObservationIgnored private var faceAnalysisGeneration = 0
+    @ObservationIgnored private var peopleCache: (revision: Int, people: [PersonSummary])?
+    /// One photo at a time, off the cooperative pool: originals without a preview may be RAWs.
+    private static let faceQueue = DispatchQueue(label: "PhotoCatalog.faces", qos: .utility)
+
+    struct PersonSummary: Identifiable, Equatable {
+        let name: String
+        let faceIds: [String]
+        let photoCount: Int
+        let coverFaceId: String
+        /// Faces matched automatically and not yet confirmed.
+        let unconfirmed: Int
+        var id: String { name }
+    }
+
+    func loadFaces(from store: CatalogStore) {
+        let loaded = (try? store.loadFaces()) ?? []
+        faces = Dictionary(loaded.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        faceScannedAssetIds = (try? store.loadFaceScannedAssetIds()) ?? []
+        faceClusters = []
+        facesRevision &+= 1
+        refreshFaceClusters()
+    }
+
+    private func clearFaces() {
+        faceAnalysisGeneration &+= 1
+        faceAnalysis = nil
+        faces = [:]
+        faceScannedAssetIds = []
+        faceClusters = []
+        facesRevision &+= 1
+    }
+
+    /// Named people, most photographed first.
+    var people: [PersonSummary] {
+        _ = facesRevision
+        if let cache = peopleCache, cache.revision == facesRevision { return cache.people }
+        var byPerson: [String: [FaceRecord]] = [:]
+        for face in faces.values {
+            if let person = face.person { byPerson[person, default: []].append(face) }
+        }
+        let result = byPerson.map { name, faces in
+            let best = faces.max { ($0.confirmed ? 1 : 0, $0.quality) < ($1.confirmed ? 1 : 0, $1.quality) }!
+            return PersonSummary(name: name, faceIds: faces.map(\.id),
+                                 photoCount: Set(faces.filter(\.confirmed).map(\.assetId)).count,
+                                 coverFaceId: best.id, unconfirmed: faces.filter { !$0.confirmed }.count)
+        }
+        .sorted { ($0.photoCount, $1.name) > ($1.photoCount, $0.name) }
+        peopleCache = (facesRevision, result)
+        return result
+    }
+
+    /// Photos not yet analysed (a RAW's paired JPEG is covered by the RAW).
+    var faceUnscannedCount: Int {
+        _ = facesRevision
+        return presentedAssets().filter { !$0.isDemo && !faceScannedAssetIds.contains($0.id) }.count
+    }
+
+    var faceScannedCount: Int {
+        _ = facesRevision
+        return faceScannedAssetIds.count
+    }
+
+    func face(_ id: String) -> FaceRecord? { faces[id] }
+
+    func asset(id: String) -> Asset? { assetIndex[id].map { assets[$0] } }
+
+    /// A person's photos in the grid, through their `人物/名字` keyword.
+    func showPhotos(of person: String) {
+        select(Selection(type: .keyword, id: FaceClustering.keyword(for: person), name: person))
+        view = .grid
+    }
+
+    /// Re-groups unnamed faces off the main thread.
+    private func refreshFaceClusters() {
+        let unnamed = faces.values.filter { $0.person == nil }
+        let revision = facesRevision
+        Task.detached(priority: .utility) { [weak self] in
+            let clusters = FaceClustering.clusters(unnamed)
+            await MainActor.run { [weak self] in
+                guard let self, self.facesRevision == revision else { return }
+                self.faceClusters = clusters
+            }
+        }
+    }
+
+    /// Looks for faces in every photo not analysed yet — from the cached preview, else the
+    /// original — then names new faces that closely match someone already named.
+    func startFaceAnalysis() {
+        guard faceAnalysis == nil, store != nil else { return }
+        let pending = presentedAssets().filter { !$0.isDemo && !faceScannedAssetIds.contains($0.id) }
+        guard !pending.isEmpty else { return }
+        faceAnalysisGeneration &+= 1
+        let generation = faceAnalysisGeneration
+        faceAnalysis = (0, pending.count)
+        let inputs = pending.map { asset in
+            (id: asset.id, preview: asset.preview.hasPrefix("http") ? "" : asset.preview, original: asset.localPath ?? "",
+             isRaw: asset.isRaw)
+        }
+        Self.faceQueue.async { [weak self] in
+            var batch: [String: [FaceRecord]] = [:]
+            for (index, input) in inputs.enumerated() {
+                let usePreview = !input.preview.isEmpty && FileManager.default.fileExists(atPath: input.preview)
+                let path = usePreview ? input.preview : input.original
+                let detected = path.isEmpty ? nil : autoreleasepool {
+                    FaceService.faces(in: URL(fileURLWithPath: path), embeddedPreview: !usePreview && input.isRaw)
+                }
+                if let detected {   // an unreadable photo stays unscanned for a later try
+                    batch[input.id] = detected.enumerated().map { offset, face in
+                        FaceRecord(id: "\(input.id)-f\(offset)", assetId: input.id, box: face.box,
+                                   quality: face.quality, vector: face.vector)
+                    }
+                }
+                let last = index == inputs.count - 1
+                if batch.count >= 24 || last {
+                    let chunk = batch
+                    batch = [:]
+                    let done = index + 1
+                    let keepGoing = DispatchQueue.main.sync {
+                        MainActor.assumeIsolated { self?.recordFaceScans(chunk, done: done, generation: generation) ?? false }
+                    }
+                    if !keepGoing { return }
+                }
+            }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.finishFaceAnalysis(generation: generation) }
+            }
+        }
+    }
+
+    func cancelFaceAnalysis() {
+        faceAnalysisGeneration &+= 1
+        faceAnalysis = nil
+    }
+
+    /// Saves a batch of scans; false stops the worker (cancelled or the catalog changed).
+    private func recordFaceScans(_ scans: [String: [FaceRecord]], done: Int, generation: Int) -> Bool {
+        guard generation == faceAnalysisGeneration, let store else { return false }
+        do {
+            try store.saveFaceScans(scans)
+        } catch {
+            push("保存人脸分析结果失败", "warning")
+            faceAnalysis = nil
+            return false
+        }
+        for (assetId, found) in scans {
+            faceScannedAssetIds.insert(assetId)
+            for face in found { faces[face.id] = face }
+        }
+        faceAnalysis?.done = done
+        facesRevision &+= 1
+        // groups fill in as the analysis goes, not only at the end
+        if done / 240 != (done - scans.count) / 240 { refreshFaceClusters() }
+        return true
+    }
+
+    private func finishFaceAnalysis(generation: Int) {
+        guard generation == faceAnalysisGeneration else { return }
+        faceAnalysis = nil
+        let unnamed = faces.values.filter { $0.person == nil }
+        let matches = FaceClustering.matches(for: unnamed, named: Array(faces.values))
+        if !matches.isEmpty {
+            applyFaceNames(matches.mapValues { ($0, false) }, undoName: nil)
+            push("找到 \(matches.count) 张可能是已命名人物的人脸，请在“人物”中确认", "person")
+        }
+        refreshFaceClusters()
+    }
+
+    /// Names a group of faces (merging into anyone already called `name`) and tags their photos.
+    func nameFaces(_ ids: [String], as rawName: String) {
+        let name = FaceClustering.cleanName(rawName)
+        guard !name.isEmpty, !ids.isEmpty else { return }
+        applyFaceNames(Dictionary(uniqueKeysWithValues: ids.map { ($0, (name, true)) }), undoName: "命名人物")
+    }
+
+    /// Confirms a person's suggested faces (all of them, or just `ids`).
+    func confirmFaces(of person: String, ids: [String]? = nil) {
+        let targets = ids ?? faces.values.filter { $0.person == person && !$0.confirmed }.map(\.id)
+        applyFaceNames(Dictionary(uniqueKeysWithValues: targets.map { ($0, (person, true)) }), undoName: "确认人物")
+    }
+
+    /// "Not this person": the face goes back to the unnamed groups, and the photo loses the
+    /// person's keyword unless another face in it is the same person.
+    func removeFaceFromPerson(_ id: String) {
+        guard let face = faces[id], face.person != nil else { return }
+        setFaceStates([id: (nil, false)], undoName: "不是此人")
+        refreshFaceClusters()
+    }
+
+    /// Person names on faces, plus the matching `人物/…` keywords on their photos; one undo step.
+    private func applyFaceNames(_ changes: [String: (String, Bool)], undoName: String?) {
+        guard !changes.isEmpty else { return }
+        setFaceStates(changes.mapValues { (person: Optional($0.0), confirmed: $0.1) }, undoName: undoName)
+        faceClusters = faceClusters.compactMap { cluster in
+            let rest = cluster.faceIds.filter { changes[$0] == nil }
+            return rest.isEmpty ? nil : FaceCluster(id: rest.contains(cluster.id) ? cluster.id : rest[0], faceIds: rest)
+        }
+    }
+
+    /// Writes face names and keeps photo keywords in step: a photo carries `人物/名字` exactly
+    /// when one of its faces is named so.
+    private func setFaceStates(_ changes: [String: (person: String?, confirmed: Bool)], undoName: String?) {
+        guard let store else { return }
+        let before = Dictionary(uniqueKeysWithValues: changes.keys.compactMap { id in
+            faces[id].map { (id, (person: $0.person, confirmed: $0.confirmed)) }
+        })
+        do {
+            try store.setFacePeople(changes)
+        } catch {
+            push("保存人物失败", "warning")
+            return
+        }
+        var touchedAssets = Set<String>()
+        var names = Set<String>()
+        for (id, change) in changes {
+            guard var face = faces[id] else { continue }
+            if let person = face.person { names.insert(person) }
+            if let person = change.person { names.insert(person) }
+            face.person = change.person
+            face.confirmed = change.confirmed
+            faces[id] = face
+            touchedAssets.insert(face.assetId)
+        }
+        facesRevision &+= 1
+        syncPersonKeywords(for: touchedAssets, names: names)
+        guard let undoName, let undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { app in
+            MainActor.assumeIsolated {
+                app.setFaceStates(before, undoName: undoName)
+                app.refreshFaceClusters()
+            }
+        }
+        undoManager.setActionName(undoName)
+    }
+
+    /// Makes the `人物/名字` keywords of `names` match the confirmed faces on each photo (and
+    /// its paired JPEG). Suggestions wait for confirmation, and only these names are touched,
+    /// so person keywords typed by hand survive.
+    private func syncPersonKeywords(for assetIds: Set<String>, names: Set<String>) {
+        guard !names.isEmpty else { return }
+        var present: [String: Set<String>] = [:]
+        for face in faces.values where assetIds.contains(face.assetId) {
+            if face.confirmed, let person = face.person, names.contains(person) {
+                present[face.assetId, default: []].insert(person)
+            }
+        }
+        var wanted: [String: Set<String>] = [:]
+        for id in assetIds {
+            for member in withCompanions([id]) { wanted[member, default: []].formUnion(present[id] ?? []) }
+        }
+        let managed = Set(names.map(FaceClustering.keyword))
+        let root = FaceClustering.keywordRoot
+        let changed = Set(wanted.keys.filter { id in
+            guard let index = assetIndex[id] else { return false }
+            let keywords = assets[index].keywords
+            let current = Set(keywords).intersection(managed)
+            let orphanedRoot = keywords.contains(root) && !keywords.contains { $0.hasPrefix(root + "/") }
+            return orphanedRoot || current != Set((wanted[id] ?? []).map(FaceClustering.keyword))
+        })
+        guard !changed.isEmpty else { return }
+        // keywords follow the faces; the face edit carries the undo
+        let registered = undoManager
+        undoManager = nil
+        mutate(changed) { asset in
+            var keywords = asset.keywords.filter { !managed.contains($0) }
+            keywords += (wanted[asset.id] ?? []).sorted().map(FaceClustering.keyword)
+            // the bare 人物 parent goes once nothing sits under it
+            if !keywords.contains(where: { $0.hasPrefix(root + "/") }) { keywords.removeAll { $0 == root } }
+            asset.keywords = KeywordService.normalize(keywords)
+        }
+        undoManager = registered
+    }
+
+    /// Keeps face names in step when a `人物/…` keyword is renamed or deleted from the sidebar.
+    private func syncFacesAfterKeywordChange(old: String, new: String?, undoName: String) {
+        guard let oldPerson = FaceClustering.person(fromKeyword: old) else {
+            // renaming or deleting the whole 人物 branch touches every person
+            guard old == FaceClustering.keywordRoot else { return }
+            var changes: [String: (person: String?, confirmed: Bool)] = [:]
+            for face in faces.values {
+                guard let person = face.person else { continue }
+                let renamed = new.flatMap { FaceClustering.person(fromKeyword: $0 + "/" + person) }
+                changes[face.id] = (renamed, renamed == nil ? false : face.confirmed)
+            }
+            if !changes.isEmpty { setFaceStates(changes, undoName: undoName) }
+            return
+        }
+        let newPerson = new.flatMap(FaceClustering.person(fromKeyword:))
+        var changes: [String: (person: String?, confirmed: Bool)] = [:]
+        for face in faces.values where face.person == oldPerson {
+            changes[face.id] = (newPerson, newPerson == nil ? false : face.confirmed)
+        }
+        guard !changes.isEmpty else { return }
+        // same undo group as the keyword edit, so undo restores both together
+        setFaceStates(changes, undoName: undoName)
+        if newPerson == nil { refreshFaceClusters() }
+    }
+
+    func renamePerson(_ old: String, to new: String) {
+        let name = FaceClustering.cleanName(new)
+        guard !name.isEmpty, name != old else { return }
+        renameKeyword(FaceClustering.keyword(for: old), to: FaceClustering.keyword(for: name))
+    }
+
+    func deletePerson(_ name: String) {
+        deleteKeyword(FaceClustering.keyword(for: name))
+    }
+
     /// Photos carrying `keyword` or anything under it, across the whole catalog.
     func photoIds(withKeyword keyword: String) -> Set<String> {
         Set(assets.lazy.filter { !$0.deleted && $0.keywords.contains { KeywordService.isWithin($0, keyword) } }
@@ -5238,6 +5566,7 @@ final class AppState {
         guard !ids.isEmpty,
               mutate(ids, undoName: "重命名关键词", { $0.keywords = KeywordService.replacing(old, with: target, in: $0.keywords) })
         else { return false }
+        syncFacesAfterKeywordChange(old: old, new: target, undoName: "重命名关键词")
         if selection.type == .keyword, KeywordService.isWithin(selection.id, old) {
             let renamed = target + selection.id.dropFirst(old.count)
             select(Selection(type: .keyword, id: renamed, name: renamed))
@@ -5253,6 +5582,7 @@ final class AppState {
         guard !ids.isEmpty,
               mutate(ids, undoName: "删除关键词", { $0.keywords = KeywordService.replacing(keyword, with: nil, in: $0.keywords) })
         else { return false }
+        syncFacesAfterKeywordChange(old: keyword, new: nil, undoName: "删除关键词")
         if selection.type == .keyword, KeywordService.isWithin(selection.id, keyword) {
             select(Selection(type: .lib, id: "all", name: "全部照片"))
         }

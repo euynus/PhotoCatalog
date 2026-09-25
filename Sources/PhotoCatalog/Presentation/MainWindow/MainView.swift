@@ -116,7 +116,15 @@ private struct DetailTitles: ViewModifier {
     func body(content: Content) -> some View {
         content
             .navigationTitle(app.selection.name)
-            .navigationSubtitle("\(app.catalogDisplayName) · \(app.contentAssetCount.formatted()) 张照片")
+            .navigationSubtitle(subtitle)
+    }
+
+    private var subtitle: String {
+        if app.isPeople && app.view == .grid && app.hasOpenCatalog {
+            let groups = app.faceClusters.filter { $0.faceIds.count > 1 }.count
+            return "\(app.catalogDisplayName) · \(app.people.count) 位人物 · \(groups) 组未命名"
+        }
+        return "\(app.catalogDisplayName) · \(app.contentAssetCount.formatted()) 张照片"
     }
 }
 
@@ -161,6 +169,8 @@ struct ContentColumn: View {
             DuplicatesView()
         } else if app.isPlaces && app.view == .grid {
             PlacesMapView()
+        } else if app.isPeople && app.view == .grid && app.hasOpenCatalog {
+            PeopleView()
         } else {
             switch app.view {
             case .grid: GridView(assetRevision: assetRevision)
