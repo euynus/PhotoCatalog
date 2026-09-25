@@ -11,7 +11,8 @@ import Foundation
 struct FileNameSortKey: Comparable {
     private let head0: UInt64
     private let head1: UInt64
-    /// Encoded bytes after the first 16 — empty for most camera file names.
+    private let head2: UInt64
+    /// Encoded bytes after the first 24 — empty for most camera file names.
     private let tail: [UInt8]
 
     /// Digit runs: this marker (between punctuation and letters), their length, then the digits
@@ -19,46 +20,59 @@ struct FileNameSortKey: Comparable {
     private static let numberMarker: UInt8 = 0x61
 
     init(_ name: String) {
-        var bytes: [UInt8] = []
-        bytes.reserveCapacity(name.utf8.count + 4)
-        var digits: [UInt8] = []
-        func flushDigits() {
-            guard !digits.isEmpty else { return }
-            var significant = digits.drop { $0 == 0x30 }
-            if significant.isEmpty { significant = digits.suffix(1) }   // "000" is "0"
-            bytes.append(Self.numberMarker)
-            bytes.append(UInt8(min(significant.count, 255)))
-            bytes.append(contentsOf: significant)
-            digits.removeAll(keepingCapacity: true)
+        if let key = name.utf8.withContiguousStorageIfAvailable({ Self(utf8: $0) }) {
+            self = key
+        } else {
+            self = Array(name.utf8).withUnsafeBufferPointer { Self(utf8: $0) }
         }
-        for byte in name.utf8 {
-            if (0x30...0x39).contains(byte) {
-                digits.append(byte)
-                continue
+    }
+
+    /// Encodes into a stack buffer: a name costs no allocation unless it is unusually long.
+    private init(utf8 source: UnsafeBufferPointer<UInt8>) {
+        (head0, head1, head2, tail) = withUnsafeTemporaryAllocation(of: UInt8.self, capacity: source.count * 2 + 2) {
+            out -> (UInt64, UInt64, UInt64, [UInt8]) in
+            var length = 0
+            var index = 0
+            while index < source.count {
+                let byte = source[index]
+                if (0x30...0x39).contains(byte) {
+                    var end = index
+                    while end < source.count, (0x30...0x39).contains(source[end]) { end += 1 }
+                    var first = index
+                    while first < end - 1, source[first] == 0x30 { first += 1 }   // "007" is "7", "000" is "0"
+                    out[length] = Self.numberMarker
+                    out[length + 1] = UInt8(min(end - first, 255))
+                    length += 2
+                    for digit in first..<end {
+                        out[length] = source[digit]
+                        length += 1
+                    }
+                    index = end
+                    continue
+                }
+                switch byte {
+                case 0x41...0x5A: out[length] = byte + 0x21   // upper → lower, above the number marker
+                case 0x61...0x7A: out[length] = byte + 1      // letters above the number marker
+                case 0x7B...0x7E: out[length] = byte - 0x20   // { | } ~ with the other symbols
+                case 0x00...0x1F: out[length] = 0x01          // never 0: zero is the packing pad
+                default: out[length] = byte                   // punctuation below digits, non-ASCII after letters
+                }
+                length += 1
+                index += 1
             }
-            flushDigits()
-            switch byte {
-            case 0x41...0x5A: bytes.append(byte + 0x21)   // upper → lower, above the number marker
-            case 0x61...0x7A: bytes.append(byte + 1)      // letters above the number marker
-            case 0x7B...0x7E: bytes.append(byte - 0x20)   // { | } ~ with the other symbols
-            case 0x00...0x1F: bytes.append(0x01)          // never 0: zero is the packing pad
-            default: bytes.append(byte)                   // punctuation below digits, non-ASCII after letters
+            func pack(_ offset: Int) -> UInt64 {
+                var value: UInt64 = 0
+                for index in offset..<offset + 8 { value = value << 8 | UInt64(index < length ? out[index] : 0) }
+                return value
             }
+            return (pack(0), pack(8), pack(16), length > 24 ? Array(out[24..<length]) : [])
         }
-        flushDigits()
-        func pack(_ range: Range<Int>) -> UInt64 {
-            var value: UInt64 = 0
-            for index in range { value = value << 8 | UInt64(index < bytes.count ? bytes[index] : 0) }
-            return value
-        }
-        head0 = pack(0..<8)
-        head1 = pack(8..<16)
-        tail = bytes.count > 16 ? Array(bytes[16...]) : []
     }
 
     static func < (lhs: FileNameSortKey, rhs: FileNameSortKey) -> Bool {
         if lhs.head0 != rhs.head0 { return lhs.head0 < rhs.head0 }
         if lhs.head1 != rhs.head1 { return lhs.head1 < rhs.head1 }
+        if lhs.head2 != rhs.head2 { return lhs.head2 < rhs.head2 }
         return lhs.tail.lexicographicallyPrecedes(rhs.tail)
     }
 }
