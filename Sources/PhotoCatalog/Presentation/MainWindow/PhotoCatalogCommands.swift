@@ -85,7 +85,8 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals || app.view == .analysis)
         }
 
-        CommandMenu("视图") {
+        // In the system View menu (显示) rather than a second view menu beside it.
+        CommandGroup(before: .toolbar) {
             Button("网格视图") { perform("视图.网格视图") { app.switchView(.grid) } }
                 .disabled(app.sheet != nil || !app.onboarded)
             Button("单张查看") { perform("视图.单张查看") { app.switchView(.loupe) } }
@@ -101,7 +102,7 @@ struct PhotoCatalogCommands: Commands {
             Button("显示/隐藏筛选栏") { perform("视图.显示隐藏筛选栏") { app.toggleFilterBar() } }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
                 .disabled(app.sheet != nil || !app.onboarded)
-            Button("显示/隐藏 Inspector") { perform("视图.显示隐藏Inspector") { app.showInspector.toggle() } }
+            Button("显示/隐藏简介") { perform("视图.显示隐藏Inspector") { app.showInspector.toggle() } }
                 .keyboardShortcut("i", modifiers: .command)
                 .disabled(app.sheet != nil || !app.onboarded || app.view == .analysis)
             Button("显示/隐藏缩略图信息") { perform("视图.显示隐藏缩略图信息") { app.toggleGridInfo() } }
