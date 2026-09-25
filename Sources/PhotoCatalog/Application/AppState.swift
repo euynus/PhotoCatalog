@@ -2173,6 +2173,7 @@ final class AppState {
         return true
     }
 
+    @ObservationIgnored private var attemptedCacheRepairs = Set<String>()
     @ObservationIgnored private var isBackfilling = false
     @ObservationIgnored private var backfillTask: Task<Void, Never>?
     @ObservationIgnored private var backfillGeneration = 0
@@ -2217,9 +2218,10 @@ final class AppState {
                 // re-check Low Power Mode between chunks — it can be toggled mid-run
                 if lowPowerSensitive, ProcessInfo.processInfo.isLowPowerModeEnabled { break }
                 let chunk = Array(real[index..<min(index + chunkSize, real.count)])
-                let worker = Task.detached(priority: .background) {
+                // off the cooperative pool, one at a time at background QoS, so a large
+                // backfill never competes with visible repairs or the UI
+                _ = await ThumbnailRepairQueue.run(.background) {
                     for a in chunk {
-                        guard !Task.isCancelled else { return }
                         guard let path = a.localPath,
                               FileManager.default.fileExists(atPath: path) else { continue }
                         let original = URL(fileURLWithPath: path)
@@ -2231,11 +2233,6 @@ final class AppState {
                             catalogModificationDate: a.fileModifiedAt, assetId: a.id,
                             kind: ThumbnailService.previewKind(forCachePath: a.preview, fallbackMaxPixel: previewSize))
                     }
-                }
-                await withTaskCancellationHandler {
-                    await worker.value
-                } onCancel: {
-                    worker.cancel()
                 }
                 index += chunkSize
                 do { try await Task.sleep(for: .milliseconds(10)) } catch { break }
@@ -2333,6 +2330,7 @@ final class AppState {
 
     private func invalidateThumbnailCache() {
         ThumbLoader.clearCache()
+        attemptedCacheRepairs.removeAll()
         thumbnailCacheGeneration &+= 1
     }
 
@@ -2388,13 +2386,20 @@ final class AppState {
         guard originalExists || previewExists else {
             return requestedSource
         }
-        let restored = await Task.detached(priority: .userInitiated) {
+        // One repair per representation per session: a RAW that decodes black again
+        // must not cost another multi-second decode every time its cell reappears.
+        let repairKey = "\(assetId)|\(resolvedKind)"
+        guard !attemptedCacheRepairs.contains(repairKey) else { return requestedSource }
+        guard let restored = await ThumbnailRepairQueue.run(.visible, {
             thumbnails.ensureCached(from: original,
                                     fallbackPreview: fallbackPreview,
                                     catalogModificationDate: asset.fileModifiedAt,
                                     assetId: assetId,
                                     kind: resolvedKind)
-        }.value
+        }) else {
+            return requestedSource   // cancelled while queued; retry when shown again
+        }
+        attemptedCacheRepairs.insert(repairKey)
         return restored?.path ?? requestedSource
     }
 
