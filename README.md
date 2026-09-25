@@ -157,4 +157,15 @@ out-of-sync Command Line Tools installations.
 
 You can also open `Package.swift` directly in Xcode and run the `PhotoCatalog` scheme.
 
+### Releasing
+
+`script/release.sh <version>` builds the Release app with that version, signs it with the
+hardened runtime, notarizes and staples it, and leaves `dist/PhotoCatalog-<version>.zip` to
+publish as a GitHub release (`gh release create v<version> …`). It needs a Developer ID
+Application certificate (`DEVELOPER_ID`) and a notarytool keychain profile (`NOTARY_PROFILE`);
+the script's header shows the one-time setup. PhotoCatalog → Check for Updates… compares the
+running version with the latest GitHub release and offers its download page; it only contacts
+GitHub when chosen. After an unexpected quit, the next launch offers to show the crash report
+macOS saved (it stays on the Mac).
+
 Photos load from the Unsplash CDN; when offline each tile shows its deterministic gradient placeholder (matching the prototype's graceful fallback).
