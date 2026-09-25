@@ -41,6 +41,37 @@ enum ScaleCheck {
         let (_, applyTime) = timed { app.applyLoadedCatalogForScaleCheck(live, from: store) }
         report("apply catalog: \(applyTime) ms, \(delta(footprint(), beforeApply)) MB")
 
+        // PC_SCALE_LOOP=rate|name|keywords|dates|keyword-edit repeats one operation for 20 s, to sample it
+        if let loop = ProcessInfo.processInfo.environment["PC_SCALE_LOOP"] {
+            let ids = app.list.prefix(1000).map(\.id)
+            let end = Date().addingTimeInterval(20)
+            var rounds = 0
+            while Date() < end {
+                switch loop {
+                case "rate":
+                    app.setPrimary(ids[rounds % ids.count])
+                    _ = app.handleKey(String(rounds % 5 + 1), hasCommand: false)
+                case "name":
+                    app.sort = Sort(field: .name, descending: rounds % 2 == 0)
+                    _ = app.list.count
+                case "keywords":
+                    app.assets = app.assets
+                    _ = app.keywordList.count
+                case "dates":
+                    app.assets = app.assets
+                    _ = app.captureDateGroups.count
+                case "keyword-edit":
+                    app.selectedIds = Set(ids)
+                    app.addKeyword("循环\(rounds)")
+                default:
+                    break
+                }
+                rounds += 1
+            }
+            report("loop \(loop): \(rounds) rounds in 20 s")
+            return 0
+        }
+
         var line: [String] = []
         func step(_ label: String, _ body: () -> Void) {
             let (_, ms) = timed(body)

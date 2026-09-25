@@ -4,7 +4,10 @@ import Foundation
 enum KeywordCheck {
     static func run() {
         checkRules()
-        MainActor.assumeIsolated { checkCatalogEdits() }
+        MainActor.assumeIsolated {
+            checkCatalogEdits()
+            checkPatchedCaches()
+        }
         print("--- keyword management assertions passed ---")
     }
 
@@ -21,6 +24,37 @@ enum KeywordCheck {
         assert(KeywordService.replacing("旅", with: "X", in: photo) == photo, "prefixes of a name don't match")
         assert(KeywordService.replacing("海", with: "自然/海", in: ["海"]) == ["自然", "自然/海"],
                "moving under a new parent adds the parent")
+    }
+
+    /// Metadata edits patch the keyword counts, library counts and list in place (so a keyword
+    /// edit doesn't rebuild pairing and trees); the patched values must equal a fresh computation.
+    @MainActor
+    private static func checkPatchedCaches() {
+        let app = AppState.selfCheckFixture()
+        app.assets = DemoData.assets
+        app.duplicateGroupsCache = []
+        app.select(Selection(type: .lib, id: "all", name: "全部照片"))
+        _ = app.list
+        _ = app.keywordList
+        _ = app.libraryCounts
+        let ids = app.list.map(\.id)
+        app.selectedIds = Set(ids.prefix(12))
+        app.primaryId = ids.first
+        app.addKeyword("缓存/检查")
+        app.removeKeyword("旅行")
+        app.setLocation((31.2, 121.5), for: Set(ids.dropFirst(5).prefix(6)))
+        app.setLocation(nil, for: Set(ids.suffix(3)))
+        _ = app.renameKeyword("风光", to: "山水")
+
+        let fresh = AppState.selfCheckFixture()
+        fresh.assets = app.assets
+        fresh.duplicateGroupsCache = []
+        fresh.select(Selection(type: .lib, id: "all", name: "全部照片"))
+        assert(app.keywordList == fresh.keywordList, "patched keyword counts equal a recount")
+        assert(app.libraryCounts == fresh.libraryCounts, "patched library counts equal a recount")
+        assert(app.list.map(\.id) == fresh.list.map(\.id)
+               && zip(app.list, fresh.list).allSatisfy { $0.keywords == $1.keywords && $0.hasGPS == $1.hasGPS },
+               "the patched list holds the edited photos in the same order as a fresh list")
     }
 
     @MainActor

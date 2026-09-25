@@ -55,13 +55,16 @@ final class AppState {
             if scope == .any {
                 structureVersion &+= 1
                 assetIndexCache = nil
-                keywordListCache = nil
-                keywordSuggestionPoolCache = nil
-                projectListCache = nil
-                clientListCache = nil
+                keywordCountsCache = nil
                 captureDateGroupsCache = nil
                 folderTreeCache = nil
                 folderTreeCountCache = nil
+            }
+            if scope != .review {
+                keywordListCache = nil   // re-derived from the (patched) counts
+                keywordSuggestionPoolCache = nil
+                projectListCache = nil
+                clientListCache = nil
             }
             libraryCountsCache = nil
             sidebarCountIndexCache = nil
@@ -73,7 +76,9 @@ final class AppState {
     /// keep ids, order, paths, dates, status and keywords, so the structural caches —
     /// folder tree and counts, capture-date tree, id index, keyword/project/client lists —
     /// stay valid. Rebuilding them on every rating keystroke cost ~150 ms on 8k photos.
-    enum AssetEditScope { case any, review }
+    /// Metadata edits (keywords, title, caption, credits, location) also keep the id index,
+    /// RAW+JPEG pairing, folder and date trees — rebuilding pairing alone took ~1 s at 500k.
+    enum AssetEditScope: Comparable { case review, metadata, any }
     @ObservationIgnored private var nextAssetEditScope: AssetEditScope = .any
     /// id → index map, lazily rebuilt after any `assets` change (invalidated above).
     @ObservationIgnored private var assetIndexCache: [String: Int]?
@@ -121,6 +126,8 @@ final class AppState {
     @ObservationIgnored private var photoStacksCache: [PhotoStack]?
     @ObservationIgnored private var stackByAssetCache: [String: PhotoStack]?
     @ObservationIgnored private var keywordListCache: [KeywordCount]?
+    /// Every keyword's photo count, in first-seen order; metadata edits patch it in place.
+    @ObservationIgnored private var keywordCountsCache: (order: [String], counts: [String: Int])?
     @ObservationIgnored private var keywordSuggestionPoolCache: [String]?
     @ObservationIgnored private var projectListCache: [KeywordCount]?
     @ObservationIgnored private var clientListCache: [KeywordCount]?
@@ -142,6 +149,12 @@ final class AppState {
     }
     struct LibraryCounts: Equatable {
         var all = 0, recent = 0, unrated = 0, picks = 0, rejected = 0, missingOffline = 0, places = 0, people = 0
+
+        /// The only count a keyword / title / credit / location edit can move.
+        mutating func applyMetadataChange(from old: Asset, to new: Asset) {
+            guard !old.deleted else { return }
+            places += (new.hasGPS ? 1 : 0) - (old.hasGPS ? 1 : 0)
+        }
 
         /// The only counts a rating / flag / color edit can move.
         mutating func applyReviewChange(from old: Asset, to new: Asset) {
@@ -200,12 +213,12 @@ final class AppState {
 
     private func restoreSnapshot(_ snapshot: [Asset], actionName: String) {
         let index = assetIndex
-        let current = snapshot.compactMap { index[$0.id].map { assets[$0] } }
-        var updated = assets
-        for asset in snapshot { if let offset = index[asset.id] { updated[offset] = asset } }
-        guard persist(Set(snapshot.map(\.id)), in: updated) else { return }
-        let deletionChanged = zip(current, snapshot).contains { $0.deleted != $1.deleted }
-        replaceAssetsForMutation(updated)
+        let edits = snapshot.compactMap { asset in index[asset.id].map { (offset: $0, asset: asset) } }
+        let current = edits.map { assets[$0.offset] }
+        guard persistChanged(edits.map(\.asset)) else { return }
+        let deletionChanged = zip(current, edits).contains { $0.deleted != $1.asset.deleted }
+        let scope = zip(current, edits).map { Self.editScope(from: $0, to: $1.asset) }.max() ?? .review
+        applyAssetEdits(edits, scope: scope)
         ensurePrimaryValid()
         enqueueAutomaticXMPWrite(snapshot.filter { !$0.isDemo && !$0.deleted })
         if deletionChanged { recomputeDuplicates() }
@@ -224,6 +237,7 @@ final class AppState {
     /// and re-sorting every asset.
     private func applyAssetEdits(_ edits: [(offset: Int, asset: Asset)], scope: AssetEditScope) {
         var patchedCounts: LibraryCounts?
+        var patchedKeywords: (order: [String], counts: [String: Int])?
         var listBefore: ListSignature?
         if scope == .review {
             let pairing = assetPairing
@@ -234,14 +248,62 @@ final class AppState {
                 }
             }
             if !listDependsOnReviewFields { listBefore = currentListSignature }
+        } else if scope == .metadata {
+            let pairing = assetPairing
+            patchedCounts = libraryCountsCache.map { counts in
+                edits.reduce(into: counts) { counts, edit in
+                    guard !pairing.isHiddenCompanion(edit.asset.id) else { return }
+                    counts.applyMetadataChange(from: assets[edit.offset], to: edit.asset)
+                }
+            }
+            patchedKeywords = keywordCountsCache.map { cache in
+                var patched = cache
+                for edit in edits where !pairing.isHiddenCompanion(edit.asset.id) && !edit.asset.deleted {
+                    for keyword in assets[edit.offset].keywords { patched.counts[keyword, default: 0] -= 1 }
+                    for keyword in edit.asset.keywords {
+                        if patched.counts[keyword] == nil { patched.order.append(keyword) }
+                        patched.counts[keyword, default: 0] += 1
+                    }
+                }
+                return patched
+            }
+            if !listDependsOnMetadataFields { listBefore = currentListSignature }
         }
         nextAssetEditScope = scope
         assets.withUnsafeMutableBufferPointer { buffer in
             for edit in edits { buffer[edit.offset] = edit.asset }
         }
         if let patchedCounts { libraryCountsCache = patchedCounts }
+        if let patchedKeywords { keywordCountsCache = patchedKeywords }
         if let listBefore { patchListCaches(with: edits, validFor: listBefore) }
         didMutateAssets()
+    }
+
+    /// The narrowest scope covering what changed between two versions of a photo.
+    nonisolated static func editScope(from old: Asset, to new: Asset) -> AssetEditScope {
+        if old.filename != new.filename || old.folderId != new.folderId || old.folderName != new.folderName
+            || old.date != new.date || old.status != new.status || old.importedAt != new.importedAt
+            || old.deleted != new.deleted || old.localPath != new.localPath || old.faces != new.faces
+            || old.hasICCProfile != new.hasICCProfile || old.fileMB != new.fileMB
+            || old.fileModifiedAt != new.fileModifiedAt || old.fileCreatedAt != new.fileCreatedAt
+            || old.captureDateSource != new.captureDateSource || old.contentHash != new.contentHash
+            || old.quickHash != new.quickHash || old.isDemo != new.isDemo || old.perceptualHash != new.perceptualHash {
+            return .any
+        }
+        if old.keywords != new.keywords || old.title != new.title || old.caption != new.caption
+            || old.author != new.author || old.copyright != new.copyright || old.makerNotes != new.makerNotes
+            || old.project != new.project || old.client != new.client || old.location != new.location
+            || old.gps.0 != new.gps.0 || old.gps.1 != new.gps.1 || old.gpsAltitude != new.gpsAltitude {
+            return .metadata
+        }
+        return .review
+    }
+
+    /// Whether the current list's membership or order can move with a metadata edit.
+    private var listDependsOnMetadataFields: Bool {
+        if !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || filters.gps != "any" { return true }
+        if [.keyword, .project, .client, .smart].contains(selection.type) { return true }
+        return selection.type == .lib && selection.id == "places"
     }
 
     private var listDependsOnReviewFields: Bool {
@@ -253,6 +315,25 @@ final class AppState {
     /// Replaces edited assets inside list caches that were current before the edit.
     private func patchListCaches(with edits: [(offset: Int, asset: Asset)], validFor before: ListSignature) {
         let after = currentListSignature
+        // Usual case, nothing collapsed: both caches are one array. Patch it in place by
+        // position (O(edits)) after dropping the caches' references so no copy is forced.
+        if collapsedStackIds.isEmpty, var visible = listCache, visible.signature == before,
+           uncollapsedListCache?.signature == before {
+            // built once from the cached list (not via `list`, whose key already moved on)
+            let positions = listPositionsCache.flatMap { $0.signature == before ? $0.positions : nil }
+                ?? Self.positions(of: visible.value)
+            listCache = nil
+            uncollapsedListCache = nil
+            visible.value.withUnsafeMutableBufferPointer { buffer in
+                for edit in edits {
+                    if let position = positions[edit.asset.id] { buffer[position] = edit.asset }
+                }
+            }
+            listCache = (after, visible.value)
+            uncollapsedListCache = (after, visible.value)
+            listPositionsCache = (after, positions)
+            return
+        }
         let edited = Dictionary(edits.map { ($0.asset.id, $0.asset) }, uniquingKeysWith: { $1 })
         func patch(_ list: inout [Asset]) {
             list.withUnsafeMutableBufferPointer { buffer in
@@ -3769,7 +3850,12 @@ final class AppState {
     @discardableResult
     private func persist(_ ids: Set<String>, in sourceAssets: [Asset]? = nil) -> Bool {
         let snapshot = sourceAssets ?? assets
-        let changed = snapshot.filter { ids.contains($0.id) && !$0.isDemo }
+        return persistChanged(snapshot.filter { ids.contains($0.id) })
+    }
+
+    /// Saves these photos (demo photos are never persisted) and queues their XMP sidecars.
+    private func persistChanged(_ edited: [Asset]) -> Bool {
+        let changed = edited.filter { !$0.isDemo }
         guard let store else { return true }
         if !changed.isEmpty {
             // this is the single funnel for every metadata edit and the soft-delete-on-trash;
@@ -3803,11 +3889,8 @@ final class AppState {
     }
 
     // ---------- keyword sidebar list ----------
-    var keywordList: [KeywordCount] {
-        _ = listInputsVersion   // register the dependency even on a cache hit
-        if let cache = keywordListCache { return cache }
-        // Preserve first-encounter order (like a JS Map) so ties sort stably,
-        // matching the prototype's keyword sidebar order.
+    private var keywordCounts: (order: [String], counts: [String: Int]) {
+        if let cache = keywordCountsCache { return cache }
         var order: [String] = []
         var counts: [String: Int] = [:]
         let pairing = assetPairing
@@ -3817,7 +3900,17 @@ final class AppState {
                 counts[k, default: 0] += 1
             }
         }
-        let result = order.map { KeywordCount(name: $0, count: counts[$0] ?? 0) }
+        keywordCountsCache = (order, counts)
+        return (order, counts)
+    }
+
+    var keywordList: [KeywordCount] {
+        _ = listInputsVersion   // register the dependency even on a cache hit
+        if let cache = keywordListCache { return cache }
+        // Preserve first-encounter order (like a JS Map) so ties sort stably,
+        // matching the prototype's keyword sidebar order.
+        let (order, counts) = keywordCounts
+        let result = order.compactMap { name in counts[name].flatMap { $0 > 0 ? KeywordCount(name: name, count: $0) : nil } }
             .sorted { $0.count > $1.count }   // Swift 5 sort is stable
             .prefix(8)
             .map { $0 }
@@ -4283,6 +4376,26 @@ final class AppState {
     }
 
     // ---------- apply filter bar + search + sort ----------
+    @ObservationIgnored private var listPositionsCache: (signature: ListSignature, positions: [String: Int])?
+
+    /// Where each photo sits in `list`, built once per list and kept with it: membership and
+    /// cursor lookups are O(1) instead of scanning every photo on each keystroke (at 500k
+    /// photos those scans made a single rating take a quarter of a second).
+    private var listPositions: [String: Int] {
+        let current = list
+        let signature = currentListSignature
+        if let cache = listPositionsCache, cache.signature == signature { return cache.positions }
+        let positions = Self.positions(of: current)
+        listPositionsCache = (signature, positions)
+        return positions
+    }
+
+    private static func positions(of list: [Asset]) -> [String: Int] {
+        var positions = [String: Int](minimumCapacity: list.count)
+        for (index, asset) in list.enumerated() { positions[asset.id] = index }
+        return positions
+    }
+
     var list: [Asset] {
         let signature = currentListSignature
         if let cache = listCache, cache.signature == signature { return cache.value }
@@ -4440,15 +4553,17 @@ final class AppState {
             }
             return
         }
-        let visibleIds = Set(ids.map(\.id))
+        let positions = listPositions
         // selection must never retain assets hidden by the current collection/filter/search,
         // or batch edits (rating, flag, keyword, delete) would silently mutate off-screen photos.
-        selectedIds.formIntersection(visibleIds)
-        if view == .compare {
-            compareIds.removeAll { !visibleIds.contains($0) }
-            if let winner, !visibleIds.contains(winner) { self.winner = nil }
+        if selectedIds.contains(where: { positions[$0] == nil }) {
+            selectedIds = selectedIds.filter { positions[$0] != nil }
         }
-        if primaryId == nil || !visibleIds.contains(primaryId!) {
+        if view == .compare {
+            compareIds.removeAll { positions[$0] == nil }
+            if let winner, positions[winner] == nil { self.winner = nil }
+        }
+        if primaryId == nil || positions[primaryId!] == nil {
             primaryId = ids[0].id
             selectedIds = [ids[0].id]
             anchorId = ids[0].id
@@ -4463,10 +4578,10 @@ final class AppState {
     // ---------- selection ----------
     func selectCell(_ id: String, shift: Bool, meta: Bool) {
         if shift, let anchor = anchorId {
-            let ids = list.map { $0.id }
-            if let i1 = ids.firstIndex(of: anchor), let i2 = ids.firstIndex(of: id) {
+            let positions = listPositions
+            if let i1 = positions[anchor], let i2 = positions[id] {
                 let lo = min(i1, i2), hi = max(i1, i2)
-                selectedIds = Set(ids[lo...hi])
+                selectedIds = Set(list[lo...hi].lazy.map(\.id))
                 primaryId = id
                 return
             }
@@ -4538,21 +4653,23 @@ final class AppState {
     }
 
     private func normalizeSelectionToVisibleList() {
-        let ids = list.map(\.id)
-        guard !ids.isEmpty else {
+        let visibleList = list
+        guard !visibleList.isEmpty else {
             selectedIds = []
             primaryId = nil
             anchorId = nil
             return
         }
-        let visible = Set(ids)
-        selectedIds.formIntersection(visible)
-        if let primaryId, visible.contains(primaryId) {
+        let positions = listPositions
+        if selectedIds.contains(where: { positions[$0] == nil }) {
+            selectedIds = selectedIds.filter { positions[$0] != nil }
+        }
+        if let primaryId, positions[primaryId] != nil {
             if selectedIds.isEmpty { selectedIds = [primaryId] }
             anchorId = primaryId
             return
         }
-        let next = ids.first { selectedIds.contains($0) } ?? ids[0]
+        let next = selectedIds.min { (positions[$0] ?? .max) < (positions[$1] ?? .max) } ?? visibleList[0].id
         primaryId = next
         selectedIds = [next]
         anchorId = next
@@ -4628,14 +4745,20 @@ final class AppState {
                 _ transform: (inout Asset) -> Void) -> Bool {
         let target = ids ?? targetIds
         guard !target.isEmpty else { return false }
-        var updated = assets
-        var before: [Asset] = []
-        for i in updated.indices where target.contains(updated[i].id) {
-            before.append(updated[i])
-            transform(&updated[i])
-        }
-        guard persist(target, in: updated) else { return false }
-        replaceAssetsForMutation(updated)
+        // Edit copies of only the targeted photos and write them back in place, with the
+        // narrowest invalidation their changes need (a keyword edit keeps pairing and trees).
+        let index = assetIndex
+        let edits = target.compactMap { id -> (offset: Int, asset: Asset)? in
+            guard let offset = index[id] else { return nil }
+            var asset = assets[offset]
+            transform(&asset)
+            return (offset, asset)
+        }.sorted { $0.offset < $1.offset }
+        guard !edits.isEmpty else { return false }
+        guard persistChanged(edits.map(\.asset)) else { return false }
+        let before = edits.map { assets[$0.offset] }
+        let scope = zip(before, edits).map { Self.editScope(from: $0, to: $1.asset) }.max() ?? .review
+        applyAssetEdits(edits, scope: scope)
         ensurePrimaryValid()
         registerUndo(restoring: before, actionName: undoName)
         return true
@@ -4997,7 +5120,9 @@ final class AppState {
     private func orderedTargetAssetIds() -> [String] {
         let ids = selectionTargetIds
         let companions = assetPairing.companionsByPrimary
-        return list.map(\.id).filter { ids.contains($0) }.flatMap { [$0] + (companions[$0] ?? []) }
+        let positions = listPositions
+        return ids.compactMap { id in positions[id].map { (id, $0) } }.sorted { $0.1 < $1.1 }
+            .flatMap { [$0.0] + (companions[$0.0] ?? []) }
     }
 
     private func saveManualAlbum(_ album: Album, sortOrder: Int) -> Bool {
@@ -5728,7 +5853,8 @@ final class AppState {
     // ---------- compare ----------
     func enterCompare() {
         // order by display position so the chosen subset is deterministic
-        var ids = list.map { $0.id }.filter { selectedIds.contains($0) }
+        let positions = listPositions
+        var ids = selectedIds.compactMap { id in positions[id].map { (id, $0) } }.sorted { $0.1 < $1.1 }.map(\.0)
         if ids.count < 2 { ids = list.prefix(3).map { $0.id } }
         compareIds = Array(ids.prefix(4))
         // align the grid selection with the compared panels so rating/flag/color shortcuts
@@ -5741,7 +5867,7 @@ final class AppState {
     func addToCompare(_ id: String) {
         guard compareIds.count < 4,
               !compareIds.contains(id),
-              list.contains(where: { $0.id == id }) else { return }
+              listPositions[id] != nil else { return }
         compareIds.append(id)
         syncCompareSelection()
     }
@@ -5978,9 +6104,8 @@ final class AppState {
     /// moves one further — only for a single photo in Grid or Loupe, never a batch.
     private func applyReviewKey(_ key: String, advance: Bool) -> Bool {
         guard !targetIds.isEmpty else { return false }
-        let before = list.map(\.id)
         let current = primaryId
-        let slot = current.flatMap { before.firstIndex(of: $0) }
+        let slot = current.flatMap { listPositions[$0] }
         let applied: Bool
         switch key {
         case "0", "1", "2", "3", "4", "5":
@@ -6001,10 +6126,10 @@ final class AppState {
         }
         guard applied, let current, let slot, selectionTargetIds.count <= 1,
               view == .grid || view == .loupe else { return applied }
-        let ids = list.map(\.id)
-        guard !ids.isEmpty else { return true }
-        let next = ids.firstIndex(of: current).map { advance ? $0 + 1 : $0 } ?? slot
-        let target = ids[min(ids.count - 1, next)]
+        let visibleList = list
+        guard !visibleList.isEmpty else { return true }
+        let next = listPositions[current].map { advance ? $0 + 1 : $0 } ?? slot
+        let target = visibleList[min(visibleList.count - 1, next)].id
         if target != primaryId { setPrimary(target) }
         return true
     }
@@ -6022,8 +6147,8 @@ final class AppState {
     }
 
     private func moveSelection(_ key: String) {
-        let ids = list.map { $0.id }
-        guard let cur = ids.firstIndex(of: primaryId ?? "") else { return }
+        let visibleList = list
+        guard let cur = listPositions[primaryId ?? ""] else { return }
         var cols = 1
         if view == .grid {
             // same metrics as GridView so arrow nav lands on the right row
@@ -6031,13 +6156,13 @@ final class AppState {
         }
         var next = cur
         switch key {
-        case "right": next = min(ids.count - 1, cur + 1)
+        case "right": next = min(visibleList.count - 1, cur + 1)
         case "left": next = max(0, cur - 1)
-        case "down": next = min(ids.count - 1, cur + cols)
+        case "down": next = min(visibleList.count - 1, cur + cols)
         case "up": next = max(0, cur - cols)
         default: break
         }
-        setPrimary(ids[next])
+        setPrimary(visibleList[next].id)
     }
 
     /// Updated by the grid so arrow-key navigation knows the column count.
