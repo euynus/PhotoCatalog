@@ -13,14 +13,20 @@ struct SettingsSheet: View {
     @State private var exportPresetName = ""
     @State private var category: Category = .general
 
-    private enum Category: String, CaseIterable {
-        case general = "常规"
-        case importing = "导入"
-        case exporting = "导出"
-        case metadata = "元数据"
-        case cache = "缓存与性能"
-        case catalog = "目录库"
-        case files = "文件操作"
+    private enum Category: CaseIterable {
+        case general, importing, exporting, metadata, cache, catalog, files
+
+        var title: String {
+            switch self {
+            case .general: return L("常规")
+            case .importing: return L("导入")
+            case .exporting: return L("导出")
+            case .metadata: return L("元数据")
+            case .cache: return L("缓存与性能")
+            case .catalog: return L("目录库")
+            case .files: return L("文件操作")
+            }
+        }
 
         var symbol: String {
             switch self {
@@ -70,7 +76,7 @@ struct SettingsSheet: View {
         VStack(spacing: 3) {
             ForEach(Category.allCases, id: \.self) { item in
                 Button { category = item } label: {
-                    Label(item.rawValue, systemImage: item.symbol)
+                    Label(item.title, systemImage: item.symbol)
                         .font(.system(size: 13, weight: category == item ? .semibold : .regular))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10).padding(.vertical, 9)
@@ -94,14 +100,19 @@ struct SettingsSheet: View {
     private var body_: some View {
         @Bindable var app = app   // $app bindings below need the Bindable projection
         return VStack(alignment: .leading, spacing: 24) {
-            section("常规", category: .general) {
-                row("外观") {
+            section(L("常规"), category: .general) {
+                row(L("外观")) {
                     Segmented(options: AppAppearance.allCases.map { SegOption(value: $0.rawValue, label: $0.label) },
                               value: app.appearance.rawValue,
                               onChange: { app.appearance = AppAppearance(rawValue: $0) ?? .system }, size: "sm")
                 }
                 Text("照片画布始终保持深色中性背景，便于判断曝光与色彩。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
+                row(L("语言")) {
+                    Segmented(options: AppLanguage.allCases.map { SegOption(value: $0.rawValue, label: $0.label) },
+                              value: app.language.rawValue,
+                              onChange: { app.changeLanguage(AppLanguage(rawValue: $0) ?? .system) }, size: "sm")
+                }
                 Toggle(isOn: $app.openLastCatalogOnLaunch) {
                     Text("启动时打开上次目录库").font(.system(size: 13)).foregroundStyle(Theme.text)
                 }.toggleStyle(.switch).tint(Theme.accent)
@@ -114,7 +125,7 @@ struct SettingsSheet: View {
                 }
             }
 
-            section("导入", category: .importing) {
+            section(L("导入"), category: .importing) {
                 Toggle(isOn: $app.pairRawAndJpeg) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("RAW+JPEG 显示为一张照片").font(.system(size: 13)).foregroundStyle(Theme.text)
@@ -123,41 +134,41 @@ struct SettingsSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }.toggleStyle(.switch).tint(Theme.accent)
-                row("导入模式") {
+                row(L("导入模式")) {
                     Segmented(options: [
-                        SegOption(value: "referenced", label: "引用式"),
-                        SegOption(value: "managed", label: "托管式"),
+                        SegOption(value: "referenced", label: L("引用式")),
+                        SegOption(value: "managed", label: L("托管式")),
                     ], value: app.importMode.rawValue,
                        onChange: { app.importMode = ImportMode(rawValue: $0) ?? .referenced }, size: "sm")
                 }
-                Text(app.importMode == .managed
-                     ? "托管式：导入时复制原件到目录库 Originals/\(app.managedArchiveRule == .camera ? "<相机>/YYYY/MM" : "YYYY/MM/DD")。"
-                     : "引用式：只索引，原件保留在原位置（推荐）。")
+                Text(app.importMode == .referenced ? L("引用式：只索引，原件保留在原位置（推荐）。")
+                     : app.managedArchiveRule == .camera ? L("托管式：导入时复制原件到目录库 Originals/<相机>/YYYY/MM。")
+                     : L("托管式：导入时复制原件到目录库 Originals/YYYY/MM/DD。"))
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 if app.importMode == .managed {
-                    row("归档规则") {
+                    row(L("归档规则")) {
                         Segmented(options: [
-                            SegOption(value: "date", label: "按日期"),
-                            SegOption(value: "camera", label: "按相机"),
+                            SegOption(value: "date", label: L("按日期")),
+                            SegOption(value: "camera", label: L("按相机")),
                         ], value: app.managedArchiveRule.rawValue,
                            onChange: { app.managedArchiveRule = ManagedArchiveRule(rawValue: $0) ?? .date },
                            size: "sm")
                     }
                 }
-                row("重复处理") {
+                row(L("重复处理")) {
                     Segmented(options: [
-                        SegOption(value: "groupExact", label: "分组"),
-                        SegOption(value: "skipExact", label: "跳过"),
-                        SegOption(value: "keep", label: "保留"),
+                        SegOption(value: "groupExact", label: L("分组")),
+                        SegOption(value: "skipExact", label: L("跳过")),
+                        SegOption(value: "keep", label: L("保留")),
                     ], value: app.importDuplicateStrategy.rawValue,
                        onChange: {
                         app.importDuplicateStrategy = ImportDuplicateStrategy(rawValue: $0) ?? .groupExact
                     }, size: "sm")
                 }
-                row("导入后关键词") {
-                    settingsTextField("逗号分隔", text: $app.importPostKeywords)
+                row(L("导入后关键词")) {
+                    settingsTextField(L("逗号分隔"), text: $app.importPostKeywords)
                 }
-                row("导入后颜色") {
+                row(L("导入后颜色")) {
                     Picker("", selection: $app.importPostColorLabel) {
                         Text("无").tag("")
                         ForEach(ColorLabel.allCases) { label in
@@ -168,14 +179,14 @@ struct SettingsSheet: View {
                     .pickerStyle(.menu)
                     .frame(width: 92)
                 }
-                row("导入后相册") {
-                    settingsTextField("相册名", text: $app.importPostAlbumName)
+                row(L("导入后相册")) {
+                    settingsTextField(L("相册名"), text: $app.importPostAlbumName)
                 }
-                row("作者") {
-                    settingsTextField("导入时写入，留空则不改", text: $app.importAuthor)
+                row(L("作者")) {
+                    settingsTextField(L("导入时写入，留空则不改"), text: $app.importAuthor)
                 }
-                row("版权") {
-                    settingsTextField("如 © {year} 你的名字", text: $app.importCopyright)
+                row(L("版权")) {
+                    settingsTextField(L("如 © {year} 你的名字"), text: $app.importCopyright)
                 }
                 Toggle(isOn: $app.visionEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -185,13 +196,13 @@ struct SettingsSheet: View {
                 }.toggleStyle(.switch).tint(Theme.accent)
             }
 
-            section("导出", category: .exporting) {
-                row("目录结构") {
+            section(L("导出"), category: .exporting) {
+                row(L("目录结构")) {
                     Segmented(options: [
-                        SegOption(value: "flat", label: "平铺"),
-                        SegOption(value: "date", label: "日期"),
-                        SegOption(value: "sourceFolder", label: "源文件夹"),
-                        SegOption(value: "album", label: "相册"),
+                        SegOption(value: "flat", label: L("平铺")),
+                        SegOption(value: "date", label: L("日期")),
+                        SegOption(value: "sourceFolder", label: L("源文件夹")),
+                        SegOption(value: "album", label: L("相册")),
                     ], value: app.exportDirectoryStructure.rawValue,
                        onChange: {
                         app.exportDirectoryStructure = ExportDirectoryStructure(rawValue: $0) ?? .flat
@@ -208,7 +219,7 @@ struct SettingsSheet: View {
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .frame(width: 140)
-                    ghostButton(nil, "保存为预设", small: true) {
+                    ghostButton(nil, L("保存为预设"), small: true) {
                         app.saveExportPreset(name: exportPresetName); exportPresetName = ""
                     }
                     if !app.exportPresets.isEmpty {
@@ -227,13 +238,13 @@ struct SettingsSheet: View {
                     Spacer()
                 }
                 HStack(spacing: 9) {
-                    ghostButton("eye", "导出选中预览图", small: true,
+                    ghostButton("eye", L("导出选中预览图"), small: true,
                                 disabled: !app.canExportPreviewSelection) { app.exportSelectionPreviews() }
                     Spacer()
                 }
             }
 
-            section("元数据", category: .metadata) {
+            section(L("元数据"), category: .metadata) {
                 Toggle(isOn: $app.readXMPSidecar) {
                     Text("导入时读取 XMP sidecar").font(.system(size: 13)).foregroundStyle(Theme.text)
                 }.toggleStyle(.switch).tint(Theme.accent)
@@ -246,8 +257,8 @@ struct SettingsSheet: View {
                 }.toggleStyle(.switch).tint(Theme.accent)
             }
 
-            section("缩略图与缓存", category: .cache) {
-                row("预览长边") {
+            section(L("缩略图与缓存"), category: .cache) {
+                row(L("预览长边")) {
                     Segmented(options: [
                         SegOption(value: "1600", label: "1600px"),
                         SegOption(value: "2048", label: "2048px"),
@@ -259,13 +270,13 @@ struct SettingsSheet: View {
                         .font(.system(size: 13)).foregroundStyle(Theme.text)
                 }
                 HStack(spacing: 9) {
-                    ghostButton("refresh", "重建缩略图", small: true) { app.rebuildThumbnails() }
-                    ghostButton("trash", "清理缓存", small: true) { app.confirmClearCache() }
-                    ghostButton("check", "应用上限", small: true) { app.pruneCacheToLimit() }
+                    ghostButton("refresh", L("重建缩略图"), small: true) { app.rebuildThumbnails() }
+                    ghostButton("trash", L("清理缓存"), small: true) { app.confirmClearCache() }
+                    ghostButton("check", L("应用上限"), small: true) { app.pruneCacheToLimit() }
                 }
             }
 
-            section("性能", category: .cache) {
+            section(L("性能"), category: .cache) {
                 Toggle(isOn: $app.reduceBackgroundOnLowPower) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("低电量模式下减少后台任务").font(.system(size: 13)).foregroundStyle(Theme.text)
@@ -275,21 +286,21 @@ struct SettingsSheet: View {
                 }.toggleStyle(.switch).tint(Theme.accent)
             }
 
-            section("维护", category: .catalog) {
-                row("自动备份") {
+            section(L("维护"), category: .catalog) {
+                row(L("自动备份")) {
                     Segmented(options: [
-                        SegOption(value: "off", label: "关闭"),
-                        SegOption(value: "daily", label: "每天"),
-                        SegOption(value: "weekly", label: "每周"),
+                        SegOption(value: "off", label: L("关闭", table: "Context")),
+                        SegOption(value: "daily", label: L("每天")),
+                        SegOption(value: "weekly", label: L("每周")),
                     ], value: app.automaticBackupFrequency,
                        onChange: { app.automaticBackupFrequency = $0 }, size: "sm")
                 }
                 HStack(spacing: 9) {
-                    ghostButton("check", "立即备份", small: true,
+                    ghostButton("check", L("立即备份"), small: true,
                                 disabled: !app.canRunCatalogMaintenance) { app.runBackup() }
-                    ghostButton("refresh", "恢复备份", small: true,
+                    ghostButton("refresh", L("恢复备份"), small: true,
                                 disabled: !app.canRunCatalogMaintenance) { app.restoreBackup() }
-                    ghostButton("info", "运行健康检查", small: true,
+                    ghostButton("info", L("运行健康检查"), small: true,
                                 disabled: !app.canRunCatalogMaintenance) { app.runHealthCheck() }
                 }
                 if let r = app.healthReport {
@@ -304,7 +315,7 @@ struct SettingsSheet: View {
                 }
             }
 
-            section("批量重命名", category: .files) {
+            section(L("批量重命名"), category: .files) {
                 Text("按命名模板重命名选中已导入照片的原件。可用占位符：{seq} {date} {time} {camera} {original}（纯前缀等价于「前缀_{seq}」）。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 HStack(spacing: 9) {
@@ -315,26 +326,26 @@ struct SettingsSheet: View {
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .frame(width: 200)
-                    ghostButton(nil, "重命名选中", small: true) { app.batchRename(template: renamePrefix) }
+                    ghostButton(nil, L("重命名选中"), small: true) { app.batchRename(template: renamePrefix) }
                     Spacer()
                 }
             }
 
-            section("原件文件", category: .files) {
+            section(L("原件文件"), category: .files) {
                 Text("复制不会改变目录库路径；移动成功后会更新目录库中的原件位置。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 HStack(spacing: 9) {
-                    ghostButton("copy", "复制选中原件", small: true,
+                    ghostButton("copy", L("复制选中原件"), small: true,
                                 disabled: !app.canOperateOnSelectedOriginals) { app.copySelectedOriginals() }
-                    ghostButton("folder", "移动选中原件", danger: true, small: true,
+                    ghostButton("folder", L("移动选中原件"), danger: true, small: true,
                                 disabled: !app.canOperateOnSelectedOriginals) { app.moveSelectedOriginals() }
-                    ghostButton("trash", "移到废纸篓", danger: true, small: true,
+                    ghostButton("trash", L("移到废纸篓"), danger: true, small: true,
                                 disabled: !app.canOperateOnSelectedOriginals) { app.trashSelectedOriginals() }
                     Spacer()
                 }
             }
 
-            section("批量调整拍摄时间", category: .files) {
+            section(L("批量调整拍摄时间"), category: .files) {
                 Text("对选中照片整体平移拍摄时间（时区/相机时钟校正），或统一设为指定时间。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 HStack(spacing: 12) {
@@ -346,7 +357,7 @@ struct SettingsSheet: View {
                         Text("\(shiftMinutes > 0 ? "+" : "")\(shiftMinutes) 分")
                             .font(.system(size: 13)).foregroundStyle(Theme.text)
                     }
-                    ghostButton(nil, "平移选中", small: true) {
+                    ghostButton(nil, L("平移选中"), small: true) {
                         app.shiftCaptureTime(hours: shiftHours, minutes: shiftMinutes)
                     }
                     Spacer()
@@ -354,29 +365,29 @@ struct SettingsSheet: View {
                 HStack(spacing: 12) {
                     DatePicker("", selection: $absoluteDate)
                         .labelsHidden().datePickerStyle(.compact)
-                    ghostButton(nil, "设为该时间", small: true) { app.setCaptureDate(absoluteDate) }
+                    ghostButton(nil, L("设为该时间"), small: true) { app.setCaptureDate(absoluteDate) }
                     Spacer()
                 }
             }
 
-            section("目录库", category: .catalog) {
+            section(L("目录库"), category: .catalog) {
                 HStack(spacing: 9) {
-                    ghostButton("plus", "新建目录库", small: true) { app.createCatalog() }
-                    ghostButton("folder", "打开目录库", small: true) { app.openCatalog() }
-                    ghostButton("close", "关闭目录库", small: true) { app.closeCatalog() }
-                    ghostButton("trash", "清除最近", small: true) { app.confirmClearRecentCatalogs() }
+                    ghostButton("plus", L("新建目录库"), small: true) { app.createCatalog() }
+                    ghostButton("folder", L("打开目录库"), small: true) { app.openCatalog() }
+                    ghostButton("close", L("关闭目录库"), small: true) { app.closeCatalog() }
+                    ghostButton("trash", L("清除最近"), small: true) { app.confirmClearRecentCatalogs() }
                 }
                 Text(app.catalogPath)
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.text2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            section("隐私", category: .general) {
+            section(L("隐私"), category: .general) {
                 Text("本地优先 · 仅访问授权的文件夹。可清除以下本地数据。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 HStack(spacing: 9) {
-                    ghostButton("trash", "清除日志", small: true) { app.confirmClearLogs() }
-                    ghostButton("trash", "清除安全书签", small: true) { app.confirmClearSecurityBookmarks() }
+                    ghostButton("trash", L("清除日志"), small: true) { app.confirmClearLogs() }
+                    ghostButton("trash", L("清除安全书签"), small: true) { app.confirmClearSecurityBookmarks() }
                 }
             }
         }

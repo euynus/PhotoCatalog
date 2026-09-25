@@ -1,0 +1,29 @@
+/* Second English meanings of Chinese text used with L(…, table: "Context"). */
+
+/* Domain/SmartAlbumRule.swift */
+"不包含" = "doesn't contain";
+
+/* Presentation/Develop/DevelopPanel.swift */
+"色调" = "Tint";
+
+/* Presentation/Inspector/InspectorView.swift */
+"设备" = "Equipment";
+
+/* Presentation/Inspector/OrganizeTab.swift */
+"客户" = "Client";
+"项目" = "Project";
+
+/* Presentation/MainWindow/FilterBar.swift */
+"拒绝" = "Rejected";
+
+/* Presentation/Sheets/CardImportSheet.swift */
+"文件夹" = "Folder";
+
+/* Presentation/Sheets/LocationSheets.swift */
+"照片" = "Photos";
+
+/* Presentation/Sheets/SettingsSheet.swift */
+"关闭" = "Off";
+
+/* Presentation/Sidebar/Sidebar.swift */
+"精选" = "Picks";

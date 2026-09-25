@@ -28,7 +28,7 @@ private final class CatalogOpenPanelDelegate: NSObject, NSOpenSavePanelDelegate 
         guard AppState.isValidCatalogSelection(url) else {
             throw NSError(domain: "PhotoCatalog.CatalogOpenPanel", code: 1,
                           userInfo: [
-                            NSLocalizedDescriptionKey: "请选择有效的 .photolibrary 目录库"
+                            NSLocalizedDescriptionKey: L("请选择有效的 .photolibrary 目录库")
                           ])
         }
     }
@@ -477,6 +477,10 @@ final class AppState {
             appearance.apply()
         }
     }
+    /// The UI language picked in Settings; macOS applies it when the app launches.
+    var language: AppLanguage = .stored {
+        didSet { if language != oldValue { language.store() } }
+    }
     var exportWritesXMP = UserDefaults.standard.bool(forKey: "pc_exportXMP") {
         didSet { UserDefaults.standard.set(exportWritesXMP, forKey: "pc_exportXMP") }
     }
@@ -584,7 +588,7 @@ final class AppState {
     }
 
     // ----- selection / view -----
-    var selection = Selection(type: .lib, id: "all", name: "全部照片")
+    var selection = Selection(type: .lib, id: "all", name: L("全部照片"))
     var selectedIds: Set<String> = [] {
         didSet { selectionVersion &+= 1 }
     }
@@ -782,7 +786,7 @@ final class AppState {
         let changes = Dictionary(uniqueKeysWithValues: ids.map {
             ($0, DevelopGeometry.rotated(developSettings[$0] ?? .neutral, clockwise: clockwise))
         })
-        commitDevelop(changes, undoName: clockwise ? "向右旋转" : "向左旋转")
+        commitDevelop(changes, undoName: clockwise ? L("向右旋转") : L("向左旋转"))
     }
 
     func flipSelection() {
@@ -791,7 +795,7 @@ final class AppState {
         let changes = Dictionary(uniqueKeysWithValues: ids.map {
             ($0, DevelopGeometry.mirrored(developSettings[$0] ?? .neutral))
         })
-        commitDevelop(changes, undoName: "水平翻转")
+        commitDevelop(changes, undoName: L("水平翻转"))
     }
 
     /// Levels the photo from the horizon Vision finds in it.
@@ -819,7 +823,7 @@ final class AppState {
                 let frame = self.developFrame(for: asset, settings: next)
                 next.crop = next.crop.map { DevelopGeometry.fit($0, angle: next.straighten, frame: frame) }
             }
-            self.commitDevelop([id: next], undoName: "自动拉直")
+            self.commitDevelop([id: next], undoName: L("自动拉直"))
         }
     }
 
@@ -884,7 +888,7 @@ final class AppState {
     /// ⇧⌘V: onto the photo in Develop, or every selected photo elsewhere.
     func pasteDevelopSettings() {
         guard let clipboard = developClipboard else { return }
-        let count = applyDevelopTransfer(clipboard, to: developTargetIds, undoName: "粘贴修图设置")
+        let count = applyDevelopTransfer(clipboard, to: developTargetIds, undoName: L("粘贴修图设置"))
         if count > 1 { push("已粘贴到 \(count) 张照片", "doc.on.clipboard") }
     }
 
@@ -903,12 +907,12 @@ final class AppState {
         let transfer = DevelopTransfer(settings: developSettings[source.id] ?? .neutral, fields: fields,
                                        sourceIsRaw: source.isRaw)
         let targets = developTargetIds.filter { $0 != source.id }
-        let count = applyDevelopTransfer(transfer, to: targets, undoName: "同步修图设置")
+        let count = applyDevelopTransfer(transfer, to: targets, undoName: L("同步修图设置"))
         push("已同步到 \(count) 张照片", "arrow.triangle.2.circlepath")
     }
 
     func applyDevelopPreset(_ preset: DevelopPreset) {
-        applyDevelopTransfer(preset.transfer, to: developTargetIds, undoName: "应用预设“\(preset.name)”")
+        applyDevelopTransfer(preset.transfer, to: developTargetIds, undoName: L("应用预设“\(preset.name)”"))
     }
 
     /// Saves the selected photo's `fields` as a preset; a preset of the same name is replaced.
@@ -934,7 +938,7 @@ final class AppState {
         let ids = developTargetIds.filter { developSettings[$0] != nil }
         guard !ids.isEmpty else { return }
         commitDevelop(Dictionary(uniqueKeysWithValues: ids.map { ($0, DevelopSettings.neutral) }),
-                      undoName: "复位修图调整")
+                      undoName: L("复位修图调整"))
     }
 
     var canResetDevelopSelection: Bool {
@@ -1113,10 +1117,10 @@ final class AppState {
                 launchCatalogHandled = true
                 if !openCatalog(at: launchURL), store == nil, openLastCatalogOnLaunch,
                    let error = loadExistingCatalog() {
-                    push(catalogOpenFailureMessage(error), "warning")
+                    push(verbatim: catalogOpenFailureMessage(error), "warning")
                 }
             } else if onboarded && openLastCatalogOnLaunch, let error = loadExistingCatalog() {
-                push(catalogOpenFailureMessage(error), "warning")
+                push(verbatim: catalogOpenFailureMessage(error), "warning")
             }
             if onboarded && store == nil {
                 UserDefaults.standard.set("0", forKey: "pc_onboarded")
@@ -1149,7 +1153,7 @@ final class AppState {
     var canRunCatalogMaintenance: Bool { hasOpenCatalog && !importing && !isLoadingCatalog }
 
     var catalogPath: String {
-        store?.packageURL.path ?? loadingCatalogURL?.path ?? "未打开目录库"
+        store?.packageURL.path ?? loadingCatalogURL?.path ?? L("未打开目录库")
     }
 
     var catalogDisplayName: String {
@@ -1193,11 +1197,11 @@ final class AppState {
         }
         let text: String
         if !hasReal {
-            text = mode == .managed ? "托管式管理 · 原件在目录库" : "引用式管理 · 原件只读"
+            text = mode == .managed ? L("托管式管理 · 原件在目录库") : L("引用式管理 · 原件只读")
         } else if hasManaged {
-            text = hasReferenced ? "混合管理 · 原件只读" : "托管式管理 · 原件在目录库"
+            text = hasReferenced ? L("混合管理 · 原件只读") : L("托管式管理 · 原件在目录库")
         } else {
-            text = "引用式管理 · 原件只读"
+            text = L("引用式管理 · 原件只读")
         }
         catalogManagementTextCache = (version, modes, mode, text)
         return text
@@ -1206,22 +1210,22 @@ final class AppState {
         (version: Int, modes: [String: String], importMode: ImportMode, text: String)?
 
     var statusCacheText: String {
-        guard let cacheBytes = statusMetrics.cacheBytes else { return "缓存 --" }
-        if cacheBytes == 0 { return "缓存 0 KB" }
-        return "缓存 " + ByteCountFormatter.string(fromByteCount: cacheBytes, countStyle: .file)
+        guard let cacheBytes = statusMetrics.cacheBytes else { return L("缓存 --") }
+        if cacheBytes == 0 { return L("缓存 0 KB") }
+        return L("缓存 \(ByteCountFormatter.string(fromByteCount: cacheBytes, countStyle: .file))")
     }
 
     var statusBackupText: String {
-        guard let date = statusMetrics.lastBackupDate else { return "尚未备份" }
+        guard let date = statusMetrics.lastBackupDate else { return L("尚未备份") }
         let time = date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
         if Calendar.current.isDateInToday(date) {
-            return "上次备份 今天 \(time)"
+            return L("上次备份 今天 \(time)")
         }
         if Calendar.current.isDateInYesterday(date) {
-            return "上次备份 昨天 \(time)"
+            return L("上次备份 昨天 \(time)")
         }
         let day = date.formatted(.dateTime.month(.twoDigits).day(.twoDigits))
-        return "上次备份 \(day) \(time)"
+        return L("上次备份 \(day) \(time)")
     }
 
     private var configuredCatalogURL: URL {
@@ -1391,13 +1395,13 @@ final class AppState {
                         self.push("打开目录库失败", "warning")
                         self.beginDeferredCatalogLoad(at: fallbackURL, fallbackURL: nil)
                     } else {
-                        self.finishDeferredCatalogLoadFailure(message: "打开目录库失败")
+                        self.finishDeferredCatalogLoadFailure(message: L("打开目录库失败"))
                     }
                 }
             case .incompatibleSchema(let current, let supported):
-                let message = "目录库版本过新（schema \(current)，当前支持 \(supported)），请升级 PhotoCatalog 后再打开"
+                let message = L("目录库版本过新（schema \(current)，当前支持 \(supported)），请升级 PhotoCatalog 后再打开")
                 if let fallbackURL {
-                    self.push(message, "warning")
+                    self.push(verbatim: message, "warning")
                     self.beginDeferredCatalogLoad(at: fallbackURL, fallbackURL: nil)
                 } else {
                     self.finishDeferredCatalogLoadFailure(message: message)
@@ -1407,7 +1411,7 @@ final class AppState {
                     self.push("打开目录库失败", "warning")
                     self.beginDeferredCatalogLoad(at: fallbackURL, fallbackURL: nil)
                 } else {
-                    self.finishDeferredCatalogLoadFailure(message: "打开目录库失败")
+                    self.finishDeferredCatalogLoadFailure(message: L("打开目录库失败"))
                 }
             }
         }
@@ -1443,7 +1447,7 @@ final class AppState {
         resetToDemoCatalog()
         UserDefaults.standard.set("0", forKey: "pc_onboarded")
         onboarded = false
-        if let message { push(message, "warning") }
+        if let message { push(verbatim: message, "warning") }
     }
 
     private func restoreAlbums(from store: CatalogStore, assets: [Asset]) {
@@ -1586,7 +1590,7 @@ final class AppState {
             coordinator = ImportCoordinator(store: s)
             refreshStatusMetrics()
         } catch {
-            push(catalogOpenFailureMessage(error, fallback: "无法创建目录库"), "warning")
+            push(verbatim: catalogOpenFailureMessage(error, fallback: L("无法创建目录库")), "warning")
         }
     }
 
@@ -1598,7 +1602,7 @@ final class AppState {
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = "PhotoCatalog Library.photolibrary"
-        panel.prompt = "创建"
+        panel.prompt = L("创建")
         if let libraryType = UTType(filenameExtension: "photolibrary") {
             panel.allowedContentTypes = [libraryType]
         }
@@ -1633,7 +1637,7 @@ final class AppState {
         } catch {
             resetToDemoCatalog()
             loadExistingCatalog()
-            push(catalogOpenFailureMessage(error, fallback: "创建目录库失败"), "warning")
+            push(verbatim: catalogOpenFailureMessage(error, fallback: L("创建目录库失败")), "warning")
             return false
         }
     }
@@ -1675,8 +1679,8 @@ final class AppState {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "打开"
-        panel.message = "选择 .photolibrary 目录库"
+        panel.prompt = L("打开")
+        panel.message = L("选择 .photolibrary 目录库")
         if let libraryType = UTType(filenameExtension: "photolibrary") {
             panel.allowedContentTypes = [libraryType]
         }
@@ -1706,7 +1710,7 @@ final class AppState {
             setActiveCatalog(previousURL)
             resetToDemoCatalog()
             loadExistingCatalog()
-            push(catalogOpenFailureMessage(error), "warning")
+            push(verbatim: catalogOpenFailureMessage(error), "warning")
             return false
         } else {
             UserDefaults.standard.set("1", forKey: "pc_onboarded")
@@ -1778,14 +1782,14 @@ final class AppState {
     }
 
     func confirmClearRecentCatalogs() {
-        guard confirmDestructiveAction("清除最近目录库？", "只会清除本机最近打开列表，不会删除目录库文件。", "清除") else { return }
+        guard confirmDestructiveAction(L("清除最近目录库？"), L("只会清除本机最近打开列表，不会删除目录库文件。"), L("清除")) else { return }
         clearRecentCatalogs()
     }
 
-    private func catalogOpenFailureMessage(_ error: Error?, fallback: String = "打开目录库失败") -> String {
+    private func catalogOpenFailureMessage(_ error: Error?, fallback: String = L("打开目录库失败")) -> String {
         if let error = error as? CatalogStoreError,
            case let .incompatibleSchema(current, supported) = error {
-            return "目录库版本过新（schema \(current)，当前支持 \(supported)），请升级 PhotoCatalog 后再打开"
+            return L("目录库版本过新（schema \(current)，当前支持 \(supported)），请升级 PhotoCatalog 后再打开")
         }
         return fallback
     }
@@ -1839,10 +1843,10 @@ final class AppState {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "导入"
+        panel.prompt = L("导入")
         let mode = importMode
-        panel.message = mode == .managed ? "选择文件夹（托管式：复制原件到目录库）"
-                                         : "选择文件夹（引用式：原件保持不动）"
+        panel.message = mode == .managed ? L("选择文件夹（托管式：复制原件到目录库）")
+                                         : L("选择文件夹（引用式：原件保持不动）")
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         importFolder(folder)
     }
@@ -1957,7 +1961,7 @@ final class AppState {
         let copier = CardCopier(options: options, files: files)
         let urls = files.map(\.url)
         cancelBackfill()
-        push("正在从「\(card?.name ?? "存储卡")」导入 \(files.count) 张照片…", "importIcon")
+        push("正在从「\(card?.name ?? L("存储卡"))」导入 \(files.count) 张照片…", "importIcon")
         let bookmark = FileAccessService.createBookmark(for: root)
         Task { [weak self, coordinator, store, root, vision, previewSize, readXMP, bookmark, existingIds, sourceId, run,
                 control, copier, urls, card] in
@@ -2091,8 +2095,8 @@ final class AppState {
                 run.skipped = 0
             }
             let detail = assetsSaved && !fresh.isEmpty
-                ? "\(fresh.count) 张照片已写入，但源目录或导入状态未保存"
-                : "本次导入未完成"
+                ? L("\(fresh.count) 张照片已写入，但源目录或导入状态未保存")
+                : L("本次导入未完成")
             failImportPersistence(error, run: run, store: store, detail: detail,
                                   hasSavedAssets: assetsSaved)
             return
@@ -2119,16 +2123,16 @@ final class AppState {
         let message: String
         let icon: String
         if fresh.isEmpty, skipped > 0 {
-            message = "已跳过 \(skipped) 张重复照片" + (failedCount > 0 ? " · \(failedCount) 失败" : "")
+            message = L("已跳过 \(skipped) 张重复照片") + (failedCount > 0 ? L(" · \(failedCount) 失败") : "")
             icon = "warning"
         } else if fresh.isEmpty {
-            message = failedCount > 0 ? "导入失败 \(failedCount) 个文件" : "未发现可导入的照片"
+            message = failedCount > 0 ? L("导入失败 \(failedCount) 个文件") : L("未发现可导入的照片")
             icon = "warning"
         } else {
-            message = "已导入 \(fresh.count) 张照片" + (failedCount > 0 ? " · \(failedCount) 失败" : "")
+            message = L("已导入 \(fresh.count) 张照片") + (failedCount > 0 ? L(" · \(failedCount) 失败") : "")
             icon = failedCount > 0 ? "warning" : "check"
         }
-        push(message, icon)
+        push(verbatim: message, icon)
     }
 
     private func applyPostImportMetadata(to fresh: [Asset]) -> [Asset] {
@@ -2188,14 +2192,14 @@ final class AppState {
             do {
                 guard let payload = importJobPayload(from: job), payload.kind == "importFolder",
                       let mode = ImportMode(rawValue: payload.mode) else {
-                    throw DBError.step("无法解析导入任务")
+                    throw DBError.step(L("无法解析导入任务"))
                 }
                 let folder = URL(fileURLWithPath: payload.sourcePath)
                 let phase: ImportPhase = job.state == "paused" ? .paused : .importing
                 let run = try restoredImportRun(job: job, payload: payload, folder: folder,
                                                 mode: mode, phase: phase, store: store)
                 guard FileManager.default.fileExists(atPath: folder.path) else {
-                    throw DBError.step("源文件夹不可访问")
+                    throw DBError.step(L("源文件夹不可访问"))
                 }
                 if phase == .paused {
                     importRun = run
@@ -2213,14 +2217,14 @@ final class AppState {
                                        previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel,
                                        existingIds: Set(existingAssets.map { $0.id }))
             } catch {
-                var message = "未能恢复导入：\(error)"
+                var message = L("未能恢复导入：\(String(describing: error))")
                 do {
                     try store.updateJob(id: job.id, state: "failed", lockedAt: nil, lastError: message)
-                } catch { message += " · 任务失败状态也未保存：\(error)" }
-                push(message, "warning")
+                } catch { message += L(" · 任务失败状态也未保存：\(String(describing: error))") }
+                push(verbatim: message, "warning")
             }
         } catch {
-            push("读取导入任务失败：\(error)", "warning")
+            push("读取导入任务失败：\(String(describing: error))", "warning")
         }
     }
 
@@ -2232,13 +2236,13 @@ final class AppState {
                     .first(where: { $0.id == activeImportJobId }),
                   let payload = importJobPayload(from: job), payload.kind == "importFolder",
                   let mode = ImportMode(rawValue: payload.mode) else {
-                throw DBError.step("导入任务缺失或无法解析")
+                throw DBError.step(L("导入任务缺失或无法解析"))
             }
             let folder = URL(fileURLWithPath: payload.sourcePath)
             _ = try restoredImportRun(job: job, payload: payload, folder: folder,
                                        mode: mode, phase: .paused, store: store)
             guard FileManager.default.fileExists(atPath: folder.path) else {
-                throw DBError.step("源文件夹不可访问")
+                throw DBError.step(L("源文件夹不可访问"))
             }
             restartRecoveredImport(jobId: job.id, run: run, folder: folder, mode: mode,
                                    autoTag: payload.autoTag,
@@ -2247,7 +2251,7 @@ final class AppState {
                                    previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel,
                                    existingIds: Set(assets.map { $0.id }))
         } catch {
-            failImportPersistence(error, run: run, store: store, detail: "未能恢复导入")
+            failImportPersistence(error, run: run, store: store, detail: L("未能恢复导入"))
             importControl = nil
             self.activeImportJobId = nil
             importing = false
@@ -2304,7 +2308,7 @@ final class AppState {
         guard let runId = UUID(uuidString: payload.sessionId),
               let session = try store.loadImportSessions().first(where: { $0.id == payload.sessionId }),
               ["running", "paused"].contains(session.state), session.state == job.state else {
-            throw DBError.step("导入会话缺失或状态不一致，不能自动恢复")
+            throw DBError.step(L("导入会话缺失或状态不一致，不能自动恢复"))
         }
         var run = ImportRun(id: runId, source: folder, mode: mode,
                             startedAt: session.startedAt)
@@ -2432,7 +2436,7 @@ final class AppState {
     }
 
     private func failImportPersistence(_ error: Error, run: ImportRun, store: CatalogStore,
-                                       detail: String = "本次处理结果未保存", hasSavedAssets: Bool = false) {
+                                       detail: String = L("本次处理结果未保存"), hasSavedAssets: Bool = false) {
         var failed = run
         failed.phase = .failed
         failed.finishedAt = .now
@@ -2441,28 +2445,28 @@ final class AppState {
             failed.skipped = 0
             failed.recentAssets = []
         }
-        var messages = ["写入目录库失败：\(error)", detail]
+        var messages = [L("写入目录库失败：\(String(describing: error))"), detail]
         if let summary = importFailureSummary(run.failures) { messages.append(summary) }
         if let activeImportJobId {
             // Attempt both independently: a broken session must not leave a resumable job.
             do {
                 try store.updateJob(id: activeImportJobId, state: "failed", lockedAt: nil,
                                     lastError: messages.joined(separator: " · "))
-            } catch { messages.append("任务失败状态也未保存：\(error)") }
+            } catch { messages.append(L("任务失败状态也未保存：\(String(describing: error))")) }
             do {
                 try store.updateImportSession(id: run.id.uuidString, state: "failed",
                                               totalCount: failed.total, importedCount: failed.imported,
                                               skippedCount: failed.skipped, failedCount: failed.failed,
                                               finishedAt: failed.finishedAt,
                                               errorMessage: messages.joined(separator: " · "))
-            } catch { messages.append("会话失败状态也未保存：\(error)") }
+            } catch { messages.append(L("会话失败状态也未保存：\(String(describing: error))")) }
         }
         failed.errorMessage = messages.joined(separator: " · ")
         pendingImportRun = nil
         importRun = failed
         // ponytail: cancellation takes effect between files; keep the lock until the current file exits.
         importControl?.cancel()
-        push(failed.errorMessage ?? "导入失败", "warning")
+        push(verbatim: failed.errorMessage ?? L("导入失败"), "warning")
     }
 
     // ---------- FSEvents incremental watch (§12.8) ----------
@@ -2729,7 +2733,7 @@ final class AppState {
         guard totalMinutes != 0 else { return }
         let ids = targetIds
         guard !ids.isEmpty else { return }
-        guard mutate(ids, undoName: "调整拍摄时间", {
+        guard mutate(ids, undoName: L("调整拍摄时间"), {
             $0.date = $0.date.addingTimeInterval(Double(totalMinutes) * 60)
             $0.captureDateSource = "手动调整"
         }) else { return }
@@ -2741,7 +2745,7 @@ final class AppState {
     func setCaptureDate(_ date: Date) {
         let ids = targetIds
         guard !ids.isEmpty else { return }
-        guard mutate(ids, undoName: "设置拍摄时间", {
+        guard mutate(ids, undoName: L("设置拍摄时间"), {
             $0.date = date
             $0.captureDateSource = "手动设置"
         }) else { return }
@@ -2783,9 +2787,9 @@ final class AppState {
         }).filter { !$0.value.isEmpty }
         let fileCount = real.count + partners.values.reduce(0) { $0 + $1.count }
         guard confirmDestructiveAction(
-            "重命名原件？",
-            "将重命名 \(fileCount) 个磁盘原件，并更新目录库中的文件路径。",
-            "重命名"
+            L("重命名原件？"),
+            L("将重命名 \(fileCount) 个磁盘原件，并更新目录库中的文件路径。"),
+            L("重命名")
         ) else { return }
         let map = RenameService.renameWithTemplate(real, template: template, companions: partners)
         guard !map.isEmpty else {
@@ -2803,15 +2807,15 @@ final class AppState {
         guard persist(changedIds, in: updated) else {
             let rolledBack = OriginalFileOperationService.rollBackMoves(
                 map, originals: real + partners.values.flatMap { $0 })
-            push("重命名未完成"
-                 + (rolledBack > 0 ? " · 已回滚 \(rolledBack) 张照片" : " · 回滚失败")
-                 + " · 目录库保存失败",
+            push(verbatim: L("重命名未完成")
+                 + (rolledBack > 0 ? L(" · 已回滚 \(rolledBack) 张照片") : L(" · 回滚失败"))
+                 + L(" · 目录库保存失败"),
                  "warning")
             return
         }
         replaceAssetsForMutation(updated)
         let saved = map.count
-        push("已重命名 \(saved) 个文件" + (saved < fileCount ? " · \(fileCount - saved) 失败" : ""),
+        push(verbatim: L("已重命名 \(saved) 个文件") + (saved < fileCount ? L(" · \(fileCount - saved) 失败") : ""),
              saved < fileCount ? "warning" : "check")
     }
 
@@ -2843,7 +2847,7 @@ final class AppState {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = operation == .move ? "移动到此处" : "复制到此处"
+        panel.prompt = operation == .move ? L("移动到此处") : L("复制到此处")
         guard panel.runModal() == .OK, let destination = panel.url else { return }
 
         Task { [weak self, operation, real, destination, operationCatalogURL] in
@@ -2902,12 +2906,12 @@ final class AppState {
     private func confirmOriginalFileOperation(_ operation: OriginalFileOperation, count: Int) -> Bool {
         let alert = NSAlert()
         alert.alertStyle = operation == .move ? .warning : .informational
-        alert.messageText = operation == .move ? "移动原件" : "复制原件"
+        alert.messageText = operation == .move ? L("移动原件") : L("复制原件")
         alert.informativeText = operation == .move
-            ? "将移动 \(count) 个磁盘原件，并更新目录库中的文件路径。"
-            : "将复制 \(count) 个磁盘原件，目录库中的文件路径保持不变。"
-        alert.addButton(withTitle: operation == .move ? "移动" : "复制")
-        alert.addButton(withTitle: "取消")
+            ? L("将移动 \(count) 个磁盘原件，并更新目录库中的文件路径。")
+            : L("将复制 \(count) 个磁盘原件，目录库中的文件路径保持不变。")
+        alert.addButton(withTitle: operation == .move ? L("移动") : L("复制"))
+        alert.addButton(withTitle: L("取消"))
         return alert.runModal() == .alertFirstButtonReturn
     }
 
@@ -2936,19 +2940,40 @@ final class AppState {
                                                  persistenceFailed: Bool = false,
                                                  rolledBack: Int = 0) {
         if operation == .move, persistenceFailed {
-            push("移动未完成"
-                 + (rolledBack > 0 ? " · 已回滚 \(rolledBack) 个原件" : " · 回滚失败")
-                 + " · 目录库保存失败",
+            push(verbatim: L("移动未完成")
+                 + (rolledBack > 0 ? L(" · 已回滚 \(rolledBack) 个原件") : L(" · 回滚失败"))
+                 + L(" · 目录库保存失败"),
                  "warning")
             return
         }
         let completed = operation == .move ? report.moved : report.copied
-        let verb = operation == .move ? "移动" : "复制"
-        push("已\(verb) \(completed) 个原件"
-             + (report.failed > 0 ? " · \(report.failed) 失败" : "")
-             + (report.skipped > 0 ? " · \(report.skipped) 跳过" : "")
-             + (persistenceFailed ? " · 目录库保存失败" : ""),
+        let done = operation == .move ? L("已移动 \(completed) 个原件") : L("已复制 \(completed) 个原件")
+        push(verbatim: done
+             + (report.failed > 0 ? L(" · \(report.failed) 失败") : "")
+             + (report.skipped > 0 ? L(" · \(report.skipped) 跳过") : "")
+             + (persistenceFailed ? L(" · 目录库保存失败") : ""),
              report.failed > 0 || persistenceFailed ? "warning" : "check")
+    }
+
+    // ---------- language ----------
+    /// Stores the language and offers to relaunch, since the interface switches at launch.
+    func changeLanguage(_ language: AppLanguage) {
+        guard language != self.language else { return }
+        self.language = language
+        let alert = NSAlert()
+        alert.messageText = L("重新启动 PhotoCatalog 以切换语言？")
+        alert.informativeText = L("界面语言会在下次启动时生效。")
+        let canRelaunch = Bundle.main.bundlePath.hasSuffix(".app")
+        if canRelaunch { alert.addButton(withTitle: L("立即重新启动")) }
+        alert.addButton(withTitle: canRelaunch ? L("稍后") : L("好"))
+        guard alert.runModal() == .alertFirstButtonReturn, canRelaunch else { return }
+        // reopen once this process has exited, so two copies never hold the catalog at once
+        let reopen = Process()
+        reopen.executableURL = URL(fileURLWithPath: "/bin/sh")
+        reopen.arguments = ["-c", "while kill -0 \"$0\" 2>/dev/null; do sleep 0.2; done; exec /usr/bin/open \"$1\"",
+                            String(ProcessInfo.processInfo.processIdentifier), Bundle.main.bundlePath]
+        guard (try? reopen.run()) != nil else { return }
+        NSApp.terminate(nil)
     }
 
     // ---------- catalog health / cache (§6.1, §17.3) ----------
@@ -2963,7 +2988,7 @@ final class AppState {
             }.value
             guard let self, self.store?.packageURL == packageURL else { return }
             self.applyHealthReport(report)
-            self.push(report.summary, report.isHealthy ? "check" : "warning")
+            self.push(verbatim: report.summary, report.isHealthy ? "check" : "warning")
         }
     }
 
@@ -3116,7 +3141,7 @@ final class AppState {
 
     /// Privacy: delete catalog log files (§17.6).
     func confirmClearLogs() {
-        guard confirmDestructiveAction("清除日志？", "将删除当前目录库中的本地日志文件。", "清除") else { return }
+        guard confirmDestructiveAction(L("清除日志？"), L("将删除当前目录库中的本地日志文件。"), L("清除")) else { return }
         clearLogs()
     }
 
@@ -3141,7 +3166,7 @@ final class AppState {
 
     /// Privacy: drop stored security-scoped bookmarks; sources need re-authorization (§17.6).
     func confirmClearSecurityBookmarks() {
-        guard confirmDestructiveAction("清除安全书签？", "当前目录库的源文件夹下次访问时需要重新授权。", "清除") else { return }
+        guard confirmDestructiveAction(L("清除安全书签？"), L("当前目录库的源文件夹下次访问时需要重新授权。"), L("清除")) else { return }
         clearSecurityBookmarks()
     }
 
@@ -3167,7 +3192,7 @@ final class AppState {
     }
 
     func confirmClearCache() {
-        guard confirmDestructiveAction("清理缓存？", "将删除当前目录库的缩略图和预览缓存，可稍后重新生成。", "清理") else { return }
+        guard confirmDestructiveAction(L("清理缓存？"), L("将删除当前目录库的缩略图和预览缓存，可稍后重新生成。"), L("清理")) else { return }
         clearCache()
     }
 
@@ -3203,7 +3228,7 @@ final class AppState {
         alert.messageText = title
         alert.informativeText = message
         alert.addButton(withTitle: confirmTitle)
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L("取消"))
         return alert.runModal() == .alertFirstButtonReturn
     }
 
@@ -3425,7 +3450,7 @@ final class AppState {
     }
     var renderedExportFolder: String = UserDefaults.standard.string(forKey: "pc_renderedExportFolder")
         ?? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("PhotoCatalog 导出").path ?? NSHomeDirectory() {
+            .appendingPathComponent(L("PhotoCatalog 导出")).path ?? NSHomeDirectory() {
         didSet { UserDefaults.standard.set(renderedExportFolder, forKey: "pc_renderedExportFolder") }
     }
     var renderedExportPresets: [RenderedExportPreset] =
@@ -3531,7 +3556,7 @@ final class AppState {
             do {
                 try FileManager.default.createDirectory(at: job.folder, withIntermediateDirectories: true)
             } catch {
-                failures.append("无法创建导出文件夹：\(error.localizedDescription)")
+                failures.append(L("无法创建导出文件夹：\(error.localizedDescription)"))
                 folderReady = false
             }
             for (index, item) in job.items.enumerated() where folderReady {
@@ -3559,10 +3584,10 @@ final class AppState {
     private func finishRenderedExport(_ job: RenderedExportJob, written: [URL], skipped: Int, failures: [String],
                                       cancelled: Bool) {
         if !renderedExportJobs.isEmpty { renderedExportJobs.removeFirst() }
-        var message = cancelled ? "导出已取消 · 已写入 \(written.count) 张" : "已导出 \(written.count) 张照片"
-        if skipped > 0 { message += " · \(skipped) 张已存在而跳过" }
-        if let first = failures.first { message += " · \(failures.count) 张失败（\(first)）" }
-        push(message, failures.isEmpty ? "export" : "warning")
+        var message = cancelled ? L("导出已取消 · 已写入 \(written.count) 张") : L("已导出 \(written.count) 张照片")
+        if skipped > 0 { message += L(" · \(skipped) 张已存在而跳过") }
+        if let first = failures.first { message += L(" · \(failures.count) 张失败（\(first)）") }
+        push(verbatim: message, failures.isEmpty ? "export" : "warning")
         if job.settings.revealInFinder, !written.isEmpty, !cancelled {
             // selecting thousands of files is slow in Finder; open the folder instead
             if written.count <= 50 {
@@ -3609,7 +3634,7 @@ final class AppState {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.prompt = "导出到此处"
+        panel.prompt = L("导出到此处")
         guard panel.runModal() == .OK, let dest = panel.url else { return }
         let xmp = exportWritesXMP
         let directoryStructure = exportDirectoryStructure
@@ -3637,12 +3662,12 @@ final class AppState {
                               expectedCatalogURL: URL? = nil) -> Bool {
         if let expectedCatalogURL, store?.packageURL != expectedCatalogURL { return false }
         let xmpNote = xmp
-            ? (result.report.xmpFailed > 0 ? " · \(result.report.xmpFailed) 个 XMP 失败" : " · 含 XMP")
+            ? (result.report.xmpFailed > 0 ? L(" · \(result.report.xmpFailed) 个 XMP 失败") : L(" · 含 XMP"))
             : ""
-        push("已导出 \(result.report.copied) 张原件"
-             + (result.report.failed > 0 ? " · \(result.report.failed) 失败" : "")
+        push(verbatim: L("已导出 \(result.report.copied) 张原件")
+             + (result.report.failed > 0 ? L(" · \(result.report.failed) 失败") : "")
              + xmpNote
-             + (result.metadataOK ? " · 含元数据" : " · 元数据失败"), "export")
+             + (result.metadataOK ? L(" · 含元数据") : L(" · 元数据失败")), "export")
         return true
     }
 
@@ -3655,7 +3680,7 @@ final class AppState {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.prompt = "导出预览到此处"
+        panel.prompt = L("导出预览到此处")
         guard panel.runModal() == .OK, let dest = panel.url else { return }
 
         let thumbnails = coordinator?.thumbnails
@@ -3674,9 +3699,9 @@ final class AppState {
     @discardableResult
     func finishPreviewExport(_ report: ExportReport, expectedCatalogURL: URL? = nil) -> Bool {
         if let expectedCatalogURL, store?.packageURL != expectedCatalogURL { return false }
-        push("已导出 \(report.copied) 张预览图"
-             + (report.failed > 0 ? " · \(report.failed) 失败" : "")
-             + (report.skipped > 0 ? " · \(report.skipped) 跳过" : ""),
+        push(verbatim: L("已导出 \(report.copied) 张预览图")
+             + (report.failed > 0 ? L(" · \(report.failed) 失败") : "")
+             + (report.skipped > 0 ? L(" · \(report.skipped) 跳过") : ""),
              report.failed > 0 ? "warning" : "export")
         return true
     }
@@ -3774,19 +3799,19 @@ final class AppState {
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
         panel.directoryURL = backupsURL
-        panel.prompt = "恢复"
-        panel.message = "选择一个目录库 SQLite 备份文件"
+        panel.prompt = L("恢复")
+        panel.message = L("选择一个目录库 SQLite 备份文件")
         if let sqliteType = UTType(filenameExtension: "sqlite") {
             panel.allowedContentTypes = [sqliteType]
         }
         guard panel.runModal() == .OK, let backup = panel.url else { return }
 
         let alert = NSAlert()
-        alert.messageText = "恢复目录库备份？"
-        alert.informativeText = "当前目录库数据库会被所选备份替换。应用会先尝试创建一次当前状态备份。"
+        alert.messageText = L("恢复目录库备份？")
+        alert.informativeText = L("当前目录库数据库会被所选备份替换。应用会先尝试创建一次当前状态备份。")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "恢复")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L("恢复"))
+        alert.addButton(withTitle: L("取消"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
         do {
@@ -3856,7 +3881,7 @@ final class AppState {
         sourceRootPathsById = [:]
         sourceManagementModesById = [:]
         duplicateGroupsCache = DemoData.duplicateGroups
-        selection = Selection(type: .lib, id: "all", name: "全部照片")
+        selection = Selection(type: .lib, id: "all", name: L("全部照片"))
         primaryId = list.first?.id
         selectedIds = primaryId.map { Set([$0]) } ?? []
         anchorId = primaryId
@@ -3877,7 +3902,7 @@ final class AppState {
         sourceRootPathsById = [:]
         sourceManagementModesById = [:]
         duplicateGroupsCache = []
-        selection = Selection(type: .lib, id: "all", name: "全部照片")
+        selection = Selection(type: .lib, id: "all", name: L("全部照片"))
         primaryId = nil
         selectedIds = []
         anchorId = nil
@@ -3943,15 +3968,15 @@ final class AppState {
         switch action {
         case .removeFromCatalog:
             guard confirmDestructiveAction(
-                "从目录库移除？",
-                "将从目录库移除 \(count) 个重复照片记录，磁盘原件会保留。",
-                "移除"
+                L("从目录库移除？"),
+                L("将从目录库移除 \(count) 个重复照片记录，磁盘原件会保留。"),
+                L("移除")
             ) else { return false }
         case .moveToTrash:
             guard confirmDestructiveAction(
-                "移到废纸篓？",
-                "将把 \(count) 个重复照片的磁盘原件移到废纸篓，并从目录库移除对应记录。",
-                "移到废纸篓"
+                L("移到废纸篓？"),
+                L("将把 \(count) 个重复照片的磁盘原件移到废纸篓，并从目录库移除对应记录。"),
+                L("移到废纸篓")
             ) else { return false }
         }
 
@@ -3965,9 +3990,9 @@ final class AppState {
         guard persist(report.removedIds, in: updated) else {
             if action == .moveToTrash {
                 let rolledBack = OriginalFileOperationService.rollBackTrash(report.trashedLocations)
-                push("重复文件处理未完成"
-                     + (rolledBack > 0 ? " · 已回滚 \(rolledBack) 个原件" : " · 回滚失败")
-                     + " · 目录库保存失败",
+                push(verbatim: L("重复文件处理未完成")
+                     + (rolledBack > 0 ? L(" · 已回滚 \(rolledBack) 个原件") : L(" · 回滚失败"))
+                     + L(" · 目录库保存失败"),
                      "warning")
             }
             return false
@@ -3978,9 +4003,10 @@ final class AppState {
         recomputeDuplicates()
         ensurePrimaryValid()
 
-        let actionText = action == .moveToTrash ? "移到废纸篓" : "从目录库移除"
-        let failedText = report.failedCount > 0 ? " · \(report.failedCount) 失败" : ""
-        push("已\(actionText) \(report.affectedCount) 张重复照片\(failedText)", "check")
+        let done = action == .moveToTrash ? L("已移到废纸篓 \(report.affectedCount) 张重复照片")
+                                          : L("已从目录库移除 \(report.affectedCount) 张重复照片")
+        let failedText = report.failedCount > 0 ? L(" · \(report.failedCount) 失败") : ""
+        push(verbatim: done + failedText, "check")
         return report.failedCount == 0
     }
 
@@ -4021,7 +4047,13 @@ final class AppState {
     }
 
     // ---------- toasts ----------
-    func push(_ message: String, _ icon: String = "check") {
+    /// A toast in the user's language (see `L`).
+    func push(_ message: String.LocalizationValue, _ icon: String = "check") {
+        toastCenter.push(String(localized: message), icon)
+    }
+
+    /// A toast whose text is already localized, or is the user's own content.
+    func push(verbatim message: String, _ icon: String = "check") {
         toastCenter.push(message, icon)
     }
 
@@ -4328,8 +4360,8 @@ final class AppState {
 
     func managementDisplayText(for asset: Asset) -> String {
         switch managementMode(for: asset) {
-        case .managed: return "托管式 (Managed)"
-        case .referenced: return "引用式 (Referenced)"
+        case .managed: return L("托管式 (Managed)")
+        case .referenced: return L("引用式 (Referenced)")
         }
     }
 
@@ -4775,7 +4807,7 @@ final class AppState {
             return
         }
         guard let name = promptAlbumName(defaultName: defaultFilterSmartAlbumName(),
-                                         messageText: "新建智能相册") else { return }
+                                         messageText: L("新建智能相册")) else { return }
 
         let rule = SmartRule(match: "all", conditions: conditions)
         let count = SmartMatcher.count(assets.filter { !$0.deleted }, rule)
@@ -4784,8 +4816,8 @@ final class AppState {
 
     private func defaultFilterSmartAlbumName() -> String {
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !q.isEmpty { return "筛选 · \(q)" }
-        return "当前筛选"
+        if !q.isEmpty { return L("筛选 · \(q)") }
+        return L("当前筛选")
     }
 
     private func ensurePrimaryValid() {
@@ -5027,19 +5059,19 @@ final class AppState {
 
     @discardableResult
     func setRating(_ n: Int) -> Bool {
-        mutateIndexedMetadata(undoName: "评分", { $0.rating = n }) { store, ids in
+        mutateIndexedMetadata(undoName: L("评分"), { $0.rating = n }) { store, ids in
             try store.updateRatings(n, assetIDs: ids)
         }
     }
     @discardableResult
     func setFlag(_ f: Flag) -> Bool {
-        mutateIndexedMetadata(undoName: "旗标", { $0.flag = f }) { store, ids in
+        mutateIndexedMetadata(undoName: L("旗标"), { $0.flag = f }) { store, ids in
             try store.updateFlags(f, assetIDs: ids)
         }
     }
     @discardableResult
     func setColor(_ c: ColorLabel?) -> Bool {
-        mutateIndexedMetadata(undoName: "颜色标签", { $0.colorLabel = c }) { store, ids in
+        mutateIndexedMetadata(undoName: L("颜色标签"), { $0.colorLabel = c }) { store, ids in
             try store.updateColorLabels(c, assetIDs: ids)
         }
     }
@@ -5096,9 +5128,9 @@ final class AppState {
         guard !indexed.isEmpty || folders.contains(where: { $0.id == folderId }) else { return }
 
         guard confirmDestructiveAction(
-            "移除源文件夹？",
-            "将从目录库移除「\(folderName)」的索引记录，磁盘上的原件不会被删除。",
-            "移除索引"
+            L("移除源文件夹？"),
+            L("将从目录库移除「\(folderName)」的索引记录，磁盘上的原件不会被删除。"),
+            L("移除索引")
         ) else { return }
 
         let sourceRootPath = sourceRootPathsById[folderId]
@@ -5134,7 +5166,7 @@ final class AppState {
             }
         }
         refreshWatcher()
-        selection = Selection(type: .lib, id: "all", name: "全部照片")
+        selection = Selection(type: .lib, id: "all", name: L("全部照片"))
         selectedIds = []
         primaryId = list.first?.id
         if let primaryId {
@@ -5182,8 +5214,8 @@ final class AppState {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "重新授权"
-        panel.message = "选择源文件夹以恢复访问权限"
+        panel.prompt = L("重新授权")
+        panel.message = L("选择源文件夹以恢复访问权限")
         guard let currentPath else { return }
         let currentURL = URL(fileURLWithPath: currentPath, isDirectory: true).standardizedFileURL
         if FileManager.default.fileExists(atPath: currentURL.path) {
@@ -5210,7 +5242,7 @@ final class AppState {
     }
 
     func createAlbumFromSelection() {
-        guard let name = promptAlbumName(defaultName: "新建相册") else { return }
+        guard let name = promptAlbumName(defaultName: L("新建相册")) else { return }
         let album = Album(id: "al-" + UUID().uuidString.prefix(8), name: name,
                           assetIds: orderedTargetAssetIds())
         guard saveManualAlbum(album, sortOrder: albums.count) else { return }
@@ -5233,10 +5265,10 @@ final class AppState {
         let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 240, height: 28))
         popup.addItems(withTitles: albums.map(\.name))
         let alert = NSAlert()
-        alert.messageText = "加入相册"
+        alert.messageText = L("加入相册")
         alert.accessoryView = popup
-        alert.addButton(withTitle: "加入")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L("加入"))
+        alert.addButton(withTitle: L("取消"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let index = popup.indexOfSelectedItem
         guard albums.indices.contains(index) else { return }
@@ -5274,8 +5306,8 @@ final class AppState {
     func renameAlbum(_ id: String) {
         guard let album = albums.first(where: { $0.id == id }),
               let name = promptAlbumName(defaultName: album.name,
-                                         messageText: "重命名相册",
-                                         confirmTitle: "保存") else { return }
+                                         messageText: L("重命名相册"),
+                                         confirmTitle: L("保存")) else { return }
         _ = renameAlbum(id, to: name)
     }
 
@@ -5304,9 +5336,9 @@ final class AppState {
         guard let index = albums.firstIndex(where: { $0.id == id }) else { return }
         let album = albums[index]
         guard confirmDestructiveAction(
-            "删除相册？",
-            "只会删除相册「\(album.name)」及其目录库关系，不会删除任何照片或原件。",
-            "删除相册"
+            L("删除相册？"),
+            L("只会删除相册「\(album.name)」及其目录库关系，不会删除任何照片或原件。"),
+            L("删除相册")
         ) else { return }
         do {
             try store?.deleteAlbum(id: id)
@@ -5318,7 +5350,7 @@ final class AppState {
         pinnedSidebarItems.removeAll { $0.type == .album && $0.selectionId == id }
         savePinnedSidebarItems()
         if selection.type == .album, selection.id == id {
-            selection = Selection(type: .lib, id: "all", name: "全部照片")
+            selection = Selection(type: .lib, id: "all", name: L("全部照片"))
             ensurePrimaryValid()
         }
         push("已删除相册「\(album.name)」", "trash")
@@ -5339,9 +5371,9 @@ final class AppState {
         guard let index = smartAlbums.firstIndex(where: { $0.id == id }) else { return }
         let album = smartAlbums[index]
         guard confirmDestructiveAction(
-            "删除智能相册？",
-            "只会删除智能相册「\(album.name)」及其规则，不会删除任何照片或原件。",
-            "删除智能相册"
+            L("删除智能相册？"),
+            L("只会删除智能相册「\(album.name)」及其规则，不会删除任何照片或原件。"),
+            L("删除智能相册")
         ) else { return }
         do {
             try store?.deleteSmartAlbum(id: id)
@@ -5356,7 +5388,7 @@ final class AppState {
             dismissSmartAlbumBuilder()
         }
         if selection.type == .smart, selection.id == id {
-            selection = Selection(type: .lib, id: "all", name: "全部照片")
+            selection = Selection(type: .lib, id: "all", name: L("全部照片"))
             ensurePrimaryValid()
         }
         push("已删除智能相册「\(album.name)」", "trash")
@@ -5381,15 +5413,15 @@ final class AppState {
         }
     }
 
-    private func promptAlbumName(defaultName: String, messageText: String = "新建相册",
-                                 confirmTitle: String = "创建") -> String? {
+    private func promptAlbumName(defaultName: String, messageText: String = L("新建相册"),
+                                 confirmTitle: String = L("创建")) -> String? {
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
         field.stringValue = defaultName
         let alert = NSAlert()
         alert.messageText = messageText
         alert.accessoryView = field
         alert.addButton(withTitle: confirmTitle)
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L("取消"))
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
         let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         return name.isEmpty ? nil : name
@@ -5477,8 +5509,8 @@ final class AppState {
         panel.canChooseDirectories = true
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "重新定位"
-        panel.message = "选择移动后的原件文件，或选择包含该原件的新文件夹。"
+        panel.prompt = L("重新定位")
+        panel.message = L("选择移动后的原件文件，或选择包含该原件的新文件夹。")
         guard panel.runModal() == .OK, let selected = panel.url else { return }
 
         guard let replacement = RelocationService.replacement(for: asset, selected: selected) else {
@@ -5508,14 +5540,14 @@ final class AppState {
     func addKeyword(_ kw: String) {
         let keywords = KeywordService.normalize(kw)
         guard !keywords.isEmpty else { return }
-        mutate(undoName: "添加关键词") {
+        mutate(undoName: L("添加关键词")) {
             for keyword in keywords where !$0.keywords.contains(keyword) {
                 $0.keywords.append(keyword)
             }
         }
     }
     func removeKeyword(_ kw: String) {
-        mutate(undoName: "移除关键词") { $0.keywords.removeAll { $0 == kw } }
+        mutate(undoName: L("移除关键词")) { $0.keywords.removeAll { $0 == kw } }
     }
 
     // ---------- location: place on a map, match a GPX track ----------
@@ -5551,7 +5583,7 @@ final class AppState {
     func setLocation(_ coordinate: (Double, Double)?, altitude: Double? = nil, for ids: Set<String>) -> Bool {
         guard !ids.isEmpty else { return false }
         // a RAW's paired JPEG was taken at the same spot
-        let applied = mutate(withCompanions(ids), undoName: coordinate == nil ? "移除位置" : "设置位置") { asset in
+        let applied = mutate(withCompanions(ids), undoName: coordinate == nil ? L("移除位置") : L("设置位置")) { asset in
             asset.gps = coordinate ?? (0, 0)
             asset.gpsAltitude = coordinate == nil ? nil : altitude
             asset.location = Asset.locationLabel(coordinate)
@@ -5568,7 +5600,7 @@ final class AppState {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [UTType(filenameExtension: "gpx") ?? .xml]
-        panel.prompt = "打开轨迹"
+        panel.prompt = L("打开轨迹")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let track = GPXParser.parse(contentsOf: url), !track.points.isEmpty else {
             push("「\(url.lastPathComponent)」里没有带时间的轨迹点", "warning")
@@ -5601,7 +5633,7 @@ final class AppState {
         for (id, point) in matches {
             for companion in withCompanions([id]) where points[companion] == nil { points[companion] = point }
         }
-        let applied = mutate(Set(points.keys), undoName: "匹配 GPX 位置") { asset in
+        let applied = mutate(Set(points.keys), undoName: L("匹配 GPX 位置")) { asset in
             guard let point = points[asset.id] else { return }
             asset.gps = (point.latitude, point.longitude)
             asset.gpsAltitude = point.elevation
@@ -5792,20 +5824,20 @@ final class AppState {
     func nameFaces(_ ids: [String], as rawName: String) {
         let name = FaceClustering.cleanName(rawName)
         guard !name.isEmpty, !ids.isEmpty else { return }
-        applyFaceNames(Dictionary(uniqueKeysWithValues: ids.map { ($0, (name, true)) }), undoName: "命名人物")
+        applyFaceNames(Dictionary(uniqueKeysWithValues: ids.map { ($0, (name, true)) }), undoName: L("命名人物"))
     }
 
     /// Confirms a person's suggested faces (all of them, or just `ids`).
     func confirmFaces(of person: String, ids: [String]? = nil) {
         let targets = ids ?? faces.values.filter { $0.person == person && !$0.confirmed }.map(\.id)
-        applyFaceNames(Dictionary(uniqueKeysWithValues: targets.map { ($0, (person, true)) }), undoName: "确认人物")
+        applyFaceNames(Dictionary(uniqueKeysWithValues: targets.map { ($0, (person, true)) }), undoName: L("确认人物"))
     }
 
     /// "Not this person": the face goes back to the unnamed groups, and the photo loses the
     /// person's keyword unless another face in it is the same person.
     func removeFaceFromPerson(_ id: String) {
         guard let face = faces[id], face.person != nil else { return }
-        setFaceStates([id: (nil, false)], undoName: "不是此人")
+        setFaceStates([id: (nil, false)], undoName: L("不是此人"))
         refreshFaceClusters()
     }
 
@@ -5942,9 +5974,9 @@ final class AppState {
               !target.hasPrefix(old + "/") else { return false }
         let ids = photoIds(withKeyword: old)
         guard !ids.isEmpty,
-              mutate(ids, undoName: "重命名关键词", { $0.keywords = KeywordService.replacing(old, with: target, in: $0.keywords) })
+              mutate(ids, undoName: L("重命名关键词"), { $0.keywords = KeywordService.replacing(old, with: target, in: $0.keywords) })
         else { return false }
-        syncFacesAfterKeywordChange(old: old, new: target, undoName: "重命名关键词")
+        syncFacesAfterKeywordChange(old: old, new: target, undoName: L("重命名关键词"))
         if selection.type == .keyword, KeywordService.isWithin(selection.id, old) {
             let renamed = target + selection.id.dropFirst(old.count)
             select(Selection(type: .keyword, id: renamed, name: renamed))
@@ -5958,11 +5990,11 @@ final class AppState {
     func deleteKeyword(_ keyword: String) -> Bool {
         let ids = photoIds(withKeyword: keyword)
         guard !ids.isEmpty,
-              mutate(ids, undoName: "删除关键词", { $0.keywords = KeywordService.replacing(keyword, with: nil, in: $0.keywords) })
+              mutate(ids, undoName: L("删除关键词"), { $0.keywords = KeywordService.replacing(keyword, with: nil, in: $0.keywords) })
         else { return false }
-        syncFacesAfterKeywordChange(old: keyword, new: nil, undoName: "删除关键词")
+        syncFacesAfterKeywordChange(old: keyword, new: nil, undoName: L("删除关键词"))
         if selection.type == .keyword, KeywordService.isWithin(selection.id, keyword) {
-            select(Selection(type: .lib, id: "all", name: "全部照片"))
+            select(Selection(type: .lib, id: "all", name: L("全部照片")))
         }
         push("已从 \(ids.count) 张照片中删除关键词「\(keyword)」", "tag")
         return true
@@ -5971,14 +6003,14 @@ final class AppState {
     /// Asks for a new name; typing an existing keyword merges into it.
     func promptRenameKeyword(_ keyword: String) {
         let alert = NSAlert()
-        alert.messageText = "重命名关键词「\(keyword)」"
-        alert.informativeText = "用于 \(photoIds(withKeyword: keyword).count) 张照片，下级关键词一并更新。输入已有的关键词即合并。"
+        alert.messageText = L("重命名关键词「\(keyword)」")
+        alert.informativeText = L("用于 \(photoIds(withKeyword: keyword).count) 张照片，下级关键词一并更新。输入已有的关键词即合并。")
         let field = NSTextField(string: keyword)
         field.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
         alert.accessoryView = field
         alert.window.initialFirstResponder = field
-        alert.addButton(withTitle: "重命名")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L("重命名"))
+        alert.addButton(withTitle: L("取消"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name != keyword else { return }
@@ -5988,10 +6020,10 @@ final class AppState {
     func confirmDeleteKeyword(_ keyword: String) {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "删除关键词「\(keyword)」？"
-        alert.informativeText = "将从 \(photoIds(withKeyword: keyword).count) 张照片中移除它及其下级关键词。可以撤销。"
-        alert.addButton(withTitle: "删除")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = L("删除关键词「\(keyword)」？")
+        alert.informativeText = L("将从 \(photoIds(withKeyword: keyword).count) 张照片中移除它及其下级关键词。可以撤销。")
+        alert.addButton(withTitle: L("删除"))
+        alert.addButton(withTitle: L("取消"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         deleteKeyword(keyword)
     }
@@ -6000,7 +6032,7 @@ final class AppState {
         let ids = targetIds
         guard !ids.isEmpty else { return }
         let photoCount = selectionTargetIds.count
-        guard mutate(ids, undoName: "从目录库移除", { $0.deleted = true }) else { return }
+        guard mutate(ids, undoName: L("从目录库移除"), { $0.deleted = true }) else { return }
         purgeCacheFiles(forAssetIds: ids)
         push("已从目录库移除 \(photoCount) 张（原件保留）", "trash")
         selectedIds = []
@@ -6018,11 +6050,11 @@ final class AppState {
         let real = selectedRealAssetsWithOriginals()
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "移除照片"
-        alert.informativeText = "将 \(selectionTargetIds.count) 张照片从目录库移除。原件默认保留。"
-        alert.addButton(withTitle: "从目录库移除")
-        if !real.isEmpty { alert.addButton(withTitle: "移到废纸篓") }
-        alert.addButton(withTitle: "取消")
+        alert.messageText = L("移除照片")
+        alert.informativeText = L("将 \(selectionTargetIds.count) 张照片从目录库移除。原件默认保留。")
+        alert.addButton(withTitle: L("从目录库移除"))
+        if !real.isEmpty { alert.addButton(withTitle: L("移到废纸篓")) }
+        alert.addButton(withTitle: L("取消"))
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
             removeSelected()
@@ -6040,10 +6072,10 @@ final class AppState {
 
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "移到废纸篓"
-        alert.informativeText = "将 \(real.count) 个磁盘原件移到废纸篓，并从目录库移除对应记录。"
-        alert.addButton(withTitle: "移到废纸篓")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = L("移到废纸篓")
+        alert.informativeText = L("将 \(real.count) 个磁盘原件移到废纸篓，并从目录库移除对应记录。")
+        alert.addButton(withTitle: L("移到废纸篓"))
+        alert.addButton(withTitle: L("取消"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         performTrashOriginals(real)
     }
@@ -6065,9 +6097,9 @@ final class AppState {
                     let rolledBack = await Task.detached(priority: .userInitiated) {
                         OriginalFileOperationService.rollBackTrash(result.locations)
                     }.value
-                    self?.push("移到废纸篓未完成"
-                               + (rolledBack > 0 ? " · 已回滚 \(rolledBack) 个原件" : " · 回滚失败")
-                               + " · 目录库保存失败",
+                    self?.push(verbatim: L("移到废纸篓未完成")
+                               + (rolledBack > 0 ? L(" · 已回滚 \(rolledBack) 个原件") : L(" · 回滚失败"))
+                               + L(" · 目录库保存失败"),
                                "warning")
                 }
                 return
@@ -6078,8 +6110,8 @@ final class AppState {
     @discardableResult
     func applyTrashedOriginals(_ result: OriginalTrashReport, expectedCatalogURL: URL? = nil) -> Bool {
         guard !result.trashedIds.isEmpty else {
-            push("已移到废纸篓 0 张"
-                 + (result.failed > 0 ? " · \(result.failed) 失败" : ""),
+            push(verbatim: L("已移到废纸篓 0 张")
+                 + (result.failed > 0 ? L(" · \(result.failed) 失败") : ""),
                  result.failed > 0 ? "warning" : "check")
             return true
         }
@@ -6089,8 +6121,8 @@ final class AppState {
         selectedIds.subtract(result.trashedIds)
         ensurePrimaryValid()
         recomputeDuplicates()
-        push("已移到废纸篓 \(result.trashedIds.count) 张"
-             + (result.failed > 0 ? " · \(result.failed) 失败" : ""),
+        push(verbatim: L("已移到废纸篓 \(result.trashedIds.count) 张")
+             + (result.failed > 0 ? L(" · \(result.failed) 失败") : ""),
              result.failed > 0 ? "warning" : "check")
         return true
     }
@@ -6136,7 +6168,7 @@ final class AppState {
 
     func switchView(_ v: ViewMode) {
         if (v == .analysis || v == .develop) && isDuplicates {
-            select(Selection(type: .lib, id: "all", name: "全部照片"))
+            select(Selection(type: .lib, id: "all", name: L("全部照片")))
         }
         if v == .compare { enterCompare() } else { view = v }
     }
@@ -6430,6 +6462,24 @@ extension AppAppearance {
         case .dark: .darkAqua
         }
         NSApp.appearance = name.flatMap(NSAppearance.init(named:))
+    }
+}
+
+extension AppLanguage {
+    private static let defaultsKey = "AppleLanguages"
+
+    /// The choice kept in this app's own AppleLanguages, which macOS reads at launch.
+    static var stored: AppLanguage {
+        let domain = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")
+        return (domain?[defaultsKey] as? [String])?.first.flatMap(AppLanguage.init(rawValue:)) ?? .system
+    }
+
+    func store() {
+        if self == .system {
+            UserDefaults.standard.removeObject(forKey: Self.defaultsKey)
+        } else {
+            UserDefaults.standard.set([rawValue], forKey: Self.defaultsKey)
+        }
     }
 }
 

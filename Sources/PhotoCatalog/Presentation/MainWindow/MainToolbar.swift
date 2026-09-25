@@ -4,7 +4,7 @@
 import SwiftUI
 
 func inspectorToggleLabel(isVisible: Bool) -> String {
-    isVisible ? "隐藏简介 (⌘I)" : "显示简介 (⌘I)"
+    isVisible ? L("隐藏简介 (⌘I)") : L("显示简介 (⌘I)")
 }
 
 /// Each item is its own view so it re-renders only for the state it reads: rebuilding
@@ -82,8 +82,8 @@ private struct SortMenu: View {
             Label("排序", systemImage: "arrow.up.arrow.down")
         }
         .disabled(!app.canFilterOrSort)
-        .help("排序：\(app.sort.field.label) · \(app.sort.descending ? "降序" : "升序")")
-        .accessibilityValue("\(app.sort.field.label)，\(app.sort.descending ? "降序" : "升序")")
+        .help("排序：\(app.sort.field.label) · \(app.sort.descending ? L("降序") : L("升序"))")
+        .accessibilityValue("\(app.sort.field.label)，\(app.sort.descending ? L("降序") : L("升序"))")
     }
 }
 

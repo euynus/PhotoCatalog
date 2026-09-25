@@ -17,17 +17,17 @@ struct DevelopTransferSheet: View {
 
     private var title: String {
         switch mode {
-        case .copy: "拷贝修图设置"
-        case .sync: "同步修图设置"
-        case .preset: "新建修图预设"
+        case .copy: L("拷贝修图设置")
+        case .sync: L("同步修图设置")
+        case .preset: L("新建修图预设")
         }
     }
 
     private var actionTitle: String {
         switch mode {
-        case .copy: "拷贝"
-        case .sync: "同步"
-        case .preset: "存储预设"
+        case .copy: L("拷贝")
+        case .sync: L("同步")
+        case .preset: L("存储预设")
         }
     }
 
@@ -70,7 +70,7 @@ struct DevelopTransferSheet: View {
 
             HStack(spacing: 9) {
                 Spacer()
-                ghostButton(nil, "取消") { app.sheet = nil }
+                ghostButton(nil, L("取消")) { app.sheet = nil }
                 Button(action: confirm) {
                     Text(actionTitle)
                         .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)

@@ -88,6 +88,8 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 cp "$ROOT_DIR/Resources/AppIcon.icns" "$APP_RESOURCES/AppIcon.icns"
+# UI translations (keys are the Chinese source strings; see Domain/Localization.swift)
+cp -R "$ROOT_DIR/Resources/Localization/"*.lproj "$APP_RESOURCES/"
 chmod +x "$APP_BINARY"
 
 cat >"$INFO_PLIST" <<PLIST
@@ -102,9 +104,10 @@ cat >"$INFO_PLIST" <<PLIST
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
   <key>CFBundleDevelopmentRegion</key>
-  <string>zh_CN</string>
+  <string>en</string>
   <key>CFBundleLocalizations</key>
   <array>
+    <string>en</string>
     <string>zh-Hans</string>
   </array>
   <key>CFBundleIconFile</key>

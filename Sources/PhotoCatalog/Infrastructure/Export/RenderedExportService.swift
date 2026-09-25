@@ -103,11 +103,11 @@ enum RenderedExportService {
             return .skipped
         }
         let rendered = autoreleasepool { render(item, settings: settings) }
-        guard let rendered else { return .failed("\(item.baseName)：无法渲染原件") }
+        guard let rendered else { return .failed(L("\(item.baseName)：无法渲染原件")) }
         let partial = folder.appendingPathComponent(".\(UUID().uuidString).partial")
         guard let output = CGImageDestinationCreateWithURL(partial as CFURL, settings.format.typeIdentifier as CFString,
                                                            1, nil) else {
-            return .failed("\(item.baseName)：无法创建 \(settings.format.title) 文件")
+            return .failed(L("\(item.baseName)：无法创建 \(settings.format.title) 文件"))
         }
         let sourceProperties = CGImageSourceCreateWithURL(URL(fileURLWithPath: item.sourcePath) as CFURL, nil)
             .flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] } ?? [:]
@@ -116,7 +116,7 @@ enum RenderedExportService {
         CGImageDestinationAddImage(output, rendered, properties as CFDictionary)
         guard CGImageDestinationFinalize(output) else {
             try? FileManager.default.removeItem(at: partial)
-            return .failed("\(item.baseName)：写入失败")
+            return .failed(L("\(item.baseName)：写入失败"))
         }
         do {
             if FileManager.default.fileExists(atPath: destination.path) {
@@ -126,7 +126,7 @@ enum RenderedExportService {
             }
         } catch {
             try? FileManager.default.removeItem(at: partial)
-            return .failed("\(item.baseName)：\(error.localizedDescription)")
+            return .failed(L("\(item.baseName)：\(error.localizedDescription)"))
         }
         return .written(destination)
     }

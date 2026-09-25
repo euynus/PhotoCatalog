@@ -118,7 +118,7 @@ struct CropEditor: View {
                 if case .level = drag.kind {
                     straighten(along: value.startLocation, value.location, frame: frame)
                 } else if let draft = app.developDraft, draft.assetId == asset.id {
-                    app.commitDevelop([asset.id: draft.settings], undoName: "裁剪")
+                    app.commitDevelop([asset.id: draft.settings], undoName: L("裁剪"))
                 }
             }
     }
@@ -136,7 +136,7 @@ struct CropEditor: View {
         else { return }
         edit.straighten = angle
         edit.crop = edit.crop.map { DevelopGeometry.fit($0, angle: angle, frame: frame) }
-        app.commitDevelop([asset.id: edit], undoName: "拉直")
+        app.commitDevelop([asset.id: edit], undoName: L("拉直"))
     }
 
     // ---- layout and hit testing ----

@@ -122,9 +122,9 @@ private struct DetailTitles: ViewModifier {
     private var subtitle: String {
         if app.isPeople && app.view == .grid && app.hasOpenCatalog {
             let groups = app.faceClusters.filter { $0.faceIds.count > 1 }.count
-            return "\(app.catalogDisplayName) · \(app.people.count) 位人物 · \(groups) 组未命名"
+            return L("\(app.catalogDisplayName) · \(app.people.count) 位人物 · \(groups) 组未命名")
         }
-        return "\(app.catalogDisplayName) · \(app.contentAssetCount.formatted()) 张照片"
+        return L("\(app.catalogDisplayName) · \(app.contentAssetCount.formatted()) 张照片")
     }
 }
 

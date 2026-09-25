@@ -75,8 +75,8 @@ struct PlacesMapView: View {
                                     }
                                 }
                             } label: { pin(c) }.buttonStyle(.plain)
-                                .help(c.count == 1 ? c.representative.filename : "\(c.count) 张照片 — 点按放大")
-                                .accessibilityLabel(c.count == 1 ? c.representative.filename : "\(c.count) 张照片")
+                                .help(c.count == 1 ? c.representative.filename : L("\(c.count) 张照片 — 点按放大"))
+                                .accessibilityLabel(c.count == 1 ? c.representative.filename : L("\(c.count) 张照片"))
                                 .accessibilityHint(c.count == 1 ? "打开照片" : "放大地图")
                         }
                     }

@@ -108,9 +108,9 @@ private struct ImportProgressLabel: View {
 
     private func statusText(_ run: ImportRun) -> String {
         if run.phase == .paused {
-            return run.total > 0 ? "已暂停 \(run.percent)%" : "已暂停"
+            return run.total > 0 ? L("已暂停 \(run.percent)%") : L("已暂停")
         }
-        return run.total > 0 ? "导入 \(run.percent)%" : "正在扫描…"
+        return run.total > 0 ? L("导入 \(run.percent)%") : L("正在扫描…")
     }
 }
 
@@ -123,7 +123,7 @@ private struct ExportProgressLabel: View {
                 ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
                     .tint(Theme.accent)
                     .frame(width: 54)
-                Text("导出 \(progress.done)/\(progress.total)" + (progress.queued > 0 ? " · 队列 \(progress.queued)" : ""))
+                Text(L("导出 \(progress.done)/\(progress.total)") + (progress.queued > 0 ? L(" · 队列 \(progress.queued)") : ""))
                     .monospacedDigit()
                 Button { app.cancelRenderedExport() } label: {
                     Image(systemName: "xmark.circle.fill")

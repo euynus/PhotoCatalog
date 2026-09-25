@@ -70,8 +70,8 @@ struct ImportRun: Identifiable, Equatable, Sendable {
 extension ImportMode {
     var displayName: String {
         switch self {
-        case .managed: return "托管式"
-        case .referenced: return "引用式"
+        case .managed: return L("托管式")
+        case .referenced: return L("引用式")
         }
     }
 }

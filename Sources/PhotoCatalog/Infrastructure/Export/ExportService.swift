@@ -202,7 +202,7 @@ enum ExportService {
             components = sourceFolderComponents(for: asset, source: source,
                                                 sourceRootPathsByFolderId: sourceRootPathsByFolderId)
         case .album:
-            components = [safePathComponent(albumNamesByAssetId[asset.id] ?? "未加入相册")]
+            components = [safePathComponent(albumNamesByAssetId[asset.id] ?? L("未加入相册"))]
         }
         return components.reduce(destination) { url, component in
             url.appendingPathComponent(component, isDirectory: true)

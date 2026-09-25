@@ -23,7 +23,7 @@ struct CaptureAnalysisView: View {
                     }
 
                     if app.isLoadingCatalog {
-                        ProgressView("正在加载目录库…")
+                        ProgressView(L("正在加载目录库…"))
                             .frame(maxWidth: .infinity, minHeight: 200)
                     } else if let statistics {
                         if statistics.totalCount == 0 {
@@ -41,7 +41,7 @@ struct CaptureAnalysisView: View {
                             }
                         }
                     } else {
-                        ProgressView("正在分析拍摄参数…")
+                        ProgressView(L("正在分析拍摄参数…"))
                             .frame(maxWidth: .infinity, minHeight: 240)
                     }
                 }
@@ -58,11 +58,11 @@ struct CaptureAnalysisView: View {
         VStack(alignment: .leading, spacing: 16) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading),
                                      count: max(1, min(4, Int(width / 200)))), alignment: .leading, spacing: 16) {
-                metric("分析照片", value: statistics.totalCount, color: Theme.accent)
-                metric("拍摄天数", value: statistics.dayCount, color: Theme.green)
-                metric("参数齐全", value: statistics.completeCount, color: Theme.text)
+                metric(L("分析照片"), value: statistics.totalCount, color: Theme.accent)
+                metric(L("拍摄天数"), value: statistics.dayCount, color: Theme.green)
+                metric(L("参数齐全"), value: statistics.completeCount, color: Theme.text)
                     .help("相机、镜头、焦距、光圈、快门和 ISO 均有有效记录的照片数。")
-                metric("文件日期回退", value: statistics.fileDateCount, color: Theme.yellow)
+                metric(L("文件日期回退"), value: statistics.fileDateCount, color: Theme.yellow)
                     .help("缺少拍摄日期，目录改用文件创建或修改日期的照片数。")
             }
             if let first = statistics.firstDate, let last = statistics.lastDate {
@@ -138,7 +138,7 @@ private struct CaptureDistributionView: View {
                             .font(.system(size: 12))
                     }
                     .buttonStyle(.plain).foregroundStyle(Theme.accent)
-                    .accessibilityLabel("\(distribution.parameter.title)：\(expanded ? "收起" : "显示全部参数")")
+                    .accessibilityLabel(expanded ? "\(distribution.parameter.title)：收起" : "\(distribution.parameter.title)：显示全部参数")
                 }
             }
         }

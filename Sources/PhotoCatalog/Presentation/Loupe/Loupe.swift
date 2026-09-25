@@ -117,7 +117,7 @@ struct Loupe: View {
                     .help("\(asset.camera) · \(exposureSummary(asset))")
                 HStack(spacing: 8) {
                     StarsView(value: asset.rating, size: 13, gap: 2) { n in
-                        app.mutateAsset(asset.id, scope: .review, withCompanions: true, undoName: "评分") { $0.rating = asset.rating == n ? 0 : n }
+                        app.mutateAsset(asset.id, scope: .review, withCompanions: true, undoName: L("评分")) { $0.rating = asset.rating == n ? 0 : n }
                     }
                     FlagPill(flag: asset.flag, size: 12).frame(width: 14)
                     ColorDot(label: asset.colorLabel, size: 10).frame(width: 10)
@@ -126,8 +126,8 @@ struct Loupe: View {
                 Rectangle().fill(Theme.canvasLine).frame(width: 1, height: 16)
                 LoupeZoomButton()
                 HStack(spacing: 2) {
-                    navButton("chevronL", label: "上一张", disabled: idx == 0) { go(-1) }
-                    navButton("chevronR", label: "下一张", disabled: idx == count - 1) { go(1) }
+                    navButton("chevronL", label: L("上一张"), disabled: idx == 0) { go(-1) }
+                    navButton("chevronR", label: L("下一张"), disabled: idx == count - 1) { go(1) }
                 }
                 .fixedSize()
             }
@@ -162,7 +162,7 @@ private struct LoupeZoomButton: View {
             Button { _ = app.toggleZoom() } label: {
                 HStack(spacing: 4) {
                     Image(systemName: zoom == nil ? "plus.magnifyingglass" : "minus.magnifyingglass")
-                    Text(zoom.map { "\(Int(($0.scale * 100).rounded()))%" } ?? "适合")
+                    Text(zoom.map { "\(Int(($0.scale * 100).rounded()))%" } ?? L("适合"))
                         .monospacedDigit()
                 }
                 .font(.system(size: 11, weight: .medium))

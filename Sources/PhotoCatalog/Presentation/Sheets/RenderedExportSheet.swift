@@ -108,7 +108,7 @@ struct RenderedExportSheet: View {
     private var form: some View {
         Form {
             Section("导出位置") {
-                LabeledContent("文件夹") {
+                LabeledContent(L("文件夹", table: "Context")) {
                     HStack(spacing: 8) {
                         Text((folder as NSString).abbreviatingWithTildeInPath)
                             .lineLimit(1).truncationMode(.middle)
@@ -212,12 +212,12 @@ struct RenderedExportSheet: View {
     private var summary: String {
         var parts = [settings.format.title, settings.colorSpace.title]
         switch settings.resize {
-        case .none: parts.append("原始尺寸")
-        case .longEdge: parts.append("长边 \(settings.edge) px")
-        case .shortEdge: parts.append("短边 \(settings.edge) px")
-        case .fitWithin: parts.append("\(settings.maxWidth) × \(settings.maxHeight) 以内")
+        case .none: parts.append(L("原始尺寸"))
+        case .longEdge: parts.append(L("长边 \(String(settings.edge)) px"))
+        case .shortEdge: parts.append(L("短边 \(String(settings.edge)) px"))
+        case .fitWithin: parts.append(L("\(String(settings.maxWidth)) × \(String(settings.maxHeight)) 以内"))
         }
-        if settings.watermarkEnabled { parts.append("水印") }
+        if settings.watermarkEnabled { parts.append(L("水印")) }
         return parts.joined(separator: " · ")
     }
 
@@ -225,7 +225,7 @@ struct RenderedExportSheet: View {
         HStack(spacing: 9) {
             Text(summary).font(.system(size: 12)).foregroundStyle(Theme.text3)
             Spacer()
-            ghostButton(nil, "取消") { app.sheet = nil }
+            ghostButton(nil, L("取消")) { app.sheet = nil }
             Button(action: export) {
                 Label("导出", systemImage: "square.and.arrow.up")
                     .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
@@ -247,7 +247,7 @@ struct RenderedExportSheet: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "选择"
+        panel.prompt = L("选择")
         panel.directoryURL = URL(fileURLWithPath: folder)
         if panel.runModal() == .OK, let url = panel.url { folder = url.path }
     }

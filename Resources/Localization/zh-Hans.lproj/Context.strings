@@ -1,0 +1,29 @@
+/* Chinese keeps the source text; this table exists so the lookup never falls back to English. */
+
+/* Domain/SmartAlbumRule.swift */
+"不包含" = "不包含";
+
+/* Presentation/Develop/DevelopPanel.swift */
+"色调" = "色调";
+
+/* Presentation/Inspector/InspectorView.swift */
+"设备" = "设备";
+
+/* Presentation/Inspector/OrganizeTab.swift */
+"客户" = "客户";
+"项目" = "项目";
+
+/* Presentation/MainWindow/FilterBar.swift */
+"拒绝" = "拒绝";
+
+/* Presentation/Sheets/CardImportSheet.swift */
+"文件夹" = "文件夹";
+
+/* Presentation/Sheets/LocationSheets.swift */
+"照片" = "照片";
+
+/* Presentation/Sheets/SettingsSheet.swift */
+"关闭" = "关闭";
+
+/* Presentation/Sidebar/Sidebar.swift */
+"精选" = "精选";

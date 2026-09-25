@@ -284,8 +284,8 @@ enum CropAspect: Hashable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .original: "原始比例"
-        case .free: "自由"
+        case .original: L("原始比例")
+        case .free: L("自由")
         case .square: "1 : 1"
         case .r4x5: "4 : 5"
         case .r5x7: "5 : 7"
@@ -320,20 +320,20 @@ struct DevelopControl: Identifiable {
     let step: Double
     let format: @Sendable (Double) -> String
 
-    static let exposure = DevelopControl(id: \.exposure, title: "曝光度", range: -5...5, step: 0.01) {
+    static let exposure = DevelopControl(id: \.exposure, title: L("曝光度"), range: -5...5, step: 0.01) {
         String(format: "%+.2f", $0)
     }
     static let tone: [DevelopControl] = [
         .exposure,
-        signed(\.contrast, "对比度"),
-        signed(\.highlights, "高光"),
-        signed(\.shadows, "阴影"),
-        signed(\.whites, "白色色阶"),
-        signed(\.blacks, "黑色色阶"),
+        signed(\.contrast, L("对比度")),
+        signed(\.highlights, L("高光")),
+        signed(\.shadows, L("阴影")),
+        signed(\.whites, L("白色色阶")),
+        signed(\.blacks, L("黑色色阶")),
     ]
     static let presence: [DevelopControl] = [
-        signed(\.vibrance, "鲜艳度"),
-        signed(\.saturation, "饱和度"),
+        signed(\.vibrance, L("鲜艳度")),
+        signed(\.saturation, L("饱和度")),
     ]
 
     private static func signed(_ keyPath: WritableKeyPath<DevelopSettings, Double>, _ title: String) -> DevelopControl {

@@ -67,8 +67,8 @@ struct ImportSheet: View {
                 Text("导入模式").foregroundStyle(Theme.text2)
                 Spacer()
                 Segmented(options: [
-                    SegOption(value: "referenced", label: "引用式"),
-                    SegOption(value: "managed", label: "托管式"),
+                    SegOption(value: "referenced", label: L("引用式")),
+                    SegOption(value: "managed", label: L("托管式")),
                 ], value: app.importMode.rawValue,
                    onChange: { app.importMode = ImportMode(rawValue: $0) ?? .referenced })
             }
@@ -77,8 +77,8 @@ struct ImportSheet: View {
                     Text("归档规则").foregroundStyle(Theme.text2)
                     Spacer()
                     Segmented(options: [
-                        SegOption(value: "date", label: "按日期"),
-                        SegOption(value: "camera", label: "按相机"),
+                        SegOption(value: "date", label: L("按日期")),
+                        SegOption(value: "camera", label: L("按相机")),
                     ], value: app.managedArchiveRule.rawValue,
                        onChange: { app.managedArchiveRule = ManagedArchiveRule(rawValue: $0) ?? .date })
                 }
@@ -87,9 +87,9 @@ struct ImportSheet: View {
                 Text("重复处理").foregroundStyle(Theme.text2)
                 Spacer()
                 Segmented(options: [
-                    SegOption(value: "groupExact", label: "分组"),
-                    SegOption(value: "skipExact", label: "跳过"),
-                    SegOption(value: "keep", label: "保留"),
+                    SegOption(value: "groupExact", label: L("分组")),
+                    SegOption(value: "skipExact", label: L("跳过")),
+                    SegOption(value: "keep", label: L("保留")),
                 ], value: app.importDuplicateStrategy.rawValue,
                    onChange: {
                     app.importDuplicateStrategy = ImportDuplicateStrategy(rawValue: $0) ?? .groupExact
@@ -118,7 +118,7 @@ struct ImportSheet: View {
     private var idleFoot: some View {
         HStack {
             Spacer()
-            ghostButton(nil, "取消") { app.sheet = nil }
+            ghostButton(nil, L("取消")) { app.sheet = nil }
             Button { app.addFolder() } label: {
                 Label("选择文件夹…", systemImage: "folder")
                     .font(.system(size: 13, weight: .semibold))
@@ -184,11 +184,11 @@ struct ImportSheet: View {
 
     private func stats(_ run: ImportRun) -> some View {
         HStack(spacing: 8) {
-            stat(run.scanned.formatted(), "已扫描", nil)
-            stat(run.pending.formatted(), "待处理", nil)
-            stat(run.imported.formatted(), "成功", Theme.green)
-            stat(run.skipped.formatted(), "跳过（重复）", Theme.yellow)
-            stat(run.failed.formatted(), "失败", Theme.redSoft)
+            stat(run.scanned.formatted(), L("已扫描"), nil)
+            stat(run.pending.formatted(), L("待处理"), nil)
+            stat(run.imported.formatted(), L("成功"), Theme.green)
+            stat(run.skipped.formatted(), L("跳过（重复）"), Theme.yellow)
+            stat(run.failed.formatted(), L("失败"), Theme.redSoft)
         }
         .padding(.horizontal, 18).padding(.vertical, 8)
     }
@@ -300,10 +300,10 @@ struct ImportSheet: View {
                 HStack(spacing: 9) {
                     Spacer()
                     ghostButton(run.phase == .paused ? "play" : "pause",
-                                run.phase == .paused ? "继续" : "暂停") {
+                                run.phase == .paused ? L("继续") : L("暂停")) {
                         app.toggleImportPaused()
                     }
-                    ghostButton(nil, "后台运行") { app.sheet = nil }
+                    ghostButton(nil, L("后台运行")) { app.sheet = nil }
                 }
             } else if run.phase == .complete {
                 HStack(spacing: 6) {
@@ -316,7 +316,7 @@ struct ImportSheet: View {
                 HStack(spacing: 9) {
                     Spacer()
                     if !run.failures.isEmpty {
-                        ghostButton("refresh", "重试失败", small: true) { app.retryFailedImport() }
+                        ghostButton("refresh", L("重试失败"), small: true) { app.retryFailedImport() }
                     }
                     Button { app.sheet = nil; app.push("导入完成", "check") } label: {
                         Label("完成", systemImage: "checkmark")
@@ -328,18 +328,18 @@ struct ImportSheet: View {
             } else {
                 HStack(alignment: .top, spacing: 6) {
                     Icon("warning", size: 14).foregroundStyle(Theme.redSoft)
-                    Text(run.errorMessage ?? "导入失败")
+                    Text(run.errorMessage ?? L("导入失败"))
                         .lineLimit(2)
-                        .help(run.errorMessage ?? "导入失败")
+                        .help(run.errorMessage ?? L("导入失败"))
                 }
                 .font(.system(size: 13)).foregroundStyle(Theme.redSoft)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 9) {
                     Spacer()
                     if !run.failures.isEmpty {
-                        ghostButton("refresh", "重试失败", small: true) { app.retryFailedImport() }
+                        ghostButton("refresh", L("重试失败"), small: true) { app.retryFailedImport() }
                     }
-                    ghostButton(nil, "关闭") { app.sheet = nil }
+                    ghostButton(nil, L("关闭")) { app.sheet = nil }
                 }
             }
         }
@@ -350,24 +350,24 @@ struct ImportSheet: View {
 
     private func title(for phase: ImportPhase) -> String {
         switch phase {
-        case .scanning: return "正在扫描文件夹…"
-        case .importing: return "正在导入照片…"
-        case .paused: return "导入已暂停"
-        case .complete: return "导入完成"
-        case .failed: return "导入失败"
+        case .scanning: return L("正在扫描文件夹…")
+        case .importing: return L("正在导入照片…")
+        case .paused: return L("导入已暂停")
+        case .complete: return L("导入完成")
+        case .failed: return L("导入失败")
         }
     }
 
     private func progressLabel(_ run: ImportRun) -> String {
-        run.total == 0 && run.phase.isActive ? "扫描中" : "\(run.percent)%"
+        run.total == 0 && run.phase.isActive ? L("扫描中") : "\(run.percent)%"
     }
 
     private func activeDetail(_ run: ImportRun) -> String {
         if run.phase == .paused {
-            return "已暂停在 \((run.processed + run.failed).formatted()) / \(run.total.formatted()) 个文件"
+            return L("已暂停在 \((run.processed + run.failed).formatted()) / \(run.total.formatted()) 个文件")
         }
-        guard run.total > 0 else { return "正在扫描源文件夹…" }
-        return "正在处理 \((run.processed + run.failed).formatted()) / \(run.total.formatted()) 个文件"
+        guard run.total > 0 else { return L("正在扫描源文件夹…") }
+        return L("正在处理 \((run.processed + run.failed).formatted()) / \(run.total.formatted()) 个文件")
     }
 }
 

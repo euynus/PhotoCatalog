@@ -35,14 +35,14 @@ struct PeopleView: View {
             VStack(alignment: .leading, spacing: 22) {
                 AnalysisBanner()
                 if !people.isEmpty {
-                    section("人物 · \(people.count)") {
+                    section(L("人物 · \(people.count)")) {
                         ForEach(people) { person in
                             PersonTile(person: person) { detail = .person(person.name) }
                         }
                     }
                 }
                 if !shown.isEmpty {
-                    section("未命名 · \(shown.count) 组") {
+                    section(L("未命名 · \(shown.count) 组")) {
                         ForEach(shown) { cluster in
                             ClusterTile(cluster: cluster) { detail = .cluster(cluster.id) }
                         }
@@ -265,7 +265,7 @@ private struct PeopleDetailView: View {
     private var title: String {
         switch detail {
         case .person(let name): name
-        case .cluster: "未命名"
+        case .cluster: L("未命名")
         }
     }
 

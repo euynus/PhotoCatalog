@@ -9,9 +9,9 @@ struct CaptureDateBucket: Identifiable, Sendable {
 
 enum CaptureDates {
     static let presets = [
-        ("today", "今天"), ("yesterday", "昨天"),
-        ("last7Days", "最近 7 天"), ("last30Days", "最近 30 天"),
-        ("thisMonth", "本月"), ("thisYear", "今年"),
+        ("today", L("今天")), ("yesterday", L("昨天")),
+        ("last7Days", L("最近 7 天")), ("last30Days", L("最近 30 天")),
+        ("thisMonth", L("本月")), ("thisYear", L("今年")),
     ]
 
     static func key(_ date: Date, depth: Int = 2) -> String {
@@ -82,12 +82,24 @@ enum CaptureDates {
         return buckets(counts, depth: 0)
     }
 
+    /// A tree level's label: "2026年" / "2026", "3月" / "Mar", "25日" / "25".
+    private static func label(_ value: Int, depth: Int) -> String {
+        switch depth {
+        // as text: a number argument would be formatted with grouping ("2,026")
+        case 0: return L("\(String(value))年")
+        case 1: return monthNames.indices.contains(value - 1) ? monthNames[value - 1] : "\(value)"
+        default: return L("\(String(value))日")
+        }
+    }
+
+    private static let monthNames = DateFormatter().shortStandaloneMonthSymbols ?? []
+
     private static func buckets(_ days: [(key: String, count: Int)], depth: Int) -> [CaptureDateBucket] {
         let grouped = Dictionary(grouping: days) { $0.key.split(separator: "-").prefix(depth + 1).joined(separator: "-") }
         return grouped.keys.sorted(by: >).map { key in
             let members = grouped[key] ?? []
             let suffix = Int(key.split(separator: "-").last ?? "") ?? 0
-            return CaptureDateBucket(id: key, label: "\(suffix)\(["年", "月", "日"][depth])",
+            return CaptureDateBucket(id: key, label: label(suffix, depth: depth),
                                      count: members.reduce(0) { $0 + $1.count },
                                      children: depth < 2 ? buckets(members, depth: depth + 1) : [])
         }

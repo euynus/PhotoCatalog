@@ -52,8 +52,8 @@ struct DuplicatesView: View {
     private var head: some View {
         VStack(alignment: .leading, spacing: 8) {
             FlowRow(spacing: 18, lineSpacing: 6) {
-                summaryItem("\(groups.count)", "组")
-                summaryItem("\(fileCount)", "个文件")
+                summaryItem("\(groups.count)", L("组"))
+                summaryItem("\(fileCount)", L("个文件"))
                 HStack(spacing: 4) {
                     Text("可释放 ≈").foregroundStyle(Theme.text2)
                     Text(fileSizeText(megabytes: reclaim))
@@ -123,12 +123,12 @@ struct DuplicatesView: View {
                 FlowRow(spacing: 10, lineSpacing: 8) {
                     Text("保留 1 张，其余：").foregroundStyle(Theme.text3)
                         .padding(.vertical, 5)
-                    ghostButton("minus", "从目录库移除", small: true) {
+                    ghostButton("minus", L("从目录库移除"), small: true) {
                         if app.resolveDuplicateGroup(g, keepId: keptId, action: .removeFromCatalog) {
                             resolved[g.id] = "removed"
                         }
                     }
-                    ghostButton("trash", "移到废纸篓", danger: true, small: true) {
+                    ghostButton("trash", L("移到废纸篓"), danger: true, small: true) {
                         if app.resolveDuplicateGroup(g, keepId: keptId, action: .moveToTrash) {
                             resolved[g.id] = "trashed"
                         }
@@ -176,7 +176,7 @@ struct DuplicatesView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(kept)
-                    .accessibilityLabel("\(kept ? "已保留" : "保留这张")：\(it.filename)")
+                    .accessibilityLabel(kept ? "已保留：\(it.filename)" : "保留这张：\(it.filename)")
                 } else if kept {
                     Label("已保留", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(Theme.accent)

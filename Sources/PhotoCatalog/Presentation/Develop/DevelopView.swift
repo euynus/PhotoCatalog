@@ -60,7 +60,7 @@ private struct DevelopCanvas: View {
                     }
                 }
                 .overlay(alignment: .topLeading) {
-                    if app.developShowsOriginal { badge("修改前（按 \\ 切换）") }
+                    if app.developShowsOriginal { badge(L("修改前（按 \\ 切换）")) }
                 }
                 .overlay(alignment: .topTrailing) {
                     if engine.isRendering(asset.id) { ProgressView().controlSize(.small).padding(14) }

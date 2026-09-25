@@ -26,12 +26,12 @@ struct DevelopPanel: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header(asset, settings: settings)
-                section("裁剪与旋转") { geometry(asset, settings) }
-                section("白平衡") { whiteBalance(asset, settings) }
-                section("色调") {
+                section(L("裁剪与旋转")) { geometry(asset, settings) }
+                section(L("白平衡")) { whiteBalance(asset, settings) }
+                section(L("色调")) {
                     ForEach(DevelopControl.tone) { control in slider(control, asset, settings) }
                 }
-                section("偏好") {
+                section(L("偏好")) {
                     ForEach(DevelopControl.presence) { control in slider(control, asset, settings) }
                 }
             }
@@ -53,7 +53,7 @@ struct DevelopPanel: View {
                 .help("修改前 / 修改后 (\\)")
                 Spacer(minLength: 0)
                 Button("复位") {
-                    app.commitDevelop([asset.id: .neutral], undoName: "复位调整")
+                    app.commitDevelop([asset.id: .neutral], undoName: L("复位调整"))
                 }
                 .disabled(settings.isNeutral)
                 .help("恢复为原照设置")
@@ -76,39 +76,39 @@ struct DevelopPanel: View {
     private func whiteBalance(_ asset: Asset, _ settings: DevelopSettings) -> some View {
         if asset.isRaw {
             let asShot = app.developAsShot[asset.id]
-            DevelopSlider(title: "色温", value: settings.temperature ?? asShot?.temperature ?? 5500,
+            DevelopSlider(title: L("色温"), value: settings.temperature ?? asShot?.temperature ?? 5500,
                           range: 2000...12000, step: 50,
                           format: { String(format: "%.0f K", $0) },
                           isNeutral: settings.temperature == nil,
                           onChange: { draft(asset, settings) { $0.temperature = $1 }($0) },
-                          onReset: { commit(asset, settings, "色温") { $0.temperature = nil } },
-                          onCommit: { commitDraft(asset, "色温") })
-            DevelopSlider(title: "色调", value: settings.tint ?? asShot?.tint ?? 0,
+                          onReset: { commit(asset, settings, L("色温")) { $0.temperature = nil } },
+                          onCommit: { commitDraft(asset, L("色温")) })
+            DevelopSlider(title: L("色调", table: "Context"), value: settings.tint ?? asShot?.tint ?? 0,
                           range: -150...150, step: 1,
                           format: { String(format: "%+.0f", $0) },
                           isNeutral: settings.tint == nil,
                           onChange: { draft(asset, settings) { $0.tint = $1 }($0) },
-                          onReset: { commit(asset, settings, "色调") { $0.tint = nil } },
-                          onCommit: { commitDraft(asset, "色调") })
+                          onReset: { commit(asset, settings, L("色调", table: "Context")) { $0.tint = nil } },
+                          onCommit: { commitDraft(asset, L("色调", table: "Context")) })
             if settings.temperature != nil || settings.tint != nil {
                 Button("原照设置") {
-                    commit(asset, settings, "白平衡") { $0.temperature = nil; $0.tint = nil }
+                    commit(asset, settings, L("白平衡")) { $0.temperature = nil; $0.tint = nil }
                 }
                 .controlSize(.small)
             }
         } else {
-            DevelopSlider(title: "色温", value: settings.temperature ?? 0, range: -100...100, step: 1,
+            DevelopSlider(title: L("色温"), value: settings.temperature ?? 0, range: -100...100, step: 1,
                           format: { $0 == 0 ? "0" : String(format: "%+.0f", $0) },
                           isNeutral: (settings.temperature ?? 0) == 0,
                           onChange: { draft(asset, settings) { $0.temperature = $1 }($0) },
-                          onReset: { commit(asset, settings, "色温") { $0.temperature = nil } },
-                          onCommit: { commitDraft(asset, "色温") })
-            DevelopSlider(title: "色调", value: settings.tint ?? 0, range: -100...100, step: 1,
+                          onReset: { commit(asset, settings, L("色温")) { $0.temperature = nil } },
+                          onCommit: { commitDraft(asset, L("色温")) })
+            DevelopSlider(title: L("色调", table: "Context"), value: settings.tint ?? 0, range: -100...100, step: 1,
                           format: { $0 == 0 ? "0" : String(format: "%+.0f", $0) },
                           isNeutral: (settings.tint ?? 0) == 0,
                           onChange: { draft(asset, settings) { $0.tint = $1 }($0) },
-                          onReset: { commit(asset, settings, "色调") { $0.tint = nil } },
-                          onCommit: { commitDraft(asset, "色调") })
+                          onReset: { commit(asset, settings, L("色调", table: "Context")) { $0.tint = nil } },
+                          onCommit: { commitDraft(asset, L("色调", table: "Context")) })
         }
     }
 
@@ -180,13 +180,13 @@ struct DevelopPanel: View {
             }
             .controlSize(.small)
         }
-        DevelopSlider(title: "角度", value: settings.straighten,
+        DevelopSlider(title: L("角度"), value: settings.straighten,
                       range: -DevelopGeometry.maxStraighten...DevelopGeometry.maxStraighten, step: 0.1,
                       format: { $0 == 0 ? "0°" : String(format: "%+.1f°", $0) },
                       isNeutral: settings.straighten == 0,
                       onChange: { straightenDraft(asset, $0) },
                       onReset: { commitStraighten(asset, 0) },
-                      onCommit: { commitDraft(asset, "角度") })
+                      onCommit: { commitDraft(asset, L("角度")) })
         HStack(spacing: 8) {
             Button("自动拉直") { app.autoStraighten(asset) }
                 .help("按画面中的地平线自动拉直")
@@ -195,7 +195,7 @@ struct DevelopPanel: View {
                 var next = app.developSettings[asset.id] ?? .neutral
                 next.crop = nil
                 next.straighten = 0
-                app.commitDevelop([asset.id: next], undoName: "复位裁剪")
+                app.commitDevelop([asset.id: next], undoName: L("复位裁剪"))
             }
             .disabled(settings.crop == nil && settings.straighten == 0)
         }
@@ -214,7 +214,7 @@ struct DevelopPanel: View {
 
     private func commitStraighten(_ asset: Asset, _ angle: Double) {
         straightenDraft(asset, angle)
-        commitDraft(asset, "角度")
+        commitDraft(asset, L("角度"))
     }
 
     /// Picks a crop shape and reshapes the crop to the largest of it around the same center.
@@ -224,14 +224,14 @@ struct DevelopPanel: View {
         guard let ratio = aspect.ratio(frame: frame) else { return }
         let current = DevelopGeometry.effectiveCrop(settings, frame: frame)
         let landscape = current.width * frame.width >= current.height * frame.height
-        reshapeCrop(asset, aspect: landscape ? ratio : 1 / ratio, around: current, frame: frame, undoName: "裁剪比例")
+        reshapeCrop(asset, aspect: landscape ? ratio : 1 / ratio, around: current, frame: frame, undoName: L("裁剪比例"))
     }
 
     private func swapCropOrientation(_ asset: Asset, _ settings: DevelopSettings) {
         let frame = app.developFrame(for: asset, settings: settings)
         let current = DevelopGeometry.effectiveCrop(settings, frame: frame)
         let aspect = current.height * frame.height / max(current.width * frame.width, 1e-9)
-        reshapeCrop(asset, aspect: aspect, around: current, frame: frame, undoName: "切换裁剪框横竖")
+        reshapeCrop(asset, aspect: aspect, around: current, frame: frame, undoName: L("切换裁剪框横竖"))
     }
 
     private func reshapeCrop(_ asset: Asset, aspect: Double, around current: DevelopCrop, frame: CGSize,
@@ -278,14 +278,14 @@ struct DevelopPanel: View {
 
     private func commitDraft(_ asset: Asset, _ title: String) {
         guard let draft = app.developDraft, draft.assetId == asset.id else { return }
-        app.commitDevelop([asset.id: draft.settings], undoName: "调整\(title)")
+        app.commitDevelop([asset.id: draft.settings], undoName: L("调整\(title)"))
     }
 
     private func commit(_ asset: Asset, _ settings: DevelopSettings, _ title: String,
                         _ apply: (inout DevelopSettings) -> Void) {
         var next = app.developSettings[asset.id] ?? .neutral
         apply(&next)
-        app.commitDevelop([asset.id: next], undoName: "复位\(title)")
+        app.commitDevelop([asset.id: next], undoName: L("复位\(title)"))
     }
 }
 
@@ -358,10 +358,10 @@ private struct DevelopHistogramView: View {
         .frame(height: 88)
         .background(Theme.canvas, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(alignment: .topLeading) {
-            clipIndicator(histogram?.shadowClipping, label: "阴影剪切")
+            clipIndicator(histogram?.shadowClipping, label: L("阴影剪切"))
         }
         .overlay(alignment: .topTrailing) {
-            clipIndicator(histogram?.highlightClipping, label: "高光剪切")
+            clipIndicator(histogram?.highlightClipping, label: L("高光剪切"))
         }
         .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
         .accessibilityElement()

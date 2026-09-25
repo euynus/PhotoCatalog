@@ -6,11 +6,11 @@ enum CaptureParameter: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .camera: return "相机"
-        case .lens: return "镜头"
-        case .focal: return "焦距"
-        case .aperture: return "光圈"
-        case .shutter: return "快门"
+        case .camera: return L("相机")
+        case .lens: return L("镜头")
+        case .focal: return L("焦距")
+        case .aperture: return L("光圈")
+        case .shutter: return L("快门")
         case .iso: return "ISO"
         }
     }

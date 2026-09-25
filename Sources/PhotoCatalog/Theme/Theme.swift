@@ -140,12 +140,12 @@ enum ColorLabel: String, CaseIterable, Identifiable, Hashable, Sendable {
     }
     var name: String {
         switch self {
-        case .red: return "红"
-        case .orange: return "橙"
-        case .yellow: return "黄"
-        case .green: return "绿"
-        case .blue: return "蓝"
-        case .purple: return "紫"
+        case .red: return L("红")
+        case .orange: return L("橙")
+        case .yellow: return L("黄")
+        case .green: return L("绿")
+        case .blue: return L("蓝")
+        case .purple: return L("紫")
         }
     }
 }

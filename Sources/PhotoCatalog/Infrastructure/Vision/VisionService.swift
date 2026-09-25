@@ -40,11 +40,11 @@ enum VisionService {
     /// fall back to the raw identifier for everything else.
     private static func localize(_ id: String) -> String {
         let map: [String: String] = [
-            "outdoor": "户外", "indoor": "室内", "sky": "天空", "water": "水景",
-            "landscape": "风光", "mountain": "山脉", "beach": "海岸", "snow": "雪景",
-            "plant": "植物", "tree": "树木", "flower": "花卉", "animal": "动物",
-            "people": "人物", "food": "美食", "building": "建筑", "city": "城市",
-            "night": "夜景", "sunset": "日落", "vehicle": "交通工具", "street": "街拍",
+            "outdoor": L("户外"), "indoor": L("室内"), "sky": L("天空"), "water": L("水景"),
+            "landscape": L("风光"), "mountain": L("山脉"), "beach": L("海岸"), "snow": L("雪景"),
+            "plant": L("植物"), "tree": L("树木"), "flower": L("花卉"), "animal": L("动物"),
+            "people": L("人物"), "food": L("美食"), "building": L("建筑"), "city": L("城市"),
+            "night": L("夜景"), "sunset": L("日落"), "vehicle": L("交通工具"), "street": L("街拍"),
         ]
         return map[id] ?? id
     }

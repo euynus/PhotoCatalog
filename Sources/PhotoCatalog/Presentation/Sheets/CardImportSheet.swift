@@ -23,7 +23,7 @@ struct CardImportSheet: View {
     }
 
     private var sourceRoot: URL? { customSource ?? card?.dcim }
-    private var sourceName: String { customSource?.lastPathComponent ?? card?.name ?? "选择来源" }
+    private var sourceName: String { customSource?.lastPathComponent ?? card?.name ?? L("选择来源") }
     private var chosen: [CardFile] { files.filter { selection.contains($0.id) } }
 
     var body: some View {
@@ -61,7 +61,7 @@ struct CardImportSheet: View {
                 }
                 if !app.cardVolumes.isEmpty { Divider() }
                 Button("选择文件夹…") {
-                    if let url = chooseFolder(prompt: "选择来源", start: nil) { customSource = url }
+                    if let url = chooseFolder(prompt: L("选择来源"), start: nil) { customSource = url }
                 }
             } label: {
                 Label(sourceName, systemImage: customSource == nil ? "sdcard" : "folder")
@@ -132,12 +132,12 @@ struct CardImportSheet: View {
                 Text("插入存储卡，或选择一个包含照片的文件夹。")
             } actions: {
                 Button("选择文件夹…") {
-                    if let url = chooseFolder(prompt: "选择来源", start: nil) { customSource = url }
+                    if let url = chooseFolder(prompt: L("选择来源"), start: nil) { customSource = url }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if scanning && files.isEmpty {
-            ProgressView("正在读取「\(sourceName)」…").frame(maxWidth: .infinity, maxHeight: .infinity)
+            ProgressView(L("正在读取「\(sourceName)」…")).frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if visibleFiles.isEmpty {
             ContentUnavailableView(files.isEmpty ? "没有找到照片" : "照片都已导入", systemImage: "photo.on.rectangle")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -197,12 +197,12 @@ struct CardImportSheet: View {
         @Bindable var app = app
         return Form {
             Section("目标位置") {
-                LabeledContent("文件夹") {
+                LabeledContent(L("文件夹", table: "Context")) {
                     HStack(spacing: 8) {
                         Text((options.destination.path as NSString).abbreviatingWithTildeInPath)
                             .lineLimit(1).truncationMode(.middle).foregroundStyle(Theme.text2)
                         Button("选择…") {
-                            if let url = chooseFolder(prompt: "选择", start: options.destination) {
+                            if let url = chooseFolder(prompt: L("选择"), start: options.destination) {
                                 options.destination = url
                             }
                         }
@@ -239,10 +239,10 @@ struct CardImportSheet: View {
                 if options.backupEnabled {
                     LabeledContent("备份文件夹") {
                         HStack(spacing: 8) {
-                            Text(options.backup.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? "未选择")
+                            Text(options.backup.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? L("未选择"))
                                 .lineLimit(1).truncationMode(.middle).foregroundStyle(Theme.text2)
                             Button("选择…") {
-                                if let url = chooseFolder(prompt: "选择", start: options.backup) { options.backup = url }
+                                if let url = chooseFolder(prompt: L("选择"), start: options.backup) { options.backup = url }
                             }
                         }
                     }
@@ -274,11 +274,11 @@ struct CardImportSheet: View {
         let bytes = chosen.reduce(Int64(0)) { $0 + $1.size }
         let ready = !chosen.isEmpty && (!options.backupEnabled || options.backup != nil)
         return HStack(spacing: 9) {
-            Text("已选 \(chosen.count) / \(files.count) 张 · "
+            Text(L("已选 \(chosen.count) / \(files.count) 张 · ")
                  + ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))
                 .font(.system(size: 12)).foregroundStyle(Theme.text3)
             Spacer()
-            ghostButton(nil, "取消") { app.sheet = nil }
+            ghostButton(nil, L("取消")) { app.sheet = nil }
             Button {
                 app.sheet = nil
                 app.importFromCard(customSource == nil ? card : nil, files: chosen, options: options)
@@ -334,7 +334,7 @@ private struct CardThumbCell: View {
             }
             .overlay(alignment: .bottomTrailing) {
                 HStack(spacing: 3) {
-                    if file.alreadyImported { badge("已导入") }
+                    if file.alreadyImported { badge(L("已导入")) }
                     if file.isRaw { badge("RAW") }
                 }
                 .padding(5)

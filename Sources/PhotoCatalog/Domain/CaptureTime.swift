@@ -22,3 +22,18 @@ extension TimeZone {
     /// The fixed timezone capture wall-clock times are anchored to.
     static let captureWallClock = TimeZone(identifier: "UTC")!
 }
+
+enum CaptureDateSource {
+    /// Where a capture time came from, in the user's language. The catalog stores the Chinese
+    /// names (and EXIF tag names, shown as they are), so only the display is translated.
+    static func label(_ stored: String) -> String {
+        switch stored {
+        case "文件创建时间": return L("文件创建时间")
+        case "文件修改时间": return L("文件修改时间")
+        case "手动调整": return L("手动调整")
+        case "手动设置": return L("手动设置")
+        case "sidecar": return L("XMP 附属文件")
+        default: return stored
+        }
+    }
+}

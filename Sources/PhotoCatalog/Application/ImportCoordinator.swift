@@ -13,7 +13,7 @@ enum ImportMode: String, Sendable { case referenced, managed }
 enum ManagedArchiveRule: String, Sendable, CaseIterable {
     case date    // Originals/YYYY/MM/DD
     case camera  // Originals/<camera>/YYYY/MM
-    var label: String { self == .date ? "按日期" : "按相机" }
+    var label: String { self == .date ? L("按日期") : L("按相机") }
 }
 
 /// Turns a file an import found into the file to catalog — a card import copies it off first.
@@ -148,7 +148,7 @@ final class ImportCoordinator: @unchecked Sendable {
                 guard FileManager.default.fileExists(atPath: url.path) else {
                     prog.failed += 1
                     prog.latestAsset = nil
-                    prog.latestFailure = ImportFailure(url: url, reason: "文件不存在或不可访问")
+                    prog.latestFailure = ImportFailure(url: url, reason: L("文件不存在或不可访问"))
                     return
                 }
                 // Reuse cataloged referenced files; downstream dedup still counts them as skipped.
@@ -171,12 +171,12 @@ final class ImportCoordinator: @unchecked Sendable {
                     } else {
                         prog.failed += 1
                         prog.latestAsset = nil
-                        prog.latestFailure = ImportFailure(url: url, reason: "无法读取图片元数据或像素尺寸")
+                        prog.latestFailure = ImportFailure(url: url, reason: L("无法读取图片元数据或像素尺寸"))
                     }
                 } catch {
                     prog.failed += 1
                     prog.latestAsset = nil
-                    prog.latestFailure = ImportFailure(url: url, reason: "复制原件失败：\(error.localizedDescription)")
+                    prog.latestFailure = ImportFailure(url: url, reason: L("复制原件失败：\(error.localizedDescription)"))
                 }
             }
             progress?(prog)
@@ -316,7 +316,7 @@ final class ImportCoordinator: @unchecked Sendable {
 
     private func sanitizeFolderName(_ name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "未知相机" }
+        guard !trimmed.isEmpty else { return L("未知相机") }
         let illegal = CharacterSet(charactersIn: "/\\:?%*|\"<>")
         return trimmed.components(separatedBy: illegal).joined(separator: "-")
     }

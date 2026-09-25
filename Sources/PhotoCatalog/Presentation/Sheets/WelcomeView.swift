@@ -48,9 +48,9 @@ struct WelcomeView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("目录库").font(.system(size: 15, weight: .semibold))
             VStack(spacing: 8) {
-                wbtn("folder", "添加照片文件夹…", primary: true) { app.enterApp("import") }
-                wbtn("plus", "新建目录库…", primary: false) { app.createCatalog() }
-                wbtn("photos", "打开目录库…", primary: false) { app.openCatalog() }
+                wbtn("folder", L("添加照片文件夹…"), primary: true) { app.enterApp("import") }
+                wbtn("plus", L("新建目录库…"), primary: false) { app.createCatalog() }
+                wbtn("photos", L("打开目录库…"), primary: false) { app.openCatalog() }
             }
             Spacer(minLength: 0)
         }

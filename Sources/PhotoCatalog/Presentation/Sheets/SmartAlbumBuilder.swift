@@ -13,11 +13,11 @@ struct SmartAlbumBuilder: View {
 
     init(album: SmartAlbum? = nil) {
         self.album = album
-        _name = State(initialValue: album?.name ?? "五星精选 · 旅行")
+        _name = State(initialValue: album?.name ?? L("五星精选 · 旅行"))
         _match = State(initialValue: album?.rule.match ?? "all")
         _conditions = State(initialValue: album?.rule.conditions ?? [
             SmartCondition(field: "rating", op: ">=", value: "4"),
-            SmartCondition(field: "keywords", op: "包含", value: "旅行"),
+            SmartCondition(field: "keywords", op: "包含", value: L("旅行")),
         ])
     }
 
@@ -72,8 +72,8 @@ struct SmartAlbumBuilder: View {
                 Text("规则").font(.system(size: 15, weight: .semibold))
                 Spacer()
                 Segmented(options: [
-                    SegOption(value: "all", label: "全部 (AND)"),
-                    SegOption(value: "any", label: "任一 (OR)"),
+                    SegOption(value: "all", label: L("全部 (AND)")),
+                    SegOption(value: "any", label: L("任一 (OR)")),
                 ], value: match, onChange: { match = $0 })
                 Button { conditions.append(SmartCondition(field: "camera", op: "包含", value: "")) } label: {
                     Label("添加条件", systemImage: "plus")
@@ -136,7 +136,7 @@ struct SmartAlbumBuilder: View {
                      options: SmartFields.all.map { ($0.key, $0.label) }, width: 110) { newField in
                 updateField(i, newField)
             }
-            SASelect(value: conditions[i].op, options: field.ops.map { ($0, $0) }, width: 78) {
+            SASelect(value: conditions[i].op, options: field.ops.map { ($0, SmartField.opLabel($0)) }, width: 78) {
                 conditions[i].op = $0
             }
             valueControl(i, field)
@@ -177,15 +177,15 @@ struct SmartAlbumBuilder: View {
     private func valueControl(_ i: Int, _ field: SmartField) -> some View {
         switch field.input {
         case .rating:
-            SASelect(value: conditions[i].value, options: (0...5).map { ("\($0)", "\($0) 星") }) { conditions[i].value = $0 }
+            SASelect(value: conditions[i].value, options: (0...5).map { ("\($0)", L("\($0) 星")) }) { conditions[i].value = $0 }
         case .flag:
-            SASelect(value: conditions[i].value, options: [("pick", "精选"), ("reject", "拒绝"), ("none", "无")]) { conditions[i].value = $0 }
+            SASelect(value: conditions[i].value, options: [("pick", L("精选", table: "Context")), ("reject", L("拒绝", table: "Context")), ("none", L("无"))]) { conditions[i].value = $0 }
         case .color:
-            SASelect(value: conditions[i].value, options: [("", "无")] + ColorLabel.allCases.map { ($0.rawValue, $0.name) }) { conditions[i].value = $0 }
+            SASelect(value: conditions[i].value, options: [("", L("无"))] + ColorLabel.allCases.map { ($0.rawValue, $0.name) }) { conditions[i].value = $0 }
         case .type:
             SASelect(value: conditions[i].value, options: ["RAW", "HEIC", "ARW", "CR3", "NEF", "RAF", "DNG"].map { ($0, $0) }) { conditions[i].value = $0 }
         case .status:
-            SASelect(value: conditions[i].value, options: [("ready", "可访问"), ("offline", "离线"), ("missing", "缺失")]) { conditions[i].value = $0 }
+            SASelect(value: conditions[i].value, options: [("ready", L("可访问")), ("offline", L("离线")), ("missing", L("缺失"))]) { conditions[i].value = $0 }
         case .datePreset:
             SASelect(value: conditions[i].value, options: CaptureDates.presets) { conditions[i].value = $0 }
         case .date:
@@ -197,7 +197,7 @@ struct SmartAlbumBuilder: View {
             .environment(\.calendar, Calendar.captureWallClock)
             .environment(\.timeZone, TimeZone.captureWallClock)
         case .gps:
-            SASelect(value: conditions[i].value, options: [("yes", "有 GPS"), ("no", "无 GPS")]) { conditions[i].value = $0 }
+            SASelect(value: conditions[i].value, options: [("yes", L("有 GPS")), ("no", L("无 GPS"))]) { conditions[i].value = $0 }
         case .year:
             TextField("", text: Binding(get: { conditions[i].value }, set: { conditions[i].value = $0 }))
                 .textFieldStyle(.plain).font(.system(size: 13))
@@ -218,7 +218,7 @@ struct SmartAlbumBuilder: View {
     private func foot(matchedCount: Int) -> some View {
         HStack(spacing: 9) {
             Spacer()
-            ghostButton(nil, "取消") { app.dismissSmartAlbumBuilder() }
+            ghostButton(nil, L("取消")) { app.dismissSmartAlbumBuilder() }
             Button { app.saveSmart(name: name, rule: rule, count: matchedCount) } label: {
                 Label(album == nil ? "创建智能相册" : "保存更改", systemImage: "checkmark")
                     .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)

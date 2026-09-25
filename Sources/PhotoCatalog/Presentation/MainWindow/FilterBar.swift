@@ -16,22 +16,22 @@ struct FilterBar: View {
                         .font(.system(size: 11)).foregroundStyle(Theme.accent)
                 }
                 Spacer()
-                ToolButton(icon: "refresh", label: "清除筛选",
+                ToolButton(icon: "refresh", label: L("清除筛选"),
                            disabled: app.filters.activeCount == 0 && cameraText.isEmpty && lensText.isEmpty) {
                     cameraText = ""
                     lensText = ""
                     app.setFilters(Filters())
                 }
-                ToolButton(icon: "close", label: "收起筛选") { app.toggleFilterBar() }
+                ToolButton(icon: "close", label: L("收起筛选")) { app.toggleFilterBar() }
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 12, alignment: .leading)],
                       alignment: .leading, spacing: 12) {
-                field("最低评分") { ratingControl }
-                filterMenu("旗标", value: app.filters.flag,
-                           options: [("any", "全部"), ("pick", "精选"), ("reject", "拒绝")]) {
+                field(L("最低评分")) { ratingControl }
+                filterMenu(L("旗标"), value: app.filters.flag,
+                           options: [("any", L("全部")), ("pick", L("精选", table: "Context")), ("reject", L("拒绝", table: "Context"))]) {
                     var filters = app.filters; filters.flag = $0; app.setFilters(filters)
                 }
-                field("颜色标签") {
+                field(L("颜色标签")) {
                     Menu {
                         Button("全部颜色") { setColor("any") }
                         ForEach(ColorLabel.allCases) { color in
@@ -48,28 +48,28 @@ struct FilterBar: View {
                             if let color = ColorLabel(rawValue: app.filters.color) {
                                 Circle().fill(color.hex).frame(width: 9, height: 9)
                             }
-                            menuTitle(ColorLabel(rawValue: app.filters.color)?.name ?? "全部颜色")
+                            menuTitle(ColorLabel(rawValue: app.filters.color)?.name ?? L("全部颜色"))
                         }
                     }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden)
                     .accessibilityLabel("颜色标签")
-                    .accessibilityValue(ColorLabel(rawValue: app.filters.color)?.name ?? "全部颜色")
+                    .accessibilityValue(ColorLabel(rawValue: app.filters.color)?.name ?? L("全部颜色"))
                 }
-                filterMenu("文件类型", value: app.filters.type,
-                           options: [("any", "全部类型"), ("RAW", "RAW"), ("HEIC", "HEIC")]) {
+                filterMenu(L("文件类型"), value: app.filters.type,
+                           options: [("any", L("全部类型")), ("RAW", "RAW"), ("HEIC", "HEIC")]) {
                     var filters = app.filters; filters.type = $0; app.setFilters(filters)
                 }
-                field("相机") { metadataField("全部相机", label: "相机", text: $cameraText) }
-                field("镜头") { metadataField("全部镜头", label: "镜头", text: $lensText) }
-                filterMenu("拍摄日期", value: app.filters.date,
-                           options: [("any", "全部日期")] + CaptureDates.presets + [("custom", "自定义范围")],
+                field(L("相机")) { metadataField(L("全部相机"), label: L("相机"), text: $cameraText) }
+                field(L("镜头")) { metadataField(L("全部镜头"), label: L("镜头"), text: $lensText) }
+                filterMenu(L("拍摄日期"), value: app.filters.date,
+                           options: [("any", L("全部日期"))] + CaptureDates.presets + [("custom", L("自定义范围"))],
                            onSelect: setDateFilter)
                 filterMenu("GPS", value: app.filters.gps,
-                           options: [("any", "不限"), ("yes", "有位置"), ("no", "无位置")]) {
+                           options: [("any", L("不限")), ("yes", L("有位置")), ("no", L("无位置"))]) {
                     var filters = app.filters; filters.gps = $0; app.setFilters(filters)
                 }
-                filterMenu("文件状态", value: app.filters.status,
-                           options: [("any", "全部状态"), ("ready", "正常"), ("missing", "缺失"), ("offline", "离线")]) {
+                filterMenu(L("文件状态"), value: app.filters.status,
+                           options: [("any", L("全部状态")), ("ready", L("正常")), ("missing", L("缺失")), ("offline", L("离线"))]) {
                     var filters = app.filters; filters.status = $0; app.setFilters(filters)
                 }
             }

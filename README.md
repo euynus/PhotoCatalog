@@ -96,6 +96,28 @@ The built-in demo dataset is a **bit-faithful port** of the prototype's seeded R
 
 > **Scalability status.** Measured at 500,000 photos with a synthetic catalog (`--scale`, Release build, Apple silicon, warm file cache): the first photos appear within a second of launch and the whole catalog is usable in ~5 s. Filtering, sorting, searching and switching collections respond in 0.1–0.35 s, and rating a photo in ~50 ms. Asset metadata stays resident in memory in a compact copy-on-write form (~1 GB at 500k photos) rather than being paged from SQLite.
 
+## Languages
+
+The interface is available in Simplified Chinese and English. It follows the system language
+(English for every language other than Chinese), or the choice in Settings → General →
+Language, which takes effect after a relaunch.
+
+UI text is written in Chinese in the source and used as the lookup key. SwiftUI literals
+(`Text("…")`, `Button("…")`) localize by themselves; text built as a `String` goes through
+`L("…")` (`Domain/Localization.swift`), and toasts take a localizable value. The English tables
+live in `Resources/Localization/en.lproj`, which the build script copies into the app.
+`L(…, table: "Context")` carries a second English meaning of the same Chinese text (色调 is
+both Tone and Tint). Stored values such as capture-time sources and smart-album operators stay
+as they are in the catalog; only their display is translated.
+
+To add or change UI text:
+
+1. Write it in Chinese in the code, as above.
+2. Add the English to `Resources/Localization/en.lproj/Localizable.strings`, keeping the format
+   specifiers (`%lld` for numbers, `%@` for text; `%1$@`-style positions when English reorders them).
+3. If the English counts something ("%lld photos"), run `script/check_localization.py plurals`.
+4. Run `script/check_localization.py`: it reports text that isn't localized or translated.
+
 ## Build & run
 
 Requires a Swift 6 toolchain on macOS 14+. Full Xcode is required to run XCTest;

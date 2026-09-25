@@ -30,24 +30,33 @@ struct SmartField {
     let label: String
     let ops: [String]
     let input: Input
+
+    /// An operator as the rule builder shows it; rules store the operator itself.
+    static func opLabel(_ op: String) -> String {
+        switch op {
+        case "包含": return L("包含")
+        case "不包含": return L("不包含", table: "Context")
+        default: return op   // =, >=, <=
+        }
+    }
 }
 
 enum SmartFields {
     /// Ordered to match the prototype's SA_FIELDS object.
     static let all: [SmartField] = [
-        SmartField(key: "rating", label: "评分", ops: [">=", "<=", "="], input: .rating),
-        SmartField(key: "flag", label: "旗标", ops: ["="], input: .flag),
-        SmartField(key: "colorLabel", label: "颜色标签", ops: ["="], input: .color),
-        SmartField(key: "keywords", label: "关键词", ops: ["包含", "不包含"], input: .text),
-        SmartField(key: "camera", label: "相机", ops: ["包含", "="], input: .text),
-        SmartField(key: "lens", label: "镜头", ops: ["包含", "="], input: .text),
-        SmartField(key: "type", label: "文件类型", ops: ["="], input: .type),
-        SmartField(key: "captureYear", label: "拍摄年份", ops: ["=", ">=", "<="], input: .year),
-        SmartField(key: "captureDate", label: "拍摄日期", ops: ["=", ">=", "<="], input: .date),
-        SmartField(key: "datePreset", label: "日期范围", ops: ["="], input: .datePreset),
+        SmartField(key: "rating", label: L("评分"), ops: [">=", "<=", "="], input: .rating),
+        SmartField(key: "flag", label: L("旗标"), ops: ["="], input: .flag),
+        SmartField(key: "colorLabel", label: L("颜色标签"), ops: ["="], input: .color),
+        SmartField(key: "keywords", label: L("关键词"), ops: ["包含", "不包含"], input: .text),
+        SmartField(key: "camera", label: L("相机"), ops: ["包含", "="], input: .text),
+        SmartField(key: "lens", label: L("镜头"), ops: ["包含", "="], input: .text),
+        SmartField(key: "type", label: L("文件类型"), ops: ["="], input: .type),
+        SmartField(key: "captureYear", label: L("拍摄年份"), ops: ["=", ">=", "<="], input: .year),
+        SmartField(key: "captureDate", label: L("拍摄日期"), ops: ["=", ">=", "<="], input: .date),
+        SmartField(key: "datePreset", label: L("日期范围"), ops: ["="], input: .datePreset),
         SmartField(key: "gps", label: "GPS", ops: ["="], input: .gps),
-        SmartField(key: "status", label: "文件状态", ops: ["="], input: .status),
-        SmartField(key: "search", label: "全文搜索", ops: ["包含"], input: .text),
+        SmartField(key: "status", label: L("文件状态"), ops: ["="], input: .status),
+        SmartField(key: "search", label: L("全文搜索"), ops: ["包含"], input: .text),
     ]
     static func field(_ key: String) -> SmartField { all.first { $0.key == key } ?? all[0] }
 }

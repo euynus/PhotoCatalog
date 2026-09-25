@@ -469,9 +469,23 @@ enum AppAppearance: String, CaseIterable, Sendable {
 
     var label: String {
         switch self {
-        case .system: return "跟随系统"
-        case .light: return "浅色"
-        case .dark: return "深色"
+        case .system: return L("跟随系统")
+        case .light: return L("浅色")
+        case .dark: return L("深色")
+        }
+    }
+}
+
+/// The UI language: the system's choice, or one picked in Settings.
+enum AppLanguage: String, CaseIterable, Sendable {
+    case system, chinese = "zh-Hans", english = "en"
+
+    /// Languages are named in their own language, so anyone can find theirs.
+    var label: String {
+        switch self {
+        case .system: return L("跟随系统")
+        case .chinese: return "简体中文"
+        case .english: return "English"
         }
     }
 }
@@ -559,11 +573,11 @@ struct Sort: Equatable, Sendable {
     enum Field: String, CaseIterable, Sendable { case capture, imported, name, rating, size
         var label: String {
             switch self {
-            case .capture: return "拍摄时间"
-            case .imported: return "导入时间"
-            case .name: return "文件名"
-            case .rating: return "评分"
-            case .size: return "文件大小"
+            case .capture: return L("拍摄时间")
+            case .imported: return L("导入时间")
+            case .name: return L("文件名")
+            case .rating: return L("评分")
+            case .size: return L("文件大小")
             }
         }
     }

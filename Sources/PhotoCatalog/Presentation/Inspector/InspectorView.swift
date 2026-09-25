@@ -118,42 +118,42 @@ struct InspectorView: View {
     private func infoTab(_ a: Asset) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             InsGroup([
-                .init("文件名", a.filename, mono: true),
-                .init("类型", a.isRaw ? "RAW · \(a.type)" : a.type),
-                .init("大小", fileSizeText(megabytes: a.fileMB)),
-                .init("尺寸", "\(a.width) × \(a.height)", mono: true),
-                .init("色彩空间", a.colorSpace),
-                .init("ICC", a.hasICCProfile ? "有" : "无"),
-            ] + pairRows(a), title: "文件")
+                .init(L("文件名"), a.filename, mono: true),
+                .init(L("类型"), a.isRaw ? "RAW · \(a.type)" : a.type),
+                .init(L("大小"), fileSizeText(megabytes: a.fileMB)),
+                .init(L("尺寸"), "\(a.width) × \(a.height)", mono: true),
+                .init(L("色彩空间"), a.colorSpace),
+                .init("ICC", a.hasICCProfile ? L("有") : L("无")),
+            ] + pairRows(a), title: L("文件"))
             InsGroup({
                 var rows: [InfoRowData] = [
-                    .init("文件夹", a.folderName),
-                    .init("位置", a.location),
-                    .init("状态",
-                          a.status == .ready ? "可访问" : (a.status == .offline ? "离线（外置盘）" : "缺失"),
+                    .init(L("文件夹", table: "Context"), a.folderName),
+                    .init(L("位置"), a.location),
+                    .init(L("状态"),
+                          a.status == .ready ? L("可访问") : (a.status == .offline ? L("离线（外置盘）") : L("缺失")),
                           accent: a.status != .ready),
                 ]
-                if a.faces > 0 { rows.append(.init("人脸", "检测到 \(a.faces) 张")) }
+                if a.faces > 0 { rows.append(.init(L("人脸"), L("检测到 \(a.faces) 张"))) }
                 return rows
-            }(), title: "来源")
+            }(), title: L("来源"))
             VStack(alignment: .leading, spacing: 8) {
                 Text("原件路径").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text2)
                     .accessibilityAddTraits(.isHeader)
-                Text(a.localPath ?? "演示照片无本地原件")
+                Text(a.localPath ?? L("演示照片无本地原件"))
                     .font(Theme.mono).foregroundStyle(Theme.text2)
                     .lineSpacing(2)
                     .lineLimit(4).truncationMode(.middle)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
-                    .help(a.localPath ?? "演示照片无本地原件")
+                    .help(a.localPath ?? L("演示照片无本地原件"))
                 HStack(spacing: 6) {
                     let canReveal = a.localPath.map { FileManager.default.fileExists(atPath: $0) } ?? false
-                    pathButton("folder", "在访达中显示", warn: false, disabled: !canReveal) {
+                    pathButton("folder", L("在访达中显示"), warn: false, disabled: !canReveal) {
                         app.revealInFinder(a.id)
                     }
                     if a.status == .missing {
-                        pathButton("link", "重新定位", warn: true) { app.locate(a.id) }
+                        pathButton("link", L("重新定位"), warn: true) { app.locate(a.id) }
                     }
                 }
             }
@@ -163,7 +163,7 @@ struct InspectorView: View {
     private func pairRows(_ a: Asset) -> [InfoRowData] {
         let companions = app.companions(of: a)
         guard !companions.isEmpty else { return [] }
-        return [.init("配对文件",
+        return [.init(L("配对文件"),
                       companions.map { "\($0.filename) · \(fileSizeText(megabytes: $0.fileMB))" }
                         .joined(separator: "\n"),
                       mono: true)]
@@ -186,22 +186,22 @@ struct InspectorView: View {
     // ---------- Metadata ----------
     private func metaTab(_ a: Asset) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            InsGroup([.init("相机", a.camera), .init("镜头", a.lens)], title: "设备")
+            InsGroup([.init(L("相机"), a.camera), .init(L("镜头"), a.lens)], title: L("设备", table: "Context"))
             InsGroup([
-                .init("焦距", formatFocalLength(a.focal)),
-                .init("光圈", formatApertureValue(a.aperture)),
-                .init("快门", formatShutterSpeed(a.shutter)),
+                .init(L("焦距"), formatFocalLength(a.focal)),
+                .init(L("光圈"), formatApertureValue(a.aperture)),
+                .init(L("快门"), formatShutterSpeed(a.shutter)),
                 .init("ISO", formatISOValue(a.iso)),
-            ], title: "曝光")
+            ], title: L("曝光"))
             InsGroup([
-                .init("拍摄时间", DateFmt.longCapture(a.date)),
-                .init("时间来源", a.captureDateSource),
-            ], title: "拍摄信息")
+                .init(L("拍摄时间"), DateFmt.longCapture(a.date)),
+                .init(L("时间来源"), CaptureDateSource.label(a.captureDateSource)),
+            ], title: L("拍摄信息"))
             let rightsRows = [
-                a.author.isEmpty ? nil : InfoRowData("作者", a.author),
-                a.copyright.isEmpty ? nil : InfoRowData("版权", a.copyright),
+                a.author.isEmpty ? nil : InfoRowData(L("作者"), a.author),
+                a.copyright.isEmpty ? nil : InfoRowData(L("版权"), a.copyright),
             ].compactMap { $0 }
-            if !rightsRows.isEmpty { InsGroup(rightsRows, title: "版权") }
+            if !rightsRows.isEmpty { InsGroup(rightsRows, title: L("版权")) }
             if !a.makerNotes.isEmpty {
                 MakerNotesGroup(rows: makerNoteRows(a.makerNotes))
             }
@@ -213,8 +213,8 @@ struct InspectorView: View {
     private func gpsPanel(_ a: Asset) -> some View {
         if a.hasGPS {
             InsGroup([
-                .init("坐标", formatGPSLabel(a.gps, altitude: a.gpsAltitude, isPresent: a.hasGPS), mono: true),
-            ], title: "位置")
+                .init(L("坐标"), formatGPSLabel(a.gps, altitude: a.gpsAltitude, isPresent: a.hasGPS), mono: true),
+            ], title: L("位置"))
         } else {
             HStack(spacing: 8) {
                 Icon("location", size: 16).foregroundStyle(Theme.text3)
@@ -228,18 +228,18 @@ struct InspectorView: View {
     // ---------- History ----------
     private func histTab(_ a: Asset) -> some View {
         InsGroup([
-            .init("导入时间", DateFmt.long(a.importedAt)),
-            .init("管理方式", app.managementDisplayText(for: a)),
-            .init("内容哈希",
-                  a.contentHash.map { "sha256:\($0.prefix(12))…" } ?? "未计算",
+            .init(L("导入时间"), DateFmt.long(a.importedAt)),
+            .init(L("管理方式"), app.managementDisplayText(for: a)),
+            .init(L("内容哈希"),
+                  a.contentHash.map { "sha256:\($0.prefix(12))…" } ?? L("未计算"),
                   mono: true),
             .init("Quick Hash",
-                  a.quickHash.map { "\($0.prefix(10))…" } ?? "未计算",
+                  a.quickHash.map { "\($0.prefix(10))…" } ?? L("未计算"),
                   mono: true),
-            .init("原件修改", a.fileModifiedAt.map { DateFmt.short($0) } ?? "—"),
-            .init("原件创建", a.fileCreatedAt.map { DateFmt.short($0) } ?? "—"),
-            .init("目录库备份", app.statusBackupText),
-        ], title: "记录")
+            .init(L("原件修改"), a.fileModifiedAt.map { DateFmt.short($0) } ?? "—"),
+            .init(L("原件创建"), a.fileCreatedAt.map { DateFmt.short($0) } ?? "—"),
+            .init(L("目录库备份"), app.statusBackupText),
+        ], title: L("记录"))
     }
 
 }
@@ -287,7 +287,7 @@ func hasGPS(_ gps: (Double, Double)) -> Bool {
 }
 
 func formatGPSLabel(_ gps: (Double, Double), altitude: Double?, isPresent: Bool? = nil) -> String {
-    guard isPresent ?? hasGPS(gps) else { return "无 GPS" }
+    guard isPresent ?? hasGPS(gps) else { return L("无 GPS") }
     let coordinate = String(format: "%.4f, %.4f", gps.0, gps.1)
     guard let altitude else { return coordinate }
     return coordinate + " · \(formatAltitude(altitude))"
@@ -296,7 +296,7 @@ func formatGPSLabel(_ gps: (Double, Double), altitude: Double?, isPresent: Bool?
 /// Its own view so a new selection doesn't re-run the segmented control's AppKit update.
 private struct InspectorTabPicker: View {
     @Environment(AppState.self) private var app
-    private static let tabs = [("info", "信息"), ("meta", "元数据"), ("org", "整理"), ("hist", "历史")]
+    private static let tabs = [("info", L("信息")), ("meta", L("元数据")), ("org", L("整理")), ("hist", L("历史"))]
 
     var body: some View {
         @Bindable var app = app
@@ -316,7 +316,7 @@ private struct InspectorTabPicker: View {
 /// Splits the "Vendor: key=value, key=value · …" summary into readable rows.
 func makerNoteRows(_ summary: String) -> [InfoRowData] {
     summary.components(separatedBy: " · ").flatMap { entry -> [InfoRowData] in
-        guard let colon = entry.range(of: ": ") else { return [InfoRowData("备注", entry)] }
+        guard let colon = entry.range(of: ": ") else { return [InfoRowData(L("备注"), entry)] }
         let name = String(entry[..<colon.lowerBound])
         let body = String(entry[colon.upperBound...])
         let pairs = body.components(separatedBy: ", ").compactMap { pair -> InfoRowData? in
@@ -334,11 +334,11 @@ struct ExposureStrip: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            cell(formatFocalLength(asset.focal), "焦距")
+            cell(formatFocalLength(asset.focal), L("焦距"))
             divider
-            cell(formatApertureValue(asset.aperture), "光圈")
+            cell(formatApertureValue(asset.aperture), L("光圈"))
             divider
-            cell(formatShutterSpeed(asset.shutter), "快门")
+            cell(formatShutterSpeed(asset.shutter), L("快门"))
             divider
             cell(formatISOValue(asset.iso), "ISO")
         }

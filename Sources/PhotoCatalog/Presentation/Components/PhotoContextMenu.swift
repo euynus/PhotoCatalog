@@ -41,7 +41,7 @@ struct PhotoContextMenu: View {
         Divider()
         Menu("评分") {
             ForEach(0...5, id: \.self) { rating in
-                Button(rating == 0 ? "无评分" : String(repeating: "★", count: rating)) {
+                Button(rating == 0 ? L("无评分") : String(repeating: "★", count: rating)) {
                     act { _ = app.setRating(rating) }
                 }
             }

@@ -82,13 +82,13 @@ struct Sidebar: View {
     @ViewBuilder
     private var librarySection: some View {
         let c = app.libraryCounts
-        row("photos", "全部照片", .lib, "all", badge: Text(c.all.formatted()))
-        row("clock", "最近导入", .lib, "recent", badge: pendingBadge ?? Text(c.recent.formatted()))
-        row("map", "地点", .lib, "places", badge: pendingBadge ?? Text(c.places.formatted()))
+        row("photos", L("全部照片"), .lib, "all", badge: Text(c.all.formatted()))
+        row("clock", L("最近导入"), .lib, "recent", badge: pendingBadge ?? Text(c.recent.formatted()))
+        row("map", L("地点"), .lib, "places", badge: pendingBadge ?? Text(c.places.formatted()))
         if app.hasCatalogPreview || c.people > 0 || app.hasOpenCatalog {
             // after face analysis the badge counts named people, before it photos with faces
             let named = app.people.count
-            row("person.crop.rectangle", "人物", .lib, "people",
+            row("person.crop.rectangle", L("人物"), .lib, "people",
                 badge: pendingBadge ?? Text((named > 0 ? named : c.people).formatted()))
         }
     }
@@ -96,9 +96,9 @@ struct Sidebar: View {
     @ViewBuilder
     private var reviewSection: some View {
         let c = app.libraryCounts
-        row("star", "未评分", .lib, "unrated", badge: pendingBadge ?? Text(c.unrated.formatted()))
-        row("flag", "精选", .lib, "picks", badge: pendingBadge ?? Text(c.picks.formatted()))
-        row("reject", "被拒绝", .lib, "rejected", badge: pendingBadge ?? Text(c.rejected.formatted()))
+        row("star", L("未评分"), .lib, "unrated", badge: pendingBadge ?? Text(c.unrated.formatted()))
+        row("flag", L("精选", table: "Context"), .lib, "picks", badge: pendingBadge ?? Text(c.picks.formatted()))
+        row("reject", L("被拒绝"), .lib, "rejected", badge: pendingBadge ?? Text(c.rejected.formatted()))
     }
 
     /// Mounted memory cards: click to import, the eject button to unmount.
@@ -124,10 +124,10 @@ struct Sidebar: View {
     @ViewBuilder
     private var maintenanceSection: some View {
         let c = app.libraryCounts
-        row("offline", "缺失 / 离线", .lib, "missing",
+        row("offline", L("缺失 / 离线"), .lib, "missing",
             tint: c.missingOffline > 0 ? Theme.yellow : nil,
             badge: pendingBadge ?? Text(c.missingOffline.formatted()))
-        row("copy", "重复文件", .lib, "duplicates",
+        row("copy", L("重复文件"), .lib, "duplicates",
             badge: pendingBadge ?? Text("\(app.duplicateGroups.count.formatted()) 组"))
     }
 
@@ -263,11 +263,11 @@ struct Sidebar: View {
 
     private func folderStatusText(_ status: String) -> String? {
         switch status {
-        case "offline": return "离线"
-        case "missing": return "缺失"
-        case "permissionLost": return "需授权"
-        case "scanning": return "扫描中"
-        case "error": return "错误"
+        case "offline": return L("离线")
+        case "missing": return L("缺失")
+        case "permissionLost": return L("需授权")
+        case "scanning": return L("扫描中")
+        case "error": return L("错误")
         default: return nil
         }
     }

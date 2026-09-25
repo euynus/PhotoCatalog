@@ -61,14 +61,14 @@ struct LocationSheet: View {
             }
 
             HStack(spacing: 9) {
-                Text(pin.map { String(format: "%.5f, %.5f", $0.latitude, $0.longitude) } ?? "尚未选择位置")
+                Text(pin.map { String(format: "%.5f, %.5f", $0.latitude, $0.longitude) } ?? L("尚未选择位置"))
                     .font(.system(size: 12)).monospacedDigit().foregroundStyle(Theme.text3)
                 Spacer()
-                ghostButton(nil, "移除位置", danger: true, disabled: !anyLocated) {
+                ghostButton(nil, L("移除位置"), danger: true, disabled: !anyLocated) {
                     app.setLocation(nil, for: ids)
                     app.sheet = nil
                 }
-                ghostButton(nil, "取消") { app.sheet = nil }
+                ghostButton(nil, L("取消")) { app.sheet = nil }
                 Button {
                     guard let pin else { return }
                     app.setLocation((pin.latitude, pin.longitude), for: ids)
@@ -118,7 +118,7 @@ struct LocationSheet: View {
                     }
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(item.name ?? "未命名地点").lineLimit(1)
+                        Text(item.name ?? L("未命名地点")).lineLimit(1)
                         if let subtitle = item.placemark.title, subtitle != item.name {
                             Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.text3).lineLimit(2)
                         }
@@ -202,7 +202,7 @@ struct GPXMatchSheet: View {
                     LabeledContent("轨迹点", value: "\(track.points.count)")
                     if let start = track.start, let end = track.end {
                         LabeledContent("时间") {
-                            Text(DateFmt.long(start) + " – " + DateFmt.long(end).suffix(5))
+                            Text(DateFmt.long(start) + " – " + DateFmt.time(end))
                         }
                     }
                 }
@@ -216,7 +216,7 @@ struct GPXMatchSheet: View {
                     Text("相机记录的是当地时间，GPS 轨迹是世界协调时。请设为拍摄时相机时钟所用的时区。")
                         .font(.system(size: 11)).foregroundStyle(Theme.text3)
                 }
-                Section("照片") {
+                Section(L("照片", table: "Context")) {
                     Picker("范围", selection: $useSelection) {
                         Text("选中的 \(selected.count) 张").tag(true)
                         Text("当前视图的 \(inView.count) 张").tag(false)
@@ -234,7 +234,7 @@ struct GPXMatchSheet: View {
 
             HStack(spacing: 9) {
                 Spacer()
-                ghostButton(nil, "取消") { app.sheet = nil }
+                ghostButton(nil, L("取消")) { app.sheet = nil }
                 Button {
                     app.applyGPXMatches(matches)
                     app.sheet = nil

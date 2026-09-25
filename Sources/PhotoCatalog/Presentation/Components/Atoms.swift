@@ -276,14 +276,18 @@ func megapixelText(_ megapixels: Double) -> String {
 
 // ---------- Date helpers ----------
 enum DateFmt {
-    private static let weekdays = ["日", "一", "二", "三", "四", "五", "六"]
-
+    /// Day, weekday and (optionally) time, in the user's language and hour cycle:
+    /// "2026年9月25日 周五 14:03" or "Fri, Sep 25, 2026 at 2:03 PM".
     static func long(_ d: Date, withTime: Bool = true, calendar: Calendar = .current) -> String {
-        let c = calendar.dateComponents([.year, .month, .day, .hour, .minute, .weekday], from: d)
-        let wk = weekdays[(c.weekday ?? 1) - 1]
-        let base = "\(c.year ?? 0)年\(c.month ?? 0)月\(c.day ?? 0)日 周\(wk)"
-        if !withTime { return base }
-        return base + String(format: " %02d:%02d", c.hour ?? 0, c.minute ?? 0)
+        var style = Date.FormatStyle(calendar: calendar, timeZone: calendar.timeZone)
+            .year().month(.abbreviated).day().weekday(.abbreviated)
+        if withTime { style = style.hour().minute() }
+        return d.formatted(style)
+    }
+
+    /// The time of day alone, e.g. for the end of a range on the same day.
+    static func time(_ d: Date, calendar: Calendar = .current) -> String {
+        d.formatted(Date.FormatStyle(calendar: calendar, timeZone: calendar.timeZone).hour().minute())
     }
 
     static func short(_ d: Date, calendar: Calendar = .current) -> String {

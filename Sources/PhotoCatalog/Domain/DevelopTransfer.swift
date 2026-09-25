@@ -13,26 +13,26 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .whiteBalance: "白平衡"
-        case .exposure: "曝光度"
-        case .contrast: "对比度"
-        case .highlights: "高光"
-        case .shadows: "阴影"
-        case .whites: "白色色阶"
-        case .blacks: "黑色色阶"
-        case .vibrance: "鲜艳度"
-        case .saturation: "饱和度"
-        case .orientation: "旋转与翻转"
-        case .crop: "裁剪与拉直"
+        case .whiteBalance: L("白平衡")
+        case .exposure: L("曝光度")
+        case .contrast: L("对比度")
+        case .highlights: L("高光")
+        case .shadows: L("阴影")
+        case .whites: L("白色色阶")
+        case .blacks: L("黑色色阶")
+        case .vibrance: L("鲜艳度")
+        case .saturation: L("饱和度")
+        case .orientation: L("旋转与翻转")
+        case .crop: L("裁剪与拉直")
         }
     }
 
     /// Sections of the copy dialog.
     static let groups: [(title: String, fields: [DevelopField])] = [
-        ("白平衡", [.whiteBalance]),
-        ("色调", [.exposure, .contrast, .highlights, .shadows, .whites, .blacks]),
-        ("偏好", [.vibrance, .saturation]),
-        ("裁剪与旋转", [.orientation, .crop]),
+        (L("白平衡"), [.whiteBalance]),
+        (L("色调"), [.exposure, .contrast, .highlights, .shadows, .whites, .blacks]),
+        (L("偏好"), [.vibrance, .saturation]),
+        (L("裁剪与旋转"), [.orientation, .crop]),
     ]
 
     /// Copy leaves framing alone unless asked: crops rarely fit another photo.
@@ -100,33 +100,33 @@ struct DevelopPreset: Codable, Equatable, Identifiable, Sendable {
     var isBuiltIn: Bool { id.hasPrefix("builtin.") }
 
     static let builtIns: [DevelopPreset] = [
-        builtIn("bw", "黑白", [.vibrance, .saturation]) { $0.saturation = -100 },
-        builtIn("bw-contrast", "黑白 · 高对比", [.vibrance, .saturation, .contrast, .whites, .blacks]) {
+        builtIn("bw", L("黑白"), [.vibrance, .saturation]) { $0.saturation = -100 },
+        builtIn("bw-contrast", L("黑白 · 高对比"), [.vibrance, .saturation, .contrast, .whites, .blacks]) {
             $0.saturation = -100
             $0.contrast = 40
             $0.whites = 20
             $0.blacks = -20
         },
-        builtIn("vivid", "鲜艳", [.vibrance, .saturation]) {
+        builtIn("vivid", L("鲜艳"), [.vibrance, .saturation]) {
             $0.vibrance = 35
             $0.saturation = 8
         },
-        builtIn("punch", "高对比", [.contrast, .whites, .blacks]) {
+        builtIn("punch", L("高对比"), [.contrast, .whites, .blacks]) {
             $0.contrast = 35
             $0.whites = 15
             $0.blacks = -15
         },
-        builtIn("soft", "柔和", [.contrast, .highlights, .shadows]) {
+        builtIn("soft", L("柔和"), [.contrast, .highlights, .shadows]) {
             $0.contrast = -15
             $0.highlights = -25
             $0.shadows = 25
         },
-        builtIn("fade", "褪色胶片", [.contrast, .blacks, .saturation]) {
+        builtIn("fade", L("褪色胶片"), [.contrast, .blacks, .saturation]) {
             $0.contrast = -10
             $0.blacks = 30
             $0.saturation = -25
         },
-        builtIn("open-shadows", "提亮阴影", [.highlights, .shadows]) {
+        builtIn("open-shadows", L("提亮阴影"), [.highlights, .shadows]) {
             $0.highlights = -20
             $0.shadows = 45
         },

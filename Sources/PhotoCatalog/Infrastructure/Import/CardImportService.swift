@@ -36,9 +36,9 @@ struct CardImportOptions: Codable, Equatable, Sendable {
         var id: Self { self }
         var title: String {
             switch self {
-            case .yearDay: "年 / 年-月-日"
-            case .day: "年-月-日"
-            case .flat: "不分文件夹"
+            case .yearDay: L("年 / 年-月-日")
+            case .day: L("年-月-日")
+            case .flat: L("不分文件夹")
             }
         }
     }
@@ -56,7 +56,7 @@ struct CardImportOptions: Codable, Equatable, Sendable {
     static var standard: CardImportOptions {
         let pictures = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
-        return CardImportOptions(destination: pictures.appendingPathComponent("PhotoCatalog 照片", isDirectory: true))
+        return CardImportOptions(destination: pictures.appendingPathComponent(L("PhotoCatalog 照片"), isDirectory: true))
     }
 }
 
@@ -168,7 +168,7 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
             try fm.copyItem(at: source, to: destination)
             guard Self.isSameFile(destination, size: size) else {
                 try? fm.removeItem(at: destination)
-                throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "复制后大小不一致"])
+                throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: L("复制后大小不一致")])
             }
         }
         let sidecar = XMPSidecar.sidecarURL(for: source)
@@ -177,7 +177,7 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
             try? fm.copyItem(at: sidecar, to: copiedSidecar)
         }
         if options.backupEnabled, let backup = options.backup {
-            let folder = backup.appendingPathComponent("导入于 \(importDay)", isDirectory: true)
+            let folder = backup.appendingPathComponent(L("导入于 \(importDay)"), isDirectory: true)
             try fm.createDirectory(at: folder, withIntermediateDirectories: true)
             let copy = folder.appendingPathComponent(destination.lastPathComponent)
             if !Self.isSameFile(copy, size: size) {

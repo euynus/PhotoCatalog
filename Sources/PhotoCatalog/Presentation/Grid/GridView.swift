@@ -101,18 +101,18 @@ struct GridView: View {
     private static func accessibilityLabel(_ asset: Asset, stack: (count: Int, collapsed: Bool)?,
                                            pair: [Asset]) -> String {
         var parts = [asset.filename, asset.isRaw ? "\(asset.type) RAW" : asset.type]
-        if let label = pairLabel(pair) { parts.append("含 \(label)") }
-        parts.append(asset.rating > 0 ? "\(asset.rating) 星" : "未评分")
+        if let label = pairLabel(pair) { parts.append(L("含 \(label)")) }
+        parts.append(asset.rating > 0 ? L("\(asset.rating) 星") : L("未评分"))
         switch asset.flag {
-        case .pick: parts.append("精选")
-        case .reject: parts.append("拒绝")
+        case .pick: parts.append(L("精选"))
+        case .reject: parts.append(L("拒绝"))
         case .none: break
         }
-        if let label = asset.colorLabel { parts.append("\(label.name)色标签") }
-        if asset.status == .missing { parts.append("缺失") }
-        if asset.status == .offline { parts.append("离线") }
-        if let stack { parts.append(stack.collapsed ? "堆栈 \(stack.count) 张（已折叠）" : "堆栈 \(stack.count) 张") }
-        return parts.joined(separator: "，")
+        if let label = asset.colorLabel { parts.append(L("\(label.name)色标签")) }
+        if asset.status == .missing { parts.append(L("缺失")) }
+        if asset.status == .offline { parts.append(L("离线")) }
+        if let stack { parts.append(stack.collapsed ? L("堆栈 \(stack.count) 张（已折叠）") : L("堆栈 \(stack.count) 张")) }
+        return parts.joined(separator: L("，"))
     }
 }
 
@@ -252,20 +252,20 @@ private struct GridEmptyState: View {
     }
 
     private var title: String {
-        hasActiveQuery ? "未找到照片" : "此集合中没有照片"
+        hasActiveQuery ? L("未找到照片") : L("此集合中没有照片")
     }
 
     private var message: String {
         if !trimmedSearch.isEmpty, activeFilterCount > 0 {
-            return "没有与“\(trimmedSearch)”匹配并符合当前筛选条件的照片。"
+            return L("没有与“\(trimmedSearch)”匹配并符合当前筛选条件的照片。")
         }
         if !trimmedSearch.isEmpty {
-            return "没有与“\(trimmedSearch)”匹配的照片。"
+            return L("没有与“\(trimmedSearch)”匹配的照片。")
         }
         if activeFilterCount > 0 {
-            return "“\(selectionName)”中没有符合当前筛选条件的照片。"
+            return L("“\(selectionName)”中没有符合当前筛选条件的照片。")
         }
-        return "“\(selectionName)”当前为空。"
+        return L("“\(selectionName)”当前为空。")
     }
 
     var body: some View {

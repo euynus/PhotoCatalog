@@ -39,7 +39,7 @@ struct OrganizeTab: View {
                             app.setRating(asset.rating == n ? 0 : n)
                         }
                         Spacer(minLength: 0)
-                        ToolButton(icon: "close", label: "清除评分", disabled: asset.rating == 0) {
+                        ToolButton(icon: "close", label: L("清除评分"), disabled: asset.rating == 0) {
                             app.setRating(0)
                         }
                     }
@@ -47,21 +47,21 @@ struct OrganizeTab: View {
                 GridRow {
                     Text("旗标").foregroundStyle(Theme.text2)
                     HStack(spacing: 4) {
-                        FlagButton(flag: .pick, icon: "flag", label: "精选", on: asset.flag == .pick) {
+                        FlagButton(flag: .pick, icon: "flag", label: L("精选"), on: asset.flag == .pick) {
                             app.setFlag(asset.flag == .pick ? .none : .pick)
                         }
-                        FlagButton(flag: .reject, icon: "reject", label: "拒绝", on: asset.flag == .reject) {
+                        FlagButton(flag: .reject, icon: "reject", label: L("拒绝"), on: asset.flag == .reject) {
                             app.setFlag(asset.flag == .reject ? .none : .reject)
                         }
                     }
                 }
             }
             // color
-            block("颜色标签") { ColorLabelPicker(value: asset.colorLabel) { app.setColor($0) } }
+            block(L("颜色标签")) { ColorLabelPicker(value: asset.colorLabel) { app.setColor($0) } }
             Rectangle().fill(Theme.line).frame(height: 1)
             // keywords — zIndex lifts the suggestion dropdown above the
             // 标题/说明 blocks below, which otherwise draw and hit-test over it
-            block("关键词") {
+            block(L("关键词")) {
                 KeywordEditor(keywords: asset.keywords,
                               suggestions: app.keywordSuggestionPool,
                               onAdd: { app.addKeyword($0) }, onRemove: { app.removeKeyword($0) })
@@ -69,7 +69,7 @@ struct OrganizeTab: View {
             }
             .zIndex(10)
             // title
-            block("标题") {
+            block(L("标题")) {
                 TextField("为这张照片添加标题…", text: $drafts.title)
                     .textFieldStyle(.plain).font(.system(size: 13))
                     .focused($focusedField, equals: .title)
@@ -80,7 +80,7 @@ struct OrganizeTab: View {
                     .accessibilityLabel("标题")
             }
             // caption
-            block("说明") {
+            block(L("说明")) {
                 ZStack(alignment: .topLeading) {
                     if drafts.caption.isEmpty {
                         Text("添加说明…").font(.system(size: 13)).foregroundStyle(Theme.text3)
@@ -102,7 +102,7 @@ struct OrganizeTab: View {
             Rectangle().fill(Theme.line).frame(height: 1)
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
                 GridRow {
-                    Text("项目").foregroundStyle(Theme.text2)
+                    Text(L("项目", table: "Context")).foregroundStyle(Theme.text2)
                     TextField("项目名称", text: $drafts.project)
                         .textFieldStyle(.plain)
                         .focused($focusedField, equals: .project)
@@ -110,10 +110,10 @@ struct OrganizeTab: View {
                         .background(Theme.surface)
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                         .focusRing(focusedField == .project, radius: 3)
-                        .accessibilityLabel("项目")
+                        .accessibilityLabel(L("项目", table: "Context"))
                 }
                 GridRow {
-                    Text("客户").foregroundStyle(Theme.text2)
+                    Text(L("客户", table: "Context")).foregroundStyle(Theme.text2)
                     TextField("客户名称", text: $drafts.client)
                         .textFieldStyle(.plain)
                         .focused($focusedField, equals: .client)
@@ -121,7 +121,7 @@ struct OrganizeTab: View {
                         .background(Theme.surface)
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                         .focusRing(focusedField == .client, radius: 3)
-                        .accessibilityLabel("客户")
+                        .accessibilityLabel(L("客户", table: "Context"))
                 }
             }
         }
@@ -160,7 +160,7 @@ struct OrganizeTab: View {
         let clientChanged = client != seeded.client
         guard titleChanged || captionChanged || projectChanged || clientChanged else { return }
         let d = drafts
-        app.mutate(editTargets, undoName: "编辑照片信息") {
+        app.mutate(editTargets, undoName: L("编辑照片信息")) {
             if titleChanged { $0.title = d.title }
             if captionChanged { $0.caption = d.caption }
             if projectChanged { $0.project = project }

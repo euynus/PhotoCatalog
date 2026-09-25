@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Chinese has no plural forms: each entry keeps its source text, so the English table is never used -->
+<plist version="1.0">
+<dict>
+	<key> · %lld 张资产 · 缺失原件 %lld · 缺失缩略图 %lld · 缺失预览 %lld</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string> · %lld 张资产 · 缺失原件 %lld · 缺失缩略图 %lld · 缺失预览 %lld</string>
+	</dict>
+	<key> · 已回滚 %lld 个原件</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string> · 已回滚 %lld 个原件</string>
+	</dict>
+	<key> · 已回滚 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string> · 已回滚 %lld 张照片</string>
+	</dict>
+	<key>%@ · %lld 位人物 · %lld 组未命名</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%@ · %lld 位人物 · %lld 组未命名</string>
+	</dict>
+	<key>%lld 个 XMP sidecar 写入失败</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 个 XMP sidecar 写入失败</string>
+	</dict>
+	<key>%lld 个文件失败 · 可稍后重试</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 个文件失败 · 可稍后重试</string>
+	</dict>
+	<key>%lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 张</string>
+	</dict>
+	<key>%lld 张 · %@</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 张 · %@</string>
+	</dict>
+	<key>%lld 张 · 批量编辑</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 张 · 批量编辑</string>
+	</dict>
+	<key>%lld 张人脸</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 张人脸</string>
+	</dict>
+	<key>%lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 张照片</string>
+	</dict>
+	<key>%lld 张照片 — 点按放大</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 张照片 — 点按放大</string>
+	</dict>
+	<key>%lld 张照片已写入，但源目录或导入状态未保存</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 张照片已写入，但源目录或导入状态未保存</string>
+	</dict>
+	<key>%lld 张照片有位置信息</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 张照片有位置信息</string>
+	</dict>
+	<key>%lld 张照片符合规则</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 张照片符合规则</string>
+	</dict>
+	<key>%lld 张自动识别的人脸待确认</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 张自动识别的人脸待确认</string>
+	</dict>
+	<key>%lld 星</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 星</string>
+	</dict>
+	<key>%lld 星及以上</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 星及以上</string>
+	</dict>
+	<key>%lld 项条件</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 项条件</string>
+	</dict>
+	<key>「最近导入」窗口 %lld 天</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>「最近导入」窗口 %lld 天</string>
+	</dict>
+	<key>全部 %lld 项</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>全部 %lld 项</string>
+	</dict>
+	<key>导入失败 %lld 个文件</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>导入失败 %lld 个文件</string>
+	</dict>
+	<key>导出已取消 · 已写入 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>导出已取消 · 已写入 %lld 张</string>
+	</dict>
+	<key>将 %lld 个磁盘原件移到废纸篓，并从目录库移除对应记录。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>将 %lld 个磁盘原件移到废纸篓，并从目录库移除对应记录。</string>
+	</dict>
+	<key>将 %lld 张照片从目录库移除。原件默认保留。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>将 %lld 张照片从目录库移除。原件默认保留。</string>
+	</dict>
+	<key>将从 %lld 张照片中移除它及其下级关键词。可以撤销。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>将从 %lld 张照片中移除它及其下级关键词。可以撤销。</string>
+	</dict>
+	<key>将从目录库移除 %lld 个重复照片记录，磁盘原件会保留。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>将从目录库移除 %lld 个重复照片记录，磁盘原件会保留。</string>
+	</dict>
+	<key>将复制 %lld 个磁盘原件，目录库中的文件路径保持不变。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>将复制 %lld 个磁盘原件，目录库中的文件路径保持不变。</string>
+	</dict>
+	<key>将把 %lld 个重复照片的磁盘原件移到废纸篓，并从目录库移除对应记录。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>将把 %lld 个重复照片的磁盘原件移到废纸篓，并从目录库移除对应记录。</string>
+	</dict>
+	<key>将移动 %lld 个磁盘原件，并更新目录库中的文件路径。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>将移动 %lld 个磁盘原件，并更新目录库中的文件路径。</string>
+	</dict>
+	<key>将重命名 %lld 个磁盘原件，并更新目录库中的文件路径。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>将重命名 %lld 个磁盘原件，并更新目录库中的文件路径。</string>
+	</dict>
+	<key>已为 %lld 张照片设置位置</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已为 %lld 张照片设置位置</string>
+	</dict>
+	<key>已从 %lld 张照片中删除关键词「%@」</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已从 %lld 张照片中删除关键词「%@」</string>
+	</dict>
+	<key>已从「%@」移除 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已从「%@」移除 %lld 张照片</string>
+	</dict>
+	<key>已从目录库移除 %lld 张重复照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已从目录库移除 %lld 张重复照片</string>
+	</dict>
+	<key>已从目录库移除 %lld 张（原件保留）</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已从目录库移除 %lld 张（原件保留）</string>
+	</dict>
+	<key>已写入 %lld 个 XMP sidecar</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已写入 %lld 个 XMP sidecar</string>
+	</dict>
+	<key>已加入 %lld 张照片到「%@」</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已加入 %lld 张照片到「%@」</string>
+	</dict>
+	<key>已加入导出队列 · 前面还有 %lld 个任务</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已加入导出队列 · 前面还有 %lld 个任务</string>
+	</dict>
+	<key>已同步到 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已同步到 %lld 张照片</string>
+	</dict>
+	<key>已复制 %lld 个原件</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已复制 %lld 个原件</string>
+	</dict>
+	<key>已导入 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已导入 %lld 张照片</string>
+	</dict>
+	<key>已导出 %lld 张原件</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已导出 %lld 张原件</string>
+	</dict>
+	<key>已导出 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已导出 %lld 张照片</string>
+	</dict>
+	<key>已导出 %lld 张预览图</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已导出 %lld 张预览图</string>
+	</dict>
+	<key>已将 %lld 张拍摄时间设为指定时间</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已将 %lld 张拍摄时间设为指定时间</string>
+	</dict>
+	<key>已将「%@」重命名为「%@」· %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已将「%@」重命名为「%@」· %lld 张照片</string>
+	</dict>
+	<key>已折叠 %lld 张照片为堆栈</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已折叠 %lld 张照片为堆栈</string>
+	</dict>
+	<key>已按轨迹为 %lld 张照片添加位置</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已按轨迹为 %lld 张照片添加位置</string>
+	</dict>
+	<key>已更新 %lld 张修改过的照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已更新 %lld 张修改过的照片</string>
+	</dict>
+	<key>已清理缓存 %@ · %lld 个文件</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已清理缓存 %@ · %lld 个文件</string>
+	</dict>
+	<key>已移到废纸篓 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已移到废纸篓 %lld 张</string>
+	</dict>
+	<key>已移到废纸篓 %lld 张重复照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已移到废纸篓 %lld 张重复照片</string>
+	</dict>
+	<key>已移动 %lld 个原件</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已移动 %lld 个原件</string>
+	</dict>
+	<key>已移除 %lld 张照片的位置</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已移除 %lld 张照片的位置</string>
+	</dict>
+	<key>已粘贴到 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已粘贴到 %lld 张照片</string>
+	</dict>
+	<key>已调整 %lld 张拍摄时间 %@%lld时%lld分</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已调整 %lld 张拍摄时间 %@%lld时%lld分</string>
+	</dict>
+	<key>已跳过 %lld 张重复照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已跳过 %lld 张重复照片</string>
+	</dict>
+	<key>已重命名 %lld 个文件</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已重命名 %lld 个文件</string>
+	</dict>
+	<key>找到 %lld 张可能是已命名人物的人脸，请在“人物”中确认</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>找到 %lld 张可能是已命名人物的人脸，请在“人物”中确认</string>
+	</dict>
+	<key>显示 %lld 个只出现一次的人脸</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>显示 %lld 个只出现一次的人脸</string>
+	</dict>
+	<key>未命名 · %lld 组</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>未命名 · %lld 组</string>
+	</dict>
+	<key>检测到 %lld 张新照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>检测到 %lld 张新照片</string>
+	</dict>
+	<key>正在从「%@」导入 %lld 张照片…</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>正在从「%@」导入 %lld 张照片…</string>
+	</dict>
+	<key>正在重试 %lld 个失败文件…</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>正在重试 %lld 个失败文件…</string>
+	</dict>
+	<key>用于 %lld 张照片，下级关键词一并更新。输入已有的关键词即合并。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>用于 %lld 张照片，下级关键词一并更新。输入已有的关键词即合并。</string>
+	</dict>
+	<key>设置位置 · %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>设置位置 · %lld 张照片</string>
+	</dict>
+	<key>评分 %lld 星</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>评分 %lld 星</string>
+	</dict>
+</dict>
+</plist>

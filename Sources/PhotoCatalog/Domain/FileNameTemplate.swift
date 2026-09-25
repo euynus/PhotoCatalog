@@ -16,7 +16,7 @@ enum FileNameTemplate {
             .replacingOccurrences(of: "{time}", with: format(date, "HHmmss"))
             .replacingOccurrences(of: "{camera}", with: camera)
             .replacingOccurrences(of: "{title}", with: title)
-            .replacingOccurrences(of: "{rating}", with: "\(rating)星")
+            .replacingOccurrences(of: "{rating}", with: L("\(rating)星"))
         let illegal = CharacterSet(charactersIn: "/\\:?%*|\"<>").union(.newlines)
         let cleaned = name.components(separatedBy: illegal).joined(separator: "-")
             .trimmingCharacters(in: .whitespaces)

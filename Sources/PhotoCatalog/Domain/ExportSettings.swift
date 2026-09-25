@@ -60,10 +60,10 @@ struct ExportSettings: Codable, Equatable, Sendable {
         var id: Self { self }
         var title: String {
             switch self {
-            case .none: "原始尺寸"
-            case .longEdge: "长边"
-            case .shortEdge: "短边"
-            case .fitWithin: "宽 × 高以内"
+            case .none: L("原始尺寸")
+            case .longEdge: L("长边")
+            case .shortEdge: L("短边")
+            case .fitWithin: L("宽 × 高以内")
             }
         }
     }
@@ -74,9 +74,9 @@ struct ExportSettings: Codable, Equatable, Sendable {
         var id: Self { self }
         var title: String {
             switch self {
-            case .all: "全部元数据"
-            case .copyrightOnly: "仅版权信息"
-            case .none: "不包含"
+            case .all: L("全部元数据")
+            case .copyrightOnly: L("仅版权信息")
+            case .none: L("不包含")
             }
         }
     }
@@ -87,9 +87,9 @@ struct ExportSettings: Codable, Equatable, Sendable {
         var id: Self { self }
         var title: String {
             switch self {
-            case .uniqueName: "自动编号"
-            case .overwrite: "覆盖"
-            case .skip: "跳过"
+            case .uniqueName: L("自动编号")
+            case .overwrite: L("覆盖")
+            case .skip: L("跳过")
             }
         }
     }
@@ -119,8 +119,8 @@ struct ExportSettings: Codable, Equatable, Sendable {
     var revealInFinder = true
 
     static let fileNameTokens: [(token: String, title: String)] = [
-        ("{original}", "原文件名"), ("{seq}", "序号"), ("{date}", "拍摄日期"), ("{time}", "拍摄时间"),
-        ("{camera}", "相机"), ("{title}", "标题"), ("{rating}", "星级"),
+        ("{original}", L("原文件名")), ("{seq}", L("序号")), ("{date}", L("拍摄日期")), ("{time}", L("拍摄时间")),
+        ("{camera}", L("相机")), ("{title}", L("标题")), ("{rating}", L("星级")),
     ]
 }
 
@@ -199,26 +199,26 @@ struct RenderedExportPreset: Codable, Equatable, Identifiable, Sendable {
     var isBuiltIn: Bool { id.hasPrefix("builtin.") }
 
     static let builtIns: [RenderedExportPreset] = [
-        builtIn("full-jpeg", "全尺寸 JPEG") { $0.quality = 0.92 },
-        builtIn("web", "网络分享 · 2048 px") {
+        builtIn("full-jpeg", L("全尺寸 JPEG")) { $0.quality = 0.92 },
+        builtIn("web", L("网络分享 · 2048 px")) {
             $0.resize = .longEdge
             $0.edge = 2048
             $0.quality = 0.82
             $0.removeLocation = true
         },
-        builtIn("social", "社交媒体 · 1080 px") {
+        builtIn("social", L("社交媒体 · 1080 px")) {
             $0.resize = .shortEdge
             $0.edge = 1080
             $0.quality = 0.85
             $0.removeLocation = true
             $0.metadata = .copyrightOnly
         },
-        builtIn("print-tiff", "打印 · 16 位 TIFF") {
+        builtIn("print-tiff", L("打印 · 16 位 TIFF")) {
             $0.format = .tiff
             $0.sixteenBit = true
             $0.colorSpace = .adobeRGB
         },
-        builtIn("heic", "HEIC · 高效存档") {
+        builtIn("heic", L("HEIC · 高效存档")) {
             $0.format = .heic
             $0.quality = 0.85
             $0.colorSpace = .displayP3
