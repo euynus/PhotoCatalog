@@ -53,6 +53,7 @@ final class AppState {
             let scope = nextAssetEditScope
             nextAssetEditScope = .any
             if scope == .any {
+                structureVersion &+= 1
                 assetIndexCache = nil
                 keywordListCache = nil
                 keywordSuggestionPoolCache = nil
@@ -154,6 +155,9 @@ final class AppState {
     /// Bumped whenever an array input to `list` changes (assets/albums/smartAlbums/folders/
     /// source roots/priorities or collapsed-stack membership); small values are compared directly.
     private var listInputsVersion = 0   // tracked: cached getters read it so cache HITS register deps
+    /// Bumped only by non-review asset edits (ids, paths, status, deletion…); values that
+    /// can't change with a rating key on this so they neither recompute nor re-render.
+    private var structureVersion = 0
     private var stackInputsVersion = 0
     var assetRenderVersion = 0
     var thumbnailCacheGeneration = 0
@@ -545,18 +549,35 @@ final class AppState {
         return list.count
     }
 
+    /// Cached per structural version: review edits can't change it, and the old
+    /// filter + map + Set copied every asset on each status-bar render.
     var catalogManagementText: String {
-        let real = assets.filter { !$0.deleted && !$0.isDemo }
-        if real.isEmpty {
-            return importMode == .managed
-                ? "托管式管理 · 原件在目录库"
-                : "引用式管理 · 原件只读"
+        let version = structureVersion
+        let modes = sourceManagementModesById
+        let mode = importMode
+        if let cache = catalogManagementTextCache, cache.version == version,
+           cache.modes == modes, cache.importMode == mode {
+            return cache.text
         }
-        let modes = Set(real.map { managementMode(for: $0) })
-        if modes == Set([ImportMode.managed]) { return "托管式管理 · 原件在目录库" }
-        if modes.contains(.managed) { return "混合管理 · 原件只读" }
-        return "引用式管理 · 原件只读"
+        var hasReal = false, hasManaged = false, hasReferenced = false
+        for asset in assets where !asset.deleted && !asset.isDemo {
+            hasReal = true
+            if managementMode(for: asset) == .managed { hasManaged = true } else { hasReferenced = true }
+            if hasManaged && hasReferenced { break }
+        }
+        let text: String
+        if !hasReal {
+            text = mode == .managed ? "托管式管理 · 原件在目录库" : "引用式管理 · 原件只读"
+        } else if hasManaged {
+            text = hasReferenced ? "混合管理 · 原件只读" : "托管式管理 · 原件在目录库"
+        } else {
+            text = "引用式管理 · 原件只读"
+        }
+        catalogManagementTextCache = (version, modes, mode, text)
+        return text
     }
+    @ObservationIgnored private var catalogManagementTextCache:
+        (version: Int, modes: [String: String], importMode: ImportMode, text: String)?
 
     var statusCacheText: String {
         guard let cacheBytes = statusMetrics.cacheBytes else { return "缓存 --" }

@@ -3,52 +3,24 @@
 // ============================================================
 import SwiftUI
 
+/// Split into small views so each part re-renders only for what it shows —
+/// a rating or a thumbnail-size drag no longer rebuilds the whole bar.
 struct StatusBar: View {
     @Environment(AppState.self) var app
 
     var body: some View {
         HStack(spacing: 10) {
-            catalogStatus
-            sep
-            Text(app.catalogManagementText).foregroundStyle(Theme.text3)
-                .truncationMode(.middle)
+            CatalogStatusLabel()
+            SelectionCountLabel()
+            StatusSeparator()
+            ManagementModeLabel()
             Spacer(minLength: 8)
-            if let run = app.importRun, run.phase.isActive {
-                Button { app.sheet = "import" } label: {
-                    HStack(spacing: 5) {
-                        if run.total > 0 {
-                            ProgressView(value: Double(run.processed + run.failed), total: Double(run.total))
-                                .tint(Theme.accent)
-                                .frame(width: 54)
-                        } else {
-                            ProgressView().controlSize(.mini).tint(Theme.accent)
-                        }
-                        Text(statusText(run))
-                    }
-                    .foregroundStyle(Theme.accent)
-                }
-                .buttonStyle(.plain)
-                .fixedSize()
-            }
-            if app.isCheckingOriginals {
-                HStack(spacing: 5) {
-                    ProgressView().controlSize(.mini)
-                    Text("正在检查原件…")
-                }
-                .foregroundStyle(Theme.text3)
-                .accessibilityElement(children: .combine)
-                .fixedSize()
-            }
-            Button { app.runBackup() } label: {
-                Label(app.statusBackupText, systemImage: "clock.arrow.circlepath")
-                    .foregroundStyle(Theme.text3)
-            }
-            .buttonStyle(.plain).disabled(!app.canRunCatalogMaintenance).help("立即备份目录库 (⌘B)")
-            .fixedSize()
-            Text(app.statusCacheText).foregroundStyle(Theme.text3).fixedSize()
+            ImportProgressLabel()
+            OriginalsCheckLabel()
+            MaintenanceLabels()
             if app.view == .grid && !app.isDuplicates && !app.isPlaces {
-                sep
-                gridControls
+                StatusSeparator()
+                GridControls()
             }
         }
         .font(.system(size: 11))
@@ -60,8 +32,16 @@ struct StatusBar: View {
         .background(Theme.bgTitlebar)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
+}
 
-    @ViewBuilder private var catalogStatus: some View {
+private struct StatusSeparator: View {
+    var body: some View { Rectangle().fill(Theme.line2).frame(width: 1, height: 12) }
+}
+
+private struct CatalogStatusLabel: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
         if app.hasCatalogPreview {
             HStack(spacing: 5) {
                 ProgressView().controlSize(.mini).tint(Theme.accent)
@@ -78,8 +58,95 @@ struct StatusBar: View {
             .fixedSize()
         }
     }
+}
 
-    private var gridControls: some View {
+private struct SelectionCountLabel: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let count = app.selectedIds.count
+        if count > 0 {
+            Text("已选 \(count.formatted())")
+                .foregroundStyle(Theme.accent)
+                .fixedSize()
+        }
+    }
+}
+
+private struct ManagementModeLabel: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        Text(app.catalogManagementText).foregroundStyle(Theme.text3)
+            .truncationMode(.middle)
+    }
+}
+
+private struct ImportProgressLabel: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        if let run = app.importRun, run.phase.isActive {
+            Button { app.sheet = "import" } label: {
+                HStack(spacing: 5) {
+                    if run.total > 0 {
+                        ProgressView(value: Double(run.processed + run.failed), total: Double(run.total))
+                            .tint(Theme.accent)
+                            .frame(width: 54)
+                    } else {
+                        ProgressView().controlSize(.mini).tint(Theme.accent)
+                    }
+                    Text(statusText(run))
+                }
+                .foregroundStyle(Theme.accent)
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+        }
+    }
+
+    private func statusText(_ run: ImportRun) -> String {
+        if run.phase == .paused {
+            return run.total > 0 ? "已暂停 \(run.percent)%" : "已暂停"
+        }
+        return run.total > 0 ? "导入 \(run.percent)%" : "正在扫描…"
+    }
+}
+
+private struct OriginalsCheckLabel: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        if app.isCheckingOriginals {
+            HStack(spacing: 5) {
+                ProgressView().controlSize(.mini)
+                Text("正在检查原件…")
+            }
+            .foregroundStyle(Theme.text3)
+            .accessibilityElement(children: .combine)
+            .fixedSize()
+        }
+    }
+}
+
+private struct MaintenanceLabels: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        Button { app.runBackup() } label: {
+            Label(app.statusBackupText, systemImage: "clock.arrow.circlepath")
+                .foregroundStyle(Theme.text3)
+        }
+        .buttonStyle(.plain).disabled(!app.canRunCatalogMaintenance).help("立即备份目录库 (⌘B)")
+        .fixedSize()
+        Text(app.statusCacheText).foregroundStyle(Theme.text3).fixedSize()
+    }
+}
+
+private struct GridControls: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
         @Bindable var app = app
         return HStack(spacing: 6) {
             Button { app.toggleGridInfo() } label: {
@@ -103,15 +170,6 @@ struct StatusBar: View {
                 .accessibilityHidden(true)
         }
         .fixedSize()
-    }
-
-    private var sep: some View { Rectangle().fill(Theme.line2).frame(width: 1, height: 12) }
-
-    private func statusText(_ run: ImportRun) -> String {
-        if run.phase == .paused {
-            return run.total > 0 ? "已暂停 \(run.percent)%" : "已暂停"
-        }
-        return run.total > 0 ? "导入 \(run.percent)%" : "正在扫描…"
     }
 }
 

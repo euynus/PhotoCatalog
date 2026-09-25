@@ -24,8 +24,7 @@ struct MainView: View {
                         .inspectorColumnWidth(min: Theme.inspectorMinW, ideal: Theme.inspectorW,
                                               max: Theme.inspectorMaxW)
                 }
-                .navigationTitle(app.selection.name)
-                .navigationSubtitle(subtitle)
+                .modifier(DetailTitles())
                 .toolbar { MainToolbar() }
                 .searchable(text: $searchText, placement: .toolbar, prompt: "搜索照片、关键词")
         }
@@ -42,12 +41,6 @@ struct MainView: View {
         }
         .onChange(of: app.searchFocusToken) { ToolbarSearchField.focus() }
         .onChange(of: app.searchBlurToken) { ToolbarSearchField.blur() }
-    }
-
-    private var subtitle: String {
-        var parts = [app.catalogDisplayName, "\(app.contentAssetCount.formatted()) 张照片"]
-        if !app.selectedIds.isEmpty { parts.append("已选 \(app.selectedIds.count.formatted())") }
-        return parts.joined(separator: " · ")
     }
 
     /// Analysis and duplicate review own the full width; the user's inspector
@@ -82,6 +75,19 @@ struct MainView: View {
 
 extension AppState {
     var inspectorAvailable: Bool { !isDuplicates && view != .analysis }
+}
+
+/// Title and subtitle read the list count; as a modifier they update without
+/// re-evaluating the split view. Selection count lives in the status bar so
+/// clicking a photo doesn't re-lay out the toolbar.
+private struct DetailTitles: ViewModifier {
+    @Environment(AppState.self) private var app
+
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle(app.selection.name)
+            .navigationSubtitle("\(app.catalogDisplayName) · \(app.contentAssetCount.formatted()) 张照片")
+    }
 }
 
 // ---------- Content column (filters / main / status) ----------

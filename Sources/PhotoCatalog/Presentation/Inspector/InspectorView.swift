@@ -8,11 +8,6 @@ struct InspectorView: View {
     let asset: Asset?
     let assetRevision: Int
 
-    private let tabs: [(String, String, String)] = [
-        ("info", "info", "信息"), ("meta", "aperture", "元数据"),
-        ("org", "organize", "整理"), ("hist", "history", "历史"),
-    ]
-
     var body: some View {
         let _ = assetRevision
         Group {
@@ -38,7 +33,7 @@ struct InspectorView: View {
     private func content(_ asset: Asset) -> some View {
         VStack(spacing: 0) {
             header(asset)
-            tabBar
+            InspectorTabPicker()
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     switch app.insTab {
@@ -110,19 +105,6 @@ struct InspectorView: View {
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
 
-    private var tabBar: some View {
-        @Bindable var app = app
-        return Picker("简介分页", selection: $app.insTab) {
-            ForEach(tabs, id: \.0) { tab in
-                Text(tab.2).tag(tab.0)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
-    }
 
     // ---------- Info ----------
     private func infoTab(_ a: Asset) -> some View {
@@ -292,6 +274,26 @@ func formatGPSLabel(_ gps: (Double, Double), altitude: Double?, isPresent: Bool?
     let coordinate = String(format: "%.4f, %.4f", gps.0, gps.1)
     guard let altitude else { return coordinate }
     return coordinate + " · \(formatAltitude(altitude))"
+}
+
+/// Its own view so a new selection doesn't re-run the segmented control's AppKit update.
+private struct InspectorTabPicker: View {
+    @Environment(AppState.self) private var app
+    private static let tabs = [("info", "信息"), ("meta", "元数据"), ("org", "整理"), ("hist", "历史")]
+
+    var body: some View {
+        @Bindable var app = app
+        Picker("简介分页", selection: $app.insTab) {
+            ForEach(Self.tabs, id: \.0) { tab in
+                Text(tab.1).tag(tab.0)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
 }
 
 /// Splits the "Vendor: key=value, key=value · …" summary into readable rows.
