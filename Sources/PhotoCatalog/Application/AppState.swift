@@ -50,20 +50,30 @@ final class AppState {
     // ----- core data -----
     var assets: [Asset] {
         didSet {
-            assetIndexCache = nil
-            keywordListCache = nil
-            keywordSuggestionPoolCache = nil
-            projectListCache = nil
-            clientListCache = nil
-            captureDateGroupsCache = nil
-            folderTreeCache = nil
-            folderTreeCountCache = nil
+            let scope = nextAssetEditScope
+            nextAssetEditScope = .any
+            if scope == .any {
+                assetIndexCache = nil
+                keywordListCache = nil
+                keywordSuggestionPoolCache = nil
+                projectListCache = nil
+                clientListCache = nil
+                captureDateGroupsCache = nil
+                folderTreeCache = nil
+                folderTreeCountCache = nil
+            }
             libraryCountsCache = nil
             sidebarCountIndexCache = nil
             pinnedSidebarFavoritesCache = nil
             listInputsVersion &+= 1
         }
     }
+    /// What an `assets` write may have changed. Review edits (rating / flag / color label)
+    /// keep ids, order, paths, dates, status and keywords, so the structural caches —
+    /// folder tree and counts, capture-date tree, id index, keyword/project/client lists —
+    /// stay valid. Rebuilding them on every rating keystroke cost ~150 ms on 8k photos.
+    enum AssetEditScope { case any, review }
+    @ObservationIgnored private var nextAssetEditScope: AssetEditScope = .any
     /// id → index map, lazily rebuilt after any `assets` change (invalidated above).
     @ObservationIgnored private var assetIndexCache: [String: Int]?
     private var assetIndex: [String: Int] {
@@ -131,6 +141,15 @@ final class AppState {
     }
     struct LibraryCounts: Equatable {
         var all = 0, recent = 0, unrated = 0, picks = 0, rejected = 0, missingOffline = 0, places = 0, people = 0
+
+        /// The only counts a rating / flag / color edit can move.
+        mutating func applyReviewChange(from old: Asset, to new: Asset) {
+            guard !old.deleted else { return }
+            func one(_ condition: Bool) -> Int { condition ? 1 : 0 }
+            unrated += one(new.rating == 0 && new.flag != .reject) - one(old.rating == 0 && old.flag != .reject)
+            picks += one(new.flag == .pick) - one(old.flag == .pick)
+            rejected += one(new.flag == .reject) - one(old.flag == .reject)
+        }
     }
     /// Bumped whenever an array input to `list` changes (assets/albums/smartAlbums/folders/
     /// source roots/priorities or collapsed-stack membership); small values are compared directly.
@@ -160,8 +179,64 @@ final class AppState {
         fileprivate let isLoading: Bool
     }
 
-    private func replaceAssetsForMutation(_ updated: [Asset]) {
+    private func replaceAssetsForMutation(_ updated: [Asset], scope: AssetEditScope = .any) {
+        nextAssetEditScope = scope
         assets = updated
+        didMutateAssets()
+    }
+
+    /// Writes edited copies back at their offsets in one mutation (one didSet, no array copy).
+    /// Review edits also patch the library counts and — when the current collection,
+    /// filters and sort ignore review fields — the cached list, instead of rescanning
+    /// and re-sorting every asset.
+    private func applyAssetEdits(_ edits: [(offset: Int, asset: Asset)], scope: AssetEditScope) {
+        var patchedCounts: LibraryCounts?
+        var listBefore: ListSignature?
+        if scope == .review {
+            patchedCounts = libraryCountsCache.map { counts in
+                edits.reduce(into: counts) { $0.applyReviewChange(from: assets[$1.offset], to: $1.asset) }
+            }
+            if !listDependsOnReviewFields { listBefore = currentListSignature }
+        }
+        nextAssetEditScope = scope
+        assets.withUnsafeMutableBufferPointer { buffer in
+            for edit in edits { buffer[edit.offset] = edit.asset }
+        }
+        if let patchedCounts { libraryCountsCache = patchedCounts }
+        if let listBefore { patchListCaches(with: edits, validFor: listBefore) }
+        didMutateAssets()
+    }
+
+    private var listDependsOnReviewFields: Bool {
+        if filters.minRating > 0 || filters.flag != "any" || filters.color != "any" { return true }
+        if sort.field == .rating || selection.type == .smart { return true }
+        return selection.type == .lib && ["unrated", "picks", "rejected"].contains(selection.id)
+    }
+
+    /// Replaces edited assets inside list caches that were current before the edit.
+    private func patchListCaches(with edits: [(offset: Int, asset: Asset)], validFor before: ListSignature) {
+        let after = currentListSignature
+        let edited = Dictionary(edits.map { ($0.asset.id, $0.asset) }, uniquingKeysWith: { $1 })
+        func patch(_ list: inout [Asset]) {
+            list.withUnsafeMutableBufferPointer { buffer in
+                for i in buffer.indices {
+                    if let asset = edited[buffer[i].id] { buffer[i] = asset }
+                }
+            }
+        }
+        guard var uncollapsed = uncollapsedListCache, uncollapsed.signature == before else { return }
+        patch(&uncollapsed.value)
+        uncollapsedListCache = (after, uncollapsed.value)
+        guard var visible = listCache, visible.signature == before else { return }
+        if collapsedStackIds.isEmpty {
+            visible.value = uncollapsed.value   // identical when nothing is collapsed
+        } else {
+            patch(&visible.value)
+        }
+        listCache = (after, visible.value)
+    }
+
+    private func didMutateAssets() {
         assetRenderVersion &+= 1
         // Force views that render derived asset snapshots to re-read the current selection.
         let currentPrimary = primaryId
@@ -3707,12 +3782,13 @@ final class AppState {
     }
 
     @discardableResult
-    func mutateAsset(_ id: String, _ transform: (inout Asset) -> Void) -> Bool {
+    func mutateAsset(_ id: String, scope: AssetEditScope = .any,
+                     _ transform: (inout Asset) -> Void) -> Bool {
         guard let i = assetIndex[id] else { return false }
         var updated = assets
         transform(&updated[i])
         guard persist([id], in: updated) else { return false }
-        replaceAssetsForMutation(updated)
+        replaceAssetsForMutation(updated, scope: scope)
         ensurePrimaryValid()
         return true
     }
@@ -3742,13 +3818,16 @@ final class AppState {
     ) -> Bool {
         let ids = targetIds
         guard !ids.isEmpty else { return false }
-        var updated = assets
-        var changed: [Asset] = []
-        changed.reserveCapacity(ids.count)
-        for index in updated.indices where ids.contains(updated[index].id) {
-            transform(&updated[index])
-            if !updated[index].isDemo { changed.append(updated[index]) }
-        }
+        // Edit copies of only the targeted assets, persist, then write them back in place:
+        // copying the whole array retained every string of every asset on each keystroke.
+        let index = assetIndex
+        let edits = ids.compactMap { id -> (offset: Int, asset: Asset)? in
+            guard let offset = index[id] else { return nil }
+            var asset = assets[offset]
+            transform(&asset)
+            return (offset, asset)
+        }.sorted { $0.offset < $1.offset }
+        let changed = edits.map(\.asset).filter { !$0.isDemo }
         if let store, !changed.isEmpty {
             do {
                 try persist(store, Set(changed.map(\.id)))
@@ -3757,7 +3836,7 @@ final class AppState {
                 return false
             }
         }
-        replaceAssetsForMutation(updated)
+        applyAssetEdits(edits, scope: .review)
         ensurePrimaryValid()
         enqueueAutomaticXMPWrite(changed)
         return true

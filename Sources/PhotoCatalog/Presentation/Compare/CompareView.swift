@@ -175,7 +175,7 @@ struct ComparePanel: View {
             // Each group fits the 92pt footer of a four-up stage at the 480pt minimum.
             FlowRow(spacing: 8, lineSpacing: 4) {
                 StarsView(value: asset.rating, size: 11, gap: 1) { n in
-                    app.mutateAsset(asset.id) { $0.rating = asset.rating == n ? 0 : n }
+                    app.mutateAsset(asset.id, scope: .review) { $0.rating = asset.rating == n ? 0 : n }
                 }
                 .frame(width: 80, height: 24, alignment: .leading)
                 HStack(spacing: 4) {
@@ -213,7 +213,7 @@ struct ComparePanel: View {
         let tint = flag == .pick ? Theme.green : Theme.red
         return Hover { hover in
             Button {
-                app.mutateAsset(asset.id) { $0.flag = on ? .none : flag }
+                app.mutateAsset(asset.id, scope: .review) { $0.flag = on ? .none : flag }
             } label: {
                 Image(systemName: flag == .pick ? (on ? "flag.fill" : "flag")
                                                 : (on ? "xmark.circle.fill" : "xmark.circle"))

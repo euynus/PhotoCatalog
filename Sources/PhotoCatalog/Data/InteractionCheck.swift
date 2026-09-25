@@ -89,15 +89,38 @@ enum InteractionCheck {
         }
         assert(app.selectedIds == compared && Set(app.compareIds) == compared && app.primaryId == primary,
                "keyboard, menu capability and direct methods preserve the compared selection")
+        let foldersBefore = app.folderTree
+        let datesBefore = app.captureDateGroups.map(\.count)
+        let unratedBefore = app.libraryCounts.unrated
+        _ = app.list   // a current list cache takes the in-place patch path
         assert(route(event("5", keyCode: 23)) == nil,
                "rating shortcuts must reach the current Compare selection")
         assert(app.assets.allSatisfy { $0.rating == (compared.contains($0.id) ? 5 : 0) },
                "no photo outside the Compare panels may be rated")
+        assert(app.libraryCounts.unrated == unratedBefore - compared.count,
+               "review edits refresh rating-dependent counts")
+        assert(app.folderTree == foldersBefore && app.captureDateGroups.map(\.count) == datesBefore,
+               "review edits keep the folder and capture-date trees")
+        assert(app.libraryCounts.unrated
+               == app.assets.filter { !$0.deleted && $0.rating == 0 && $0.flag != .reject }.count,
+               "patched library counts match a full count")
+        let patched = app.list
+        var resort = app.sort
+        resort.descending.toggle(); app.setSort(resort)
+        resort.descending.toggle(); app.setSort(resort)
+        assert(app.list.map(\.id) == patched.map(\.id) && app.list.map(\.rating) == patched.map(\.rating),
+               "a list patched after a review edit matches a full recompute")
 
         app.view = .grid
         app.sheet = "settings"
         assert(!app.canChangeVisibleSelection && !app.selectAllVisible() && !app.invertVisibleSelection()
                && app.selectedIds == compared, "overlay sheets also block direct selection commands")
+
+        app.sheet = nil
+        let datedBefore = app.captureDateGroups.reduce(0) { $0 + $1.count }
+        assert(app.mutate([ids[0]]) { $0.deleted = true }
+               && app.captureDateGroups.reduce(0) { $0 + $1.count } == datedBefore - 1,
+               "structural edits still rebuild the capture-date tree")
     }
 
     private static func event(_ characters: String, keyCode: UInt16,
