@@ -37,6 +37,7 @@ struct GridView: View {
                                      stackCount: stack?.count,
                                      stackCollapsed: stack?.collapsed == true,
                                      pairLabel: Self.pairLabel(pair),
+                                     isEdited: app.developFingerprint(for: asset.id) != nil,
                                      onToggleStack: { app.toggleStack(containing: asset.id) })
                                 .equatable()
                                 .onTapGesture(count: 2) { app.openLoupe(asset.id) }
@@ -119,6 +120,7 @@ struct GridCell: View {
     let stackCount: Int?
     let stackCollapsed: Bool
     let pairLabel: String?
+    let isEdited: Bool
     let onToggleStack: () -> Void
     @State private var hover = false
 
@@ -211,6 +213,13 @@ struct GridCell: View {
                     .help("RAW + \(pairLabel) 显示为一张照片")
             }
             Spacer(minLength: 0)
+            if isEdited {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.canvasText2)
+                    .help("已修图")
+                    .accessibilityLabel("已修图")
+            }
             if asset.rating > 0 {
                 StarsView(value: asset.rating, size: 9, gap: 1, filledOnly: true)
                     .fixedSize()
@@ -294,7 +303,8 @@ extension GridCell: Equatable {
         l.showInfo == r.showInfo &&
         l.stackCount == r.stackCount &&
         l.stackCollapsed == r.stackCollapsed &&
-        l.pairLabel == r.pairLabel
+        l.pairLabel == r.pairLabel &&
+        l.isEdited == r.isEdited
     }
 }
 

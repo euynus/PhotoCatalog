@@ -244,7 +244,9 @@ struct Thumb: View {
     }
     private var loadKey: String {
         let previewConfiguration = cacheKind.isPreview ? app.previewMaxPixel : 0
-        return "\(asset.id)|\(source)|\(decodeMaxPixel)|\(previewConfiguration)|\(app.thumbnailCacheGeneration)"
+        // the develop fingerprint reloads the tile when the photo's adjustments change
+        return "\(asset.id)|\(source)|\(decodeMaxPixel)|\(previewConfiguration)|\(app.thumbnailCacheGeneration)|"
+            + (app.developFingerprint(for: asset.id) ?? "")
     }
 
     var body: some View {

@@ -525,6 +525,9 @@ final class AppState {
         if developAsShot[id] != value { developAsShot[id] = value }
     }
 
+    /// Changes whenever a photo's saved adjustments change; image views key their loads on it.
+    func developFingerprint(for id: String) -> String? { developSettings[id]?.fingerprint }
+
     func developSettings(for id: String) -> DevelopSettings {
         if let draft = developDraft, draft.assetId == id { return draft.settings }
         return developSettings[id] ?? .neutral
@@ -2650,6 +2653,10 @@ final class AppState {
         let resolvedKind = kind.isPreview
             ? ThumbnailService.previewKind(forCachePath: requestedSource, fallbackMaxPixel: previewMaxPixel)
             : kind
+        if let settings = developSettings[assetId], !settings.isNeutral {
+            return await editedImageSource(for: asset, settings: settings, kind: resolvedKind,
+                                           thumbnails: thumbnails) ?? requestedSource
+        }
         // A cache file already checked this session (exists, fresh, not a black RAW render)
         // skips the stat + decode hops every time its cell scrolls back into view.
         let verifiedKey = "\(requestedSource)|\(asset.fileModifiedAt?.timeIntervalSince1970 ?? 0)"
@@ -2691,6 +2698,32 @@ final class AppState {
         }
         attemptedCacheRepairs.insert(repairKey)
         return restored?.path ?? requestedSource
+    }
+
+    /// Developed rendering for an adjusted photo, rendered off the cooperative pool when missing.
+    /// An unavailable original falls back to adjusting the cached preview.
+    private func editedImageSource(for asset: Asset, settings: DevelopSettings, kind: ThumbnailService.Kind,
+                                   thumbnails: ThumbnailService) async -> String? {
+        let edited = thumbnails.editedCachePath(assetId: asset.id, kind: kind, settings: settings)
+        let key = edited.path
+        if verifiedCacheSources.contains(key) { return key }
+        let preview = asset.preview
+        let source: (url: URL, isRaw: Bool)?
+        if asset.status == .ready, let path = asset.localPath {
+            source = (URL(fileURLWithPath: path), asset.isRaw)
+        } else if !preview.isEmpty, !preview.hasPrefix("http") {
+            source = (URL(fileURLWithPath: preview), false)
+        } else {
+            source = nil
+        }
+        guard let source else { return nil }
+        let assetId = asset.id
+        guard let rendered = await ThumbnailRepairQueue.run(.visible, {
+            thumbnails.ensureEdited(from: source.url, isRaw: source.isRaw, settings: settings,
+                                    assetId: assetId, kind: kind)
+        }), let rendered else { return nil }
+        verifiedCacheSources.insert(rendered.path)
+        return rendered.path
     }
 
     func pruneCacheToLimit() {

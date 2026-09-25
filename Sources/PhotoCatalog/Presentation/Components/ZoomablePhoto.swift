@@ -18,15 +18,21 @@ struct ZoomablePhoto: View {
         preview.image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
 
-    /// The paired camera JPEG decodes an order of magnitude faster than the RAW at full size
-    /// and shows the same focus, so zooming a paired RAW reads the JPEG.
-    private var fullSource: String? {
+    /// Adjusted photos render their edit at full size; unadjusted paired RAWs read the camera
+    /// JPEG, which decodes an order of magnitude faster and shows the same focus.
+    private var fullRequest: FullResolutionLoader.Request? {
+        let settings = app.developSettings[asset.id]
+        if let settings, !settings.isNeutral {
+            guard asset.status == .ready, let path = asset.localPath else { return nil }
+            return .init(path: path, isRaw: asset.isRaw, settings: settings)
+        }
         let jpeg = app.companions(of: asset).first { $0.status == .ready && $0.localPath != nil }
-        if let path = jpeg?.localPath { return path }
-        return asset.status == .ready ? asset.localPath : nil
+        if let path = jpeg?.localPath { return .init(path: path, isRaw: false, settings: nil) }
+        guard asset.status == .ready, let path = asset.localPath else { return nil }
+        return .init(path: path, isRaw: asset.isRaw, settings: nil)
     }
 
-    private var fullImage: CGImage? { full.image(for: fullSource) }
+    private var fullImage: CGImage? { full.image(for: fullRequest) }
 
     private var pixelSize: CGSize {
         if let fullImage { return CGSize(width: fullImage.width, height: fullImage.height) }
@@ -48,7 +54,8 @@ struct ZoomablePhoto: View {
             .overlay(alignment: .topTrailing) {
                 if let zoom { zoomBadge(zoom) }
             }
-            .task(id: "\(asset.id)|\(asset.preview)|\(app.previewMaxPixel)|\(app.thumbnailCacheGeneration)") {
+            .task(id: "\(asset.id)|\(asset.preview)|\(app.previewMaxPixel)|\(app.thumbnailCacheGeneration)|"
+                  + (app.developFingerprint(for: asset.id) ?? "")) {
                 let generation = app.thumbnailCacheGeneration
                 let resolved = await app.visibleImageSource(for: asset, requestedSource: asset.preview,
                                                             kind: .preview2048)
@@ -56,15 +63,15 @@ struct ZoomablePhoto: View {
                 preview.load(resolved, maxPixel: ThumbnailService.Kind.preview2048.maxPixel,
                              cacheGeneration: generation)
             }
-            .task(id: zoom == nil ? nil : fullSource) {
+            .task(id: zoom == nil ? nil : fullRequest) {
                 guard zoom != nil else { return }
-                await full.load(fullSource)
+                await full.load(fullRequest)
             }
     }
 
     private func zoomBadge(_ zoom: ImageZoom) -> some View {
         HStack(spacing: 6) {
-            if fullImage == nil && full.isLoading(fullSource) {
+            if fullImage == nil && full.isLoading(fullRequest) {
                 ProgressView().controlSize(.mini)
                 Text("正在载入原图…")
             } else if fullImage == nil {
@@ -86,36 +93,52 @@ struct ZoomablePhoto: View {
 /// otherwise deadlock it) and keeps the last couple in memory for stepping back and forth.
 @MainActor
 final class FullResolutionLoader: ObservableObject {
-    @Published private var loaded: (path: String, image: CGImage)?
-    @Published private var loadingPath: String?
+    /// A file to show at full size, with the develop settings to render (nil = as decoded).
+    struct Request: Hashable, Sendable {
+        let path: String
+        let isRaw: Bool
+        let settings: DevelopSettings?
+        var key: String { settings.map { "\(path)|\($0.fingerprint)" } ?? path }
+    }
+
+    @Published private var loaded: (key: String, image: CGImage)?
+    @Published private var loadingKey: String?
     private static let cache: NSCache<NSString, ImageBox> = {
         let cache = NSCache<NSString, ImageBox>()
         cache.countLimit = 2   // ~100 MB each at 24 MP
         return cache
     }()
 
-    /// Only the image decoded for `path`, so a new photo never shows the previous one.
-    func image(for path: String?) -> CGImage? {
-        guard let path, let loaded, loaded.path == path else { return nil }
+    /// Only the image produced for `request`, so a new photo or edit never shows the previous one.
+    func image(for request: Request?) -> CGImage? {
+        guard let request, let loaded, loaded.key == request.key else { return nil }
         return loaded.image
     }
 
-    func isLoading(_ path: String?) -> Bool { path != nil && loadingPath == path }
+    func isLoading(_ request: Request?) -> Bool { request != nil && loadingKey == request?.key }
 
-    func load(_ path: String?) async {
-        guard let path, loaded?.path != path else { return }
-        if let cached = Self.cache.object(forKey: path as NSString) {
-            loaded = (path, cached.image)
+    func load(_ request: Request?) async {
+        guard let request, loaded?.key != request.key else { return }
+        let key = request.key
+        if let cached = Self.cache.object(forKey: key as NSString) {
+            loaded = (key, cached.image)
             return
         }
-        loadingPath = path
+        loadingKey = key
         let decoded = await ThumbnailRepairQueue.run(.visible) {
-            Self.decodeFullResolution(URL(fileURLWithPath: path)).map(ImageBox.init)
+            let url = URL(fileURLWithPath: request.path)
+            let image: CGImage? = if let settings = request.settings {
+                DevelopRenderer.Source(url: url, isRaw: request.isRaw, maxPixel: nil)?
+                    .image(settings).flatMap(DevelopRenderer.render)
+            } else {
+                Self.decodeFullResolution(url)
+            }
+            return image.map(ImageBox.init)
         } ?? nil
-        if loadingPath == path { loadingPath = nil }
+        if loadingKey == key { loadingKey = nil }
         guard !Task.isCancelled, let decoded else { return }
-        Self.cache.setObject(decoded, forKey: path as NSString)
-        loaded = (path, decoded.image)
+        Self.cache.setObject(decoded, forKey: key as NSString)
+        loaded = (key, decoded.image)
     }
 
     nonisolated static func decodeFullResolution(_ url: URL) -> CGImage? {

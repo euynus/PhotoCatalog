@@ -87,6 +87,34 @@ final class ThumbnailService: @unchecked Sendable {
             .appendingPathComponent("\(assetId).jpg")
     }
 
+    /// Where a developed rendering lives; the settings fingerprint in the name means an edit
+    /// never reuses an older render, and clearing the edit falls back to the untouched cache.
+    func editedCachePath(assetId: String, kind: Kind, settings: DevelopSettings) -> URL {
+        let plain = cachePath(assetId: assetId, kind: kind)
+        let shard = plain.deletingLastPathComponent()
+        let relative = shard.path.replacingOccurrences(of: store.cacheURL.path, with: "")
+        return store.cacheURL.appendingPathComponent("Edited")
+            .appendingPathComponent(relative)
+            .appendingPathComponent("\(assetId)-\(settings.fingerprint).jpg")
+    }
+
+    /// Returns the developed rendering at the kind's size, rendering it from `source`
+    /// (the original, or a cached preview when the original is unavailable) if missing.
+    @discardableResult
+    func ensureEdited(from source: URL, isRaw: Bool, settings: DevelopSettings, assetId: String,
+                      kind: Kind) -> URL? {
+        let out = editedCachePath(assetId: assetId, kind: kind, settings: settings)
+        if FileManager.default.fileExists(atPath: out.path) { return out }
+        try? FileManager.default.createDirectory(at: out.deletingLastPathComponent(),
+                                                 withIntermediateDirectories: true)
+        let rendered = autoreleasepool {
+            DevelopRenderer.Source(url: source, isRaw: isRaw, maxPixel: kind.maxPixel)?
+                .image(settings)
+                .flatMap(DevelopRenderer.render)
+        }
+        return rendered.flatMap { writeJPEG($0, to: out) }
+    }
+
     /// Return an existing cached representation or regenerate it from the original.
     @discardableResult
     func ensureCached(from original: URL, assetId: String, kind: Kind) -> URL? {

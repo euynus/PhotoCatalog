@@ -312,6 +312,15 @@ enum PipelineCheck {
                         at: blackProbe, original: originalURL, kind: kind)
             }
             check(blackBoundHolds, "full-size black renders stay under the decode-skip size bound")
+
+            var brighter = DevelopSettings()
+            brighter.exposure = 1
+            let edited = coordinator.thumbnails.ensureEdited(from: originalURL, isRaw: true, settings: brighter,
+                                                             assetId: cr3Asset.id, kind: .thumb512)
+            check(edited.map { $0.path.contains("/Cache/Edited/") && $0.lastPathComponent.contains(brighter.fingerprint)
+                               && meanLuminance(at: $0) > meanLuminance(at: thumbURL) + 0.05 } == true
+                  && fm.fileExists(atPath: thumbURL.path),
+                  "developed thumbnails render adjustments into their own cache files")
         } else {
             check(false, "CR3 black preview cache regenerates from original")
             check(false, "CR3 black thumbnail cache regenerates from preview fallback")
@@ -987,6 +996,21 @@ enum PipelineCheck {
         let options = quality.map { [kCGImageDestinationLossyCompressionQuality: $0] as CFDictionary }
         CGImageDestinationAddImage(dest, cg, options)
         CGImageDestinationFinalize(dest)
+    }
+
+    private static func meanLuminance(at url: URL) -> Double {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceThumbnailMaxPixelSize: 16,
+              ] as CFDictionary) else { return 0 }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        guard let context = CGContext(data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return 0 }
+        context.interpolationQuality = .medium
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return (0.3 * Double(pixel[0]) + 0.59 * Double(pixel[1]) + 0.11 * Double(pixel[2])) / 255
     }
 
     private static func imageIsUniformBlack(at url: URL) -> Bool {
