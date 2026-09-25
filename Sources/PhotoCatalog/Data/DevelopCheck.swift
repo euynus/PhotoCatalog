@@ -7,23 +7,29 @@ import UniformTypeIdentifiers
 enum DevelopCheck {
     static func run() {
         checkRendering()
+        checkHistogram()
         checkPersistence()
         MainActor.assumeIsolated { checkEditsAndUndo() }
         print("--- develop assertions passed ---")
     }
 
-    /// Mean RGB (0…1, display P3) of a rendered adjustment of a solid-color image.
-    private static func mean(_ color: (Double, Double, Double), _ settings: DevelopSettings) -> (r: Double, g: Double, b: Double) {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-develop-\(UUID().uuidString).png")
-        defer { try? FileManager.default.removeItem(at: url) }
+    /// A 64×64 solid-color image in display P3.
+    private static func solid(_ color: (Double, Double, Double)) -> CGImage {
         let context = CGContext(data: nil, width: 64, height: 64, bitsPerComponent: 8, bytesPerRow: 0,
                                 space: DevelopRenderer.outputColorSpace,
                                 bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
         context.setFillColor(CGColor(colorSpace: DevelopRenderer.outputColorSpace,
                                      components: [color.0, color.1, color.2, 1])!)
         context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+        return context.makeImage()!
+    }
+
+    /// Mean RGB (0…1, display P3) of a rendered adjustment of a solid-color image.
+    private static func mean(_ color: (Double, Double, Double), _ settings: DevelopSettings) -> (r: Double, g: Double, b: Double) {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-develop-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
         let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
-        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+        CGImageDestinationAddImage(destination, solid(color), nil)
         CGImageDestinationFinalize(destination)
 
         let source = DevelopRenderer.Source(url: url, isRaw: false, maxPixel: nil)!
@@ -68,6 +74,21 @@ enum DevelopCheck {
         s = DevelopSettings(); s.contrast = 100
         assert(luma(mean((0.8, 0.8, 0.8), s)) > luma(mean((0.8, 0.8, 0.8), .neutral)),
                "contrast pushes light tones lighter")
+    }
+
+    private static func checkHistogram() {
+        let dark = DevelopRenderer.histogram(of: solid((0.1, 0.1, 0.1)))!
+        let total = dark.red.reduce(0, +)
+        assert(abs(total - 1) < 0.01, "histogram bins are fractions of all pixels")
+        // encoded value 0.1 lands in bin 6 of 64 — display values, not linear light (bin 0)
+        assert(dark.green.firstIndex(where: { $0 > 0.5 }) == 6, "histogram counts display values")
+        assert(dark.shadowClipping < DevelopHistogram.clippingWarning, "mid-dark tones don't clip")
+
+        let white = DevelopRenderer.histogram(of: solid((1, 1, 1)))!
+        assert(white.highlightClipping > 0.99, "pure white reports highlight clipping")
+        let warm = DevelopRenderer.histogram(of: solid((0.9, 0.5, 0.1)))!
+        let peak = { (bins: [Double]) in bins.firstIndex(of: bins.max()!)! }
+        assert(peak(warm.red) > peak(warm.green) && peak(warm.green) > peak(warm.blue), "channels are kept apart")
     }
 
     private static func checkPersistence() {

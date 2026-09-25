@@ -520,6 +520,15 @@ final class AppState {
     /// Camera-recorded RAW white balance, learned when a photo is first rendered.
     var developAsShot: [String: DevelopAsShot] = [:]
 
+    /// Tone distribution of the photo's latest finished Develop render.
+    var developHistogram: (assetId: String, histogram: DevelopHistogram)?
+
+    func recordDevelopHistogram(_ histogram: DevelopHistogram, for id: String) {
+        if developHistogram?.assetId != id || developHistogram?.histogram != histogram {
+            developHistogram = (id, histogram)
+        }
+    }
+
     func recordAsShotWhiteBalance(_ id: String, temperature: Double, tint: Double) {
         let value = DevelopAsShot(temperature: temperature, tint: tint)
         if developAsShot[id] != value { developAsShot[id] = value }

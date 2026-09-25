@@ -128,6 +128,28 @@ enum DevelopRenderer {
         }
     }
 
+    /// 64-bin R, G, B histogram of a rendered image (fractions of pixels), computed on the GPU
+    /// from the encoded display values — what the eye sees, not linear light.
+    static func histogram(of image: CGImage) -> DevelopHistogram? {
+        var input = CIImage(cgImage: image, options: [.colorSpace: NSNull()])
+        let longEdge = max(input.extent.width, input.extent.height)
+        if longEdge > 1024 {   // a downsampled render has the same distribution
+            let scale = 1024 / longEdge
+            input = input.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        }
+        let histogram = input.applyingFilter("CIAreaHistogram", parameters: [
+            "inputExtent": CIVector(cgRect: input.extent),
+            "inputCount": DevelopHistogram.binCount,
+            "inputScale": 1,
+        ])
+        var bins = [Float](repeating: 0, count: DevelopHistogram.binCount * 4)
+        context.render(histogram, toBitmap: &bins, rowBytes: DevelopHistogram.binCount * 16,
+                       bounds: CGRect(x: 0, y: 0, width: DevelopHistogram.binCount, height: 1),
+                       format: .RGBAf, colorSpace: nil)
+        let channel = { (offset: Int) in stride(from: offset, to: bins.count, by: 4).map { Double(bins[$0]) } }
+        return DevelopHistogram(red: channel(0), green: channel(1), blue: channel(2))
+    }
+
     static func render(_ image: CIImage) -> CGImage? {
         context.createCGImage(image, from: image.extent.integral, format: .RGBA8, colorSpace: outputColorSpace)
     }
@@ -191,6 +213,7 @@ final class DevelopRenderWorker: @unchecked Sendable {
     struct Result: @unchecked Sendable {
         let request: Request
         let image: CGImage?
+        let histogram: DevelopHistogram?
         let asShotTemperature: Double?
         let asShotTint: Double?
     }
@@ -218,7 +241,8 @@ final class DevelopRenderWorker: @unchecked Sendable {
         let image = autoreleasepool {
             source?.source.image(request.settings, draft: request.draft).flatMap(DevelopRenderer.render)
         }
-        completion(Result(request: request, image: image,
+        let histogram = image.flatMap(DevelopRenderer.histogram)
+        completion(Result(request: request, image: image, histogram: histogram,
                           asShotTemperature: source?.source.asShotTemperature,
                           asShotTint: source?.source.asShotTint))
     }

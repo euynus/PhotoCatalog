@@ -73,3 +73,17 @@ struct DevelopControl: Identifiable {
         }
     }
 }
+
+/// Tone distribution of a rendered photo, per channel, as fractions of all pixels.
+struct DevelopHistogram: Equatable, Sendable {
+    static let binCount = 64
+    let red: [Double]
+    let green: [Double]
+    let blue: [Double]
+
+    /// Share of pixels in the darkest / brightest bin of any channel — clipping warnings.
+    var shadowClipping: Double { max(red.first ?? 0, green.first ?? 0, blue.first ?? 0) }
+    var highlightClipping: Double { max(red.last ?? 0, green.last ?? 0, blue.last ?? 0) }
+    /// Clipping worth flagging: more than a sliver of the photo sits in an end bin.
+    static let clippingWarning = 0.005
+}

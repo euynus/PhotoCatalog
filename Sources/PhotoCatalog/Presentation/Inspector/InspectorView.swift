@@ -329,7 +329,7 @@ func makerNoteRows(_ summary: String) -> [InfoRowData] {
 }
 
 /// Camera exposure at a glance — the four numbers photographers scan first.
-private struct ExposureStrip: View {
+struct ExposureStrip: View {
     let asset: Asset
 
     var body: some View {

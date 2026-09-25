@@ -59,8 +59,11 @@ private struct DevelopCanvas: View {
                                                    draft: dragging, fullResolution: fullResolution),
                               initial: true) {
                         engine.render(assetId: asset.id, url: source.url, isRaw: source.isRaw, settings: settings,
-                                      draft: dragging, fullResolution: fullResolution) { temperature, tint in
-                            app.recordAsShotWhiteBalance(asset.id, temperature: temperature, tint: tint)
+                                      draft: dragging, fullResolution: fullResolution) { result, histogram in
+                            if let temperature = result.asShotTemperature, let tint = result.asShotTint {
+                                app.recordAsShotWhiteBalance(asset.id, temperature: temperature, tint: tint)
+                            }
+                            if let histogram { app.recordDevelopHistogram(histogram, for: asset.id) }
                         }
                     }
             } else {
@@ -109,6 +112,7 @@ final class DevelopPreviewEngine: ObservableObject {
     private let previewWorker = DevelopRenderWorker()
     private let fullWorker = DevelopRenderWorker()
     private var token = 0
+    private var histogramToken = 0
 
     func image(for assetId: String) -> CGImage? {
         shown?.assetId == assetId ? shown?.image : nil
@@ -117,7 +121,8 @@ final class DevelopPreviewEngine: ObservableObject {
     func isRendering(_ assetId: String) -> Bool { renderingAssetId == assetId }
 
     func render(assetId: String, url: URL, isRaw: Bool, settings: DevelopSettings, draft: Bool,
-                fullResolution: Bool, asShot: @escaping (Double, Double) -> Void) {
+                fullResolution: Bool,
+                finished: @escaping (DevelopRenderWorker.Result, _ newestHistogram: DevelopHistogram?) -> Void) {
         token += 1
         let request = DevelopRenderWorker.Request(url: url, isRaw: isRaw, maxPixel: fullResolution ? nil : 2048,
                                                  settings: settings, draft: draft, token: token)
@@ -125,10 +130,14 @@ final class DevelopPreviewEngine: ObservableObject {
         (fullResolution ? fullWorker : previewWorker).submit(request) { [weak self] result in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if let temperature = result.asShotTemperature, let tint = result.asShotTint {
-                    asShot(temperature, tint)
-                }
                 if result.request.token == self.token { self.renderingAssetId = nil }
+                // renders finish out of order across the two workers; keep the newest histogram
+                var histogram: DevelopHistogram?
+                if result.histogram != nil, result.request.token > self.histogramToken {
+                    self.histogramToken = result.request.token
+                    histogram = result.histogram
+                }
+                finished(result, histogram)
                 // a coalesced older render still beats a stale photo while dragging
                 guard let image = result.image,
                       self.shown?.assetId != assetId || result.request.token >= (self.shown?.token ?? 0) else { return }
