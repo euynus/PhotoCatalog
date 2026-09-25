@@ -11,7 +11,11 @@ enum DevelopCheck {
         checkGeometryMath()
         checkGeometryRendering()
         checkPersistence()
-        MainActor.assumeIsolated { checkEditsAndUndo() }
+        checkTransferRules()
+        MainActor.assumeIsolated {
+            checkEditsAndUndo()
+            checkCopyPasteAndPresets()
+        }
         print("--- develop assertions passed ---")
     }
 
@@ -250,6 +254,108 @@ enum DevelopCheck {
         } catch {
             preconditionFailure("develop persistence check failed: \(error)")
         }
+    }
+
+    private static func checkTransferRules() {
+        var source = DevelopSettings()
+        source.exposure = 0.8
+        source.contrast = 20
+        source.temperature = 4200
+        source.rotation = 1
+        var target = DevelopSettings()
+        target.shadows = 30
+        target.crop = DevelopCrop(x: 0.1, y: 0.2, width: 0.5, height: 0.3)
+
+        let toned = target.applying(source, fields: [.exposure])
+        assert(toned.exposure == 0.8 && toned.contrast == 0 && toned.shadows == 30,
+               "only the chosen settings travel; the rest of the photo's edit stays")
+        let turned = target.applying(source, fields: [.orientation])
+        assert(turned.rotation == 1 && abs(turned.crop!.x - 0.5) < 1e-9 && abs(turned.crop!.y - 0.1) < 1e-9,
+               "taking a rotation turns the photo's own crop with it")
+
+        let transfer = DevelopTransfer(settings: source, fields: [.whiteBalance, .exposure], sourceIsRaw: true)
+        assert(transfer.applied(to: target, targetIsRaw: true).temperature == 4200,
+               "white balance carries between RAW files")
+        let onJPEG = transfer.applied(to: target, targetIsRaw: false)
+        assert(onJPEG.temperature == nil && onJPEG.exposure == 0.8, "RAW Kelvin never lands on a JPEG")
+
+        assert(DevelopField.exposure.isAdjusted(in: source) && !DevelopField.shadows.isAdjusted(in: source)
+               && DevelopField.orientation.isAdjusted(in: source), "adjusted fields are detected")
+        for preset in DevelopPreset.builtIns {
+            let untouched = Set(DevelopField.allCases).subtracting(preset.transfer.fields)
+            assert(untouched.allSatisfy { !$0.isAdjusted(in: preset.transfer.settings) },
+                   "built-in preset \(preset.name) only sets the fields it carries")
+        }
+    }
+
+    @MainActor
+    private static func checkCopyPasteAndPresets() {
+        let base = DemoData.assets.filter(\.isRaw)
+        func local(_ asset: Asset, _ name: String) -> Asset {
+            var copy = asset
+            copy.localPath = "/tmp/pc-develop-transfer/\(name)"
+            copy.status = .ready
+            copy.isDemo = false
+            return copy
+        }
+        let a = local(base[0], "A.CR3"), b = local(base[1], "B.CR3"), c = local(base[2], "C.CR3")
+        let app = AppState.selfCheckFixture()
+        app.assets = [a, b, c]
+        app.duplicateGroupsCache = []
+        app.select(Selection(type: .lib, id: "all", name: "Transfer check"))
+        let savedPresets = app.developPresets
+        let savedFields = app.developTransferFields
+        defer {
+            app.developPresets = savedPresets
+            app.developTransferFields = savedFields
+        }
+
+        var edit = DevelopSettings()
+        edit.exposure = 0.6
+        edit.vibrance = 25
+        edit.crop = DevelopCrop(x: 0, y: 0, width: 0.5, height: 0.5)
+        app.commitDevelop([a.id: edit], undoName: "调整")
+        app.setPrimary(a.id)
+        app.copyDevelopSettings(fields: DevelopField.defaultCopy)
+        app.selectedIds = [b.id, c.id]
+        app.primaryId = b.id
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        app.undoManager = undo
+        undo.beginUndoGrouping()
+        app.pasteDevelopSettings()
+        undo.endUndoGrouping()
+        let pasted = app.developSettings[b.id]
+        assert(pasted?.exposure == 0.6 && pasted?.vibrance == 25 && pasted?.crop == nil
+               && app.developSettings[c.id] == pasted, "paste reaches every selected photo, crop left out")
+        undo.undo()
+        assert(app.developSettings[b.id] == nil && app.developSettings[c.id] == nil, "one undo takes the paste back")
+        app.undoManager = nil
+
+        app.selectedIds = [a.id, b.id, c.id]
+        app.primaryId = a.id
+        app.syncDevelopSettings(fields: [.exposure])
+        assert(app.developSettings[b.id]?.exposure == 0.6 && app.developSettings[b.id]?.vibrance == 0
+               && app.developSettings[a.id] == edit, "sync copies the chosen settings from the selected photo")
+
+        app.setPrimary(c.id)
+        app.applyDevelopPreset(DevelopPreset.builtIns.first { $0.name == "黑白" }!)
+        assert(app.developSettings[c.id]?.saturation == -100 && app.developSettings[c.id]?.exposure == 0.6,
+               "a preset changes only its own settings")
+
+        app.setPrimary(a.id)
+        app.saveDevelopPreset(name: "  测试预设 ", fields: app.developPresetDefaultFields)
+        let preset = app.developPresets.last
+        assert(preset?.name == "测试预设" && preset?.transfer.fields == [.exposure, .vibrance],
+               "a new preset holds what the photo adjusted, framing aside")
+        app.saveDevelopPreset(name: "测试预设", fields: [.exposure])
+        assert(app.developPresets.filter { $0.name == "测试预设" }.count == 1, "saving a name again replaces it")
+        app.deleteDevelopPreset(preset!.id)
+        assert(!app.developPresets.contains { $0.name == "测试预设" }, "presets can be deleted")
+
+        app.selectedIds = [a.id, b.id, c.id]
+        app.resetDevelopSelection()
+        assert(app.developSettings.isEmpty, "reset returns the selection to as shot")
     }
 
     @MainActor

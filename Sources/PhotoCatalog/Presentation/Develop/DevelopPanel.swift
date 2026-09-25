@@ -59,6 +59,16 @@ struct DevelopPanel: View {
                 .help("恢复为原照设置")
             }
             .controlSize(.small)
+            HStack(spacing: 8) {
+                presetMenu
+                Spacer(minLength: 0)
+                Button("拷贝…") { app.showDevelopTransfer(.copy) }
+                    .help("拷贝修图设置 (⇧⌘C)")
+                Button("粘贴") { app.pasteDevelopSettings() }
+                    .disabled(app.developClipboard == nil)
+                    .help("粘贴修图设置 (⇧⌘V)")
+            }
+            .controlSize(.small)
         }
     }
 
@@ -100,6 +110,36 @@ struct DevelopPanel: View {
                           onReset: { commit(asset, settings, "色调") { $0.tint = nil } },
                           onCommit: { commitDraft(asset, "色调") })
         }
+    }
+
+    private var presetMenu: some View {
+        Menu {
+            Section("内置") {
+                ForEach(DevelopPreset.builtIns) { preset in
+                    Button(preset.name) { app.applyDevelopPreset(preset) }
+                }
+            }
+            if !app.developPresets.isEmpty {
+                Section("我的预设") {
+                    ForEach(app.developPresets) { preset in
+                        Button(preset.name) { app.applyDevelopPreset(preset) }
+                    }
+                }
+            }
+            Divider()
+            Button("存储为预设…") { app.showDevelopTransfer(.preset) }
+            if !app.developPresets.isEmpty {
+                Menu("删除预设") {
+                    ForEach(app.developPresets) { preset in
+                        Button(preset.name, role: .destructive) { app.deleteDevelopPreset(preset.id) }
+                    }
+                }
+            }
+        } label: {
+            Label("预设", systemImage: "wand.and.stars")
+        }
+        .fixedSize()
+        .help("应用或存储修图预设")
     }
 
     @ViewBuilder

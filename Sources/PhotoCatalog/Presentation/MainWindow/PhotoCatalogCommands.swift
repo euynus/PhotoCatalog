@@ -73,6 +73,24 @@ struct PhotoCatalogCommands: Commands {
             Button("水平翻转") { perform("照片.水平翻转") { app.flipSelection() } }
                 .disabled(!app.canTransformSelection)
             Divider()
+            Button("拷贝修图设置…") { perform("照片.拷贝修图设置") { app.showDevelopTransfer(.copy) } }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .disabled(!app.canCopyDevelopSettings)
+            Button("粘贴修图设置") { perform("照片.粘贴修图设置") { app.pasteDevelopSettings() } }
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+                .disabled(!app.canPasteDevelopSettings)
+            Button("同步修图设置…") { perform("照片.同步修图设置") { app.showDevelopTransfer(.sync) } }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .disabled(!app.canSyncDevelopSettings)
+            Menu("应用修图预设") {
+                ForEach(app.allDevelopPresets) { preset in
+                    Button(preset.name) { perform("照片.应用修图预设") { app.applyDevelopPreset(preset) } }
+                }
+            }
+            .disabled(!app.canTransformSelection)
+            Button("复位修图调整") { perform("照片.复位修图调整") { app.resetDevelopSelection() } }
+                .disabled(!app.canResetDevelopSelection)
+            Divider()
             Toggle("评分后自动前进", isOn: Binding(get: { app.autoAdvance }, set: { app.autoAdvance = $0 }))
                 .help("评分、旗标或颜色后跳到下一张；按住 Shift 可单次前进")
             Button("移除被拒绝的照片…") { perform("照片.移除被拒绝的照片") { app.confirmRemoveRejected() } }

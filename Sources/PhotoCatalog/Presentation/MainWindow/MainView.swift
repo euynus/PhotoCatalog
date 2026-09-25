@@ -80,6 +80,10 @@ struct MainView: View {
             })
         case "settings":
             SettingsSheet()
+        case "developTransfer":
+            DevelopTransferSheet(mode: app.developTransferMode,
+                                 fields: app.developTransferMode == .preset
+                                     ? app.developPresetDefaultFields : app.developTransferFields)
         default:
             EmptyView()
         }

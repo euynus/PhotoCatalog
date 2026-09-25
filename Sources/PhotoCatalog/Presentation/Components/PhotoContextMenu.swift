@@ -57,6 +57,20 @@ struct PhotoContextMenu: View {
             }
             Button("无") { act { _ = app.setColor(nil) } }
         }
+        Menu("修图设置") {
+            Button("拷贝修图设置…") { act { app.showDevelopTransfer(.copy) } }
+            Button("粘贴修图设置") { act { app.pasteDevelopSettingsIfCopied() } }
+            Menu("应用修图预设") {
+                // presets change rarely, so reading them doesn't rebuild menus on every click
+                ForEach(app.allDevelopPresets) { preset in
+                    Button(preset.name) { act { app.applyDevelopPreset(preset) } }
+                }
+            }
+            Divider()
+            Button("向左旋转") { act { app.rotateSelection(clockwise: false) } }
+            Button("向右旋转") { act { app.rotateSelection(clockwise: true) } }
+            Button("复位修图调整") { act { app.resetDevelopSelection() } }
+        }
 
         Divider()
         Button("加入相册…") { act { app.addSelectionToAlbum() } }

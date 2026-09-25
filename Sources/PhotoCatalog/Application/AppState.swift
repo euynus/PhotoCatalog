@@ -616,6 +616,142 @@ final class AppState {
         }
     }
 
+    // ----- develop: copy / paste / sync and presets -----
+    /// Settings copied with ⇧⌘C, waiting for ⇧⌘V.
+    var developClipboard: DevelopTransfer?
+    /// The user's own presets; built-ins come first wherever presets are listed.
+    var developPresets: [DevelopPreset] = AppState.loadDevelopPresets() {
+        didSet { AppState.store(developPresets, forKey: AppState.developPresetsKey) }
+    }
+    var allDevelopPresets: [DevelopPreset] { DevelopPreset.builtIns + developPresets }
+    /// A new preset offers what the photo has adjusted, leaving its framing out.
+    var developPresetDefaultFields: Set<DevelopField> {
+        let settings = primaryId.flatMap { developSettings[$0] } ?? .neutral
+        let adjusted = Set(DevelopField.allCases.filter { $0.isAdjusted(in: settings) })
+            .subtracting([.orientation, .crop])
+        return adjusted.isEmpty ? developTransferFields : adjusted
+    }
+    /// Fields the copy / sync dialog offers checked, as last used.
+    var developTransferFields: Set<DevelopField> = AppState.loadDevelopTransferFields() {
+        didSet { AppState.store(developTransferFields, forKey: AppState.developTransferFieldsKey) }
+    }
+    enum DevelopTransferMode { case copy, sync, preset }
+    var developTransferMode: DevelopTransferMode = .copy
+
+    private static let developPresetsKey = "pc_developPresets"
+    private static let developTransferFieldsKey = "pc_developTransferFields"
+
+    private static func loadDevelopPresets() -> [DevelopPreset] {
+        UserDefaults.standard.data(forKey: developPresetsKey)
+            .flatMap { try? JSONDecoder().decode([DevelopPreset].self, from: $0) } ?? []
+    }
+
+    private static func loadDevelopTransferFields() -> Set<DevelopField> {
+        UserDefaults.standard.data(forKey: developTransferFieldsKey)
+            .flatMap { try? JSONDecoder().decode(Set<DevelopField>.self, from: $0) } ?? DevelopField.defaultCopy
+    }
+
+    private static func store<T: Encodable>(_ value: T, forKey key: String) {
+        if let data = try? JSONEncoder().encode(value) { UserDefaults.standard.set(data, forKey: key) }
+    }
+
+    private var primaryCanDevelop: Bool { primary.map(canDevelop) ?? false }
+    var canCopyDevelopSettings: Bool { onboarded && sheet == nil && view != .analysis && primaryCanDevelop }
+    var canPasteDevelopSettings: Bool { developClipboard != nil && canTransformSelection }
+    var canSyncDevelopSettings: Bool { canCopyDevelopSettings && view != .develop && selectionTargetIds.count > 1 }
+
+    /// ⇧⌘C / ⇧⌘S / 存储为预设: the dialog that picks which settings travel.
+    func showDevelopTransfer(_ mode: DevelopTransferMode) {
+        guard canCopyDevelopSettings, mode != .sync || canSyncDevelopSettings else { return }
+        developTransferMode = mode
+        sheet = "developTransfer"
+    }
+
+    func copyDevelopSettings(fields: Set<DevelopField>) {
+        guard let asset = primary, canDevelop(asset) else { return }
+        developClipboard = DevelopTransfer(settings: developSettings[asset.id] ?? .neutral, fields: fields,
+                                           sourceIsRaw: asset.isRaw)
+        push("已拷贝修图设置", "doc.on.doc")
+    }
+
+    /// ⇧⌘V: onto the photo in Develop, or every selected photo elsewhere.
+    func pasteDevelopSettings() {
+        guard let clipboard = developClipboard else { return }
+        let count = applyDevelopTransfer(clipboard, to: developTargetIds, undoName: "粘贴修图设置")
+        if count > 1 { push("已粘贴到 \(count) 张照片", "doc.on.clipboard") }
+    }
+
+    /// The right-click menu can't disable itself without rebuilding every cell's menu, so it says why.
+    func pasteDevelopSettingsIfCopied() {
+        guard developClipboard != nil else {
+            push("还没有拷贝修图设置（⇧⌘C）", "info")
+            return
+        }
+        pasteDevelopSettings()
+    }
+
+    /// The selected photo's settings onto the rest of the selection.
+    func syncDevelopSettings(fields: Set<DevelopField>) {
+        guard let source = primary, canDevelop(source) else { return }
+        let transfer = DevelopTransfer(settings: developSettings[source.id] ?? .neutral, fields: fields,
+                                       sourceIsRaw: source.isRaw)
+        let targets = developTargetIds.filter { $0 != source.id }
+        let count = applyDevelopTransfer(transfer, to: targets, undoName: "同步修图设置")
+        push("已同步到 \(count) 张照片", "arrow.triangle.2.circlepath")
+    }
+
+    func applyDevelopPreset(_ preset: DevelopPreset) {
+        applyDevelopTransfer(preset.transfer, to: developTargetIds, undoName: "应用预设“\(preset.name)”")
+    }
+
+    /// Saves the selected photo's `fields` as a preset; a preset of the same name is replaced.
+    func saveDevelopPreset(name: String, fields: Set<DevelopField>) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let asset = primary, canDevelop(asset), !name.isEmpty, !fields.isEmpty else { return }
+        let transfer = DevelopTransfer(settings: developSettings[asset.id] ?? .neutral, fields: fields,
+                                       sourceIsRaw: asset.isRaw)
+        if let index = developPresets.firstIndex(where: { $0.name == name }) {
+            developPresets[index].transfer = transfer
+        } else {
+            developPresets.append(DevelopPreset(id: UUID().uuidString, name: name, transfer: transfer))
+        }
+        push("已存储预设“\(name)”", "square.and.arrow.down")
+    }
+
+    func deleteDevelopPreset(_ id: String) {
+        developPresets.removeAll { $0.id == id }
+    }
+
+    /// Returns every selected photo (or the one in Develop) to as shot.
+    func resetDevelopSelection() {
+        let ids = developTargetIds.filter { developSettings[$0] != nil }
+        guard !ids.isEmpty else { return }
+        commitDevelop(Dictionary(uniqueKeysWithValues: ids.map { ($0, DevelopSettings.neutral) }),
+                      undoName: "复位修图调整")
+    }
+
+    var canResetDevelopSelection: Bool {
+        canTransformSelection && developTargetIds.contains { developSettings[$0] != nil }
+    }
+
+    /// Applies a transfer as one undoable step; returns how many photos it reached.
+    @discardableResult
+    private func applyDevelopTransfer(_ transfer: DevelopTransfer, to ids: [String], undoName: String) -> Int {
+        var changes: [String: DevelopSettings] = [:]
+        for id in ids {
+            guard let index = assetIndex[id] else { continue }
+            let asset = assets[index]
+            var next = transfer.applied(to: developSettings[id] ?? .neutral, targetIsRaw: asset.isRaw)
+            // a crop from another photo may reach past this one's straightened edges
+            let frame = developFrame(for: asset, settings: next)
+            next.crop = next.crop.map { DevelopGeometry.fit($0, angle: next.straighten, frame: frame) }
+            changes[id] = next
+        }
+        guard !changes.isEmpty else { return 0 }
+        commitDevelop(changes, undoName: undoName)
+        return changes.count
+    }
+
     /// Tone distribution of the photo's latest finished Develop render.
     var developHistogram: (assetId: String, histogram: DevelopHistogram)?
 
@@ -4977,7 +5113,7 @@ final class AppState {
                     runBackup()
                 }
             case "s":
-                guard canSaveCurrentFilter else { return false }
+                guard !hasShift, canSaveCurrentFilter else { return false }   // ⇧⌘S syncs settings (menu)
                 saveCurrentFilterAsSmartAlbum()
             case "a":
                 guard canChangeVisibleSelection else { return true }
