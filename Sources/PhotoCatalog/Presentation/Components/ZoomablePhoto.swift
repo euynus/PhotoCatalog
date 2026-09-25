@@ -37,6 +37,12 @@ struct ZoomablePhoto: View {
     private var pixelSize: CGSize {
         if let fullImage { return CGSize(width: fullImage.width, height: fullImage.height) }
         let preview = previewImage
+        if let preview, app.developSettings[asset.id]?.hasGeometry == true, asset.width > 0, asset.height > 0 {
+            // a rotated or cropped preview renders the whole photo at 2048 px on the long edge first
+            let longEdge = CGFloat(max(asset.width, asset.height))
+            let factor = longEdge / min(CGFloat(ThumbnailService.Kind.preview2048.maxPixel), longEdge)
+            return CGSize(width: CGFloat(preview.width) * factor, height: CGFloat(preview.height) * factor)
+        }
         var size = CGSize(width: asset.width, height: asset.height)
         if size.width <= 0 || size.height <= 0 {
             return CGSize(width: preview?.width ?? 1, height: preview?.height ?? 1)

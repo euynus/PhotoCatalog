@@ -26,6 +26,7 @@ struct DevelopPanel: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header(asset, settings: settings)
+                section("裁剪与旋转") { geometry(asset, settings) }
                 section("白平衡") { whiteBalance(asset, settings) }
                 section("色调") {
                     ForEach(DevelopControl.tone) { control in slider(control, asset, settings) }
@@ -99,6 +100,111 @@ struct DevelopPanel: View {
                           onReset: { commit(asset, settings, "色调") { $0.tint = nil } },
                           onCommit: { commitDraft(asset, "色调") })
         }
+    }
+
+    @ViewBuilder
+    private func geometry(_ asset: Asset, _ settings: DevelopSettings) -> some View {
+        HStack(spacing: 6) {
+            Toggle(isOn: Binding(get: { app.developCropping }, set: { app.developCropping = $0 })) {
+                Label("裁剪", systemImage: "crop")
+            }
+            .toggleStyle(.button)
+            .help("裁剪与拉直 (R)")
+            Spacer(minLength: 0)
+            Button { app.rotateSelection(clockwise: false) } label: { Image(systemName: "rotate.left") }
+                .help("向左旋转 (⌘[)")
+                .accessibilityLabel("向左旋转")
+            Button { app.rotateSelection(clockwise: true) } label: { Image(systemName: "rotate.right") }
+                .help("向右旋转 (⌘])")
+                .accessibilityLabel("向右旋转")
+            Button { app.flipSelection() } label: {
+                Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right")
+            }
+            .help("水平翻转")
+            .accessibilityLabel("水平翻转")
+        }
+        .controlSize(.small)
+        if app.developCropping {
+            HStack(spacing: 6) {
+                Text("比例").font(.system(size: 12)).foregroundStyle(Theme.text2)
+                Picker("比例", selection: Binding(get: { app.developCropAspect },
+                                                set: { applyAspect($0, asset, settings) })) {
+                    ForEach(CropAspect.allCases) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                Button { swapCropOrientation(asset, settings) } label: {
+                    Image(systemName: "rectangle.portrait.rotate")
+                }
+                .help("切换裁剪框横竖")
+                .accessibilityLabel("切换裁剪框横竖")
+            }
+            .controlSize(.small)
+        }
+        DevelopSlider(title: "角度", value: settings.straighten,
+                      range: -DevelopGeometry.maxStraighten...DevelopGeometry.maxStraighten, step: 0.1,
+                      format: { $0 == 0 ? "0°" : String(format: "%+.1f°", $0) },
+                      isNeutral: settings.straighten == 0,
+                      onChange: { straightenDraft(asset, $0) },
+                      onReset: { commitStraighten(asset, 0) },
+                      onCommit: { commitDraft(asset, "角度") })
+        HStack(spacing: 8) {
+            Button("自动拉直") { app.autoStraighten(asset) }
+                .help("按画面中的地平线自动拉直")
+            Spacer(minLength: 0)
+            Button("复位裁剪") {
+                var next = app.developSettings[asset.id] ?? .neutral
+                next.crop = nil
+                next.straighten = 0
+                app.commitDevelop([asset.id: next], undoName: "复位裁剪")
+            }
+            .disabled(settings.crop == nil && settings.straighten == 0)
+        }
+        .controlSize(.small)
+    }
+
+    // ---- crop: fractions of the rotated frame, kept inside the straightened photo ----
+    private func straightenDraft(_ asset: Asset, _ angle: Double) {
+        // shrink from the saved crop, so dragging back toward level grows it again
+        var next = app.developSettings[asset.id] ?? .neutral
+        let frame = app.developFrame(for: asset, settings: next)
+        next.straighten = angle
+        next.crop = next.crop.map { DevelopGeometry.fit($0, angle: angle, frame: frame) }
+        app.updateDevelopDraft(next, for: asset.id)
+    }
+
+    private func commitStraighten(_ asset: Asset, _ angle: Double) {
+        straightenDraft(asset, angle)
+        commitDraft(asset, "角度")
+    }
+
+    /// Picks a crop shape and reshapes the crop to the largest of it around the same center.
+    private func applyAspect(_ aspect: CropAspect, _ asset: Asset, _ settings: DevelopSettings) {
+        app.developCropAspect = aspect
+        let frame = app.developFrame(for: asset, settings: settings)
+        guard let ratio = aspect.ratio(frame: frame) else { return }
+        let current = DevelopGeometry.effectiveCrop(settings, frame: frame)
+        let landscape = current.width * frame.width >= current.height * frame.height
+        reshapeCrop(asset, aspect: landscape ? ratio : 1 / ratio, around: current, frame: frame, undoName: "裁剪比例")
+    }
+
+    private func swapCropOrientation(_ asset: Asset, _ settings: DevelopSettings) {
+        let frame = app.developFrame(for: asset, settings: settings)
+        let current = DevelopGeometry.effectiveCrop(settings, frame: frame)
+        let aspect = current.height * frame.height / max(current.width * frame.width, 1e-9)
+        reshapeCrop(asset, aspect: aspect, around: current, frame: frame, undoName: "切换裁剪框横竖")
+    }
+
+    private func reshapeCrop(_ asset: Asset, aspect: Double, around current: DevelopCrop, frame: CGSize,
+                             undoName: String) {
+        var next = app.developSettings[asset.id] ?? .neutral
+        let largest = DevelopGeometry.inscribed(aspect: aspect, angle: next.straighten, frame: frame)
+        let crop = DevelopGeometry.move(largest, dx: current.midX - largest.midX, dy: current.midY - largest.midY,
+                                        angle: next.straighten, frame: frame)
+        // the whole photo's own shape is what "no crop" already means
+        let isWhole = crop == DevelopGeometry.inscribed(aspect: frame.width / max(frame.height, 1),
+                                                        angle: next.straighten, frame: frame)
+        next.crop = isWhole ? nil : crop
+        app.commitDevelop([asset.id: next], undoName: undoName)
     }
 
     private func slider(_ control: DevelopControl, _ asset: Asset, _ settings: DevelopSettings) -> some View {

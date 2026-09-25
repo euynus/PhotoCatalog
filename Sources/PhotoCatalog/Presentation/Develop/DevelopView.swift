@@ -42,30 +42,42 @@ private struct DevelopCanvas: View {
 
     var body: some View {
         let settings = app.developShowsOriginal ? .neutral : app.developSettings(for: asset.id)
+        let cropping = app.developCropping && !app.developShowsOriginal
         let dragging = app.developDraft?.assetId == asset.id
-        let fullResolution = app.loupeZoom != nil && !dragging
-        Group {
+        let fullResolution = app.loupeZoom != nil && !dragging && !cropping
+        // the crop tool draws the crop itself, so moving it never re-renders
+        var rendered = settings
+        if cropping { rendered.crop = nil }
+        return Group {
             if let source {
-                ZoomableImageView(image: engine.image(for: asset.id), pixelSize: pixelSize,
-                                  zoom: app.loupeZoom) { app.loupeZoom = $0 }
-                    .padding(app.loupeZoom == nil ? 12 : 0)
-                    .overlay(alignment: .topLeading) {
-                        if app.developShowsOriginal { badge("修改前（按 \\ 切换）") }
+                Group {
+                    if cropping {
+                        CropEditor(asset: asset, image: engine.wholeFrameImage(for: asset.id), settings: settings)
+                    } else {
+                        ZoomableImageView(image: engine.image(for: asset.id), pixelSize: pixelSize,
+                                          zoom: app.loupeZoom) { app.loupeZoom = $0 }
+                            .padding(app.loupeZoom == nil ? 12 : 0)
                     }
-                    .overlay(alignment: .topTrailing) {
-                        if engine.isRendering(asset.id) { ProgressView().controlSize(.small).padding(14) }
-                    }
-                    .onChange(of: DevelopRenderKey(assetId: asset.id, settings: settings,
-                                                   draft: dragging, fullResolution: fullResolution),
-                              initial: true) {
-                        engine.render(assetId: asset.id, url: source.url, isRaw: source.isRaw, settings: settings,
-                                      draft: dragging, fullResolution: fullResolution) { result, histogram in
-                            if let temperature = result.asShotTemperature, let tint = result.asShotTint {
-                                app.recordAsShotWhiteBalance(asset.id, temperature: temperature, tint: tint)
-                            }
-                            if let histogram { app.recordDevelopHistogram(histogram, for: asset.id) }
+                }
+                .overlay(alignment: .topLeading) {
+                    if app.developShowsOriginal { badge("修改前（按 \\ 切换）") }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if engine.isRendering(asset.id) { ProgressView().controlSize(.small).padding(14) }
+                }
+                .onChange(of: DevelopRenderKey(assetId: asset.id, settings: rendered, draft: dragging,
+                                               fullResolution: fullResolution, wholeFrame: cropping),
+                          initial: true) {
+                    engine.render(assetId: asset.id, url: source.url, isRaw: source.isRaw, settings: rendered,
+                                  draft: dragging, fullResolution: fullResolution,
+                                  wholeFrame: cropping) { result, histogram in
+                        if let temperature = result.asShotTemperature, let tint = result.asShotTint {
+                            app.recordAsShotWhiteBalance(asset.id, temperature: temperature, tint: tint)
                         }
+                        if let size = result.sourceSize { app.recordDevelopSourceSize(size, for: asset.id) }
+                        if let histogram { app.recordDevelopHistogram(histogram, for: asset.id) }
                     }
+                }
             } else {
                 ContentUnavailableView("原件不可用",
                                        systemImage: "exclamationmark.triangle",
@@ -75,15 +87,17 @@ private struct DevelopCanvas: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// The finished photo's size at 1:1. Previews render the uncropped photo at 2048 px on the
+    /// long edge, so a cropped preview scales up by the same factor as the whole photo would.
     private var pixelSize: CGSize {
-        let rendered = engine.image(for: asset.id).map { CGSize(width: $0.width, height: $0.height) }
-        guard asset.width > 0, asset.height > 0 else { return rendered ?? CGSize(width: 1, height: 1) }
-        var size = CGSize(width: asset.width, height: asset.height)
-        if let rendered, rendered.width != rendered.height,
-           (rendered.width > rendered.height) != (size.width > size.height) {
-            size = CGSize(width: size.height, height: size.width)
+        guard let shown = engine.shown(for: asset.id) else {
+            return CGSize(width: max(asset.width, 1), height: max(asset.height, 1))
         }
-        return size
+        let size = CGSize(width: shown.image.width, height: shown.image.height)
+        guard !shown.fullResolution, asset.width > 0, asset.height > 0 else { return size }
+        let longEdge = CGFloat(max(asset.width, asset.height))
+        let factor = longEdge / min(CGFloat(DevelopPreviewEngine.previewMaxPixel), longEdge)
+        return CGSize(width: size.width * factor, height: size.height * factor)
     }
 
     private func badge(_ text: String) -> some View {
@@ -101,31 +115,49 @@ private struct DevelopRenderKey: Equatable {
     let settings: DevelopSettings
     let draft: Bool
     let fullResolution: Bool
+    let wholeFrame: Bool
 }
 
 /// Owns two render workers — preview size and full resolution — so switching zoom
 /// doesn't re-decode, and shows the newest finished render for the current photo.
 @MainActor
 final class DevelopPreviewEngine: ObservableObject {
-    @Published private var shown: (assetId: String, token: Int, image: CGImage)?
+    static let previewMaxPixel = 2048
+
+    struct Shown {
+        let assetId: String
+        let token: Int
+        let image: CGImage
+        let fullResolution: Bool
+        let wholeFrame: Bool
+    }
+
+    @Published private var shown: Shown?
     @Published private var renderingAssetId: String?
     private let previewWorker = DevelopRenderWorker()
     private let fullWorker = DevelopRenderWorker()
     private var token = 0
     private var histogramToken = 0
 
-    func image(for assetId: String) -> CGImage? {
-        shown?.assetId == assetId ? shown?.image : nil
+    func shown(for assetId: String) -> Shown? { shown?.assetId == assetId ? shown : nil }
+
+    func image(for assetId: String) -> CGImage? { shown(for: assetId)?.image }
+
+    /// Only an uncropped render: the crop tool lays its rectangle over the whole frame.
+    func wholeFrameImage(for assetId: String) -> CGImage? {
+        shown(for: assetId).flatMap { $0.wholeFrame ? $0.image : nil }
     }
 
     func isRendering(_ assetId: String) -> Bool { renderingAssetId == assetId }
 
     func render(assetId: String, url: URL, isRaw: Bool, settings: DevelopSettings, draft: Bool,
-                fullResolution: Bool,
+                fullResolution: Bool, wholeFrame: Bool,
                 finished: @escaping (DevelopRenderWorker.Result, _ newestHistogram: DevelopHistogram?) -> Void) {
         token += 1
-        let request = DevelopRenderWorker.Request(url: url, isRaw: isRaw, maxPixel: fullResolution ? nil : 2048,
-                                                 settings: settings, draft: draft, token: token)
+        var request = DevelopRenderWorker.Request(url: url, isRaw: isRaw,
+                                                  maxPixel: fullResolution ? nil : Self.previewMaxPixel,
+                                                  settings: settings, draft: draft, token: token)
+        request.wholeFrame = wholeFrame
         renderingAssetId = assetId
         (fullResolution ? fullWorker : previewWorker).submit(request) { [weak self] result in
             Task { @MainActor [weak self] in
@@ -141,7 +173,9 @@ final class DevelopPreviewEngine: ObservableObject {
                 // a coalesced older render still beats a stale photo while dragging
                 guard let image = result.image,
                       self.shown?.assetId != assetId || result.request.token >= (self.shown?.token ?? 0) else { return }
-                self.shown = (assetId, result.request.token, image)
+                self.shown = Shown(assetId: assetId, token: result.request.token, image: image,
+                                   fullResolution: result.request.maxPixel == nil,
+                                   wholeFrame: result.request.wholeFrame)
             }
         }
     }

@@ -64,6 +64,15 @@ struct PhotoCatalogCommands: Commands {
             Button("在访达中显示") { perform("照片.在访达中显示") { app.revealSelectionInFinder() } }
                 .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals)
             Divider()
+            Button("向左旋转") { perform("照片.向左旋转") { app.rotateSelection(clockwise: false) } }
+                .keyboardShortcut("[", modifiers: .command)
+                .disabled(!app.canTransformSelection)
+            Button("向右旋转") { perform("照片.向右旋转") { app.rotateSelection(clockwise: true) } }
+                .keyboardShortcut("]", modifiers: .command)
+                .disabled(!app.canTransformSelection)
+            Button("水平翻转") { perform("照片.水平翻转") { app.flipSelection() } }
+                .disabled(!app.canTransformSelection)
+            Divider()
             Toggle("评分后自动前进", isOn: Binding(get: { app.autoAdvance }, set: { app.autoAdvance = $0 }))
                 .help("评分、旗标或颜色后跳到下一张；按住 Shift 可单次前进")
             Button("移除被拒绝的照片…") { perform("照片.移除被拒绝的照片") { app.confirmRemoveRejected() } }
@@ -102,6 +111,10 @@ struct PhotoCatalogCommands: Commands {
             Button("单张查看") { perform("视图.单张查看") { app.switchView(.loupe) } }
                 .disabled(app.sheet != nil || !app.onboarded)
             Button("比较视图") { perform("视图.比较视图") { app.enterCompare() } }
+                .disabled(app.sheet != nil || !app.onboarded)
+            Button("修图 (D)") { perform("视图.修图") { app.switchView(.develop) } }
+                .disabled(app.sheet != nil || !app.onboarded)
+            Button("裁剪与拉直 (R)") { perform("视图.裁剪与拉直") { app.toggleCropTool() } }
                 .disabled(app.sheet != nil || !app.onboarded)
             Button("拍摄参数分析") { perform("视图.拍摄参数分析") { app.switchView(.analysis) } }
                 .disabled(app.sheet != nil || !app.onboarded)

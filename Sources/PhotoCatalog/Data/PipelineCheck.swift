@@ -321,6 +321,14 @@ enum PipelineCheck {
                                && meanLuminance(at: $0) > meanLuminance(at: thumbURL) + 0.05 } == true
                   && fm.fileExists(atPath: thumbURL.path),
                   "developed thumbnails render adjustments into their own cache files")
+            var turned = DevelopSettings()
+            turned.rotation = 1
+            let rotated = coordinator.thumbnails.ensureEdited(from: thumbURL, isRaw: false, settings: turned,
+                                                              assetId: cr3Asset.id, kind: .thumb512)
+            let thumbSize = pixelSize(at: thumbURL)
+            check(rotated.flatMap(pixelSize) == thumbSize.map { CGSize(width: $0.height, height: $0.width) }
+                  && thumbSize.map { $0.width != $0.height } == true,
+                  "a quarter turn renders from the cached thumbnail with its sides swapped")
         } else {
             check(false, "CR3 black preview cache regenerates from original")
             check(false, "CR3 black thumbnail cache regenerates from preview fallback")
@@ -996,6 +1004,14 @@ enum PipelineCheck {
         let options = quality.map { [kCGImageDestinationLossyCompressionQuality: $0] as CFDictionary }
         CGImageDestinationAddImage(dest, cg, options)
         CGImageDestinationFinalize(dest)
+    }
+
+    private static func pixelSize(at url: URL) -> CGSize? {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else { return nil }
+        return CGSize(width: width, height: height)
     }
 
     private static func meanLuminance(at url: URL) -> Double {

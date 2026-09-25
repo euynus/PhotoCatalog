@@ -4,6 +4,7 @@
 import CoreImage
 import ImageIO
 import Foundation
+import Vision
 
 enum DevelopRenderer {
     /// One GPU context for the app: contexts are expensive to create and safe to share.
@@ -29,6 +30,8 @@ enum DevelopRenderer {
         /// half-float bitmap. Re-running CIRAWFilter costs ~0.5–2 s per change, so tone and color
         /// render from this cache; white balance and exposure drags apply as deltas on it.
         private var rawStage: (key: RawStageKey, image: CIImage)?
+        /// Size of the decoded photo before rotation and crop, known after the first render.
+        private(set) var sourceSize: CGSize?
 
         private struct RawStageKey: Equatable {
             let temperature: Double
@@ -60,7 +63,15 @@ enum DevelopRenderer {
             }
         }
 
-        func image(_ settings: DevelopSettings, draft: Bool = false) -> CIImage? {
+        /// The photo with `settings` applied. `wholeFrame` skips the crop and leaves the corners a
+        /// straightened photo no longer covers empty, for the crop tool to draw over.
+        func image(_ settings: DevelopSettings, draft: Bool = false, wholeFrame: Bool = false) -> CIImage? {
+            guard let toned = tonedImage(settings, draft: draft) else { return nil }
+            sourceSize = toned.extent.integral.size
+            return DevelopRenderer.applyGeometry(toned, settings, wholeFrame: wholeFrame)
+        }
+
+        private func tonedImage(_ settings: DevelopSettings, draft: Bool) -> CIImage? {
             if let raw {
                 let key = RawStageKey(temperature: settings.temperature ?? asShotTemperature ?? 6500,
                                       tint: settings.tint ?? asShotTint ?? 0,
@@ -154,6 +165,58 @@ enum DevelopRenderer {
         context.createCGImage(image, from: image.extent.integral, format: .RGBA8, colorSpace: outputColorSpace)
     }
 
+    /// Rotation, mirror, straighten and crop (see `DevelopSettings`). The result's origin is zero.
+    static func applyGeometry(_ input: CIImage, _ s: DevelopSettings, wholeFrame: Bool = false) -> CIImage {
+        guard s.hasGeometry else { return input }
+        let orientations: [CGImagePropertyOrientation] = [.up, .right, .down, .left]   // clockwise turns
+        var image = input.oriented(orientations[((s.rotation % 4) + 4) % 4])
+        if s.flipped { image = image.oriented(.upMirrored) }
+        image = atOrigin(image)
+        let frame = CGRect(origin: .zero, size: image.extent.integral.size)
+        if s.straighten != 0 {
+            // Core Image's y axis points up, so a clockwise turn is a negative angle
+            let turn = CGAffineTransform(translationX: frame.midX, y: frame.midY)
+                .rotated(by: -s.straighten * .pi / 180)
+                .translatedBy(x: -frame.midX, y: -frame.midY)
+            image = image.clampedToExtent().transformed(by: turn).cropped(to: frame)
+            if wholeFrame {
+                // outside the turned photo stays empty so the crop tool shows where the photo ends
+                let mask = CIImage(color: .white).cropped(to: frame).transformed(by: turn)
+                image = image.applyingFilter("CIBlendWithAlphaMask", parameters: [
+                    kCIInputBackgroundImageKey: CIImage.empty(),
+                    kCIInputMaskImageKey: mask,
+                ]).cropped(to: frame)
+            }
+        }
+        guard !wholeFrame else { return image }
+        let crop = DevelopGeometry.effectiveCrop(s, frame: frame.size)
+        let x = (crop.x * frame.width).rounded(), width = max(1, (crop.width * frame.width).rounded())
+        let height = max(1, (crop.height * frame.height).rounded())
+        let y = ((1 - crop.y) * frame.height).rounded() - height   // top-left fractions → bottom-left pixels
+        return atOrigin(image.cropped(to: CGRect(x: x, y: max(0, y), width: width, height: height)))
+    }
+
+    /// The straighten angle (degrees, positive = clockwise) that levels the horizon Vision
+    /// finds in the photo as rotated and mirrored by `settings`; nil when it finds none.
+    static func horizonAngle(url: URL, isRaw: Bool, settings: DevelopSettings) -> Double? {
+        var oriented = DevelopSettings()
+        oriented.rotation = settings.rotation
+        oriented.flipped = settings.flipped
+        guard let image = Source(url: url, isRaw: isRaw, maxPixel: 1024)?.image(oriented).flatMap(render) else {
+            return nil
+        }
+        let request = VNDetectHorizonRequest()
+        try? VNImageRequestHandler(cgImage: image).perform([request])
+        // Vision reports a horizon rising to the right as a negative angle, which a clockwise
+        // (positive) straighten of the same size levels
+        return request.results?.first.map { -Double($0.angle) * 180 / .pi }
+    }
+
+    private static func atOrigin(_ image: CIImage) -> CIImage {
+        let origin = image.extent.origin
+        return origin == .zero ? image : image.transformed(by: CGAffineTransform(translationX: -origin.x, y: -origin.y))
+    }
+
     /// Tone and color shared by RAW and other formats, in Lightroom's order. The curve and
     /// contrast work perceptually so slider response matches the eye, not linear light.
     static func applyTone(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
@@ -207,6 +270,7 @@ final class DevelopRenderWorker: @unchecked Sendable {
         let maxPixel: Int?
         let settings: DevelopSettings
         let draft: Bool
+        var wholeFrame = false
         let token: Int
     }
 
@@ -214,6 +278,8 @@ final class DevelopRenderWorker: @unchecked Sendable {
         let request: Request
         let image: CGImage?
         let histogram: DevelopHistogram?
+        /// The decoded photo's size before rotation and crop.
+        let sourceSize: CGSize?
         let asShotTemperature: Double?
         let asShotTint: Double?
     }
@@ -239,10 +305,12 @@ final class DevelopRenderWorker: @unchecked Sendable {
                 .map { (key, $0) }
         }
         let image = autoreleasepool {
-            source?.source.image(request.settings, draft: request.draft).flatMap(DevelopRenderer.render)
+            source?.source.image(request.settings, draft: request.draft, wholeFrame: request.wholeFrame)
+                .flatMap(DevelopRenderer.render)
         }
-        let histogram = image.flatMap(DevelopRenderer.histogram)
-        completion(Result(request: request, image: image, histogram: histogram,
+        // the crop tool's whole-frame view has empty corners that would skew the histogram
+        let histogram = request.wholeFrame ? nil : image.flatMap(DevelopRenderer.histogram)
+        completion(Result(request: request, image: image, histogram: histogram, sourceSize: source?.source.sourceSize,
                           asShotTemperature: source?.source.asShotTemperature,
                           asShotTint: source?.source.asShotTint))
     }

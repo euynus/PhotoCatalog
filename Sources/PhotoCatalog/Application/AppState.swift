@@ -482,7 +482,9 @@ final class AppState {
     var selection = Selection(type: .lib, id: "all", name: "全部照片")
     var selectedIds: Set<String> = []
     var primaryId: String?
-    var view: ViewMode = .grid
+    var view: ViewMode = .grid {
+        didSet { if view != .develop { developCropping = false } }
+    }
     var thumbSize: CGFloat = 168
     var showInspector = true
     var showInfo = true
@@ -519,6 +521,100 @@ final class AppState {
     struct DevelopAsShot: Equatable { let temperature: Double; let tint: Double }
     /// Camera-recorded RAW white balance, learned when a photo is first rendered.
     var developAsShot: [String: DevelopAsShot] = [:]
+
+    /// Crop & straighten tool (R). The photo is shown whole with the crop drawn over it.
+    var developCropping = false {
+        didSet { if developCropping { loupeZoom = nil } }
+    }
+    /// Crop shape the tool holds while resizing.
+    var developCropAspect: CropAspect = .original
+    /// Decoded photo sizes before rotation and crop, learned from Develop renders.
+    @ObservationIgnored private var developSourceSizes: [String: CGSize] = [:]
+
+    func recordDevelopSourceSize(_ size: CGSize, for id: String) { developSourceSizes[id] = size }
+
+    /// The frame crops are expressed in: the photo after its quarter turns.
+    func developFrame(for asset: Asset, settings: DevelopSettings) -> CGSize {
+        let size = developSourceSizes[asset.id] ?? CGSize(width: max(asset.width, 1), height: max(asset.height, 1))
+        return DevelopGeometry.rotatedSize(size, settings.rotation)
+    }
+
+    /// Photos with pixels to render: a local original, or at least a local preview.
+    func canDevelop(_ asset: Asset) -> Bool {
+        if asset.status == .ready, asset.localPath != nil { return true }
+        return !asset.preview.isEmpty && !asset.preview.hasPrefix("http")
+    }
+
+    /// R: opens the crop tool (from any view) or closes it.
+    func toggleCropTool() {
+        if view == .develop {
+            developCropping.toggle()
+        } else {
+            switchView(.develop)
+            developCropping = view == .develop
+        }
+    }
+
+    /// The photo in Develop, or every selected photo elsewhere, that can take an edit.
+    private var developTargetIds: [String] {
+        let ids = view == .develop ? primaryId.map { [$0] } ?? [] : selectionTargetIds.sorted()
+        return ids.filter { id in assetIndex[id].map { canDevelop(assets[$0]) } ?? false }
+    }
+
+    /// Menu state: stops at the first photo that can take an edit.
+    var canTransformSelection: Bool {
+        guard onboarded, sheet == nil, view != .analysis else { return false }
+        let ids = view == .develop ? Set(primaryId.map { [$0] } ?? []) : selectionTargetIds
+        return ids.contains { id in assetIndex[id].map { canDevelop(assets[$0]) } ?? false }
+    }
+
+    /// ⌘[ / ⌘]: a quarter turn, stored as an adjustment — the original is never rewritten.
+    func rotateSelection(clockwise: Bool) {
+        let ids = developTargetIds
+        guard !ids.isEmpty else { return }
+        let changes = Dictionary(uniqueKeysWithValues: ids.map {
+            ($0, DevelopGeometry.rotated(developSettings[$0] ?? .neutral, clockwise: clockwise))
+        })
+        commitDevelop(changes, undoName: clockwise ? "向右旋转" : "向左旋转")
+    }
+
+    func flipSelection() {
+        let ids = developTargetIds
+        guard !ids.isEmpty else { return }
+        let changes = Dictionary(uniqueKeysWithValues: ids.map {
+            ($0, DevelopGeometry.mirrored(developSettings[$0] ?? .neutral))
+        })
+        commitDevelop(changes, undoName: "水平翻转")
+    }
+
+    /// Levels the photo from the horizon Vision finds in it.
+    func autoStraighten(_ asset: Asset) {
+        guard canDevelop(asset) else { return }
+        let settings = developSettings[asset.id] ?? .neutral
+        let source: (url: URL, isRaw: Bool) = if asset.status == .ready, let path = asset.localPath {
+            (URL(fileURLWithPath: path), asset.isRaw)
+        } else {
+            (URL(fileURLWithPath: asset.preview), false)
+        }
+        let id = asset.id
+        Task { [weak self] in
+            let angle = await ThumbnailRepairQueue.run(.visible) {
+                DevelopRenderer.horizonAngle(url: source.url, isRaw: source.isRaw, settings: settings)
+            } ?? nil
+            guard let self else { return }
+            guard let angle, abs(angle) <= DevelopGeometry.maxStraighten else {
+                self.push("未找到可用于拉直的地平线", "info")
+                return
+            }
+            var next = self.developSettings[id] ?? .neutral
+            next.straighten = (angle * 10).rounded() / 10
+            if let asset = self.assetIndex[id].map({ self.assets[$0] }) {
+                let frame = self.developFrame(for: asset, settings: next)
+                next.crop = next.crop.map { DevelopGeometry.fit($0, angle: next.straighten, frame: frame) }
+            }
+            self.commitDevelop([id: next], undoName: "自动拉直")
+        }
+    }
 
     /// Tone distribution of the photo's latest finished Develop render.
     var developHistogram: (assetId: String, histogram: DevelopHistogram)?
@@ -637,6 +733,10 @@ final class AppState {
         }
         if filterOpen {
             filterOpen = false
+            return true
+        }
+        if view == .develop, developCropping {
+            developCropping = false
             return true
         }
         if view == .loupe || view == .develop, loupeZoom != nil {
@@ -2663,9 +2763,27 @@ final class AppState {
             ? ThumbnailService.previewKind(forCachePath: requestedSource, fallbackMaxPixel: previewMaxPixel)
             : kind
         if let settings = developSettings[assetId], !settings.isNeutral {
+            let edited = thumbnails.editedCachePath(assetId: assetId, kind: resolvedKind, settings: settings).path
+            if verifiedCacheSources.contains(edited) { return edited }
+            // Rotation and crop alone start from the ordinary cached image, not a full RAW render.
+            let base = settings.withoutGeometry.isNeutral
+                ? await cachedImageSource(for: asset, requestedSource: requestedSource, kind: resolvedKind,
+                                          original: original, fallbackPreview: fallbackPreview, thumbnails: thumbnails)
+                : nil
             return await editedImageSource(for: asset, settings: settings, kind: resolvedKind,
-                                           thumbnails: thumbnails) ?? requestedSource
+                                           thumbnails: thumbnails, base: base) ?? requestedSource
         }
+        return await cachedImageSource(for: asset, requestedSource: requestedSource, kind: resolvedKind,
+                                       original: original, fallbackPreview: fallbackPreview,
+                                       thumbnails: thumbnails) ?? requestedSource
+    }
+
+    /// The ordinary (unadjusted) cached image, repaired from the original when missing or damaged.
+    private func cachedImageSource(for asset: Asset, requestedSource: String, kind resolvedKind: ThumbnailService.Kind,
+                                   original: URL, fallbackPreview: URL?,
+                                   thumbnails: ThumbnailService) async -> String? {
+        let assetId = asset.id
+        let localPath = original.path
         // A cache file already checked this session (exists, fresh, not a black RAW render)
         // skips the stat + decode hops every time its cell scrolls back into view.
         let verifiedKey = "\(requestedSource)|\(asset.fileModifiedAt?.timeIntervalSince1970 ?? 0)"
@@ -2690,12 +2808,12 @@ final class AppState {
                     !preview.isEmpty && fm.fileExists(atPath: preview))
         }.value
         guard originalExists || previewExists else {
-            return requestedSource
+            return nil
         }
         // One repair per representation per session: a RAW that decodes black again
         // must not cost another multi-second decode every time its cell reappears.
         let repairKey = "\(assetId)|\(resolvedKind)"
-        guard !attemptedCacheRepairs.contains(repairKey) else { return requestedSource }
+        guard !attemptedCacheRepairs.contains(repairKey) else { return nil }
         guard let restored = await ThumbnailRepairQueue.run(.visible, {
             thumbnails.ensureCached(from: original,
                                     fallbackPreview: fallbackPreview,
@@ -2703,22 +2821,25 @@ final class AppState {
                                     assetId: assetId,
                                     kind: resolvedKind)
         }) else {
-            return requestedSource   // cancelled while queued; retry when shown again
+            return nil   // cancelled while queued; retry when shown again
         }
         attemptedCacheRepairs.insert(repairKey)
-        return restored?.path ?? requestedSource
+        return restored?.path
     }
 
     /// Developed rendering for an adjusted photo, rendered off the cooperative pool when missing.
-    /// An unavailable original falls back to adjusting the cached preview.
+    /// `base` (an already-rendered image) replaces the original; an unavailable original falls
+    /// back to adjusting the cached preview.
     private func editedImageSource(for asset: Asset, settings: DevelopSettings, kind: ThumbnailService.Kind,
-                                   thumbnails: ThumbnailService) async -> String? {
+                                   thumbnails: ThumbnailService, base: String? = nil) async -> String? {
         let edited = thumbnails.editedCachePath(assetId: asset.id, kind: kind, settings: settings)
         let key = edited.path
         if verifiedCacheSources.contains(key) { return key }
         let preview = asset.preview
         let source: (url: URL, isRaw: Bool)?
-        if asset.status == .ready, let path = asset.localPath {
+        if let base {
+            source = (URL(fileURLWithPath: base), false)
+        } else if asset.status == .ready, let path = asset.localPath {
             source = (URL(fileURLWithPath: path), asset.isRaw)
         } else if !preview.isEmpty, !preview.hasPrefix("http") {
             source = (URL(fileURLWithPath: preview), false)
@@ -4891,6 +5012,10 @@ final class AppState {
         case "escape":
             guard dismissTransientUI() else { return false }
         case "return":
+            if view == .develop, developCropping {
+                developCropping = false
+                return true
+            }
             guard let primaryId else { return false }
             openLoupe(primaryId)
         case "1", "2", "3", "4", "5", "0", "p", "x", "u", "6", "7", "8", "9":
@@ -4912,6 +5037,8 @@ final class AppState {
         case "\\":
             guard view == .develop else { return false }
             developShowsOriginal.toggle()
+        case "r":
+            toggleCropTool()
         case "a":
             switchView(.analysis)
         case "i":
