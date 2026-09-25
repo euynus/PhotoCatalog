@@ -138,7 +138,19 @@ final class ThumbnailService: @unchecked Sendable {
 
     func cachedRepresentationNeedsRegeneration(at cached: URL, original: URL, kind: Kind) -> Bool {
         guard Self.prefersQuickLook(for: original) else { return false }
+        // A uniformly black JPEG is empty 8×8 blocks — ~3 KB plus header at 512 px — so a file
+        // well above that bound has real content and needs no decode. The check runs for every
+        // visible RAW cell and every backfilled asset on each launch.
+        if let size = try? cached.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+           size > Self.maxUniformBlackBytes(for: kind) {
+            return false
+        }
         return Self.imageIsUniformBlack(at: cached)
+    }
+
+    /// ~3× the size of an all-black JPEG at the kind's largest (square) dimensions.
+    static func maxUniformBlackBytes(for kind: Kind) -> Int {
+        kind.maxPixel * kind.maxPixel / 28 + 4_096
     }
 
     /// A cached thumbnail is stale once the original is modified after it was generated

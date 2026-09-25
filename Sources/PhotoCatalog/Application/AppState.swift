@@ -2270,6 +2270,7 @@ final class AppState {
     }
 
     @ObservationIgnored private var attemptedCacheRepairs = Set<String>()
+    @ObservationIgnored private var verifiedCacheSources = Set<String>()
     @ObservationIgnored private var isBackfilling = false
     @ObservationIgnored private var backfillTask: Task<Void, Never>?
     @ObservationIgnored private var backfillGeneration = 0
@@ -2427,6 +2428,7 @@ final class AppState {
     private func invalidateThumbnailCache() {
         ThumbLoader.clearCache()
         attemptedCacheRepairs.removeAll()
+        verifiedCacheSources.removeAll()
         thumbnailCacheGeneration &+= 1
     }
 
@@ -2459,18 +2461,21 @@ final class AppState {
         let resolvedKind = kind.isPreview
             ? ThumbnailService.previewKind(forCachePath: requestedSource, fallbackMaxPixel: previewMaxPixel)
             : kind
-        let requestedExists = await Task.detached(priority: .userInitiated) {
-            !requestedSource.isEmpty && FileManager.default.fileExists(atPath: requestedSource)
-        }.value
-        if requestedExists {
-            let cached = URL(fileURLWithPath: requestedSource)
-            let needsRegeneration = await Task.detached(priority: .userInitiated) {
-                ThumbnailService.cacheIsStale(cache: cached, originalModificationDate: asset.fileModifiedAt)
-                    || thumbnails.cachedRepresentationNeedsRegeneration(at: cached, original: original, kind: resolvedKind)
-            }.value
-            if !needsRegeneration {
-                return requestedSource
+        // A cache file already checked this session (exists, fresh, not a black RAW render)
+        // skips the stat + decode hops every time its cell scrolls back into view.
+        let verifiedKey = "\(requestedSource)|\(asset.fileModifiedAt?.timeIntervalSince1970 ?? 0)"
+        if verifiedCacheSources.contains(verifiedKey) { return requestedSource }
+        let cachedIsUsable = await Task.detached(priority: .userInitiated) {
+            guard !requestedSource.isEmpty, FileManager.default.fileExists(atPath: requestedSource) else {
+                return false
             }
+            let cached = URL(fileURLWithPath: requestedSource)
+            return !ThumbnailService.cacheIsStale(cache: cached, originalModificationDate: asset.fileModifiedAt)
+                && !thumbnails.cachedRepresentationNeedsRegeneration(at: cached, original: original, kind: resolvedKind)
+        }.value
+        if cachedIsUsable {
+            verifiedCacheSources.insert(verifiedKey)
+            return requestedSource
         }
         // Only touch a referenced original after the local cache is missing, stale, or damaged.
         let (originalExists, previewExists) = await Task.detached(priority: .userInitiated) {
@@ -2511,6 +2516,7 @@ final class AppState {
                 return (report, CatalogHealth.check(store, assets: snapshot))
             }.value
             guard let self, self.store?.packageURL == packageURL else { return }
+            if result.0.removedFiles > 0 { self.verifiedCacheSources.removeAll() }
             self.applyHealthReport(result.1)
             if result.0.removedFiles == 0 {
                 self.push("缓存已在 \(limitMB) MB 上限内", "check")
@@ -2538,6 +2544,7 @@ final class AppState {
             }.value
             guard let self, self.store?.packageURL == packageURL else { return }
             if let report = result.0 {
+                self.verifiedCacheSources.removeAll()   // pruning removed cache files
                 self.applyHealthReport(report)
             } else {
                 self.statusMetrics.cacheBytes = result.1

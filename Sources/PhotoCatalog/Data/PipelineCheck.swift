@@ -300,6 +300,18 @@ enum PipelineCheck {
             check(detectedBlackCache && repairedThumb?.path == cr3Asset.thumb
                   && !imageIsUniformBlack(at: thumbURL),
                   "CR3 black thumbnail cache regenerates from preview fallback")
+            // The size shortcut in cachedRepresentationNeedsRegeneration must never hide a
+            // black render: full-size black JPEGs, encoded like the cache, stay under the bound.
+            let blackProbe = fm.temporaryDirectory.appendingPathComponent("pc-black-\(UUID().uuidString).jpg")
+            defer { try? fm.removeItem(at: blackProbe) }
+            let blackBoundHolds = [ThumbnailService.Kind.thumb256, .thumb512, .preview2048].allSatisfy { kind in
+                writeBlackImage(to: blackProbe, width: kind.maxPixel, height: kind.maxPixel, quality: 0.82)
+                let size = (try? blackProbe.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? .max
+                return size <= ThumbnailService.maxUniformBlackBytes(for: kind)
+                    && coordinator.thumbnails.cachedRepresentationNeedsRegeneration(
+                        at: blackProbe, original: originalURL, kind: kind)
+            }
+            check(blackBoundHolds, "full-size black renders stay under the decode-skip size bound")
         } else {
             check(false, "CR3 black preview cache regenerates from original")
             check(false, "CR3 black thumbnail cache regenerates from preview fallback")
@@ -962,7 +974,7 @@ enum PipelineCheck {
         CGImageDestinationFinalize(dest)
     }
 
-    private static func writeBlackImage(to url: URL, width: Int, height: Int) {
+    private static func writeBlackImage(to url: URL, width: Int, height: Int, quality: Double? = nil) {
         let cs = CGColorSpaceCreateDeviceRGB()
         guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
                                   bytesPerRow: 0, space: cs,
@@ -972,7 +984,8 @@ enum PipelineCheck {
         guard let cg = ctx.makeImage(),
               let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)
         else { return }
-        CGImageDestinationAddImage(dest, cg, nil)
+        let options = quality.map { [kCGImageDestinationLossyCompressionQuality: $0] as CFDictionary }
+        CGImageDestinationAddImage(dest, cg, options)
         CGImageDestinationFinalize(dest)
     }
 
