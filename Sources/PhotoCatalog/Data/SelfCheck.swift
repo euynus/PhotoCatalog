@@ -126,6 +126,7 @@ enum SelfCheck {
         DevelopCheck.run()
         ExportCheck.run()
         KeywordCheck.run()
+        LocationCheck.run()
         ImportSafetyCheck.run()
         ImportPersistenceCheck.run()
         CaptureAnalysisCheck.run()

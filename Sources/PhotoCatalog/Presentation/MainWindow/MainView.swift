@@ -80,6 +80,13 @@ struct MainView: View {
             })
         case "settings":
             SettingsSheet()
+        case "location":
+            LocationSheet(ids: app.locationTargetIds, current: app.locationEditorStart)
+        case "gpx":
+            if let gpx = app.gpxTrack {
+                GPXMatchSheet(name: gpx.name, track: gpx.track, selected: app.locationTargetIds,
+                              inView: Set(app.list.map(\.id)))
+            }
         case "cardImport":
             CardImportSheet(card: app.cardImportVolume, options: app.cardImportOptions)
         case "renderedExport":

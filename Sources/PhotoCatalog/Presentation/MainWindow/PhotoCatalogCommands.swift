@@ -75,6 +75,11 @@ struct PhotoCatalogCommands: Commands {
             Button("水平翻转") { perform("照片.水平翻转") { app.flipSelection() } }
                 .disabled(!app.canTransformSelection)
             Divider()
+            Button("设置位置…") { perform("照片.设置位置") { app.showLocationEditor() } }
+                .disabled(!app.canEditLocation)
+            Button("按 GPX 轨迹匹配位置…") { perform("照片.匹配GPX") { app.chooseGPXTrack() } }
+                .disabled(app.sheet != nil || !app.onboarded)
+            Divider()
             Button("拷贝修图设置…") { perform("照片.拷贝修图设置") { app.showDevelopTransfer(.copy) } }
                 .keyboardShortcut("c", modifiers: [.command, .shift])
                 .disabled(!app.canCopyDevelopSettings)

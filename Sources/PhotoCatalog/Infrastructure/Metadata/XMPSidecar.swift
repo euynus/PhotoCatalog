@@ -13,6 +13,14 @@ struct SidecarMetadata: Equatable {
     var author: String = ""
     var copyright: String = ""
     var captureDate: Date?
+    /// Latitude, longitude in degrees.
+    var gps: (Double, Double)?
+
+    static func == (l: SidecarMetadata, r: SidecarMetadata) -> Bool {
+        l.rating == r.rating && l.colorLabel == r.colorLabel && l.keywords == r.keywords && l.title == r.title
+            && l.caption == r.caption && l.author == r.author && l.copyright == r.copyright
+            && l.captureDate == r.captureDate && l.gps?.0 == r.gps?.0 && l.gps?.1 == r.gps?.1
+    }
 }
 
 enum XMPSidecar {
@@ -30,8 +38,28 @@ enum XMPSidecar {
         original.deletingPathExtension().appendingPathExtension("xmp")
     }
 
+    /// XMP's GPS form: degrees, decimal minutes and a hemisphere letter ("30,30.500000N").
+    static func gpsCoordinate(_ degrees: Double, positive: Character, negative: Character) -> String {
+        let value = abs(degrees)
+        let whole = Int(value)
+        return String(format: "%d,%.6f", whole, (value - Double(whole)) * 60) + String(degrees < 0 ? negative : positive)
+    }
+
+    /// Parses "DDD,MM.mmk" or "DDD,MM,SSk"; nil when malformed.
+    static func parseGPSCoordinate(_ text: String) -> Double? {
+        guard let reference = text.last?.uppercased(), "NSEW".contains(reference) else { return nil }
+        let parts = text.dropLast().split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard (2...3).contains(parts.count) else { return nil }
+        let degrees = parts[0] + parts[1] / 60 + (parts.count == 3 ? parts[2] / 3600 : 0)
+        return reference == "S" || reference == "W" ? -degrees : degrees
+    }
+
     static func xmp(for a: Asset) -> String {
         let label = a.colorLabel.map { $0.rawValue.capitalized } ?? ""
+        let gps = a.hasGPS && !(a.gps.0 == 0 && a.gps.1 == 0)
+            ? "\n            exif:GPSLatitude=\"\(gpsCoordinate(a.gps.0, positive: "N", negative: "S"))\""
+                + "\n            exif:GPSLongitude=\"\(gpsCoordinate(a.gps.1, positive: "E", negative: "W"))\""
+            : ""
         let kws = a.keywords.map { "        <rdf:li>\(escape($0))</rdf:li>" }.joined(separator: "\n")
         return """
         <?xpacket begin="\u{FEFF}" id="W5M0MpCehiHzreSzNTczkc9d"?>
@@ -43,7 +71,7 @@ enum XMPSidecar {
             xmlns:exif="http://ns.adobe.com/exif/1.0/"
             xmp:Rating="\(a.rating)"
             xmp:Label="\(escape(label))"
-            exif:DateTimeOriginal="\(exifDateFormatter.string(from: a.date))">
+            exif:DateTimeOriginal="\(exifDateFormatter.string(from: a.date))"\(gps)>
            <dc:subject>
             <rdf:Bag>
         \(kws)
@@ -102,6 +130,10 @@ private final class SidecarParser: NSObject, XMLParserDelegate {
             }
             if let d = attrs["exif:DateTimeOriginal"] ?? attrs["DateTimeOriginal"], !d.isEmpty {
                 result.captureDate = XMPSidecar.exifDateFormatter.date(from: d)
+            }
+            if let lat = (attrs["exif:GPSLatitude"] ?? attrs["GPSLatitude"]).flatMap(XMPSidecar.parseGPSCoordinate),
+               let lon = (attrs["exif:GPSLongitude"] ?? attrs["GPSLongitude"]).flatMap(XMPSidecar.parseGPSCoordinate) {
+                result.gps = (lat, lon)
             }
         }
     }

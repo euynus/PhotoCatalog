@@ -72,6 +72,8 @@ struct PhotoContextMenu: View {
             Button("复位修图调整") { act { app.resetDevelopSelection() } }
         }
 
+        Button("设置位置…") { act { app.showLocationEditor() } }
+
         Divider()
         Button("导出…") { act { app.showRenderedExport() } }
         Button("加入相册…") { act { app.addSelectionToAlbum() } }

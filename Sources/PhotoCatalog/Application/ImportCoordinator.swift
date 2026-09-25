@@ -245,6 +245,11 @@ final class ImportCoordinator: @unchecked Sendable {
             if !sc.copyright.isEmpty { asset.copyright = sc.copyright }
             // a capture-time correction made in another app (or mirrored by us) takes precedence
             if let d = sc.captureDate { asset.date = d; asset.captureDateSource = "sidecar" }
+            // a location set in another app (or by us) travels in the sidecar
+            if let gps = sc.gps {
+                asset.gps = gps
+                asset.location = Asset.locationLabel(gps)
+            }
         }
 
         // cache the perceptual hash from the just-generated thumbnail (avoids re-decoding later)
@@ -306,7 +311,7 @@ final class ImportCoordinator: @unchecked Sendable {
     }
 
     private func gpsLabel(_ gps: (Double, Double), hasGPS: Bool) -> String {
-        hasGPS ? String(format: "%.3f, %.3f", gps.0, gps.1) : ""
+        Asset.locationLabel(hasGPS ? gps : nil)
     }
 
     private func sanitizeFolderName(_ name: String) -> String {

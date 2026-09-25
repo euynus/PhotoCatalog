@@ -54,8 +54,8 @@ struct Asset: Identifiable, Equatable, Sendable {
     var project: String = ""
     var client: String = ""
 
-    let location: String
-    let gps: (Double, Double)
+    var location: String
+    var gps: (Double, Double)
     var gpsAltitude: Double? = nil
     var status: AssetStatus
     var importedAt: Date
@@ -71,6 +71,11 @@ struct Asset: Identifiable, Equatable, Sendable {
     var perceptualHash: UInt64? = nil           // cached dHash for similar-photo grouping (§6.10)
 
     var megapixels: Double { Double(width * height) / 1_000_000 }
+
+    /// The label stored with coordinates: "30.500, 114.300", or empty without a location.
+    static func locationLabel(_ gps: (Double, Double)?) -> String {
+        gps.map { String(format: "%.3f, %.3f", $0.0, $0.1) } ?? ""
+    }
     var hasGPS: Bool { Self.hasGPSCoordinates(gps, location: location) }
 
     static func hasGPSCoordinates(_ gps: (Double, Double), location: String) -> Bool {
