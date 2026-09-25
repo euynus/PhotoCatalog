@@ -122,6 +122,7 @@ enum SelfCheck {
         InteractionCheck.run()
         PairingCheck.run()
         UndoCheck.run()
+        CullingCheck.run()
         ImportSafetyCheck.run()
         ImportPersistenceCheck.run()
         CaptureAnalysisCheck.run()

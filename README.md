@@ -28,7 +28,7 @@ appearance (Settings → 外观), a neutral dark photo canvas in every mode, and
 - **Import / scan** — animated scan→import progress with a 5-stat panel and a thumbnail wall.
 - **First-launch / Welcome** — catalog creation card with recents.
 - **Interactions** — click / ⌘-click / ⇧-click selection, live search, filter bar, sort, toasts, and keyboard shortcuts:
-  `1–5` rate · `0` clear · `P/X/U` flags · `6–9` color · `G/E/C/A` views · `Z` zoom 1:1 (double-click too; linked across Compare) · `⌘Z/⇧⌘Z` undo/redo catalog edits · arrows navigate · `Return` loupe · `Esc` close panels · `F` filters · `I` thumbnail info · `⌘F` search · `⌘I` inspector · `⌘N/⌘O` catalog · `⇧⌘I` import · `⌘E` export · `⇧⌘E` preview export · `⌘R` rescan · `⌘B` backup · `⌘,` settings · `⌘+/-/0` thumbnail size · `⌫` remove · `⌘⌫` trash originals.
+  `1–5` rate · `0` clear · `P/X/U` flags · `6–9` color (hold `Shift` to move on to the next photo; 照片 → 评分后自动前进 makes it the default) · `Tab` hide side panels · `G/E/C/A` views · `Z` zoom 1:1 (double-click too; linked across Compare) · `⌘Z/⇧⌘Z` undo/redo catalog edits · arrows navigate · `Return` loupe · `Esc` close panels · `F` filters · `I` thumbnail info · `⌘F` search · `⌘I` inspector · `⌘N/⌘O` catalog · `⇧⌘I` import · `⌘E` export · `⇧⌘E` preview export · `⌘R` rescan · `⌘B` backup · `⌘,` settings · `⌘+/-/0` thumbnail size · `⌫` remove · `⌘⌫` trash originals.
 
 ### Real catalog backend (PRD Infrastructure layer, §11)
 

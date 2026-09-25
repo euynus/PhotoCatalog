@@ -13,7 +13,9 @@ struct MainView: View {
 
     var body: some View {
         let assetRevision = app.assetRenderVersion
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: Binding(
+            get: { app.sidebarVisible ? .all : .detailOnly },
+            set: { app.sidebarVisible = $0 != .detailOnly })) {
             Sidebar(assetRevision: assetRevision)
                 .navigationSplitViewColumnWidth(min: Theme.sidebarMinW, ideal: Theme.sidebarW,
                                                 max: Theme.sidebarMaxW)

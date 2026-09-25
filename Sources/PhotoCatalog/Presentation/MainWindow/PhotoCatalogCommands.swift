@@ -59,6 +59,11 @@ struct PhotoCatalogCommands: Commands {
                     .disabled(app.sheet != nil || !app.hasSelection)
             }
             Divider()
+            Toggle("评分后自动前进", isOn: Binding(get: { app.autoAdvance }, set: { app.autoAdvance = $0 }))
+                .help("评分、旗标或颜色后跳到下一张；按住 Shift 可单次前进")
+            Button("移除被拒绝的照片…") { perform("照片.移除被拒绝的照片") { app.confirmRemoveRejected() } }
+                .disabled(app.sheet != nil || !app.onboarded || app.view == .analysis)
+            Divider()
             Button("导出选中原件…") { perform("照片.导出选中原件") { app.exportSelection() } }
                 .keyboardShortcut("e", modifiers: .command)
                 .disabled(app.sheet != nil || !app.canExportOriginalSelection)
@@ -101,6 +106,8 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.onboarded)
             Button("显示/隐藏筛选栏") { perform("视图.显示隐藏筛选栏") { app.toggleFilterBar() } }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(app.sheet != nil || !app.onboarded)
+            Button("显示/隐藏侧边面板 (Tab)") { perform("视图.显示隐藏侧边面板") { app.togglePanels() } }
                 .disabled(app.sheet != nil || !app.onboarded)
             Button("显示/隐藏简介") { perform("视图.显示隐藏Inspector") { app.showInspector.toggle() } }
                 .keyboardShortcut("i", modifiers: .command)

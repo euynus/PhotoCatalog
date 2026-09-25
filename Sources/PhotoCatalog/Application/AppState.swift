@@ -305,6 +305,19 @@ final class AppState {
     var importPostAlbumName = UserDefaults.standard.string(forKey: "pc_importPostAlbumName") ?? "" {
         didSet { UserDefaults.standard.set(importPostAlbumName, forKey: "pc_importPostAlbumName") }
     }
+    /// After a rating / flag / color key on one photo, move to the next (Shift does it once).
+    var autoAdvance: Bool = UserDefaults.standard.bool(forKey: "pc_autoAdvance") {
+        didSet { UserDefaults.standard.set(autoAdvance, forKey: "pc_autoAdvance") }
+    }
+    /// Sidebar column visibility; Tab hides it together with the inspector for culling.
+    var sidebarVisible = true
+
+    func togglePanels() {
+        let anyVisible = sidebarVisible || (showInspector && inspectorAvailable)
+        sidebarVisible = !anyVisible
+        showInspector = !anyVisible
+    }
+
     /// Show a RAW and its same-name JPEG/HEIC as one photo; off lists every file separately.
     var pairRawAndJpeg: Bool = (UserDefaults.standard.object(forKey: "pc_pairRawJpeg") as? Bool) ?? true {
         didSet {
@@ -4416,9 +4429,10 @@ final class AppState {
     func removeSelected() {
         let ids = targetIds
         guard !ids.isEmpty else { return }
+        let photoCount = selectionTargetIds.count
         guard mutate(ids, undoName: "从目录库移除", { $0.deleted = true }) else { return }
         purgeCacheFiles(forAssetIds: ids)
-        push("已从目录库移除 \(ids.count) 张（原件保留）", "trash")
+        push("已从目录库移除 \(photoCount) 张（原件保留）", "trash")
         selectedIds = []
         ensurePrimaryValid()
         // drop the removed assets from duplicate groups / collapsed stacks, like the
@@ -4435,7 +4449,7 @@ final class AppState {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "移除照片"
-        alert.informativeText = "将 \(ids.count) 张从目录库移除。原件默认保留。"
+        alert.informativeText = "将 \(selectionTargetIds.count) 张照片从目录库移除。原件默认保留。"
         alert.addButton(withTitle: "从目录库移除")
         if !real.isEmpty { alert.addButton(withTitle: "移到废纸篓") }
         alert.addButton(withTitle: "取消")
@@ -4717,38 +4731,10 @@ final class AppState {
         case "return":
             guard let primaryId else { return false }
             openLoupe(primaryId)
-        case "1", "2", "3", "4", "5":
-            guard applyRatingShortcut(Int(key) ?? 0) else { return false }
-        case "0":
-            guard applyRatingShortcut(0) else { return false }
-        case "p":
-            guard !targetIds.isEmpty else { return false }
-            guard setFlag(.pick) else { return false }
-            push("标记为精选", "flag")
-        case "x":
-            guard !targetIds.isEmpty else { return false }
-            guard setFlag(.reject) else { return false }
-            push("标记为拒绝", "reject")
-        case "u":
-            guard !targetIds.isEmpty else { return false }
-            guard setFlag(.none) else { return false }
-            push("已清除旗标")
-        case "6":
-            guard !targetIds.isEmpty else { return false }
-            guard setColor(.red) else { return false }
-            push("颜色标签：红", "tag")
-        case "7":
-            guard !targetIds.isEmpty else { return false }
-            guard setColor(.yellow) else { return false }
-            push("颜色标签：黄", "tag")
-        case "8":
-            guard !targetIds.isEmpty else { return false }
-            guard setColor(.green) else { return false }
-            push("颜色标签：绿", "tag")
-        case "9":
-            guard !targetIds.isEmpty else { return false }
-            guard setColor(.blue) else { return false }
-            push("颜色标签：蓝", "tag")
+        case "1", "2", "3", "4", "5", "0", "p", "x", "u", "6", "7", "8", "9":
+            guard applyReviewKey(key, advance: hasShift || autoAdvance) else { return false }
+        case "tab":
+            togglePanels()
         case "f":
             toggleFilterBar()
         case "g":
@@ -4774,6 +4760,54 @@ final class AppState {
             return false
         }
         return true
+    }
+
+    /// Rating / flag / color keys. The cursor keeps its place: a photo that leaves the view
+    /// (rated inside 未评分) hands over to the one that slides into its slot, and `advance`
+    /// moves one further — only for a single photo in Grid or Loupe, never a batch.
+    private func applyReviewKey(_ key: String, advance: Bool) -> Bool {
+        guard !targetIds.isEmpty else { return false }
+        let before = list.map(\.id)
+        let current = primaryId
+        let slot = current.flatMap { before.firstIndex(of: $0) }
+        let applied: Bool
+        switch key {
+        case "0", "1", "2", "3", "4", "5":
+            applied = applyRatingShortcut(Int(key) ?? 0)
+        case "p":
+            applied = setFlag(.pick)
+            if applied { push("标记为精选", "flag") }
+        case "x":
+            applied = setFlag(.reject)
+            if applied { push("标记为拒绝", "reject") }
+        case "u":
+            applied = setFlag(.none)
+            if applied { push("已清除旗标") }
+        default:
+            let color: ColorLabel = ["6": .red, "7": .yellow, "8": .green][key] ?? .blue
+            applied = setColor(color)
+            if applied { push("颜色标签：\(color.name)", "tag") }
+        }
+        guard applied, let current, let slot, selectionTargetIds.count <= 1,
+              view == .grid || view == .loupe else { return applied }
+        let ids = list.map(\.id)
+        guard !ids.isEmpty else { return true }
+        let next = ids.firstIndex(of: current).map { advance ? $0 + 1 : $0 } ?? slot
+        let target = ids[min(ids.count - 1, next)]
+        if target != primaryId { setPrimary(target) }
+        return true
+    }
+
+    /// Selects every rejected photo in the current view and offers to remove them.
+    func confirmRemoveRejected() {
+        let rejected = list.filter { $0.flag == .reject }.map(\.id)
+        guard !rejected.isEmpty else {
+            push("当前视图中没有被拒绝的照片", "info")
+            return
+        }
+        selectedIds = Set(rejected)
+        primaryId = rejected.first
+        confirmDeleteSelected()
     }
 
     private func moveSelection(_ key: String) {
