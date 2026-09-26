@@ -130,6 +130,7 @@ enum SelfCheck {
         FaceCheck.run()
         ImportSafetyCheck.run()
         DiagnosticsCheck.run()
+        ZoomCheck.run()
         ImportPersistenceCheck.run()
         CaptureAnalysisCheck.run()
         assert(CompareView.stageColumnCount(itemCount: 4, size: CGSize(width: 785, height: 1200)) == 2

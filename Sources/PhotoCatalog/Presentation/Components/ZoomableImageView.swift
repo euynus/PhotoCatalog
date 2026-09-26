@@ -49,15 +49,25 @@ final class ZoomScrollView: NSScrollView {
         hasHorizontalScroller = true
         hasVerticalScroller = true
         autohidesScrollers = true
-        scrollerStyle = .overlay
         allowsMagnification = true
         usesPredominantAxisScrolling = false
-        contentView.postsBoundsChangedNotifications = true
         imageView.onDoubleClick = { [weak self] point in self?.toggleZoom(at: point) }
-        NotificationCenter.default.addObserver(self, selector: #selector(viewportChanged),
-                                               name: NSView.boundsDidChangeNotification, object: contentView)
-        NotificationCenter.default.addObserver(self, selector: #selector(viewportChanged),
-                                               name: NSScrollView.didEndLiveMagnifyNotification, object: self)
+        imageView.onPan = { [weak self] in self?.userMovedViewport() }
+        // Only the user's own gestures change the shared zoom. Reporting every bounds change
+        // fed layout back into SwiftUI state: a resize moved the clip, the "new" zoom re-rendered
+        // the loupe, which resized the view again — a layout loop that froze the window until
+        // AppKit gave up and crashed, and left a stray zoom that cropped every photo.
+        for name in [NSScrollView.didLiveScrollNotification, NSScrollView.didEndLiveScrollNotification,
+                     NSScrollView.didEndLiveMagnifyNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(userMovedViewport), name: name, object: self)
+        }
+    }
+
+    /// Overlay scrollers always: legacy ones (a mouse is connected) take room from the clip
+    /// view, and the fit size must not depend on whether a scroller happens to be showing.
+    override var scrollerStyle: NSScroller.Style {
+        get { .overlay }
+        set { super.scrollerStyle = .overlay }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -98,11 +108,11 @@ final class ZoomScrollView: NSScrollView {
 
     private func apply() {
         guard bounds.width > 0 else { return }
+        isApplying = true
+        defer { isApplying = false }
         let fit = fitMagnification
         minMagnification = fit
         maxMagnification = max(4, fit)
-        isApplying = true
-        defer { isApplying = false }
         guard let zoom = requestedZoom else {
             if abs(magnification - fit) > 0.001 { magnification = fit }
             return
@@ -144,14 +154,25 @@ final class ZoomScrollView: NSScrollView {
         onZoomChange?(requestedZoom)
     }
 
-    @objc private func viewportChanged() {
+    /// After a pinch, scroll or drag: the zoom the user now looks at, if it changed noticeably.
+    @objc private func userMovedViewport() {
         guard !isApplying else { return }
         let zoom: ImageZoom? = magnification > fitMagnification * 1.01
             ? ImageZoom(scale: magnification, center: currentCenter)
             : nil
-        guard zoom != requestedZoom else { return }
+        guard !Self.same(zoom, requestedZoom) else { return }
         requestedZoom = zoom
         onZoomChange?(zoom)
+    }
+
+    private static func same(_ a: ImageZoom?, _ b: ImageZoom?) -> Bool {
+        switch (a, b) {
+        case (nil, nil): return true
+        case let (a?, b?):
+            return abs(a.scale - b.scale) < 0.001 && abs(a.center.x - b.center.x) < 0.002
+                && abs(a.center.y - b.center.y) < 0.002
+        default: return false
+        }
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -159,6 +180,8 @@ final class ZoomScrollView: NSScrollView {
         if requestedZoom == nil && !event.modifierFlags.contains(.command) && event.phase == [] &&
             event.momentumPhase == [] { nextResponder?.scrollWheel(with: event); return }
         super.scrollWheel(with: event)
+        // a mouse wheel scrolls without live-scroll notifications
+        if event.phase == [] && event.momentumPhase == [] { userMovedViewport() }
     }
 }
 
@@ -176,6 +199,8 @@ private final class CenteringClipView: NSClipView {
 /// Draws the photo as layer contents scaled to the document size; drag pans, double-click zooms.
 private final class ZoomImageLayerView: NSView {
     var onDoubleClick: ((CGPoint) -> Void)?
+    /// A drag moved the view (reported once the drag ends).
+    var onPan: (() -> Void)?
     var image: CGImage? {
         didSet { if image !== oldValue { layer?.contents = image } }
     }
@@ -222,6 +247,7 @@ private final class ZoomImageLayerView: NSView {
     override func mouseUp(with event: NSEvent) {
         if pushedCursor { NSCursor.pop() }
         pushedCursor = false
+        if dragOrigin != nil { onPan?() }
         dragOrigin = nil
     }
 }
