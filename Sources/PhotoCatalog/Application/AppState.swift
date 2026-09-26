@@ -3061,6 +3061,14 @@ final class AppState {
     /// After an unexpected quit, points to the report macOS saved. Only the app calls this.
     func checkForCrashReport() {
         guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        // macOS writes the report some seconds after the crash; a quick reopen would miss it
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(15))
+            self?.presentNewCrashReport(bundleID: bundleID)
+        }
+    }
+
+    private func presentNewCrashReport(bundleID: String) {
         let key = "pc_crashReportsCheckedAt"
         let checked = UserDefaults.standard.object(forKey: key) as? Date
         UserDefaults.standard.set(Date(), forKey: key)
