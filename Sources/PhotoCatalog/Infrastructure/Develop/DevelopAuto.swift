@@ -99,9 +99,11 @@ enum DevelopAuto {
         var s = settings
         s.exposure = 0; s.contrast = 0; s.highlights = 0; s.shadows = 0; s.whites = 0; s.blacks = 0
 
-        /// Sorted display-encoded lumas of a small render.
-        func lumas(_ s: DevelopSettings) -> [Double]? {
-            guard var image = source.image(s, draft: true) else { return nil }
+        /// Sorted display-encoded lumas of a small render. Drafts apply exposure as a gain on
+        /// the cached RAW stage, after the RAW engine's tone curve, so they only match the photo
+        /// near the stage's own exposure; an accurate render moves the stage to `s.exposure`.
+        func lumas(_ s: DevelopSettings, accurate: Bool = false) -> [Double]? {
+            guard var image = source.image(s, draft: !accurate) else { return nil }
             let longEdge = max(image.extent.width, image.extent.height)
             if longEdge > 200 { image = image.transformed(by: CGAffineTransform(scaleX: 200 / longEdge, y: 200 / longEdge)) }
             let rect = image.extent.integral
@@ -135,17 +137,54 @@ enum DevelopAuto {
         //    ~0.46), so a dusk scene stays a dusk scene. Brightening stops before more than about
         //    1% of the photo nears clipping — a bright subject in a dim frame would blow out —
         //    but that limit never darkens a photo below as shot (night lights are meant to clip).
-        func exposure(target: Double, percentile q: Double) -> Double? {
-            solve(-2...2, target: target) { ev in
-                var trial = s; trial.exposure = ev
-                return lumas(trial).map { percentile($0, q) }
-            }
+        //    Exposure is solved on accurate renders: the RAW engine applies it before its own
+        //    highlight shoulder, which a draft's gain on the cached stage can't reproduce.
+        var rendered: [Double: [Double]] = [:]
+        func tones(atExposure ev: Double) -> [Double]? {
+            if let cached = rendered[ev] { return cached }
+            var trial = s; trial.exposure = ev
+            let values = lumas(trial, accurate: true)
+            rendered[ev] = values
+            return values
         }
-        guard let middle = exposure(target: 0.46, percentile: 0.5) else { return nil }
+        /// The exposure in `range` where the `q` percentile reaches `target`, within `tolerance`:
+        /// regula falsi with the Illinois fix, since tones rise smoothly with exposure (a few
+        /// renders, not eight). Near the highlight shoulder tones barely move, hence the tighter
+        /// tolerance there.
+        func exposure(target: Double, percentile q: Double, in range: ClosedRange<Double>,
+                      tolerance: Double) -> Double? {
+            func measure(_ ev: Double) -> Double? { tones(atExposure: ev).map { percentile($0, q) - target } }
+            var a = range.lowerBound, b = range.upperBound
+            guard var fa = measure(a), var fb = measure(b) else { return nil }
+            if fa >= 0 { return a }
+            if fb <= 0 { return b }
+            var side = 0
+            for _ in 0..<6 where b - a > 0.04 {
+                let c = b - fb * (b - a) / (fb - fa)
+                guard let fc = measure(c) else { return nil }
+                if abs(fc) < tolerance { return c }
+                if fc < 0 {
+                    a = c; fa = fc
+                    if side == -1 { fb /= 2 }
+                    side = -1
+                } else {
+                    b = c; fb = fc
+                    if side == 1 { fa /= 2 }
+                    side = 1
+                }
+            }
+            return (a + b) / 2
+        }
+        guard let asShot = tones(atExposure: 0),
+              let middle = exposure(target: 0.46, percentile: 0.5, in: percentile(asShot, 0.5) < 0.46 ? 0...2 : -2...0,
+                                    tolerance: 0.006) else { return nil }
         var ev = middle * 0.7
-        if ev > 0, let limit = exposure(target: 0.97, percentile: 0.99) { ev = min(ev, max(0, limit)) }
+        if ev > 0, let candidate = tones(atExposure: ev), percentile(candidate, 0.99) > 0.97 {
+            ev = exposure(target: 0.97, percentile: 0.99, in: 0...ev, tolerance: 0.002) ?? 0
+        }
         s.exposure = (ev * 100).rounded() / 100
-        guard let exposed = lumas(s) else { return nil }
+        // from here on the stage sits at the chosen exposure, so every draft below is exact
+        guard let exposed = lumas(s, accurate: true) else { return nil }
 
         // 2. recover clipped highlights and open up large dark areas
         let clipped = Double(exposed.filter { $0 > 0.96 }.count) / Double(exposed.count)
