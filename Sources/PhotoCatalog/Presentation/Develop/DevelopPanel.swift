@@ -282,18 +282,23 @@ struct DevelopPanel: View {
                     Label(kind.title, systemImage: kind.symbol)
                 }
                 .toggleStyle(.button)
-                .help(kind == .linear ? L("新建线性渐变，在照片上拖动绘制 (M)") : L("新建径向渐变，在照片上拖动绘制 (⇧M)"))
+                .help(Self.maskHelp(kind))
             }
             Spacer(minLength: 0)
         }
         .controlSize(.small)
         if settings.masks.isEmpty {
-            Text("用渐变只调整照片的一部分，例如压暗天空或提亮主体")
+            Text("用渐变或画笔只调整照片的一部分，例如压暗天空或提亮主体")
                 .font(.system(size: 11)).foregroundStyle(Theme.text3)
         } else {
             VStack(spacing: 2) {
                 ForEach(settings.masks) { mask in maskRow(mask, in: settings.masks) }
             }
+            Toggle("显示叠加", isOn: Binding(get: { app.developShowsMaskOverlay },
+                                         set: { app.developShowsMaskOverlay = $0 }))
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .help("用红色标出所选蒙版覆盖的范围 (O)")
         }
         if let index = settings.masks.firstIndex(where: { $0.id == app.developSelectedMaskId }) {
             let mask = settings.masks[index]
@@ -307,6 +312,7 @@ struct DevelopPanel: View {
             .controlSize(.small)
             .help("让调整作用于渐变之外")
             if mask.kind == .radial { slider(DevelopControl.localFeather(index), asset, settings) }
+            if mask.kind == .brush { brushControls }
             ForEach(DevelopControl.local(index)) { control in slider(control, asset, settings) }
             HStack(spacing: 8) {
                 Button("复位滑块") {
@@ -322,6 +328,36 @@ struct DevelopPanel: View {
             }
             .controlSize(.small)
         }
+    }
+
+    private static func maskHelp(_ kind: LocalAdjustment.Kind) -> String {
+        switch kind {
+        case .linear: L("新建线性渐变，在照片上拖动绘制 (M)")
+        case .radial: L("新建径向渐变，在照片上拖动绘制 (⇧M)")
+        case .brush: L("新建画笔蒙版，在照片上涂抹 (K)")
+        }
+    }
+
+    /// The brush's settings for new strokes: tool settings, not part of the photo's edit.
+    @ViewBuilder
+    private var brushControls: some View {
+        Picker("画笔模式", selection: Binding(get: { app.developBrush.erase }, set: { app.developBrush.erase = $0 })) {
+            Text("画笔").tag(false)
+            Text("擦除").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.small)
+        .help("按住 ⌥ 临时切换画笔与擦除")
+        DevelopSlider(title: L("大小"), value: app.developBrush.size, range: 1...100, step: 1,
+                      format: { String(format: "%.0f", $0) }, isNeutral: app.developBrush.size == 25,
+                      onChange: { app.developBrush.size = $0 }, onReset: { app.developBrush.size = 25 }, onCommit: {})
+        DevelopSlider(title: L("画笔羽化"), value: app.developBrush.feather, range: 0...100, step: 1,
+                      format: { String(format: "%.0f", $0) }, isNeutral: app.developBrush.feather == 50,
+                      onChange: { app.developBrush.feather = $0 }, onReset: { app.developBrush.feather = 50 }, onCommit: {})
+        DevelopSlider(title: L("密度"), value: app.developBrush.density, range: 1...100, step: 1,
+                      format: { String(format: "%.0f", $0) }, isNeutral: app.developBrush.density == 100,
+                      onChange: { app.developBrush.density = $0 }, onReset: { app.developBrush.density = 100 }, onCommit: {})
     }
 
     private func maskRow(_ mask: LocalAdjustment, in masks: [LocalAdjustment]) -> some View {

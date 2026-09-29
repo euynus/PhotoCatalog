@@ -44,6 +44,7 @@ private struct DevelopCanvas: View {
         let settings = app.developShowsOriginal ? .neutral : app.developSettings(for: asset.id)
         let cropping = app.developCropping && !app.developShowsOriginal
         let masking = app.developMasking && !app.developShowsOriginal
+        let overlay = masking && app.developShowsMaskOverlay ? app.developSelectedMaskId : nil
         let dragging = app.developDraft?.assetId == asset.id
         let fullResolution = app.loupeZoom != nil && !dragging && !cropping
         // the crop tool draws the crop itself, so moving it never re-renders
@@ -76,11 +77,12 @@ private struct DevelopCanvas: View {
                     if engine.isRendering(asset.id) { ProgressView().controlSize(.small).padding(14) }
                 }
                 .onChange(of: DevelopRenderKey(assetId: asset.id, settings: rendered, draft: dragging,
-                                               fullResolution: fullResolution, wholeFrame: cropping),
+                                               fullResolution: fullResolution, wholeFrame: cropping,
+                                               overlayMask: overlay),
                           initial: true) {
                     engine.render(assetId: asset.id, url: source.url, isRaw: source.isRaw, settings: rendered,
                                   draft: dragging, fullResolution: fullResolution,
-                                  wholeFrame: cropping) { result, histogram in
+                                  wholeFrame: cropping, overlayMask: overlay) { result, histogram in
                         if let temperature = result.asShotTemperature, let tint = result.asShotTint {
                             app.recordAsShotWhiteBalance(asset.id, temperature: temperature, tint: tint)
                         }
@@ -126,6 +128,7 @@ private struct DevelopRenderKey: Equatable {
     let draft: Bool
     let fullResolution: Bool
     let wholeFrame: Bool
+    let overlayMask: String?
 }
 
 /// Owns two render workers — preview size and full resolution — so switching zoom
@@ -166,13 +169,14 @@ final class DevelopPreviewEngine: ObservableObject {
     func isRendering(_ assetId: String) -> Bool { renderingAssetId == assetId }
 
     func render(assetId: String, url: URL, isRaw: Bool, settings: DevelopSettings, draft: Bool,
-                fullResolution: Bool, wholeFrame: Bool,
+                fullResolution: Bool, wholeFrame: Bool, overlayMask: String? = nil,
                 finished: @escaping (DevelopRenderWorker.Result, _ newestHistogram: DevelopHistogram?) -> Void) {
         token += 1
         var request = DevelopRenderWorker.Request(url: url, isRaw: isRaw,
                                                   maxPixel: fullResolution ? nil : Self.previewMaxPixel,
                                                   settings: settings, draft: draft, token: token)
         request.wholeFrame = wholeFrame
+        request.overlayMask = overlayMask
         renderingAssetId = assetId
         (fullResolution ? fullWorker : previewWorker).submit(request) { [weak self] result in
             Task { @MainActor [weak self] in

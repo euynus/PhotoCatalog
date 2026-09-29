@@ -458,6 +458,7 @@
 /* Domain/LocalAdjustment.swift */
 "线性渐变" = "Linear Gradient";
 "径向渐变" = "Radial Gradient";
+"画笔" = "Brush";
 
 /* Domain/Models.swift */
 "导入时间" = "Import Date";
@@ -617,7 +618,7 @@
 "高光剪切" = "Highlight clipping";
 "新建线性渐变，在照片上拖动绘制 (M)" = "New linear gradient — drag on the photo to draw it (M)";
 "新建径向渐变，在照片上拖动绘制 (⇧M)" = "New radial gradient — drag on the photo to draw it (⇧M)";
-"用渐变只调整照片的一部分，例如压暗天空或提亮主体" = "Use a gradient to adjust part of the photo, such as darkening the sky or brightening the subject";
+"用渐变或画笔只调整照片的一部分，例如压暗天空或提亮主体" = "Use a gradient or the brush to adjust part of the photo, such as darkening the sky or brightening the subject";
 "反相" = "Invert";
 "反相蒙版" = "Invert Mask";
 "让调整作用于渐变之外" = "Apply the adjustments outside the gradient";
@@ -626,6 +627,14 @@
 "删除蒙版" = "Delete Mask";
 "删除所选蒙版 (Delete)" = "Delete the selected mask (Delete)";
 "无调整" = "No adjustments";
+"新建画笔蒙版，在照片上涂抹 (K)" = "New brush mask — paint on the photo (K)";
+"显示叠加" = "Show Overlay";
+"用红色标出所选蒙版覆盖的范围 (O)" = "Tint the selected mask's coverage red (O)";
+"画笔模式" = "Brush Mode";
+"擦除" = "Erase";
+"按住 ⌥ 临时切换画笔与擦除" = "Hold ⌥ to switch between painting and erasing";
+"画笔羽化" = "Brush Feather";
+"密度" = "Density";
 
 /* Presentation/Develop/DevelopView.swift */
 "点选照片中应为灰色或白色的地方（Esc 取消）" = "Click a spot in the photo that should be gray or white (Esc to cancel)";
@@ -639,6 +648,10 @@
 "从中心向外拖动绘制径向渐变 · 点按放置 · Esc 取消" = "Drag out from the center to draw a radial gradient · Click to place · Esc to cancel";
 "拖动控制点调整蒙版 · 点按圆点选择蒙版 · Delete 删除 · Esc 完成" = "Drag the handles to adjust the mask · Click a pin to select a mask · Delete to remove · Esc when done";
 "编辑蒙版" = "Edit Mask";
+"在照片上涂抹 · 按住 ⌥ 擦除 · [ ] 调整大小 · Esc 取消" = "Paint on the photo · Hold ⌥ to erase · [ ] to resize · Esc to cancel";
+"涂抹添加 · 按住 ⌥ 擦除 · [ ] 调整大小 · 点按圆点选择其他蒙版 · Esc 完成" = "Paint to add · Hold ⌥ to erase · [ ] to resize · Click a pin to select another mask · Esc when done";
+"画笔描边" = "Brush Stroke";
+"擦除蒙版" = "Erase Mask";
 
 /* Presentation/Develop/ToneCurveEditor.swift */
 "通道" = "Channel";

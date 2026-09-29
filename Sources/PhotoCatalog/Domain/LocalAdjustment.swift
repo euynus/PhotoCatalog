@@ -1,5 +1,5 @@
 // ============================================================
-//  Local adjustments — Lightroom's masks: linear and radial gradients
+//  Local adjustments — Lightroom's masks: gradients and brush
 // ============================================================
 import Foundation
 import CoreGraphics
@@ -9,12 +9,13 @@ import CoreGraphics
 /// and crop), so a mask stays on the same part of the picture when the framing changes.
 struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
     enum Kind: String, Codable, CaseIterable, Sendable {
-        case linear, radial
+        case linear, radial, brush
 
         var title: String {
             switch self {
             case .linear: L("线性渐变")
             case .radial: L("径向渐变")
+            case .brush: L("画笔")
             }
         }
 
@@ -22,6 +23,7 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
             switch self {
             case .linear: "rectangle.tophalf.inset.filled"
             case .radial: "circle.dashed"
+            case .brush: "paintbrush.pointed"
             }
         }
     }
@@ -39,7 +41,9 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
     var radiusY = 0.18
     var angle = 0.0
     var feather = 50.0
-    /// Applies outside the gradient instead of inside it.
+    /// Brush: strokes painted, and erased, in order.
+    var strokes: [BrushStroke] = []
+    /// Applies outside the mask instead of inside it.
     var inverted = false
 
     // adjustments, -100…100 unless noted
@@ -70,7 +74,7 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         copy.id = id
         copy.start = start; copy.end = end
         copy.center = center; copy.radiusX = radiusX; copy.radiusY = radiusY; copy.angle = angle
-        copy.feather = feather; copy.inverted = inverted
+        copy.feather = feather; copy.strokes = strokes; copy.inverted = inverted
         return copy
     }
 
@@ -88,6 +92,7 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         let geometry: [Double] = switch kind {
         case .linear: [start.x, start.y, end.x, end.y]
         case .radial: [center.x, center.y, radiusX, radiusY, angle, feather]
+        case .brush: [Double(strokes.count), Double(BrushStroke.hash(strokes))]
         }
         let values = [exposure, contrast, highlights, shadows, whites, blacks, temperature, tint,
                       texture, clarity, dehaze, saturation]
@@ -110,6 +115,7 @@ extension LocalAdjustment {
         radiusY = try c.decodeIfPresent(Double.self, forKey: .radiusY) ?? 0.18
         angle = try c.decodeIfPresent(Double.self, forKey: .angle) ?? 0
         feather = try c.decodeIfPresent(Double.self, forKey: .feather) ?? 50
+        strokes = try c.decodeIfPresent([BrushStroke].self, forKey: .strokes) ?? []
         inverted = try c.decodeIfPresent(Bool.self, forKey: .inverted) ?? false
         func value(_ key: CodingKeys) throws -> Double { try c.decodeIfPresent(Double.self, forKey: key) ?? 0 }
         exposure = try value(.exposure)
@@ -124,6 +130,66 @@ extension LocalAdjustment {
         clarity = try value(.clarity)
         dehaze = try value(.dehaze)
         saturation = try value(.saturation)
+    }
+}
+
+/// The brush tool's settings, which each new stroke takes on.
+struct BrushSettings: Equatable, Sendable {
+    /// 1…100: a radius of up to a fifth of the photo's long edge.
+    var size = 25.0
+    var feather = 50.0
+    var density = 100.0
+    var erase = false
+
+    /// Stroke radius as a fraction of the source's long edge.
+    var radius: Double { size / 100 * 0.2 }
+}
+
+/// One brush stroke: a path of round dabs. Points are source-photo fractions, flattened
+/// (x0, y0, x1, y1, …) and rounded to 1/10 000 so long strokes stay small in the catalog.
+struct BrushStroke: Codable, Hashable, Sendable {
+    var points: [Double] = []
+    /// Dab radius as a fraction of the source's long edge.
+    var radius = 0.05
+    /// How much of the radius the dab fades over, 0…100.
+    var feather = 50.0
+    /// The strongest the stroke paints (or erases), 0…100.
+    var density = 100.0
+    var erase = false
+
+    var pointCount: Int { points.count / 2 }
+
+    func point(_ index: Int) -> CGPoint { CGPoint(x: points[index * 2], y: points[index * 2 + 1]) }
+
+    mutating func append(_ point: CGPoint) {
+        points.append((Double(point.x) * 10_000).rounded() / 10_000)
+        points.append((Double(point.y) * 10_000).rounded() / 10_000)
+    }
+
+    /// A compact hash of every stroke, for fingerprints and the rasterized-mask cache.
+    static func hash(_ strokes: [BrushStroke]) -> UInt32 {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        func mix(_ value: Double) {
+            var bits = value.bitPattern
+            for _ in 0..<8 { hash = (hash ^ (bits & 0xff)) &* 0x100_0000_01b3; bits >>= 8 }
+        }
+        for stroke in strokes {
+            stroke.points.forEach(mix)
+            [stroke.radius, stroke.feather, stroke.density, stroke.erase ? 1 : 0].forEach(mix)
+        }
+        return UInt32(truncatingIfNeeded: hash ^ (hash >> 32))
+    }
+}
+
+extension BrushStroke {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let points = try c.decodeIfPresent([Double].self, forKey: .points) ?? []
+        self.points = points.count.isMultiple(of: 2) ? points : Array(points.dropLast())
+        radius = try c.decodeIfPresent(Double.self, forKey: .radius) ?? 0.05
+        feather = try c.decodeIfPresent(Double.self, forKey: .feather) ?? 50
+        density = try c.decodeIfPresent(Double.self, forKey: .density) ?? 100
+        erase = try c.decodeIfPresent(Bool.self, forKey: .erase) ?? false
     }
 }
 

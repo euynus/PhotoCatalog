@@ -71,15 +71,18 @@ enum DevelopRenderer {
         }
 
         /// The photo with `settings` applied. `wholeFrame` skips the crop and leaves the corners a
-        /// straightened photo no longer covers empty, for the crop tool to draw over.
-        func image(_ settings: DevelopSettings, draft: Bool = false, wholeFrame: Bool = false) -> CIImage? {
+        /// straightened photo no longer covers empty, for the crop tool to draw over;
+        /// `overlayMask` tints that mask's coverage red, for the masking tool.
+        func image(_ settings: DevelopSettings, draft: Bool = false, wholeFrame: Bool = false,
+                   overlayMask: String? = nil) -> CIImage? {
             guard let base = baseImage(settings, draft: draft) else { return nil }
             sourceSize = base.extent.integral.size
             let scale = max(base.extent.width, base.extent.height) / max(fullLongEdge, 1)
             let toned = DevelopRenderer.applyTone(DevelopRenderer.applyLens(base, settings), settings)
             let colored = DevelopRenderer.applyMixer(DevelopRenderer.applyCurve(toned, settings), settings)
             let present = DevelopRenderer.applyPresence(colored, settings)
-            let local = DevelopRenderer.applyMasks(present, settings)
+            let local = DevelopRenderer.applyOverlay(DevelopRenderer.applyMasks(present, settings), settings,
+                                                     maskId: overlayMask)
             let detailed = DevelopRenderer.applyDetail(local, settings, scale: min(1, scale))
             let framed = DevelopRenderer.applyGeometry(detailed, settings, wholeFrame: wholeFrame)
             // effects follow the crop, which the crop tool's whole-frame view doesn't apply yet
@@ -327,6 +330,22 @@ enum DevelopRenderer {
         return image
     }
 
+    /// The photo with a mask's coverage tinted red, as Lightroom's overlay shows it.
+    static func applyOverlay(_ input: CIImage, _ s: DevelopSettings, maskId: String?) -> CIImage {
+        guard let maskId, let mask = s.masks.first(where: { $0.id == maskId }),
+              let weight = DevelopKernels.maskWeight(mask, extent: input.extent) else { return input }
+        let half = weight.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: 0.55, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: 0.55, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: 0.55, w: 0),
+        ])
+        let red = CIImage(color: CIColor(red: 0.95, green: 0.08, blue: 0.08)).cropped(to: input.extent)
+        return red.applyingFilter("CIBlendWithMask", parameters: [
+            kCIInputBackgroundImageKey: input,
+            kCIInputMaskImageKey: half,
+        ]).cropped(to: input.extent)
+    }
+
     /// Post-crop vignette (on linear light, so darkening behaves like exposure), then grain.
     static func applyEffects(_ input: CIImage, _ s: DevelopSettings, scale: CGFloat) -> CIImage {
         guard s.hasEffects else { return input }
@@ -461,6 +480,7 @@ final class DevelopRenderWorker: @unchecked Sendable {
         let settings: DevelopSettings
         let draft: Bool
         var wholeFrame = false
+        var overlayMask: String?
         let token: Int
     }
 
@@ -495,11 +515,12 @@ final class DevelopRenderWorker: @unchecked Sendable {
                 .map { (key, $0) }
         }
         let image = autoreleasepool {
-            source?.source.image(request.settings, draft: request.draft, wholeFrame: request.wholeFrame)
+            source?.source.image(request.settings, draft: request.draft, wholeFrame: request.wholeFrame,
+                                 overlayMask: request.overlayMask)
                 .flatMap(DevelopRenderer.render)
         }
-        // the crop tool's whole-frame view has empty corners that would skew the histogram
-        let histogram = request.wholeFrame ? nil : image.flatMap(DevelopRenderer.histogram)
+        // the crop tool's empty corners and the mask overlay's tint would skew the histogram
+        let histogram = request.wholeFrame || request.overlayMask != nil ? nil : image.flatMap(DevelopRenderer.histogram)
         completion(Result(request: request, image: image, histogram: histogram, sourceSize: source?.source.sourceSize,
                           asShotTemperature: source?.source.asShotTemperature,
                           asShotTint: source?.source.asShotTint))

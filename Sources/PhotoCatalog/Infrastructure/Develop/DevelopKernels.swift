@@ -293,6 +293,8 @@ enum DevelopKernels {
             let u = CIVector(x: cos(a) / rx, y: -sin(a) / rx)
             let v = CIVector(x: -sin(a) / ry, y: -cos(a) / ry)
             return kernel.apply(extent: extent, arguments: [pixel(mask.center), u, v, mask.feather / 100, invert])
+        case .brush:
+            return BrushRaster.weight(mask, extent: extent)
         }
     }
 

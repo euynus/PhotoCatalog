@@ -40,14 +40,15 @@ enum DevelopCheck {
     }
 
     /// Renders `settings` on `image` through a PNG file, as the app renders a photo.
-    private static func develop(_ image: CGImage, _ settings: DevelopSettings, wholeFrame: Bool = false) -> CGImage {
+    private static func develop(_ image: CGImage, _ settings: DevelopSettings, wholeFrame: Bool = false,
+                                overlayMask: String? = nil) -> CGImage {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-develop-\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: url) }
         let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
         CGImageDestinationAddImage(destination, image, nil)
         CGImageDestinationFinalize(destination)
         let source = DevelopRenderer.Source(url: url, isRaw: false, maxPixel: nil)!
-        return DevelopRenderer.render(source.image(settings, wholeFrame: wholeFrame)!)!
+        return DevelopRenderer.render(source.image(settings, wholeFrame: wholeFrame, overlayMask: overlayMask)!)!
     }
 
     /// 64 × 32: red left half, blue right half.
@@ -373,6 +374,39 @@ enum DevelopCheck {
                 assert(abs(back.x - point.x) < 1e-9 && abs(back.y - point.y) < 1e-9, "source and finished points round-trip")
             }
         }
+
+        // brush: a stroke across the middle, part of it erased again
+        var brush = LocalAdjustment(kind: .brush)
+        brush.exposure = 1.5
+        var stroke = BrushStroke()
+        stroke.radius = 0.08; stroke.feather = 20
+        stroke.append(CGPoint(x: 0.1, y: 0.5)); stroke.append(CGPoint(x: 0.9, y: 0.5))
+        brush.strokes = [stroke]
+        s = DevelopSettings(); s.masks = [brush]
+        out = develop(gray, s)
+        assert(luma(out, 32, 32) > base + 30 && luma(out, 12, 32) > base + 30 && abs(luma(out, 32, 8) - base) < 2,
+               "a brush stroke adjusts where it was painted and nowhere else")
+        var eraser = BrushStroke()
+        eraser.radius = 0.1; eraser.feather = 0; eraser.erase = true
+        eraser.append(CGPoint(x: 0.5, y: 0.2)); eraser.append(CGPoint(x: 0.5, y: 0.8))
+        s.masks[0].strokes.append(eraser)
+        out = develop(gray, s)
+        assert(abs(luma(out, 32, 32) - base) < 3 && luma(out, 12, 32) > base + 30, "erasing takes the adjustment back")
+        s.masks[0].strokes = [stroke]
+        s.masks[0].strokes[0].density = 40
+        let light = luma(develop(gray, s), 32, 32)
+        assert(light > base + 5 && light < luma(out, 12, 32) - 10, "a lower density paints a weaker effect")
+        s.masks[0].strokes[0].density = 100
+        let tinted = pixel(develop(gray, s, overlayMask: brush.id), 32, 32)
+        let untinted = pixel(develop(gray, s, overlayMask: brush.id), 32, 8)
+        assert(Int(tinted.r) > Int(tinted.b) + 40 && abs(Int(untinted.r) - Int(untinted.b)) < 4,
+               "the overlay tints the selected mask's coverage red")
+        let halfStroke = try! JSONDecoder().decode(BrushStroke.self, from: Data(#"{"points":[0.1,0.2,0.3]}"#.utf8))
+        assert(halfStroke.pointCount == 1 && halfStroke.radius == 0.05 && !halfStroke.erase,
+               "a stroke with a dangling coordinate loads without it")
+        var rounded = BrushStroke()
+        rounded.append(CGPoint(x: 0.123456789, y: 0.5))
+        assert(rounded.points == [0.1235, 0.5], "stroke points are stored rounded")
 
         let old = try! JSONDecoder().decode(DevelopSettings.self, from: Data(#"{"exposure":0.5}"#.utf8))
         assert(old.masks.isEmpty && old.fingerprint == { var e = DevelopSettings(); e.exposure = 0.5; return e }().fingerprint,
@@ -854,7 +888,14 @@ enum DevelopCheck {
         assert(!app.developMasking, "the crop tool closes the masking tool")
         app.developMasking = true
         assert(!app.developCropping, "the masking tool closes the crop tool")
+        _ = app.handleKey("]", hasCommand: false)
+        assert(app.developBrush.size == 30, "] enlarges the brush in the masking tool")
+        for _ in 0..<30 { _ = app.handleKey("[", hasCommand: false) }
+        assert(app.developBrush.size == 1, "[ shrinks the brush, down to its smallest")
+        _ = app.handleKey("o", hasCommand: false)
+        assert(app.developShowsMaskOverlay, "O shows the mask overlay")
         app.view = .grid
         assert(!app.developMasking, "leaving Develop closes the masking tool")
+        assert(!app.handleKey("[", hasCommand: false), "[ does nothing outside the masking tool")
     }
 }

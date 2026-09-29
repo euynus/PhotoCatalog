@@ -657,8 +657,18 @@ final class AppState {
     }
     /// The mask whose handles and sliders are shown.
     var developSelectedMaskId: String?
-    /// A gradient the next drag on the photo draws (a click places one of default size).
+    /// A gradient the next drag on the photo draws (a click places one of default size), or the
+    /// brush, whose first stroke starts a new brush mask.
     var developMaskCreation: LocalAdjustment.Kind?
+    /// Brush size, feather, density and mode for new strokes.
+    var developBrush = BrushSettings()
+    /// O: tints the selected mask's coverage red.
+    var developShowsMaskOverlay = false
+
+    /// [ and ]: a smaller or larger brush.
+    func resizeBrush(by delta: Double) {
+        developBrush.size = min(100, max(1, developBrush.size + delta))
+    }
 
     /// M / ⇧M or the panel's buttons: arms a new gradient, opening Develop and the masking tool.
     func armMask(_ kind: LocalAdjustment.Kind) {
@@ -6765,6 +6775,14 @@ final class AppState {
             developPickingWhiteBalance.toggle()
         case "m":
             armMask(hasShift ? .radial : .linear)
+        case "k":
+            armMask(.brush)
+        case "[", "]":
+            guard view == .develop, developMasking else { return false }
+            resizeBrush(by: key == "[" ? -5 : 5)
+        case "o":
+            guard view == .develop, developMasking else { return false }
+            developShowsMaskOverlay.toggle()
         case "a":
             switchView(.analysis)
         case "i":

@@ -1,12 +1,13 @@
 // ============================================================
-//  Mask editor — draw and reshape linear and radial gradients
+//  Mask editor — draw gradients, reshape them, paint brush masks
 // ============================================================
 import SwiftUI
 import AppKit
 
 /// The finished photo with the masks drawn over it. With a gradient armed, a drag draws it
-/// (a click places one of default size); otherwise the selected mask's handles reshape it and
-/// a click on another mask's pin selects that mask. Edits preview live and save on release.
+/// (a click places one of default size); with the brush armed or a brush mask selected, a drag
+/// paints (⌥ erases); otherwise the selected mask's handles reshape it. A click on another
+/// mask's pin selects that mask. Edits preview live and save on release.
 struct MaskEditor: View {
     @Environment(AppState.self) private var app
     let asset: Asset
@@ -17,6 +18,7 @@ struct MaskEditor: View {
     let sourceSize: CGSize
 
     @State private var drag: MaskDrag?
+    @State private var hover: CGPoint?
 
     private static let handleRadius: CGFloat = 9
 
@@ -32,6 +34,7 @@ struct MaskEditor: View {
                         .frame(width: display.width, height: display.height)
                         .offset(x: display.minX, y: display.minY)
                     MaskOverlay(masks: settings.masks, selectedId: app.developSelectedMaskId, mapper: mapper)
+                    if let hover, isPainting { brushCursor(at: hover, mapper) }
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                 .clipped()
@@ -39,8 +42,12 @@ struct MaskEditor: View {
                 .gesture(gesture(mapper))
                 .onContinuousHover { phase in
                     switch phase {
-                    case .active(let location): cursor(at: location, mapper).set()
-                    case .ended: NSCursor.arrow.set()
+                    case .active(let location):
+                        hover = location
+                        cursor(at: location, mapper).set()
+                    case .ended:
+                        hover = nil
+                        NSCursor.arrow.set()
                     }
                 }
             } else {
@@ -55,7 +62,10 @@ struct MaskEditor: View {
         let text: String = switch app.developMaskCreation {
         case .linear: L("拖动绘制线性渐变：起点处效果最强，终点处消失 · 点按放置 · Esc 取消")
         case .radial: L("从中心向外拖动绘制径向渐变 · 点按放置 · Esc 取消")
-        case nil: L("拖动控制点调整蒙版 · 点按圆点选择蒙版 · Delete 删除 · Esc 完成")
+        case .brush: L("在照片上涂抹 · 按住 ⌥ 擦除 · [ ] 调整大小 · Esc 取消")
+        case nil: selectedIndex.map { settings.masks[$0].kind == .brush } == true
+            ? L("涂抹添加 · 按住 ⌥ 擦除 · [ ] 调整大小 · 点按圆点选择其他蒙版 · Esc 完成")
+            : L("拖动控制点调整蒙版 · 点按圆点选择蒙版 · Delete 删除 · Esc 完成")
         }
         return Text(text)
             .font(.system(size: 11))
@@ -70,9 +80,45 @@ struct MaskEditor: View {
         settings.masks.firstIndex { $0.id == app.developSelectedMaskId }
     }
 
+    /// Whether a drag paints: the brush is armed, or a brush mask is selected and nothing else is.
+    private var isPainting: Bool {
+        switch app.developMaskCreation {
+        case .brush: true
+        case .linear, .radial: false
+        case nil: selectedIndex.map { settings.masks[$0].kind == .brush } == true
+        }
+    }
+
+    /// The brush's outline where it would paint, and its hard core when feathered.
+    private func brushCursor(at point: CGPoint, _ mapper: MaskMapper) -> some View {
+        let radius = mapper.screenLength(ofSourceLength: app.developBrush.radius)
+        let core = radius * (1 - app.developBrush.feather / 100)
+        let erasing = app.developBrush.erase != NSEvent.modifierFlags.contains(.option)
+        return ZStack {
+            Circle().strokeBorder(.white.opacity(0.9), style: StrokeStyle(lineWidth: 1.2, dash: erasing ? [4, 3] : []))
+                .frame(width: radius * 2, height: radius * 2)
+            if core > 2 {
+                Circle().strokeBorder(.white.opacity(0.45), lineWidth: 1).frame(width: core * 2, height: core * 2)
+            }
+            Image(systemName: erasing ? "minus" : "plus")
+                .font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+        }
+        .shadow(color: .black.opacity(0.6), radius: 1)
+        .position(point)
+        .allowsHitTesting(false)
+    }
+
     // ---- hit testing ----
     private func target(at point: CGPoint, _ mapper: MaskMapper) -> MaskDrag.Target? {
         if let kind = app.developMaskCreation { return .create(kind) }
+        if let index = selectedIndex, settings.masks[index].kind == .brush {
+            // another mask's pin still selects it; anywhere else paints
+            for mask in settings.masks.reversed() where mask.id != settings.masks[index].id
+                && distance(mapper.pin(of: mask), point) <= Self.handleRadius {
+                return .select(mask.id)
+            }
+            return .paint(settings.masks[index].id)
+        }
         if let index = selectedIndex {
             let mask = settings.masks[index]
             // the handles of the selected mask win over every pin
@@ -90,6 +136,7 @@ struct MaskEditor: View {
 
     private func cursor(at point: CGPoint, _ mapper: MaskMapper) -> NSCursor {
         switch target(at: point, mapper) {
+        case .create(.brush), .paint: .crosshair
         case .create: .crosshair
         case .handle(_, .move), .select: .openHand
         case .handle: .pointingHand
@@ -105,8 +152,15 @@ struct MaskEditor: View {
             .onChanged { value in
                 if drag == nil {
                     guard let target = target(at: value.startLocation, mapper) else { return }
-                    let start = selectedIndex.map { settings.masks[$0] }
+                    // the saved edit, not this view's copy, which can trail a commit made just before
+                    let saved = app.developSettings[asset.id] ?? .neutral
+                    let start = saved.masks.first { $0.id == app.developSelectedMaskId }
                     drag = MaskDrag(target: target, startMask: start, newId: UUID().uuidString)
+                    beginStroke(at: value.startLocation, mapper)
+                }
+                if drag?.painted != nil {
+                    continueStroke(to: value.location, mapper)
+                    return
                 }
                 guard let drag, hypot(value.translation.width, value.translation.height) >= 2 else { return }
                 switch drag.target {
@@ -117,7 +171,7 @@ struct MaskEditor: View {
                     guard let start = drag.startMask, start.id == id else { return }
                     preview(reshaped(start, handle: handle, translation: value.translation, to: value.location, mapper),
                             adding: false)
-                case .select:
+                case .select, .paint:
                     break
                 }
             }
@@ -125,6 +179,16 @@ struct MaskEditor: View {
                 defer { drag = nil }
                 guard let drag else { return }
                 let moved = hypot(value.translation.width, value.translation.height) >= 2
+                if let painted = drag.painted {
+                    // a click paints a single dab
+                    if case .create = drag.target {
+                        app.addMask(painted, to: asset.id)
+                    } else if let draft = app.developDraft, draft.assetId == asset.id {
+                        let erased = painted.strokes.last?.erase == true
+                        app.commitDevelop([asset.id: draft.settings], undoName: erased ? L("擦除蒙版") : L("画笔描边"))
+                    }
+                    return
+                }
                 switch drag.target {
                 case .create(let kind):
                     // a click places a gradient of default size at the point
@@ -137,8 +201,50 @@ struct MaskEditor: View {
                     app.commitDevelop([asset.id: draft.settings], undoName: L("编辑蒙版"))
                 case .select(let id):
                     app.developSelectedMaskId = id
+                case .paint:
+                    break
                 }
             }
+    }
+
+    /// Starts a stroke when the drag paints: on a new brush mask, or on the selected one.
+    private func beginStroke(at point: CGPoint, _ mapper: MaskMapper) {
+        guard let drag else { return }
+        var mask: LocalAdjustment
+        switch drag.target {
+        case .create(.brush):
+            mask = LocalAdjustment(kind: .brush)
+            mask.id = drag.newId
+            mask.exposure = 0.5   // a visible start, as with the gradients
+        case .paint(let id):
+            guard let start = drag.startMask, start.id == id else { return }
+            mask = start
+        default:
+            return
+        }
+        let brush = app.developBrush
+        var stroke = BrushStroke()
+        stroke.radius = brush.radius
+        stroke.feather = brush.feather
+        stroke.density = brush.density
+        stroke.erase = brush.erase != NSEvent.modifierFlags.contains(.option)
+        stroke.append(mapper.source(point))
+        mask.strokes.append(stroke)
+        self.drag?.painted = mask
+        self.drag?.lastPaint = point
+        preview(mask, adding: true)
+    }
+
+    /// Extends the stroke once the pointer has moved a fraction of the brush's size, so long
+    /// strokes stay light.
+    private func continueStroke(to point: CGPoint, _ mapper: MaskMapper) {
+        guard var mask = drag?.painted, let last = drag?.lastPaint, !mask.strokes.isEmpty else { return }
+        let spacing = max(2, mapper.screenLength(ofSourceLength: mask.strokes[mask.strokes.count - 1].radius) * 0.25)
+        guard distance(point, last) >= spacing else { return }
+        mask.strokes[mask.strokes.count - 1].append(mapper.source(point))
+        drag?.painted = mask
+        drag?.lastPaint = point
+        preview(mask, adding: true)
     }
 
     /// Shows `mask` live: replaces the mask with its id, or appends it while it's being drawn.
@@ -169,6 +275,8 @@ struct MaskEditor: View {
             mask.radiusX = max(0.01, radius)
             mask.radiusY = max(0.01, radius)
             mask.angle = mapper.sourceAngle(ofScreenDirection: CGVector(dx: 1, dy: 0), at: start)
+        case .brush:
+            break   // painted stroke by stroke instead
         }
         return mask
     }
@@ -188,6 +296,8 @@ struct MaskEditor: View {
                              to: CGPoint(x: point.x + max(display.width, display.height) / 6, y: point.y), mapper)
             mask.radiusY = mask.radiusX * 0.75
             return mask
+        case .brush:
+            return drawn(kind, id: id, from: point, to: point, mapper)
         }
     }
 
@@ -236,13 +346,17 @@ struct MaskDrag {
         case create(LocalAdjustment.Kind)
         case handle(String, MaskHandle)
         case select(String)
+        case paint(String)
     }
 
     let target: Target
     /// The selected mask as the drag began.
     let startMask: LocalAdjustment?
-    /// The id a drawn gradient gets.
+    /// The id a drawn gradient or new brush mask gets.
     let newId: String
+    /// The brush mask with the stroke being painted, and where its last point was added.
+    var painted: LocalAdjustment?
+    var lastPaint: CGPoint?
 }
 
 /// Converts between the screen, the finished photo it shows, and the source photo masks
@@ -276,6 +390,13 @@ struct MaskMapper {
         return Double(hypot(v.dx, v.dy))
     }
 
+    /// How long a source length (fraction of the long edge) is on screen.
+    func screenLength(ofSourceLength length: Double) -> CGFloat {
+        let center = CGPoint(x: display.midX, y: display.midY)
+        let perHundred = sourceLength(from: center, to: CGPoint(x: center.x + 100, y: center.y))
+        return CGFloat(length / max(perHundred, 1e-9) * 100)
+    }
+
     /// The clockwise angle, in degrees, that a screen direction has on the source photo.
     func sourceAngle(ofScreenDirection direction: CGVector, at point: CGPoint) -> Double {
         let length = max(hypot(direction.dx, direction.dy), 1e-6)
@@ -291,7 +412,8 @@ struct MaskMapper {
                        y: center.y + sin(a) * length * longEdge / Double(max(sourceSize.height, 1)))
     }
 
-    /// Where a mask's pin sits on screen: a radial gradient's center, a linear one's middle.
+    /// Where a mask's pin sits on screen: a radial gradient's center, a linear one's middle,
+    /// a brush mask's first dab.
     func pin(of mask: LocalAdjustment) -> CGPoint {
         switch mask.kind {
         case .linear:
@@ -299,6 +421,8 @@ struct MaskMapper {
             return CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
         case .radial:
             return screen(mask.center)
+        case .brush:
+            return screen(mask.strokes.first { $0.pointCount > 0 }?.point(0) ?? mask.center)
         }
     }
 
@@ -314,6 +438,8 @@ struct MaskMapper {
                 (.axisY(1), screen(sourcePoint(from: mask.center, angle: mask.angle + 90, length: mask.radiusY))),
                 (.axisY(-1), screen(sourcePoint(from: mask.center, angle: mask.angle - 90, length: mask.radiusY))),
             ]
+        case .brush:
+            return []   // painted, not reshaped
         }
     }
 }
@@ -379,6 +505,12 @@ private struct MaskOverlay: View {
                                                      width: rx * inner * 2, height: ry * inner * 2)).applying(turn)
                 context.stroke(feather, with: .color(.white.opacity(0.55)), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
             }
+        case .brush:
+            // no outline to drag: its pin, filled to show it's the one being painted
+            let pin = mapper.pin(of: mask)
+            let dot = Path(ellipseIn: CGRect(x: pin.x - 6, y: pin.y - 6, width: 12, height: 12))
+            context.fill(dot, with: .color(Theme.accentFill))
+            context.stroke(dot, with: .color(.white), lineWidth: 1.5)
         }
     }
 }
