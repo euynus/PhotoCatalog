@@ -1205,7 +1205,9 @@ final class AppState {
     }
 
     /// Saves adjustments for each id (persisted and undoable; neutral clears the photo's edit).
-    func commitDevelop(_ settings: [String: DevelopSettings], undoName: String) {
+    /// Each changed photo gets a history step named `undoName`; undoing takes it away again.
+    func commitDevelop(_ settings: [String: DevelopSettings], undoName: String,
+                       history change: DevelopHistoryChange = .append) {
         developDraft = nil
         let before = Dictionary(uniqueKeysWithValues: settings.keys.map { ($0, developSettings[$0] ?? .neutral) })
         guard before != settings else { return }
@@ -1216,11 +1218,121 @@ final class AppState {
             return
         }
         for (id, value) in settings { developSettings[id] = value.isNeutral ? nil : value }
+        recordDevelopHistory(settings.filter { before[$0.key] != $0.value }, name: undoName, change: change)
         guard let undoManager else { return }
         undoManager.registerUndo(withTarget: self) { app in
-            MainActor.assumeIsolated { app.commitDevelop(before, undoName: undoName) }
+            MainActor.assumeIsolated {
+                app.commitDevelop(before, undoName: undoName, history: change == .append ? .revert : .append)
+            }
         }
         undoManager.setActionName(undoName)
+    }
+
+    // ----- develop history and snapshots, loaded per photo when first shown -----
+    @ObservationIgnored private var developHistoryCache: [String: [DevelopHistoryStep]] = [:]
+    @ObservationIgnored private var developSnapshotCache: [String: [DevelopSnapshot]] = [:]
+    /// Bumped whenever a loaded history or snapshot list changes.
+    private var developRecordsVersion = 0
+
+    /// The photo's develop steps, oldest first.
+    func developHistory(for id: String) -> [DevelopHistoryStep] {
+        _ = developRecordsVersion
+        if let cached = developHistoryCache[id] { return cached }
+        let loaded = (try? store?.loadDevelopHistory(id)) ?? []
+        developHistoryCache[id] = loaded
+        return loaded
+    }
+
+    func developSnapshots(for id: String) -> [DevelopSnapshot] {
+        _ = developRecordsVersion
+        if let cached = developSnapshotCache[id] { return cached }
+        let loaded = (try? store?.loadDevelopSnapshots(id)) ?? []
+        developSnapshotCache[id] = loaded
+        return loaded
+    }
+
+    private func recordDevelopHistory(_ changed: [String: DevelopSettings], name: String, change: DevelopHistoryChange) {
+        guard !changed.isEmpty else { return }
+        switch change {
+        case .append:
+            let stored = (try? store?.appendDevelopHistory(changed.mapValues { (name: name, settings: $0) })) ?? [:]
+            for (id, value) in changed where developHistoryCache[id] != nil {
+                let seq = stored[id]?.seq ?? (developHistoryCache[id]?.last?.seq ?? 0) + 1
+                developHistoryCache[id]?.append(stored[id] ?? DevelopHistoryStep(seq: seq, name: name, date: .now,
+                                                                                 settings: value))
+                if let count = developHistoryCache[id]?.count, count > DevelopHistoryStep.limit {
+                    developHistoryCache[id]?.removeFirst(count - DevelopHistoryStep.limit)
+                }
+            }
+        case .revert:
+            try? store?.removeLastDevelopHistory(Array(changed.keys))
+            for id in changed.keys where developHistoryCache[id]?.isEmpty == false {
+                developHistoryCache[id]?.removeLast()
+            }
+        }
+        developRecordsVersion &+= 1
+    }
+
+    /// Returns the photo to a history step's settings, as a new step (undoable).
+    func applyDevelopHistoryStep(_ step: DevelopHistoryStep, to id: String) {
+        commitDevelop([id: step.settings], undoName: L("历史记录：\(step.name)"))
+    }
+
+    func clearDevelopHistory(for id: String) {
+        try? store?.clearDevelopHistory(id)
+        developHistoryCache[id] = []
+        developRecordsVersion &+= 1
+    }
+
+    /// Keeps the photo's current settings as a new snapshot.
+    func createDevelopSnapshot(for id: String) {
+        let existing = developSnapshots(for: id)
+        let snapshot = DevelopSnapshot(id: UUID().uuidString, name: L("快照 \(existing.count + 1)"), date: .now,
+                                       settings: developSettings[id] ?? .neutral)
+        saveDevelopSnapshot(snapshot, for: id)
+    }
+
+    func renameDevelopSnapshot(_ snapshotId: String, to name: String, for id: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, var snapshot = developSnapshots(for: id).first(where: { $0.id == snapshotId }) else { return }
+        snapshot.name = trimmed
+        saveDevelopSnapshot(snapshot, for: id)
+    }
+
+    /// Replaces a snapshot's settings with the photo's current ones.
+    func updateDevelopSnapshot(_ snapshotId: String, for id: String) {
+        guard var snapshot = developSnapshots(for: id).first(where: { $0.id == snapshotId }) else { return }
+        snapshot.settings = developSettings[id] ?? .neutral
+        saveDevelopSnapshot(snapshot, for: id)
+    }
+
+    func deleteDevelopSnapshot(_ snapshotId: String, for id: String) {
+        try? store?.deleteDevelopSnapshot(snapshotId)
+        developSnapshotCache[id] = developSnapshots(for: id).filter { $0.id != snapshotId }
+        developRecordsVersion &+= 1
+    }
+
+    func applyDevelopSnapshot(_ snapshot: DevelopSnapshot, to id: String) {
+        commitDevelop([id: snapshot.settings], undoName: L("快照：\(snapshot.name)"))
+    }
+
+    private func saveDevelopSnapshot(_ snapshot: DevelopSnapshot, for id: String) {
+        do {
+            try store?.saveDevelopSnapshot(snapshot, for: id)
+        } catch {
+            push("保存快照失败", "warning")
+            return
+        }
+        var list = developSnapshots(for: id)
+        if let index = list.firstIndex(where: { $0.id == snapshot.id }) { list[index] = snapshot } else { list.append(snapshot) }
+        developSnapshotCache[id] = list
+        developRecordsVersion &+= 1
+    }
+
+    private func clearDevelopRecordCaches() {
+        developHistoryCache = [:]
+        developSnapshotCache = [:]
+        developRecordsVersion &+= 1
     }
     /// Shared by every Compare panel, so zoom and pan stay linked across them.
     var compareZoom: ImageZoom?
@@ -1687,6 +1799,7 @@ final class AppState {
 
     private func restoreAlbums(from store: CatalogStore, assets: [Asset]) {
         developSettings = (try? store.loadDevelopSettings()) ?? [:]
+        clearDevelopRecordCaches()
         loadFaces(from: store)
         // the quick collection is stored as an album under a reserved id, and listed apart
         let loadedAlbums = (try? store.loadAlbums()) ?? []
@@ -4262,6 +4375,7 @@ final class AppState {
         smartAlbums = DemoData.initialSmartAlbums(a)
         folders = DemoData.folders
         developSettings = [:]
+        clearDevelopRecordCaches()
         clearFaces()
         sourceRootPathsById = [:]
         sourceManagementModesById = [:]
@@ -4279,6 +4393,7 @@ final class AppState {
     private func resetToEmptyCatalog() {
         duplicateRecomputeGeneration &+= 1
         developSettings = [:]
+        clearDevelopRecordCaches()
         clearFaces()
         assets = []
         albums = []

@@ -328,6 +328,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>显示 %lld 个只出现一次的人脸</string>
 	</dict>
+	<key>显示全部 %lld 步</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>显示全部 %lld 步</string>
+	</dict>
 	<key>未命名 · %lld 组</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

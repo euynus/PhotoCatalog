@@ -835,6 +835,36 @@ enum DevelopCheck {
             try store.saveDevelopSettings(["a": .neutral])
             let cleared = try store.loadDevelopSettings()
             assert(cleared == ["b": edit], "neutral settings delete the stored edit")
+
+            // history: steps in order, the newest taken away by an undo, the oldest dropped at the limit
+            try store.appendDevelopHistory(["a": (name: "one", settings: edit)])
+            var second = edit
+            second.contrast = 20
+            try store.appendDevelopHistory(["a": (name: "two", settings: second)])
+            var steps = try store.loadDevelopHistory("a")
+            assert(steps.map(\.name) == ["one", "two"] && steps.last?.settings == second, "history steps round-trip in order")
+            try store.removeLastDevelopHistory(["a"])
+            steps = try store.loadDevelopHistory("a")
+            assert(steps.map(\.name) == ["one"], "an undone edit's step is taken away")
+            for n in 0..<(DevelopHistoryStep.limit + 5) {
+                try store.appendDevelopHistory(["c": (name: "step \(n)", settings: edit)])
+            }
+            steps = try store.loadDevelopHistory("c")
+            assert(steps.count == DevelopHistoryStep.limit && steps.first?.name == "step 5", "history keeps the newest steps")
+            try store.clearDevelopHistory("c")
+            let clearedHistory = try store.loadDevelopHistory("c")
+            assert(clearedHistory.isEmpty, "history clears")
+
+            var snapshot = DevelopSnapshot(id: "s1", name: "Warm", date: .now, settings: edit)
+            try store.saveDevelopSnapshot(snapshot, for: "a")
+            snapshot.name = "Warmer"
+            try store.saveDevelopSnapshot(snapshot, for: "a")
+            try store.saveDevelopSnapshot(DevelopSnapshot(id: "s2", name: "Other", date: .now, settings: .neutral), for: "b")
+            let named = try store.loadDevelopSnapshots("a").map(\.name)
+            assert(named == ["Warmer"], "snapshots save, rename and stay per photo")
+            try store.deleteDevelopSnapshot("s1")
+            let remaining = try store.loadDevelopSnapshots("a")
+            assert(remaining.isEmpty, "snapshots delete")
         } catch {
             preconditionFailure("develop persistence check failed: \(error)")
         }
@@ -1044,5 +1074,47 @@ enum DevelopCheck {
         app.developCropping = true
         assert(!app.developSpotting, "the crop tool closes the spot tool")
         app.view = .grid
+
+        // history: each edit adds a step, undo takes it away, redo puts it back; returning to a
+        // step is itself a step
+        assert(app.developHistory(for: "h").isEmpty, "a new photo has no history")
+        var first = DevelopSettings(); first.exposure = 0.4
+        var second = first; second.contrast = 30
+        for (value, name) in [(first, "调整曝光度"), (second, "调整对比度")] {
+            undo.beginUndoGrouping()
+            app.commitDevelop(["h": value], undoName: name)
+            undo.endUndoGrouping()
+        }
+        assert(app.developHistory(for: "h").map(\.name) == ["调整曝光度", "调整对比度"], "each edit adds a history step")
+        undo.undo()
+        assert(app.developHistory(for: "h").map(\.name) == ["调整曝光度"] && app.developSettings["h"] == first,
+               "undo takes the step away")
+        undo.redo()
+        assert(app.developHistory(for: "h").count == 2 && app.developSettings["h"] == second, "redo puts it back")
+        undo.beginUndoGrouping()
+        app.applyDevelopHistoryStep(app.developHistory(for: "h")[0], to: "h")
+        undo.endUndoGrouping()
+        assert(app.developSettings["h"] == first && app.developHistory(for: "h").count == 3,
+               "returning to a step restores it as a new step")
+
+        // snapshots keep a state to come back to
+        app.createDevelopSnapshot(for: "h")
+        let kept = app.developSnapshots(for: "h")
+        assert(kept.count == 1 && kept[0].settings == first, "a snapshot keeps the current settings")
+        app.renameDevelopSnapshot(kept[0].id, to: "  Soft  ", for: "h")
+        undo.beginUndoGrouping()
+        app.commitDevelop(["h": second], undoName: "调整对比度")
+        undo.endUndoGrouping()
+        undo.beginUndoGrouping()
+        app.applyDevelopSnapshot(app.developSnapshots(for: "h")[0], to: "h")
+        undo.endUndoGrouping()
+        assert(app.developSettings["h"] == first && app.developSnapshots(for: "h")[0].name == "Soft",
+               "applying a snapshot restores its settings; names are trimmed")
+        app.updateDevelopSnapshot(kept[0].id, for: "h")
+        app.deleteDevelopSnapshot(kept[0].id, for: "h")
+        assert(app.developSnapshots(for: "h").isEmpty, "snapshots delete")
+        app.clearDevelopHistory(for: "h")
+        assert(app.developHistory(for: "h").isEmpty && app.developSettings["h"] == first,
+               "clearing history keeps the current settings")
     }
 }

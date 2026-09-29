@@ -329,6 +329,10 @@
 "没有找到天空" = "No sky found";
 "污点去除" = "Spot Removal";
 "删除污点" = "Delete Spot";
+"历史记录：%@" = "History: %@";
+"快照 %lld" = "Snapshot %lld";
+"快照：%@" = "Snapshot: %@";
+"保存快照失败" = "Couldn't save the snapshot";
 
 /* Application/ImportCoordinator.swift */
 "复制原件失败：%@" = "Couldn't copy the original: %@";
@@ -663,6 +667,18 @@
 "显示污点" = "Visualize Spots";
 "只显示细节，传感器灰尘等污点会显出圆圈" = "Show only fine detail, where sensor dust and other specks stand out as rings";
 "删除所选污点 (Delete)" = "Delete the selected spot (Delete)";
+"快照" = "Snapshots";
+"以当前设置新建快照" = "New snapshot of the current settings";
+"新建快照" = "New Snapshot";
+"历史记录" = "History";
+"清除这张照片的历史记录（不改变当前设置）" = "Clear this photo's history (the current settings stay)";
+"快照保存照片此刻的修图设置，之后随时可以回到这个状态" = "A snapshot keeps the photo's settings as they are now, to come back to at any time";
+"快照名称" = "Snapshot name";
+"用当前设置更新" = "Update with Current Settings";
+"删除快照" = "Delete Snapshot";
+"只显示最近的步骤" = "Show recent steps only";
+"显示全部 %lld 步" = "Show all %lld steps";
+"历史记录：原照设置" = "History: As Shot";
 
 /* Presentation/Develop/DevelopView.swift */
 "点选照片中应为灰色或白色的地方（Esc 取消）" = "Click a spot in the photo that should be gray or white (Esc to cancel)";

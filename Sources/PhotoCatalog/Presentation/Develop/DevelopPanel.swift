@@ -8,6 +8,9 @@ struct DevelopPanel: View {
     let asset: Asset?
     @State private var mixerProperty: ColorMixer.Property = .hue
     @State private var gradingRegion: ColorGrading.Region = .shadows
+    @State private var renamingSnapshot: String?
+    @State private var snapshotName = ""
+    @State private var showsFullHistory = false
 
     var body: some View {
         Group {
@@ -95,6 +98,18 @@ struct DevelopPanel: View {
                 section(L("效果")) {
                     ForEach(DevelopControl.effects) { control in slider(control, asset, settings) }
                 }
+                section(L("快照"), accessory: {
+                    Button { app.createDevelopSnapshot(for: asset.id) } label: { Image(systemName: "plus") }
+                        .buttonStyle(.borderless)
+                        .help("以当前设置新建快照")
+                        .accessibilityLabel("新建快照")
+                }) { snapshots(asset) }
+                section(L("历史记录"), accessory: {
+                    Button("清除") { app.clearDevelopHistory(for: asset.id) }
+                        .controlSize(.small)
+                        .disabled(app.developHistory(for: asset.id).isEmpty)
+                        .help("清除这张照片的历史记录（不改变当前设置）")
+                }) { history(asset, settings) }
             }
             .padding(14)
         }
@@ -272,6 +287,84 @@ struct DevelopPanel: View {
             .disabled(settings.crop == nil && settings.straighten == 0)
         }
         .controlSize(.small)
+    }
+
+    // ---- snapshots and history ----
+    @ViewBuilder
+    private func snapshots(_ asset: Asset) -> some View {
+        let snapshots = app.developSnapshots(for: asset.id)
+        if snapshots.isEmpty {
+            Text("快照保存照片此刻的修图设置，之后随时可以回到这个状态")
+                .font(.system(size: 11)).foregroundStyle(Theme.text3)
+        }
+        ForEach(snapshots) { snapshot in
+            if renamingSnapshot == snapshot.id {
+                TextField("快照名称", text: $snapshotName)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                    .onSubmit {
+                        app.renameDevelopSnapshot(snapshot.id, to: snapshotName, for: asset.id)
+                        renamingSnapshot = nil
+                    }
+                    .onExitCommand { renamingSnapshot = nil }
+            } else {
+                recordRow(snapshot.name, detail: Self.recordTime(snapshot.date),
+                          current: snapshot.settings == app.developSettings(for: asset.id)) {
+                    app.applyDevelopSnapshot(snapshot, to: asset.id)
+                }
+                .contextMenu {
+                    Button("重命名…") { snapshotName = snapshot.name; renamingSnapshot = snapshot.id }
+                    Button("用当前设置更新") { app.updateDevelopSnapshot(snapshot.id, for: asset.id) }
+                    Divider()
+                    Button("删除快照", role: .destructive) { app.deleteDevelopSnapshot(snapshot.id, for: asset.id) }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func history(_ asset: Asset, _ settings: DevelopSettings) -> some View {
+        let steps = app.developHistory(for: asset.id).reversed()
+        let shown = showsFullHistory ? Array(steps) : Array(steps.prefix(12))
+        // the newest step that matches the photo now is where it stands
+        let currentSeq = steps.first { $0.settings == settings }?.seq
+        ForEach(shown) { step in
+            recordRow(step.name, detail: Self.recordTime(step.date), current: step.seq == currentSeq) {
+                app.applyDevelopHistoryStep(step, to: asset.id)
+            }
+        }
+        if steps.count > shown.count || showsFullHistory && steps.count > 12 {
+            Button(showsFullHistory ? L("只显示最近的步骤") : L("显示全部 \(steps.count) 步")) { showsFullHistory.toggle() }
+                .buttonStyle(.link)
+                .controlSize(.small)
+        }
+        recordRow(L("原照设置"), detail: "", current: settings.isNeutral && currentSeq == nil) {
+            app.commitDevelop([asset.id: .neutral], undoName: L("历史记录：原照设置"))
+        }
+    }
+
+    private func recordRow(_ title: String, detail: String, current: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Text(title).lineLimit(1).truncationMode(.tail)
+                Spacer(minLength: 4)
+                Text(detail).font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.text3)
+            }
+            .font(.system(size: 12))
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(current ? Theme.accentFill.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(current ? .isSelected : [])
+    }
+
+    /// Time of day for today's records, the date for older ones.
+    private static func recordTime(_ date: Date) -> String {
+        Calendar.current.isDateInToday(date)
+            ? date.formatted(date: .omitted, time: .shortened)
+            : date.formatted(date: .numeric, time: .omitted)
     }
 
     // ---- spot removal: specks healed or cloned over ----

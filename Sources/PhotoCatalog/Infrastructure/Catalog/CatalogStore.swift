@@ -105,7 +105,7 @@ struct AssetPage: Sendable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    static let latestSchemaVersion = 20
+    static let latestSchemaVersion = 21
     let packageURL: URL
     let db: Database
 
@@ -299,6 +299,28 @@ final class CatalogStore: @unchecked Sendable {
             FROM assets;
             """)
             try recordMigration(20)
+        }
+        if current < 21 {
+            // each photo's develop steps (newest last) and the snapshots kept of it
+            try db.execChecked("""
+            CREATE TABLE IF NOT EXISTS develop_history (
+              asset_id TEXT NOT NULL,
+              seq INTEGER NOT NULL,
+              name TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              settings TEXT NOT NULL,
+              PRIMARY KEY (asset_id, seq)
+            );
+            CREATE TABLE IF NOT EXISTS develop_snapshots (
+              id TEXT PRIMARY KEY,
+              asset_id TEXT NOT NULL,
+              name TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              settings TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_develop_snapshots_asset ON develop_snapshots(asset_id);
+            """)
+            try recordMigration(21)
         }
     }
 
@@ -1067,6 +1089,86 @@ final class CatalogStore: @unchecked Sendable {
                 }
             }
         }
+    }
+
+    // ---------- develop history and snapshots ----------
+    /// A photo's develop steps, oldest first.
+    func loadDevelopHistory(_ assetId: String) throws -> [DevelopHistoryStep] {
+        let decoder = JSONDecoder()
+        return try db.query("""
+        SELECT seq, name, created_at, settings FROM develop_history WHERE asset_id=? ORDER BY seq;
+        """, [.text(assetId)]).compactMap { row in
+            guard let seq = row.int("seq"), let name = row.text("name"), let json = row.text("settings"),
+                  let settings = try? decoder.decode(DevelopSettings.self, from: Data(json.utf8)) else { return nil }
+            return DevelopHistoryStep(seq: seq, name: name, date: Self.date(row.text("created_at")) ?? .distantPast,
+                                      settings: settings)
+        }
+    }
+
+    /// Adds a step to each photo's history, dropping the oldest beyond the limit. Returns the
+    /// steps as stored.
+    @discardableResult
+    func appendDevelopHistory(_ steps: [String: (name: String, settings: DevelopSettings)], date: Date = .now) throws
+        -> [String: DevelopHistoryStep] {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        var stored: [String: DevelopHistoryStep] = [:]
+        try db.transaction {
+            for (id, step) in steps {
+                let seq = db.scalarInt("SELECT COALESCE(MAX(seq), 0) + 1 FROM develop_history WHERE asset_id=?;",
+                                       [.text(id)])
+                let json = String(decoding: try encoder.encode(step.settings), as: UTF8.self)
+                try db.run("INSERT INTO develop_history(asset_id, seq, name, created_at, settings) VALUES(?, ?, ?, ?, ?);",
+                           [.text(id), .int(seq), .text(step.name), .text(Self.iso(date)), .text(json)])
+                try db.run("DELETE FROM develop_history WHERE asset_id=? AND seq<=?;",
+                           [.text(id), .int(seq - DevelopHistoryStep.limit)])
+                stored[id] = DevelopHistoryStep(seq: seq, name: step.name, date: date, settings: step.settings)
+            }
+        }
+        return stored
+    }
+
+    /// Takes each photo's newest step away (an undone edit).
+    func removeLastDevelopHistory(_ assetIds: [String]) throws {
+        try db.transaction {
+            for id in assetIds {
+                try db.run("""
+                DELETE FROM develop_history WHERE asset_id=?
+                  AND seq=(SELECT MAX(seq) FROM develop_history WHERE asset_id=?);
+                """, [.text(id), .text(id)])
+            }
+        }
+    }
+
+    func clearDevelopHistory(_ assetId: String) throws {
+        try db.run("DELETE FROM develop_history WHERE asset_id=?;", [.text(assetId)])
+    }
+
+    /// A photo's snapshots, oldest first.
+    func loadDevelopSnapshots(_ assetId: String) throws -> [DevelopSnapshot] {
+        let decoder = JSONDecoder()
+        return try db.query("""
+        SELECT id, name, created_at, settings FROM develop_snapshots WHERE asset_id=? ORDER BY created_at, rowid;
+        """, [.text(assetId)]).compactMap { row in
+            guard let id = row.text("id"), let name = row.text("name"), let json = row.text("settings"),
+                  let settings = try? decoder.decode(DevelopSettings.self, from: Data(json.utf8)) else { return nil }
+            return DevelopSnapshot(id: id, name: name, date: Self.date(row.text("created_at")) ?? .distantPast,
+                                   settings: settings)
+        }
+    }
+
+    func saveDevelopSnapshot(_ snapshot: DevelopSnapshot, for assetId: String) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let json = String(decoding: try encoder.encode(snapshot.settings), as: UTF8.self)
+        try db.run("""
+        INSERT INTO develop_snapshots(id, asset_id, name, created_at, settings) VALUES(?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET name=excluded.name, settings=excluded.settings;
+        """, [.text(snapshot.id), .text(assetId), .text(snapshot.name), .text(Self.iso(snapshot.date)), .text(json)])
+    }
+
+    func deleteDevelopSnapshot(_ id: String) throws {
+        try db.run("DELETE FROM develop_snapshots WHERE id=?;", [.text(id)])
     }
 
     // ---------- faces ----------
