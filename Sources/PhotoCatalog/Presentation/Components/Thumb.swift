@@ -67,7 +67,7 @@ final class ThumbLoader: ObservableObject {
         return c
     }()
     private var task: Task<Void, Never>?
-    private var loadedKey: String?
+    private(set) var loadedKey: String?
 
     deinit {
         task?.cancel()
@@ -77,8 +77,17 @@ final class ThumbLoader: ObservableObject {
         cache.removeAllObjects()
     }
 
+    static func key(_ source: String, maxPixel: Int, cacheGeneration: Int = 0) -> String {
+        "\(source)|\(maxPixel)|\(cacheGeneration)"
+    }
+
+    /// An image already decoded for this key (by a loader or a prefetch), without loading.
+    static func cachedImage(forKey key: String) -> NSImage? {
+        cache.object(forKey: key as NSString)
+    }
+
     func load(_ source: String, maxPixel: Int, cacheGeneration: Int = 0) {
-        let key = "\(source)|\(maxPixel)|\(cacheGeneration)"
+        let key = Self.key(source, maxPixel: maxPixel, cacheGeneration: cacheGeneration)
         // already showing / fetching this exact source
         if key == loadedKey { return }
         loadedKey = key
@@ -123,7 +132,7 @@ final class ThumbLoader: ObservableObject {
     /// Warm the shared cache (e.g. loupe neighbors) without touching any
     /// loader's published state — a failed warm-up stays silent.
     static func prefetch(_ source: String, maxPixel: Int, cacheGeneration: Int = 0) async {
-        let key = "\(source)|\(maxPixel)|\(cacheGeneration)"
+        let key = Self.key(source, maxPixel: maxPixel, cacheGeneration: cacheGeneration)
         guard !source.isEmpty, cache.object(forKey: key as NSString) == nil else { return }
         let image: NSImage?
         if source.hasPrefix("http") {

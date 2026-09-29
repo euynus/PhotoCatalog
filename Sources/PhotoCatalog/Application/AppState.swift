@@ -3394,6 +3394,23 @@ final class AppState {
                                        thumbnails: thumbnails) ?? requestedSource
     }
 
+    /// What `visibleImageSource` returns, when that is already known without touching the disk
+    /// (the cache file was verified earlier this session); nil when it would have to check or
+    /// render. Lets the loupe show a prefetched neighbor in the same frame as the arrow key.
+    func verifiedImageSource(for asset: Asset, requestedSource: String, kind: ThumbnailService.Kind) -> String? {
+        if requestedSource.hasPrefix("http") || asset.isDemo { return requestedSource }
+        guard let coordinator, asset.localPath != nil else { return requestedSource }
+        let resolvedKind = kind.isPreview
+            ? ThumbnailService.previewKind(forCachePath: requestedSource, fallbackMaxPixel: previewMaxPixel)
+            : kind
+        if let settings = developSettings[asset.id], !settings.isNeutral {
+            let edited = coordinator.thumbnails.editedCachePath(assetId: asset.id, kind: resolvedKind, settings: settings).path
+            return verifiedCacheSources.contains(edited) ? edited : nil
+        }
+        let verifiedKey = "\(requestedSource)|\(asset.fileModifiedAt?.timeIntervalSince1970 ?? 0)"
+        return verifiedCacheSources.contains(verifiedKey) ? requestedSource : nil
+    }
+
     /// The ordinary (unadjusted) cached image, repaired from the original when missing or damaged.
     private func cachedImageSource(for asset: Asset, requestedSource: String, kind resolvedKind: ThumbnailService.Kind,
                                    original: URL, fallbackPreview: URL?,

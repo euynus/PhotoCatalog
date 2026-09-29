@@ -14,8 +14,18 @@ struct ZoomablePhoto: View {
     @StateObject private var preview = ThumbLoader()
     @StateObject private var full = FullResolutionLoader()
 
+    /// The loader's image once it holds this photo; until then a decode already in the cache (a
+    /// prefetched neighbor), so an arrow key shows the next photo in the same frame instead of
+    /// after the load task has had its turn on a busy main thread.
     private var previewImage: CGImage? {
-        preview.image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        let maxPixel = ThumbnailService.Kind.preview2048.maxPixel
+        if let source = app.verifiedImageSource(for: asset, requestedSource: asset.preview, kind: .preview2048) {
+            let key = ThumbLoader.key(source, maxPixel: maxPixel, cacheGeneration: app.thumbnailCacheGeneration)
+            if preview.loadedKey != key, let cached = ThumbLoader.cachedImage(forKey: key) {
+                return cached.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            }
+        }
+        return preview.image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
 
     /// Adjusted photos render their edit at full size; unadjusted paired RAWs read the camera
