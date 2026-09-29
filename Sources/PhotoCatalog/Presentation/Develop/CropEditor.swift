@@ -98,12 +98,15 @@ struct CropEditor: View {
                     levelLine = (value.startLocation, value.location)
                     return
                 case .move:
-                    next = DevelopGeometry.move(drag.start, dx: dx, dy: dy, angle: settings.straighten, frame: frame)
+                    next = DevelopGeometry.move(drag.start, dx: dx, dy: dy, angle: settings.straighten,
+                                                perspective: DevelopGeometry.perspective(settings, frame: frame), frame: frame)
                 case .resize(let edges):
                     next = DevelopGeometry.resize(drag.start, left: edges.left, right: edges.right,
                                                   top: edges.top, bottom: edges.bottom, dx: dx, dy: dy,
                                                   ratio: lockedRatio(for: drag.start, frame: frame),
-                                                  angle: settings.straighten, frame: frame)
+                                                  angle: settings.straighten,
+                                                  perspective: DevelopGeometry.perspective(settings, frame: frame),
+                                                  frame: frame)
                 }
                 var edit = app.developSettings[asset.id] ?? .neutral
                 edit.crop = next
@@ -135,7 +138,7 @@ struct CropEditor: View {
         guard let angle = DevelopGeometry.straightenLevelling(from: start, to: end, current: edit.straighten)
         else { return }
         edit.straighten = angle
-        edit.crop = edit.crop.map { DevelopGeometry.fit($0, angle: angle, frame: frame) }
+        edit.crop = DevelopGeometry.refit(edit, frame: frame)
         app.commitDevelop([asset.id: edit], undoName: L("拉直"))
     }
 

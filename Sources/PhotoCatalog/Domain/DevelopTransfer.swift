@@ -9,7 +9,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
     case whiteBalance, exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze
     case vibrance, saturation, toneCurve, colorMixer, colorGrading
     case sharpening, noiseReduction, lensCorrections, vignette, grain, masks, spots
-    case orientation, crop
+    case orientation, perspective, crop
 
     var id: Self { self }
 
@@ -38,6 +38,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         case .masks: L("蒙版")
         case .spots: L("污点去除")
         case .orientation: L("旋转与翻转")
+        case .perspective: L("透视")
         case .crop: L("裁剪与拉直")
         }
     }
@@ -55,12 +56,12 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         (L("效果"), [.vignette, .grain]),
         (L("蒙版"), [.masks]),
         (L("污点去除"), [.spots]),
-        (L("裁剪与旋转"), [.orientation, .crop]),
+        (L("裁剪与旋转"), [.orientation, .perspective, .crop]),
     ]
 
     /// Copy leaves framing, masks and spots alone unless asked: they belong to one photo's
     /// content (sensor dust in a burst is the exception worth ticking spots for).
-    static let defaultCopy = Set(allCases).subtracting([.orientation, .crop, .masks, .spots])
+    static let defaultCopy = Set(allCases).subtracting([.orientation, .perspective, .crop, .masks, .spots])
 
     /// Whether `settings` differ from as shot in this field.
     func isAdjusted(in settings: DevelopSettings) -> Bool {
@@ -118,6 +119,9 @@ extension DevelopSettings {
                 for _ in 0..<4 where next.rotation != source.rotation {
                     next = DevelopGeometry.rotated(next, clockwise: true)
                 }
+            case .perspective:
+                next.perspectiveVertical = source.perspectiveVertical
+                next.perspectiveHorizontal = source.perspectiveHorizontal
             case .crop:
                 next.straighten = source.straighten
                 next.crop = source.crop

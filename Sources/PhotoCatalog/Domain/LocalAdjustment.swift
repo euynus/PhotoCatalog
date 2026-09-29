@@ -223,6 +223,9 @@ extension DevelopGeometry {
         let frame = rotatedSize(sourceSize, s.rotation)
         let fw = Double(frame.width), fh = Double(frame.height)
         if s.flipped { x = fw - x }
+        if let perspective = perspective(s, frame: frame), let p = perspective.apply(CGPoint(x: x, y: y)) {
+            (x, y) = (Double(p.x), Double(p.y))
+        }
         if s.straighten != 0 {
             // y points down, so this matrix turns clockwise for a positive angle
             let a = s.straighten * .pi / 180, dx = x - fw / 2, dy = y - fh / 2
@@ -241,6 +244,9 @@ extension DevelopGeometry {
         if s.straighten != 0 {
             let a = -s.straighten * .pi / 180, dx = x - fw / 2, dy = y - fh / 2
             (x, y) = (fw / 2 + dx * cos(a) - dy * sin(a), fh / 2 + dx * sin(a) + dy * cos(a))
+        }
+        if let perspective = perspective(s, frame: frame), let p = perspective.inverse.apply(CGPoint(x: x, y: y)) {
+            (x, y) = (Double(p.x), Double(p.y))
         }
         if s.flipped { x = fw - x }
         switch ((s.rotation % 4) + 4) % 4 {

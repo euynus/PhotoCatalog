@@ -730,7 +730,7 @@
 "、" = ", ";
 "参数曲线" = "parametric curve";
 "色差校正" = "chromatic aberration";
-"透视校正" = "perspective";
+"Upright 与其他变换" = "Upright and other transforms";
 "配置文件" = "profile";
 "镜头配置文件校正" = "lens profile corrections";
 "导入或导出预设（.xmp，可与 Lightroom 互通）" = "Import or export presets (.xmp, compatible with Lightroom)";
@@ -750,6 +750,16 @@
 "同“所有相机”" = "Same as All Cameras";
 "所有相机" = "All Cameras";
 "设为 %@ 的 RAW 默认设置" = "Use as RAW Defaults for %@";
+"变换" = "Transform";
+"只让竖直线条竖直、平行" = "Set vertical lines upright and parallel only";
+"垂直" = "Vertical";
+"垂直透视" = "Vertical Upright";
+"复位变换" = "Reset Transform";
+"水平" = "Horizontal";
+"照片中没有足够的竖直线条，无法自动校正透视" = "The photo has too few vertical lines to correct its perspective automatically";
+"自动透视" = "Auto Upright";
+"让竖直线条竖直，水平线条也尽量平行" = "Set vertical lines upright, and horizontal lines parallel where possible";
+"透视" = "Perspective";
 "预设删除后无法恢复，已用它修过的照片不受影响。" = "A deleted preset can’t be brought back. Photos already edited with it stay as they are.";
 "导入时修图" = "Develop on Import";
 "修图预设" = "Develop Preset";

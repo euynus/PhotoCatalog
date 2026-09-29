@@ -24,6 +24,7 @@ enum DevelopCheck {
         checkPersistence()
         checkTransferRules()
         checkPresetBlend()
+        checkPerspective()
         MainActor.assumeIsolated {
             checkEditsAndUndo()
             checkCopyPasteAndPresets()
@@ -1168,6 +1169,133 @@ enum DevelopCheck {
         app.view = .grid
         app.importDevelopPresetId = ""
         app.rawDefaultPresetIds = [:]
+    }
+
+    /// Transform: the perspective correction, the crop kept off its empty corners, points mapped
+    /// through it both ways, and Upright setting converging verticals upright.
+    private static func checkPerspective() {
+        let frame = CGSize(width: 600, height: 400)
+        var s = DevelopSettings()
+        s.perspectiveVertical = -40
+        guard let h = DevelopGeometry.perspective(s, frame: frame) else {
+            preconditionFailure("a Transform slider makes a correction")
+        }
+        let tl = h.apply(CGPoint(x: 0, y: 0))!, tr = h.apply(CGPoint(x: 600, y: 0))!
+        let bl = h.apply(CGPoint(x: 0, y: 400))!, br = h.apply(CGPoint(x: 600, y: 400))!
+        assert(tr.x - tl.x > br.x - bl.x + 20, "negative Vertical widens the top")
+        let back = h.inverse.apply(h.apply(CGPoint(x: 123, y: 45))!)!
+        assert(abs(back.x - 123) < 1e-6 && abs(back.y - 45) < 1e-6, "the correction undoes exactly")
+        assert([tl, tr, bl, br].allSatisfy { $0.x >= -1e-6 && $0.x <= 600 + 1e-6 && $0.y >= -1e-6 && $0.y <= 400 + 1e-6 },
+               "the corrected photo fits the frame, nothing lost")
+        let crop = DevelopGeometry.effectiveCrop(s, frame: frame)
+        let larger = DevelopCrop(x: crop.x - 0.01, y: crop.y - 0.01, width: crop.width + 0.02, height: crop.height + 0.02)
+        assert(crop.width < 1 && DevelopGeometry.fits(crop, angle: 0, perspective: h, frame: frame)
+               && !DevelopGeometry.fits(larger, angle: 0, perspective: h, frame: frame)
+               && abs(crop.width * 600 / (crop.height * 400) - 1.5) < 0.001,
+               "the automatic crop is the largest of the frame's shape without empty corners")
+        s.straighten = 3
+        s.perspectiveHorizontal = 25
+        s.crop = DevelopGeometry.refit(s, frame: frame)
+        let source = CGPoint(x: 0.3, y: 0.7)
+        let finished = DevelopGeometry.finishedPoint(fromSource: source, settings: s, sourceSize: frame)
+        let returned = DevelopGeometry.sourcePoint(fromFinished: finished, settings: s, sourceSize: frame)
+        assert(abs(returned.x - 0.3) < 1e-6 && abs(returned.y - 0.7) < 1e-6, "masks and spots map through the correction both ways")
+        let turned = DevelopGeometry.rotated(s, clockwise: true)
+        assert(turned.perspectiveVertical == 25 && turned.perspectiveHorizontal == 40, "a quarter turn carries the correction along")
+        assert(DevelopGeometry.mirrored(s).perspectiveHorizontal == -25, "mirroring flips the horizontal correction")
+        var copied = DevelopSettings().applying(s, fields: [.perspective])
+        assert(copied.perspectiveVertical == -40 && copied.crop == nil && !DevelopField.defaultCopy.contains(.perspective),
+               "the correction travels as its own setting, off by default")
+        copied = s
+        copied.perspectiveVertical = 0
+        assert(copied.fingerprint != s.fingerprint, "the correction changes the fingerprint")
+
+        // rendered: no empty corners in the result
+        let gray = image { _, _ in (0.5, 0.5, 0.5) }
+        var render = DevelopSettings()
+        render.perspectiveVertical = -60
+        let corrected = develop(gray, render)
+        let corners = [(0, 0), (corrected.width - 1, 0), (0, corrected.height - 1), (corrected.width - 1, corrected.height - 1)]
+        assert(corners.allSatisfy { let p = pixel(corrected, $0.0, $0.1); return p.a == 255 && abs(Int(p.r) - 127) < 12 },
+               "the corrected render has no empty corners")
+
+        // Upright: lines of a building shot from below meet above the photo
+        let (width, height) = (600, 400)
+        let meet = CGPoint(x: 330, y: -900)
+        var luma = [Float](repeating: 0.8, count: width * height)
+        for bottom in stride(from: 60.0, through: 560.0, by: 70.0) {
+            for y in 0..<height {
+                let t = (Double(y) - Double(meet.y)) / (Double(height) - Double(meet.y))
+                let x = Double(meet.x) + (bottom - Double(meet.x)) * t
+                for dx in -1...1 {
+                    let xi = Int(x.rounded()) + dx
+                    if xi >= 0, xi < width { luma[y * width + xi] = 0.1 }
+                }
+            }
+        }
+        guard let upright = Upright.correction(luma: luma, width: width, height: height, mode: .vertical) else {
+            preconditionFailure("converging verticals are found")
+        }
+        var fixed = DevelopSettings()
+        fixed.perspectiveVertical = upright.vertical
+        fixed.perspectiveHorizontal = upright.horizontal
+        fixed.straighten = upright.straighten
+        let size = CGSize(width: width, height: height)
+        let angles = stride(from: 60.0, through: 560.0, by: 70.0).map { bottom -> Double in
+            func finished(_ y: Double) -> CGPoint {
+                let t = (y - Double(meet.y)) / (Double(height) - Double(meet.y))
+                let x = Double(meet.x) + (bottom - Double(meet.x)) * t
+                let p = DevelopGeometry.finishedPoint(fromSource: CGPoint(x: x / Double(width), y: y / Double(height)),
+                                                      settings: fixed, sourceSize: size)
+                return CGPoint(x: p.x * CGFloat(width), y: p.y * CGFloat(height))
+            }
+            let a = finished(50), b = finished(350)
+            return atan2(Double(b.x - a.x), Double(b.y - a.y)) * 180 / .pi
+        }
+        assert(upright.vertical < -10 && angles.allSatisfy { abs($0) < 0.8 },
+               "Upright sets converging verticals upright (\(upright), \(angles.map { String(format: "%.2f", $0) }))")
+        assert(Upright.correction(luma: [Float](repeating: 0.5, count: width * height), width: width, height: height,
+                                  mode: .auto) == nil, "a photo without lines has nothing to set upright")
+
+        // Auto: a facade seen from the left — verticals upright, its horizontals meet far right
+        let side = CGPoint(x: 3000, y: 180)
+        var facade = [Float](repeating: 0.8, count: width * height)
+        func plot(_ x: Double, _ y: Double) {
+            for d in -1...1 {
+                let xi = Int(x.rounded()), yi = Int(y.rounded()) + d
+                if xi >= 0, xi < width, yi >= 0, yi < height { facade[yi * width + xi] = 0.1 }
+            }
+        }
+        for left in stride(from: 20.0, through: 380.0, by: 40.0) {
+            for x in 0..<width {
+                let t = Double(x) / Double(side.x)
+                plot(Double(x), left + (Double(side.y) - left) * t)
+            }
+        }
+        for x in stride(from: 50, through: 550, by: 100) {
+            for y in 0..<height { facade[y * width + x] = 0.1; facade[y * width + x + 1] = 0.1 }
+        }
+        guard let auto = Upright.correction(luma: facade, width: width, height: height, mode: .auto) else {
+            preconditionFailure("a facade's lines are found")
+        }
+        var turnedFacade = DevelopSettings()
+        turnedFacade.perspectiveVertical = auto.vertical
+        turnedFacade.perspectiveHorizontal = auto.horizontal
+        turnedFacade.straighten = auto.straighten
+        let facadeAngles = stride(from: 20.0, through: 380.0, by: 40.0).map { left -> Double in
+            func finished(_ x: Double) -> CGPoint {
+                let y = left + (Double(side.y) - left) * x / Double(side.x)
+                let p = DevelopGeometry.finishedPoint(fromSource: CGPoint(x: x / Double(width), y: y / Double(height)),
+                                                      settings: turnedFacade, sourceSize: size)
+                return CGPoint(x: p.x * CGFloat(width), y: p.y * CGFloat(height))
+            }
+            let a = finished(100), b = finished(500)
+            return atan2(Double(b.y - a.y), Double(b.x - a.x)) * 180 / .pi
+        }
+        // before: from about +3° (top) to -4° (bottom); Auto takes most of that away
+        let facadeSpread = (facadeAngles.max() ?? 0) - (facadeAngles.min() ?? 0)
+        assert(auto.horizontal > 5 && facadeSpread < 2.5,
+               "Auto turns a facade's horizontals most of the way to parallel (\(auto), \(facadeAngles.map { String(format: "%.2f", $0) }))")
     }
 
     /// A preset's Amount: sliders, white balance, curves and masks scale; the rest is all or nothing.

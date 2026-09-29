@@ -63,6 +63,11 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     /// same-shaped rectangle without empty corners.
     var rotation = 0
     var flipped = false
+    /// Perspective (Lightroom's Transform), -100…100, between the mirror and the straighten
+    /// angle: Vertical turns the camera up or down (negative widens the top, setting converging
+    /// verticals upright), Horizontal turns it sideways (positive enlarges the right side).
+    var perspectiveVertical: Double = 0
+    var perspectiveHorizontal: Double = 0
     var straighten: Double = 0
     var crop: DevelopCrop?
 
@@ -70,7 +75,9 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
 
     var isNeutral: Bool { self == .neutral }
 
-    var hasGeometry: Bool { rotation != 0 || flipped || straighten != 0 || crop != nil }
+    var hasGeometry: Bool { rotation != 0 || flipped || straighten != 0 || crop != nil || hasPerspective }
+
+    var hasPerspective: Bool { perspectiveVertical != 0 || perspectiveHorizontal != 0 }
 
     var hasDetail: Bool { sharpening != 0 || luminanceNoise != 0 || colorNoise != 0 }
 
@@ -85,6 +92,8 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
         var copy = self
         copy.rotation = 0
         copy.flipped = false
+        copy.perspectiveVertical = 0
+        copy.perspectiveHorizontal = 0
         copy.straighten = 0
         copy.crop = nil
         return copy
@@ -128,6 +137,7 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
         if hasGeometry {   // appended only when set, so earlier edits keep their cache names
             let crop = self.crop.map { String(format: "%.4f,%.4f,%.4f,%.4f", $0.x, $0.y, $0.width, $0.height) } ?? "-"
             text += String(format: "|%d,%d,%.2f,", rotation, flipped ? 1 : 0, straighten) + crop
+            if hasPerspective { text += String(format: "|t%.1f,%.1f", perspectiveVertical, perspectiveHorizontal) }
         }
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         for byte in text.utf8 { hash = (hash ^ UInt64(byte)) &* 0x100_0000_01b3 }
@@ -174,6 +184,8 @@ extension DevelopSettings {
         spots = try container.decodeIfPresent(Lenient<SpotRemoval>.self, forKey: .spots)?.elements ?? []
         rotation = try container.decodeIfPresent(Int.self, forKey: .rotation) ?? 0
         flipped = try container.decodeIfPresent(Bool.self, forKey: .flipped) ?? false
+        perspectiveVertical = try container.decodeIfPresent(Double.self, forKey: .perspectiveVertical) ?? 0
+        perspectiveHorizontal = try container.decodeIfPresent(Double.self, forKey: .perspectiveHorizontal) ?? 0
         straighten = try container.decodeIfPresent(Double.self, forKey: .straighten) ?? 0
         crop = try container.decodeIfPresent(DevelopCrop.self, forKey: .crop)
     }
@@ -227,7 +239,8 @@ enum DevelopGeometry {
 
     /// The crop a render uses: the saved one, or the largest frame-shaped one without empty corners.
     static func effectiveCrop(_ settings: DevelopSettings, frame: CGSize) -> DevelopCrop {
-        settings.crop ?? inscribed(aspect: frame.width / max(frame.height, 1), angle: settings.straighten, frame: frame)
+        settings.crop ?? inscribed(aspect: frame.width / max(frame.height, 1), angle: settings.straighten,
+                                   perspective: perspective(settings, frame: frame), frame: frame)
     }
 
     /// Pixel size of the finished render for a photo of `size` (as displayed, before edits).
@@ -239,10 +252,23 @@ enum DevelopGeometry {
     }
 
     /// The largest centered crop of pixel aspect `aspect` (width / height) inside the frame
-    /// and inside the photo straightened by `angle` degrees.
-    static func inscribed(aspect: Double, angle: Double, frame: CGSize) -> DevelopCrop {
+    /// and inside the photo straightened by `angle` degrees (after `perspective`).
+    static func inscribed(aspect: Double, angle: Double, perspective: Homography? = nil, frame: CGSize) -> DevelopCrop {
         let w0 = Double(frame.width), h0 = Double(frame.height)
         guard w0 > 0, h0 > 0, aspect > 0 else { return .full }
+        if perspective != nil {
+            // the corrected photo is no longer a rectangle: the largest that fits, by halving
+            let whole = centered(DevelopCrop(x: 0, y: 0, width: min(w0, h0 * aspect) / w0,
+                                             height: min(w0, h0 * aspect) / aspect / h0), at: (0.5, 0.5))
+            var low = 0.0, high = 1.0
+            for _ in 0..<30 {
+                let mid = (low + high) / 2
+                let crop = centered(DevelopCrop(x: 0, y: 0, width: whole.width * mid, height: whole.height * mid),
+                                    at: (0.5, 0.5))
+                if fits(crop, angle: angle, perspective: perspective, frame: frame) { low = mid } else { high = mid }
+            }
+            return centered(DevelopCrop(x: 0, y: 0, width: whole.width * low, height: whole.height * low), at: (0.5, 0.5))
+        }
         let radians = abs(angle) * .pi / 180
         let c = cos(radians), s = sin(radians)
         // a w × h crop turned back by the angle must fit the photo: w·c + h·s ≤ W and w·s + h·c ≤ H
@@ -252,50 +278,71 @@ enum DevelopGeometry {
         return centered(crop, at: (0.5, 0.5))
     }
 
-    /// Whether the crop stays inside the frame and inside the straightened photo.
-    static func fits(_ crop: DevelopCrop, angle: Double, frame: CGSize) -> Bool {
+    /// Whether the crop stays inside the frame and inside the straightened (and perspective
+    /// corrected) photo.
+    static func fits(_ crop: DevelopCrop, angle: Double, perspective: Homography? = nil, frame: CGSize) -> Bool {
         let epsilon = 1e-6
         guard crop.x >= -epsilon, crop.y >= -epsilon,
               crop.x + crop.width <= 1 + epsilon, crop.y + crop.height <= 1 + epsilon,
               crop.width > 0, crop.height > 0 else { return false }
-        guard angle != 0 else { return true }
+        guard angle != 0 || perspective != nil else { return true }
         let w0 = Double(frame.width), h0 = Double(frame.height)
         let radians = angle * .pi / 180
         let c = cos(radians), s = sin(radians)
+        let undo = perspective?.inverse
         let corners = [(crop.x, crop.y), (crop.x + crop.width, crop.y),
                        (crop.x, crop.y + crop.height), (crop.x + crop.width, crop.y + crop.height)]
         return corners.allSatisfy { corner in
             // relative to the frame center, turned back by the straighten angle (y points down)
             let px = (corner.0 - 0.5) * w0, py = (corner.1 - 0.5) * h0
             let qx = c * px + s * py, qy = -s * px + c * py
-            return abs(qx) <= w0 / 2 + epsilon * w0 && abs(qy) <= h0 / 2 + epsilon * h0
+            guard let undo else { return abs(qx) <= w0 / 2 + epsilon * w0 && abs(qy) <= h0 / 2 + epsilon * h0 }
+            // and back through the perspective correction, onto the photo as shot
+            guard let p = undo.apply(CGPoint(x: qx + w0 / 2, y: qy + h0 / 2)) else { return false }
+            return Double(p.x) >= -epsilon * w0 && Double(p.x) <= w0 * (1 + epsilon)
+                && Double(p.y) >= -epsilon * h0 && Double(p.y) <= h0 * (1 + epsilon)
         }
     }
 
     /// The crop closest to `candidate` on the way from `valid` that still fits.
     static func constrain(_ candidate: DevelopCrop, from valid: DevelopCrop, angle: Double,
-                          frame: CGSize) -> DevelopCrop {
-        if fits(candidate, angle: angle, frame: frame) { return candidate }
-        let start = fits(valid, angle: angle, frame: frame) ? valid : fit(valid, angle: angle, frame: frame)
+                          perspective: Homography? = nil, frame: CGSize) -> DevelopCrop {
+        if fits(candidate, angle: angle, perspective: perspective, frame: frame) { return candidate }
+        let start = fits(valid, angle: angle, perspective: perspective, frame: frame)
+            ? valid : fit(valid, angle: angle, perspective: perspective, frame: frame)
         var low = 0.0, high = 1.0
         for _ in 0..<24 {
             let mid = (low + high) / 2
-            if fits(lerp(start, candidate, mid), angle: angle, frame: frame) { low = mid } else { high = mid }
+            if fits(lerp(start, candidate, mid), angle: angle, perspective: perspective, frame: frame) {
+                low = mid
+            } else {
+                high = mid
+            }
         }
         return lerp(start, candidate, low)
     }
 
-    /// Shrinks a crop toward the frame center, keeping its shape, until it fits `angle`.
-    static func fit(_ crop: DevelopCrop, angle: Double, frame: CGSize) -> DevelopCrop {
-        if fits(crop, angle: angle, frame: frame) { return crop }
+    /// Shrinks a crop toward the frame center, keeping its shape, until it fits `angle` (and
+    /// `perspective`).
+    static func fit(_ crop: DevelopCrop, angle: Double, perspective: Homography? = nil, frame: CGSize) -> DevelopCrop {
+        if fits(crop, angle: angle, perspective: perspective, frame: frame) { return crop }
         let aspect = crop.width * Double(frame.width) / max(crop.height * Double(frame.height), 1e-9)
-        let target = inscribed(aspect: aspect, angle: angle, frame: frame)
+        let target = inscribed(aspect: aspect, angle: angle, perspective: perspective, frame: frame)
         var low = 0.0, high = 1.0
         for _ in 0..<24 {
             let mid = (low + high) / 2
-            if fits(lerp(target, crop, mid), angle: angle, frame: frame) { low = mid } else { high = mid }
+            if fits(lerp(target, crop, mid), angle: angle, perspective: perspective, frame: frame) {
+                low = mid
+            } else {
+                high = mid
+            }
         }
         return lerp(target, crop, low)
+    }
+
+    /// A crop that still fits once `settings`' straighten angle or perspective changed.
+    static func refit(_ settings: DevelopSettings, frame: CGSize) -> DevelopCrop? {
+        settings.crop.map { fit($0, angle: settings.straighten, perspective: perspective(settings, frame: frame), frame: frame) }
     }
 
     /// Settings after turning the finished photo a quarter turn, keeping the crop on the same content.
@@ -304,6 +351,10 @@ enum DevelopGeometry {
         // quarter turns apply before the mirror, so a mirrored photo turns the other way
         let step = (clockwise != settings.flipped) ? 1 : 3
         next.rotation = (settings.rotation + step) % 4
+        // the perspective stays on the content: turned clockwise, its top is at the right
+        (next.perspectiveVertical, next.perspectiveHorizontal) = clockwise
+            ? (settings.perspectiveHorizontal, -settings.perspectiveVertical)
+            : (-settings.perspectiveHorizontal, settings.perspectiveVertical)
         next.crop = settings.crop.map { crop in
             clockwise
                 ? DevelopCrop(x: 1 - crop.y - crop.height, y: crop.x, width: crop.height, height: crop.width)
@@ -317,6 +368,7 @@ enum DevelopGeometry {
         var next = settings
         next.flipped.toggle()
         next.straighten = -settings.straighten
+        next.perspectiveHorizontal = -settings.perspectiveHorizontal
         next.crop = settings.crop.map { DevelopCrop(x: 1 - $0.x - $0.width, y: $0.y, width: $0.width, height: $0.height) }
         return next
     }
@@ -325,7 +377,8 @@ enum DevelopGeometry {
     /// height) keeps the shape, growing undragged edges about the center; the result stays
     /// inside the frame and the straightened photo.
     static func resize(_ start: DevelopCrop, left: Bool, right: Bool, top: Bool, bottom: Bool,
-                       dx: Double, dy: Double, ratio: Double?, angle: Double, frame: CGSize) -> DevelopCrop {
+                       dx: Double, dy: Double, ratio: Double?, angle: Double, perspective: Homography? = nil,
+                       frame: CGSize) -> DevelopCrop {
         var x0 = start.x, x1 = start.x + start.width, y0 = start.y, y1 = start.y + start.height
         if left { x0 = min(max(0, x0 + dx), x1 - minCropFraction) }
         if right { x1 = max(min(1, x1 + dx), x0 + minCropFraction) }
@@ -351,17 +404,18 @@ enum DevelopGeometry {
                                y: top ? anchorY - height : bottom ? anchorY : anchorY - height / 2,
                                width: width, height: height)
         }
-        return constrain(crop, from: start, angle: angle, frame: frame)
+        return constrain(crop, from: start, angle: angle, perspective: perspective, frame: frame)
     }
 
     /// A crop moved by (dx, dy) frame fractions, sliding along whichever edge stops it.
-    static func move(_ start: DevelopCrop, dx: Double, dy: Double, angle: Double, frame: CGSize) -> DevelopCrop {
+    static func move(_ start: DevelopCrop, dx: Double, dy: Double, angle: Double, perspective: Homography? = nil,
+                     frame: CGSize) -> DevelopCrop {
         var horizontal = start
         horizontal.x = min(max(0, start.x + dx), 1 - start.width)
-        let stepX = constrain(horizontal, from: start, angle: angle, frame: frame)
+        let stepX = constrain(horizontal, from: start, angle: angle, perspective: perspective, frame: frame)
         var vertical = stepX
         vertical.y = min(max(0, start.y + dy), 1 - start.height)
-        return constrain(vertical, from: stepX, angle: angle, frame: frame)
+        return constrain(vertical, from: stepX, angle: angle, perspective: perspective, frame: frame)
     }
 
     /// The straighten angle that makes a line drawn on the photo (as displayed at `current`
@@ -501,6 +555,11 @@ struct DevelopControl: Identifiable {
         signed(\.distortion, L("扭曲度")),
         signed(\.lensVignette, L("镜头暗角")),
         amount(\.lensVignetteMidpoint, L("镜头暗角中点"), max: 100, neutral: 50),
+    ]
+
+    static let transform: [DevelopControl] = [
+        signed(\.perspectiveVertical, L("垂直")),
+        signed(\.perspectiveHorizontal, L("水平")),
     ]
 
     static let effects: [DevelopControl] = [

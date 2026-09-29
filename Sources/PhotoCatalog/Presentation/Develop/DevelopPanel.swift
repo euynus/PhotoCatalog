@@ -61,6 +61,7 @@ struct DevelopPanel: View {
                     DevelopPresetList(asset: asset)
                 }
                 section(L("裁剪与旋转")) { geometry(asset, settings) }
+                section(L("变换")) { transform(asset, settings) }
                 section(L("蒙版")) { masks(asset, settings) }
                 section(L("污点去除")) { spots(asset, settings) }
                 section(L("白平衡")) {
@@ -629,13 +630,47 @@ struct DevelopPanel: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
+    // ---- transform: perspective, the crop kept inside the corrected photo ----
+    @ViewBuilder
+    private func transform(_ asset: Asset, _ settings: DevelopSettings) -> some View {
+        HStack(spacing: 6) {
+            Button("自动") { app.autoUpright(asset, mode: .auto) }
+                .help("让竖直线条竖直，水平线条也尽量平行")
+            Button("垂直") { app.autoUpright(asset, mode: .vertical) }
+                .help("只让竖直线条竖直、平行")
+            Spacer(minLength: 0)
+            Button("复位变换") {
+                var next = app.developSettings[asset.id] ?? .neutral
+                next.perspectiveVertical = 0
+                next.perspectiveHorizontal = 0
+                app.commitDevelop([asset.id: next], undoName: L("复位变换"))
+            }
+            .disabled(!settings.hasPerspective)
+        }
+        .controlSize(.small)
+        ForEach(DevelopControl.transform) { control in
+            DevelopSlider(title: control.title, value: settings[keyPath: control.id], range: control.range,
+                          step: control.step, format: control.format,
+                          isNeutral: settings[keyPath: control.id] == control.neutral,
+                          onChange: { value in
+                              // the crop shrinks from the saved one, so moving back grows it again
+                              var next = app.developSettings[asset.id] ?? .neutral
+                              next[keyPath: control.id] = value
+                              next.crop = DevelopGeometry.refit(next, frame: app.developFrame(for: asset, settings: next))
+                              app.updateDevelopDraft(next, for: asset.id)
+                          },
+                          onReset: { commit(asset, settings, control.title) { $0[keyPath: control.id] = control.neutral } },
+                          onCommit: { commitDraft(asset, control.title) })
+        }
+    }
+
     // ---- crop: fractions of the rotated frame, kept inside the straightened photo ----
     private func straightenDraft(_ asset: Asset, _ angle: Double) {
         // shrink from the saved crop, so dragging back toward level grows it again
         var next = app.developSettings[asset.id] ?? .neutral
         let frame = app.developFrame(for: asset, settings: next)
         next.straighten = angle
-        next.crop = next.crop.map { DevelopGeometry.fit($0, angle: angle, frame: frame) }
+        next.crop = DevelopGeometry.refit(next, frame: frame)
         app.updateDevelopDraft(next, for: asset.id)
     }
 
@@ -664,12 +699,14 @@ struct DevelopPanel: View {
     private func reshapeCrop(_ asset: Asset, aspect: Double, around current: DevelopCrop, frame: CGSize,
                              undoName: String) {
         var next = app.developSettings[asset.id] ?? .neutral
-        let largest = DevelopGeometry.inscribed(aspect: aspect, angle: next.straighten, frame: frame)
+        let perspective = DevelopGeometry.perspective(next, frame: frame)
+        let largest = DevelopGeometry.inscribed(aspect: aspect, angle: next.straighten, perspective: perspective,
+                                                frame: frame)
         let crop = DevelopGeometry.move(largest, dx: current.midX - largest.midX, dy: current.midY - largest.midY,
-                                        angle: next.straighten, frame: frame)
+                                        angle: next.straighten, perspective: perspective, frame: frame)
         // the whole photo's own shape is what "no crop" already means
         let isWhole = crop == DevelopGeometry.inscribed(aspect: frame.width / max(frame.height, 1),
-                                                        angle: next.straighten, frame: frame)
+                                                        angle: next.straighten, perspective: perspective, frame: frame)
         next.crop = isWhole ? nil : crop
         app.commitDevelop([asset.id: next], undoName: undoName)
     }

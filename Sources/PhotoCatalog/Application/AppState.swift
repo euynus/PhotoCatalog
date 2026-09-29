@@ -1058,6 +1058,33 @@ final class AppState {
     }
 
     /// Levels the photo from the horizon Vision finds in it.
+    /// Upright: sets the photo's verticals upright (and, for Auto, its horizontals parallel)
+    /// with the Transform sliders and the straighten angle.
+    func autoUpright(_ asset: Asset, mode: Upright.Mode) {
+        guard let source = developSource(for: asset) else { return }
+        let settings = developSettings[asset.id] ?? .neutral
+        let id = asset.id
+        Task { [weak self] in
+            let found = await ThumbnailRepairQueue.run(.visible) {
+                DevelopRenderer.uprightCorrection(url: source.url, isRaw: source.isRaw, settings: settings, mode: mode)
+            } ?? nil
+            guard let self else { return }
+            guard let found else {
+                self.push("照片中没有足够的竖直线条，无法自动校正透视", "info")
+                return
+            }
+            let asset = self.assetIndex[id].map { self.assets[$0] }
+            self.commitDevelopChange([id], undoName: mode == .auto ? L("自动透视") : L("垂直透视")) { _, settings in
+                settings.perspectiveVertical = found.vertical
+                settings.perspectiveHorizontal = found.horizontal
+                settings.straighten = found.straighten
+                if let asset {
+                    settings.crop = DevelopGeometry.refit(settings, frame: self.developFrame(for: asset, settings: settings))
+                }
+            }
+        }
+    }
+
     func autoStraighten(_ asset: Asset) {
         guard let source = developSource(for: asset) else { return }
         let settings = developSettings[asset.id] ?? .neutral
@@ -1075,8 +1102,7 @@ final class AppState {
             self.commitDevelopChange([id], undoName: L("自动拉直")) { _, settings in
                 settings.straighten = (angle * 10).rounded() / 10
                 if let asset {
-                    let frame = self.developFrame(for: asset, settings: settings)
-                    settings.crop = settings.crop.map { DevelopGeometry.fit($0, angle: settings.straighten, frame: frame) }
+                    settings.crop = DevelopGeometry.refit(settings, frame: self.developFrame(for: asset, settings: settings))
                 }
             }
         }
@@ -1454,8 +1480,7 @@ final class AppState {
             let asset = assets[index]
             var next = transfer.applied(to: developSettings[id] ?? .neutral, targetIsRaw: asset.isRaw)
             // a crop from another photo may reach past this one's straightened edges
-            let frame = developFrame(for: asset, settings: next)
-            next.crop = next.crop.map { DevelopGeometry.fit($0, angle: next.straighten, frame: frame) }
+            next.crop = DevelopGeometry.refit(next, frame: developFrame(for: asset, settings: next))
             changes[id] = next
         }
         guard !changes.isEmpty else { return 0 }

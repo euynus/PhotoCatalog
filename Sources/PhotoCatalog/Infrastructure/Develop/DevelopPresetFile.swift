@@ -25,7 +25,7 @@ enum DevelopPresetFile {
             case .profile: L("配置文件")
             case .masks: L("蒙版")
             case .lensProfile: L("镜头配置文件校正")
-            case .perspective: L("透视校正")
+            case .perspective: L("Upright 与其他变换")
             case .chromaticAberration: L("色差校正")
             case .parametricCurve: L("参数曲线")
             }
@@ -75,6 +75,8 @@ enum DevelopPresetFile {
             Scalar(key: "GrainAmount", path: \.grain, field: .grain, format: "%.0f"),
             Scalar(key: "GrainSize", path: \.grainSize, field: .grain, format: "%.0f"),
             Scalar(key: "GrainFrequency", path: \.grainRoughness, field: .grain, format: "%.0f"),
+            Scalar(key: "PerspectiveVertical", path: \.perspectiveVertical, field: .perspective, format: "%+.0f"),
+            Scalar(key: "PerspectiveHorizontal", path: \.perspectiveHorizontal, field: .perspective, format: "%+.0f"),
             Scalar(key: "ColorGradeBlending", path: \.grading.blending, field: .colorGrading, format: "%.0f"),
             Scalar(key: "ColorGradeBalance", path: \.grading.balance, field: .colorGrading, format: "%+.0f"),
         ]
@@ -288,8 +290,10 @@ enum DevelopPresetFile {
         if ["MaskGroupBasedCorrections", "GradientBasedCorrections", "CircularGradientBasedCorrections",
             "PaintBasedCorrections"].contains(where: { elements[$0] != nil }) { skipped.insert(.masks) }
         if values["LensProfileEnable"] == "1" { skipped.insert(.lensProfile) }
-        if ["PerspectiveUpright", "PerspectiveVertical", "PerspectiveHorizontal", "PerspectiveRotate"]
-            .contains(where: { (number($0) ?? 0) != 0 }) { skipped.insert(.perspective) }
+        if ["PerspectiveUpright", "PerspectiveRotate", "PerspectiveAspect", "PerspectiveScale", "PerspectiveX",
+            "PerspectiveY"].contains(where: { key in number(key).map { $0 != (key == "PerspectiveScale" ? 100 : 0) } ?? false }) {
+            skipped.insert(.perspective)
+        }
         if values["AutoLateralCA"] == "1" || (number("DefringePurpleAmount") ?? 0) != 0
             || (number("DefringeGreenAmount") ?? 0) != 0 { skipped.insert(.chromaticAberration) }
         if ["ParametricShadows", "ParametricDarks", "ParametricLights", "ParametricHighlights"]

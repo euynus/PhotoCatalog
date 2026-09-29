@@ -235,6 +235,18 @@ enum DevelopRenderer {
         if s.flipped { image = image.oriented(.upMirrored) }
         image = atOrigin(image)
         let frame = CGRect(origin: .zero, size: image.extent.integral.size)
+        if let perspective = DevelopGeometry.perspective(s, frame: frame.size) {
+            // the frame's corners where the correction puts them (Core Image's y points up);
+            // outside the corrected photo stays empty, and the crop leaves it out
+            func corner(_ x: CGFloat, _ y: CGFloat) -> CIVector {
+                let p = perspective.apply(CGPoint(x: x, y: y)) ?? CGPoint(x: x, y: y)
+                return CIVector(x: p.x, y: frame.height - p.y)
+            }
+            image = image.applyingFilter("CIPerspectiveTransform", parameters: [
+                "inputTopLeft": corner(0, 0), "inputTopRight": corner(frame.width, 0),
+                "inputBottomRight": corner(frame.width, frame.height), "inputBottomLeft": corner(0, frame.height),
+            ]).cropped(to: frame)
+        }
         if s.straighten != 0 {
             // Core Image's y axis points up, so a clockwise turn is a negative angle
             let turn = CGAffineTransform(translationX: frame.midX, y: frame.midY)
@@ -272,6 +284,25 @@ enum DevelopRenderer {
         // Vision reports a horizon rising to the right as a negative angle, which a clockwise
         // (positive) straighten of the same size levels
         return request.results?.first.map { -Double($0.angle) * 180 / .pi }
+    }
+
+    /// The Transform and straighten settings that set the photo's verticals upright (see
+    /// `Upright`), found in the photo as rotated, mirrored and lens-corrected by `settings`.
+    static func uprightCorrection(url: URL, isRaw: Bool, settings: DevelopSettings,
+                                  mode: Upright.Mode) -> Upright.Correction? {
+        var oriented = DevelopSettings()
+        oriented.rotation = settings.rotation
+        oriented.flipped = settings.flipped
+        oriented.distortion = settings.distortion   // lens distortion bends the lines it looks for
+        guard let image = Source(url: url, isRaw: isRaw, maxPixel: 900)?.image(oriented).flatMap(render),
+              let pixels = SemanticMasks.rgba(image) else { return nil }
+        let count = image.width * image.height
+        var luma = [Float](repeating: 0, count: count)
+        for i in 0..<count {
+            luma[i] = (0.2126 * Float(pixels[i * 4]) + 0.7152 * Float(pixels[i * 4 + 1])
+                       + 0.0722 * Float(pixels[i * 4 + 2])) / 255
+        }
+        return Upright.correction(luma: luma, width: image.width, height: image.height, mode: mode)
     }
 
     private static func atOrigin(_ image: CIImage) -> CIImage {
