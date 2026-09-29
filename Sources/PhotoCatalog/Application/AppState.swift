@@ -3475,16 +3475,25 @@ final class AppState {
         guard let editor = saved.flatMap({ FileManager.default.fileExists(atPath: $0.path) ? $0 : nil })
                 ?? chooseExternalEditor(),
               let coordinator, let store else { return }
-        let jobs = externalEditJobs(targets)
+        // the TIFF goes beside its original, so the original's folder must take a new file
+        let all = externalEditJobs(targets)
+        let jobs = all.filter { FileManager.default.isWritableFile(atPath: $0.folder.path) }
+        if jobs.count < all.count {
+            push("\(all.count - jobs.count) 张照片所在的文件夹是只读的，无法在原件旁生成 TIFF", "warning")
+        }
+        guard !jobs.isEmpty else { return }
         push("正在为 \(editor.deletingPathExtension().lastPathComponent) 准备 \(jobs.count) 张 TIFF…", "export")
         let catalogURL = store.packageURL
         let previewSize = previewMaxPixel
+        // the album the copies join is the one open now, not whichever is open when they're done
+        let albumId = selection.type == .album ? selection.id : nil
         Task { [weak self, jobs, coordinator] in
-            let made = await Task.detached(priority: .userInitiated) {
+            // RAW decodes stay off the cooperative pool (RawCamera deadlocks there)
+            let made = await ThumbnailRepairQueue.run(.visible) {
                 Self.renderEditedCopies(jobs, coordinator: coordinator, previewMaxPixel: previewSize)
-            }.value
+            } ?? []
             guard let self, self.store?.packageURL == catalogURL else { return }
-            self.finishExternalEdit(made, editor: editor, expected: jobs.count)
+            self.finishExternalEdit(made, editor: editor, expected: jobs.count, albumId: albumId)
         }
     }
 
@@ -3528,12 +3537,16 @@ final class AppState {
         }
     }
 
-    /// Adds the rendered copies to the catalog beside their originals and opens them in
-    /// `editor` (nil: only adds them).
-    func finishExternalEdit(_ made: [(url: URL, source: Asset, asset: Asset?)], editor: URL?, expected: Int) {
+    /// Adds the rendered copies to the catalog beside their originals (and to album `albumId`)
+    /// and opens them in `editor` (nil: only adds them).
+    func finishExternalEdit(_ made: [(url: URL, source: Asset, asset: Asset?)], editor: URL?, expected: Int,
+                            albumId: String? = nil) {
         var fresh: [Asset] = []
         for result in made {
-            guard var copy = result.asset, assetIndex[copy.id] == nil else { continue }
+            guard let imported = result.asset else { continue }
+            // folder watching may have seen the new file first: the copy is that entry
+            var copy = assetIndex[imported.id].map { assets[$0] } ?? imported
+            guard !copy.deleted else { continue }
             let source = result.source
             // the copy files with its original and carries what the catalog knows about it
             copy.folderId = source.folderId
@@ -3559,10 +3572,16 @@ final class AppState {
                 push("外部编辑的副本未能加入目录库", "warning")
                 return
             }
-            replaceAssetsForMutation(assets + fresh)
-            if selection.type == .album, let index = albums.firstIndex(where: { $0.id == selection.id }) {
+            var updated = assets
+            for copy in fresh {
+                if let index = assetIndex[copy.id] { updated[index] = copy } else { updated.append(copy) }
+            }
+            replaceAssetsForMutation(updated)
+            recordSidecarBaselines(fresh)
+            if let albumId, let index = albums.firstIndex(where: { $0.id == albumId }) {
                 var album = albums[index]
-                album.assetIds.append(contentsOf: fresh.map(\.id))
+                let members = Set(album.assetIds)
+                album.assetIds.append(contentsOf: fresh.map(\.id).filter { !members.contains($0) })
                 if saveManualAlbum(album, sortOrder: index) { albums[index] = album }
             }
             selectedIds = Set(fresh.map(\.id))

@@ -351,6 +351,7 @@
 "正在为 %@ 准备 %lld 张 TIFF…" = "Preparing %2$lld TIFF files for %1$@…";
 "外部编辑的副本未能加入目录库" = "The copies for editing couldn't be added to the catalog";
 "无法生成用于外部编辑的 TIFF" = "Couldn't make the TIFF files for editing";
+"%lld 张照片所在的文件夹是只读的，无法在原件旁生成 TIFF" = "No TIFF can be made beside %lld photos in read-only folders";
 "已在外部编辑器中打开 %lld 张" = "Opened %lld photos in the external editor";
 "所选照片旁没有 XMP sidecar" = "The selected photos have no XMP sidecar";
 "从文件读取元数据" = "Read Metadata from Files";

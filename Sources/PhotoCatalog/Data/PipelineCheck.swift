@@ -601,10 +601,15 @@ enum PipelineCheck {
             var look = DevelopSettings()
             look.exposure = 0.5
             app.commitDevelop([master.id: look], undoName: "look")
-            for _ in 0..<2 {
+            for round in 0..<2 {
                 let made = AppState.renderEditedCopies(app.externalEditJobs([master]),
                                                        coordinator: ImportCoordinator(store: editStore),
                                                        previewMaxPixel: 512)
+                if round == 1, let seen = made.first?.asset {
+                    // folder watching finds the new file before the edit finishes
+                    try? editStore.upsert([seen])
+                    app.applyLoadedCatalogForScaleCheck(app.assets + [seen], from: editStore)
+                }
                 app.finishExternalEdit(made, editor: nil, expected: 1)
             }
             let copies = app.assets.filter { $0.id != master.id && !$0.deleted }

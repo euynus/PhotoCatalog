@@ -73,6 +73,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>%lld 张照片已写入，但源目录或导入状态未保存</string>
 	</dict>
+	<key>%lld 张照片所在的文件夹是只读的，无法在原件旁生成 TIFF</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 张照片所在的文件夹是只读的，无法在原件旁生成 TIFF</string>
+	</dict>
 	<key>%lld 张照片有位置信息</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

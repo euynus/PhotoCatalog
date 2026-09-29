@@ -271,6 +271,22 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
+	<key>%lld 张照片所在的文件夹是只读的，无法在原件旁生成 TIFF</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>No TIFF can be made beside %#@n1@ in read-only folders</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>%lld 张照片有位置信息</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
