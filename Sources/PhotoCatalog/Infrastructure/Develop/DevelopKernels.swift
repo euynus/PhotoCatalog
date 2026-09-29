@@ -295,6 +295,8 @@ enum DevelopKernels {
             return kernel.apply(extent: extent, arguments: [pixel(mask.center), u, v, mask.feather / 100, invert])
         case .brush:
             return BrushRaster.weight(mask, extent: extent)
+        case .subject, .sky:
+            return nil   // found in the photo: see SemanticMasks
         }
     }
 

@@ -81,8 +81,9 @@ enum DevelopRenderer {
             let toned = DevelopRenderer.applyTone(DevelopRenderer.applyLens(base, settings), settings)
             let colored = DevelopRenderer.applyMixer(DevelopRenderer.applyCurve(toned, settings), settings)
             let present = DevelopRenderer.applyPresence(colored, settings)
-            let local = DevelopRenderer.applyOverlay(DevelopRenderer.applyMasks(present, settings), settings,
-                                                     maskId: overlayMask)
+            let photo = (url: url, isRaw: isRaw)
+            let local = DevelopRenderer.applyOverlay(DevelopRenderer.applyMasks(present, settings, photo: photo), settings,
+                                                     maskId: overlayMask, photo: photo)
             let detailed = DevelopRenderer.applyDetail(local, settings, scale: min(1, scale))
             let framed = DevelopRenderer.applyGeometry(detailed, settings, wholeFrame: wholeFrame)
             // effects follow the crop, which the crop tool's whole-frame view doesn't apply yet
@@ -301,14 +302,23 @@ enum DevelopRenderer {
         return image.applyingFilter("CISRGBToneCurveToLinear").cropped(to: extent)
     }
 
+    /// A mask's weight over `extent`: drawn masks from their shapes and strokes, a subject or
+    /// sky from the photo itself (`photo`, the file being rendered).
+    static func maskWeight(_ mask: LocalAdjustment, _ s: DevelopSettings, extent: CGRect,
+                           photo: (url: URL, isRaw: Bool)?) -> CIImage? {
+        guard mask.kind.isAutomatic else { return DevelopKernels.maskWeight(mask, extent: extent) }
+        guard let photo, let found = SemanticMasks.mask(mask.kind, url: photo.url, isRaw: photo.isRaw) else { return nil }
+        return SemanticMasks.weight(found, extent: extent, inverted: mask.inverted, distortion: s.distortion)
+    }
+
     /// Each mask's adjustments, blended in through its weight, in order: exposure and white
     /// balance as on the whole photo, then the shared tone and presence code.
-    static func applyMasks(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
+    static func applyMasks(_ input: CIImage, _ s: DevelopSettings, photo: (url: URL, isRaw: Bool)? = nil) -> CIImage {
         guard s.masks.contains(where: \.hasEffect) else { return input }
         let extent = input.extent
         var image = input
         for mask in s.masks where mask.hasEffect {
-            guard let weight = DevelopKernels.maskWeight(mask, extent: extent) else { continue }
+            guard let weight = maskWeight(mask, s, extent: extent, photo: photo) else { continue }
             var adjusted = image
             if mask.exposure != 0 {
                 adjusted = adjusted.applyingFilter("CIExposureAdjust", parameters: ["inputEV": mask.exposure])
@@ -331,9 +341,10 @@ enum DevelopRenderer {
     }
 
     /// The photo with a mask's coverage tinted red, as Lightroom's overlay shows it.
-    static func applyOverlay(_ input: CIImage, _ s: DevelopSettings, maskId: String?) -> CIImage {
+    static func applyOverlay(_ input: CIImage, _ s: DevelopSettings, maskId: String?,
+                             photo: (url: URL, isRaw: Bool)? = nil) -> CIImage {
         guard let maskId, let mask = s.masks.first(where: { $0.id == maskId }),
-              let weight = DevelopKernels.maskWeight(mask, extent: input.extent) else { return input }
+              let weight = maskWeight(mask, s, extent: input.extent, photo: photo) else { return input }
         let half = weight.applyingFilter("CIColorMatrix", parameters: [
             "inputRVector": CIVector(x: 0.55, y: 0, z: 0, w: 0),
             "inputGVector": CIVector(x: 0, y: 0.55, z: 0, w: 0),

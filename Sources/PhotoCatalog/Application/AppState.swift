@@ -665,6 +665,34 @@ final class AppState {
     /// O: tints the selected mask's coverage red.
     var developShowsMaskOverlay = false
 
+    /// The automatic mask being looked for, while Vision works.
+    var developDetectingMask: LocalAdjustment.Kind?
+
+    /// Finds the photo's subject or sky and adds it as a mask, or says there's none.
+    func addAutomaticMask(_ kind: LocalAdjustment.Kind) {
+        guard kind.isAutomatic, developDetectingMask == nil, view == .develop, let asset = primary,
+              let source = developSource(for: asset) else { return }
+        developMasking = true
+        developMaskCreation = nil
+        developDetectingMask = kind
+        let id = asset.id
+        Task { [weak self] in
+            let found = await ThumbnailRepairQueue.run(.visible) {
+                SemanticMasks.mask(kind, url: source.url, isRaw: source.isRaw)
+            } ?? nil
+            guard let self else { return }
+            self.developDetectingMask = nil
+            guard let found else {
+                if kind == .subject { self.push("没有找到明显的主体", "info") } else { self.push("没有找到天空", "info") }
+                return
+            }
+            var mask = LocalAdjustment(kind: kind)
+            mask.center = found.centroid
+            mask.exposure = kind == .sky ? -0.3 : 0.3   // a visible start, as with the gradients
+            self.addMask(mask, to: id)
+        }
+    }
+
     /// [ and ]: a smaller or larger brush.
     func resizeBrush(by delta: Double) {
         developBrush.size = min(100, max(1, developBrush.size + delta))

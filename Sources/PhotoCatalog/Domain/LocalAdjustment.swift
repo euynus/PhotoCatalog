@@ -1,5 +1,5 @@
 // ============================================================
-//  Local adjustments — Lightroom's masks: gradients and brush
+//  Local adjustments — Lightroom's masks: gradients, brush, subject and sky
 // ============================================================
 import Foundation
 import CoreGraphics
@@ -9,13 +9,21 @@ import CoreGraphics
 /// and crop), so a mask stays on the same part of the picture when the framing changes.
 struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
     enum Kind: String, Codable, CaseIterable, Sendable {
-        case linear, radial, brush
+        case linear, radial, brush, subject, sky
+
+        /// Masks drawn on the photo, and masks found in it.
+        static let drawn: [Kind] = [.linear, .radial, .brush]
+        static let automatic: [Kind] = [.subject, .sky]
+
+        var isAutomatic: Bool { Self.automatic.contains(self) }
 
         var title: String {
             switch self {
             case .linear: L("线性渐变")
             case .radial: L("径向渐变")
             case .brush: L("画笔")
+            case .subject: L("主体")
+            case .sky: L("天空")
             }
         }
 
@@ -24,6 +32,8 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
             case .linear: "rectangle.tophalf.inset.filled"
             case .radial: "circle.dashed"
             case .brush: "paintbrush.pointed"
+            case .subject: "person.and.background.dotted"
+            case .sky: "cloud.sun"
             }
         }
     }
@@ -33,7 +43,8 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
     /// Linear: full effect at `start`, none at `end`, a smooth fall-off between.
     var start = CGPoint(x: 0.5, y: 0.1)
     var end = CGPoint(x: 0.5, y: 0.45)
-    /// Radial: an ellipse around `center`; radii are fractions of the source's long edge and
+    /// Radial: an ellipse around `center` (for a subject or sky, the center of what was found,
+    /// where its pin sits); radii are fractions of the source's long edge and
     /// `angle` turns the ellipse's first axis clockwise, in degrees. Feather 0…100 is how much
     /// of the radius the effect fades over.
     var center = CGPoint(x: 0.5, y: 0.5)
@@ -93,6 +104,7 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         case .linear: [start.x, start.y, end.x, end.y]
         case .radial: [center.x, center.y, radiusX, radiusY, angle, feather]
         case .brush: [Double(strokes.count), Double(BrushStroke.hash(strokes))]
+        case .subject, .sky: []   // found in the photo itself
         }
         let values = [exposure, contrast, highlights, shadows, whites, blacks, temperature, tint,
                       texture, clarity, dehaze, saturation]

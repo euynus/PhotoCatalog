@@ -277,7 +277,7 @@ struct DevelopPanel: View {
     @ViewBuilder
     private func masks(_ asset: Asset, _ settings: DevelopSettings) -> some View {
         HStack(spacing: 6) {
-            ForEach(LocalAdjustment.Kind.allCases, id: \.self) { kind in
+            ForEach(LocalAdjustment.Kind.drawn, id: \.self) { kind in
                 Toggle(isOn: Binding(get: { app.developMaskCreation == kind }, set: { _ in app.armMask(kind) })) {
                     Label(kind.title, systemImage: kind.symbol)
                 }
@@ -287,8 +287,20 @@ struct DevelopPanel: View {
             Spacer(minLength: 0)
         }
         .controlSize(.small)
+        HStack(spacing: 6) {
+            ForEach(LocalAdjustment.Kind.automatic, id: \.self) { kind in
+                Button { app.addAutomaticMask(kind) } label: {
+                    Label(kind == .subject ? L("选择主体") : L("选择天空"), systemImage: kind.symbol)
+                }
+                .disabled(app.developDetectingMask != nil)
+                .help(Self.maskHelp(kind))
+            }
+            if app.developDetectingMask != nil { ProgressView().controlSize(.small) }
+            Spacer(minLength: 0)
+        }
+        .controlSize(.small)
         if settings.masks.isEmpty {
-            Text("用渐变或画笔只调整照片的一部分，例如压暗天空或提亮主体")
+            Text("用渐变、画笔或自动选择只调整照片的一部分，例如压暗天空或提亮主体")
                 .font(.system(size: 11)).foregroundStyle(Theme.text3)
         } else {
             VStack(spacing: 2) {
@@ -335,6 +347,8 @@ struct DevelopPanel: View {
         case .linear: L("新建线性渐变，在照片上拖动绘制 (M)")
         case .radial: L("新建径向渐变，在照片上拖动绘制 (⇧M)")
         case .brush: L("新建画笔蒙版，在照片上涂抹 (K)")
+        case .subject: L("自动找出照片的主体（人物、动物或物体）并建立蒙版")
+        case .sky: L("自动找出照片中的天空并建立蒙版")
         }
     }
 

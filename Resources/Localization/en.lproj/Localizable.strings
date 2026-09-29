@@ -325,6 +325,8 @@
 "颜色标签：%@" = "Color label: %@";
 "添加%@" = "Add %@";
 "删除%@" = "Delete %@";
+"没有找到明显的主体" = "No clear subject found";
+"没有找到天空" = "No sky found";
 
 /* Application/ImportCoordinator.swift */
 "复制原件失败：%@" = "Couldn't copy the original: %@";
@@ -459,6 +461,7 @@
 "线性渐变" = "Linear Gradient";
 "径向渐变" = "Radial Gradient";
 "画笔" = "Brush";
+"主体" = "Subject";
 
 /* Domain/Models.swift */
 "导入时间" = "Import Date";
@@ -618,7 +621,7 @@
 "高光剪切" = "Highlight clipping";
 "新建线性渐变，在照片上拖动绘制 (M)" = "New linear gradient — drag on the photo to draw it (M)";
 "新建径向渐变，在照片上拖动绘制 (⇧M)" = "New radial gradient — drag on the photo to draw it (⇧M)";
-"用渐变或画笔只调整照片的一部分，例如压暗天空或提亮主体" = "Use a gradient or the brush to adjust part of the photo, such as darkening the sky or brightening the subject";
+"用渐变、画笔或自动选择只调整照片的一部分，例如压暗天空或提亮主体" = "Use a gradient, the brush or an automatic selection to adjust part of the photo, such as darkening the sky or brightening the subject";
 "反相" = "Invert";
 "反相蒙版" = "Invert Mask";
 "让调整作用于渐变之外" = "Apply the adjustments outside the gradient";
@@ -635,6 +638,10 @@
 "按住 ⌥ 临时切换画笔与擦除" = "Hold ⌥ to switch between painting and erasing";
 "画笔羽化" = "Brush Feather";
 "密度" = "Density";
+"选择主体" = "Select Subject";
+"选择天空" = "Select Sky";
+"自动找出照片的主体（人物、动物或物体）并建立蒙版" = "Find the photo's subject (people, animals or objects) and mask it";
+"自动找出照片中的天空并建立蒙版" = "Find the sky in the photo and mask it";
 
 /* Presentation/Develop/DevelopView.swift */
 "点选照片中应为灰色或白色的地方（Esc 取消）" = "Click a spot in the photo that should be gray or white (Esc to cancel)";

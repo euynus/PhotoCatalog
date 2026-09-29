@@ -401,6 +401,50 @@ enum DevelopCheck {
         let untinted = pixel(develop(gray, s, overlayMask: brush.id), 32, 8)
         assert(Int(tinted.r) > Int(tinted.b) + 40 && abs(Int(untinted.r) - Int(untinted.b)) < 4,
                "the overlay tints the selected mask's coverage red")
+        // sky: a blue gradient over grass is found, darkened, and the grass left alone; a plain
+        // pale wall is not sky
+        let landscape = CGContext(data: nil, width: 240, height: 160, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: DevelopRenderer.outputColorSpace, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        for y in 0..<160 {
+            // CGContext rows count from the bottom: grass below 90, sky above
+            let t = Double(y) / 160
+            let color: [CGFloat] = y < 90 ? [0.22 + 0.1 * CGFloat((y * 7) % 3) / 3, 0.45, 0.18, 1]
+                                          : [0.62 - 0.3 * CGFloat(t), 0.75 - 0.15 * CGFloat(t), 0.97, 1]
+            landscape.setFillColor(CGColor(colorSpace: DevelopRenderer.outputColorSpace, components: color)!)
+            for x in stride(from: 0, to: 240, by: 3) where y >= 90 || (x + y) % 2 == 0 {
+                landscape.fill(CGRect(x: x, y: y, width: y < 90 ? 2 : 3, height: 1))
+            }
+        }
+        let landscapeURL = FileManager.default.temporaryDirectory.appendingPathComponent("pc-sky-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: landscapeURL) }
+        let landscapeFile = CGImageDestinationCreateWithURL(landscapeURL as CFURL, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(landscapeFile, landscape.makeImage()!, nil)
+        CGImageDestinationFinalize(landscapeFile)
+        let foundSky = SemanticMasks.mask(.sky, url: landscapeURL, isRaw: false)
+        assert(foundSky.map { (0.3...0.5).contains($0.coverage) && $0.centroid.y < 0.3 } == true,
+               "the sky is found above the grass")
+        var skyEdit = DevelopSettings()
+        var skyMask = LocalAdjustment(kind: .sky)
+        skyMask.exposure = -1.5
+        skyEdit.masks = [skyMask]
+        let skyRender = DevelopRenderer.render(DevelopRenderer.Source(url: landscapeURL, isRaw: false, maxPixel: nil)!
+            .image(skyEdit)!)!
+        let plainRender = DevelopRenderer.render(DevelopRenderer.Source(url: landscapeURL, isRaw: false, maxPixel: nil)!
+            .image(.neutral)!)!
+        assert(luma(skyRender, 120, 20) < luma(plainRender, 120, 20) - 20
+               && abs(luma(skyRender, 120, 140) - luma(plainRender, 120, 140)) < 3,
+               "a sky mask darkens the sky and leaves the ground alone")
+        let wall = image { x, y in (0.86 + 0.02 * Double((x / 8 + y / 8) % 2), 0.85, 0.83) }
+        let wallURL = FileManager.default.temporaryDirectory.appendingPathComponent("pc-wall-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: wallURL) }
+        let wallFile = CGImageDestinationCreateWithURL(wallURL as CFURL, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(wallFile, wall, nil)
+        CGImageDestinationFinalize(wallFile)
+        assert(SemanticMasks.mask(.sky, url: wallURL, isRaw: false) == nil, "a pale wall is not sky")
+        if let subject = SemanticMasks.mask(.subject, url: landscapeURL, isRaw: false) {
+            assert(subject.coverage > 0 && subject.coverage <= 1, "a subject mask covers part of the photo")
+        }
+
         let halfStroke = try! JSONDecoder().decode(BrushStroke.self, from: Data(#"{"points":[0.1,0.2,0.3]}"#.utf8))
         assert(halfStroke.pointCount == 1 && halfStroke.radius == 0.05 && !halfStroke.erase,
                "a stroke with a dangling coordinate loads without it")
