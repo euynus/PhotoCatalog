@@ -576,6 +576,51 @@ enum PipelineCheck {
         for (name, passed) in virtualCopies.sorted(by: { $0.key < $1.key }) {
             check(passed, "virtual copies: \(name)")
         }
+        // renaming photos: the preview matches what happens on disk and in the catalog
+        let renaming: [String: Bool] = MainActor.assumeIsolated {
+            let scratch = fm.temporaryDirectory.appendingPathComponent("pc-rename-\(UUID().uuidString)")
+            let previousTemplate = UserDefaults.standard.string(forKey: "pc_renameTemplate")
+            defer {
+                try? fm.removeItem(at: scratch)
+                UserDefaults.standard.set(previousTemplate, forKey: "pc_renameTemplate")
+            }
+            try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+            guard let renameStore = try? CatalogStore(packageURL: scratch.appendingPathComponent("Rename.photolibrary"))
+            else { return ["scratch catalog": false] }
+            var photos: [Asset] = []
+            for (index, title) in ["Harbor", "Harbor"].enumerated() {
+                guard let sourcePath = reloaded[index].localPath else { return ["fixture": false] }
+                let file = scratch.appendingPathComponent("IMG_\(index).jpg")
+                try? fm.copyItem(atPath: sourcePath, toPath: file.path)
+                var photo = reloaded[index]
+                photo.localPath = file.path
+                photo.filename = file.lastPathComponent
+                photo.title = title
+                photos.append(photo)
+            }
+            try? renameStore.upsert(photos)
+            let app = AppState.selfCheckFixture(store: renameStore)
+            app.runsBackgroundMaintenance = false
+            app.applyLoadedCatalogForScaleCheck(photos, from: renameStore)
+            app.selectedIds = Set(photos.map(\.id))
+            let targets = app.renameTargets()
+            let plan = RenameService.plan(targets, template: "{title}_{seq}", start: 7)
+            let sameName = RenameService.plan(targets, template: "{title}", start: 1)
+            app.renameOriginals(template: "{title}_{seq}", start: 7)
+            let names = Set(app.assets.compactMap { $0.localPath.map { URL(fileURLWithPath: $0).lastPathComponent } })
+            let reloadedNames = Set(((try? renameStore.loadAssets()) ?? []).map(\.filename))
+            return [
+                "preview": plan.names.map(\.to) == ["Harbor_0007.jpg", "Harbor_0008.jpg"] && plan.clashes == 0
+                    && sameName.clashes == 1,
+                "renamed on disk and in the catalog": names == ["Harbor_0007.jpg", "Harbor_0008.jpg"]
+                    && reloadedNames == names
+                    && names.allSatisfy { fm.fileExists(atPath: scratch.appendingPathComponent($0).path) },
+                "template remembered": app.renameTemplate == "{title}_{seq}",
+            ]
+        }
+        for (name, passed) in renaming.sorted(by: { $0.key < $1.key }) {
+            check(passed, "rename photos: \(name)")
+        }
         let smartRule = SmartRule(match: "all", conditions: [
             SmartCondition(field: "type", op: "=", value: assets[0].type),
         ])

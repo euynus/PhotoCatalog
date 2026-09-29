@@ -68,6 +68,8 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals)
             Button("在访达中显示") { perform("照片.在访达中显示") { app.revealSelectionInFinder() } }
                 .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals)
+            Button("重命名照片…") { perform("照片.重命名照片") { app.showRenameSheet() } }
+                .disabled(!app.canRenameOriginals)
             Divider()
             Button("向左旋转") { perform("照片.向左旋转") { app.rotateSelection(clockwise: false) } }
                 .keyboardShortcut("[", modifiers: .command)

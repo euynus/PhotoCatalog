@@ -3258,24 +3258,48 @@ final class AppState {
     // ---------- batch rename (§4.2) ----------
     /// Rename selected originals from a token template ({seq}/{date}/{time}/{camera}/{original}).
     /// A plain prefix with no token becomes "<prefix>_{seq}".
-    func batchRename(template rawTemplate: String) {
+    /// The photos a rename reaches, in list order and one per file (a virtual copy renames its
+    /// master's file), with their originals on disk.
+    func renameTargets() -> [Asset] {
+        let ids = selectionTargetIds
+        return fileOwners(list.filter { ids.contains($0.id) }).filter(hasExistingOriginal)
+    }
+
+    var canRenameOriginals: Bool {
+        onboarded && sheet == nil && view != .analysis && canOperateOnSelectedOriginals
+    }
+
+    /// The last rename template, offered again next time.
+    var renameTemplate: String {
+        get { UserDefaults.standard.string(forKey: "pc_renameTemplate") ?? "{original}" }
+        set { UserDefaults.standard.set(newValue, forKey: "pc_renameTemplate") }
+    }
+
+    /// 照片 → 重命名照片…: the rename dialog, with a preview of the new names.
+    func showRenameSheet() {
+        guard !renameTargets().isEmpty else {
+            push("仅可重命名已导入照片", "warning")
+            return
+        }
+        sheet = "rename"
+    }
+
+    /// Renames the selection's originals from `template`, numbering from `start`; a paired JPEG
+    /// takes its RAW's new name, and virtual copies follow their master. The dialog asked.
+    func renameOriginals(template rawTemplate: String, start: Int = 1) {
         let trimmed = rawTemplate.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
+        // a plain prefix numbers the photos after it
         let template = trimmed.contains("{") ? trimmed : "\(trimmed)_{seq}"
-        let ids = selectionTargetIds
-        let real = fileOwners(list.filter { ids.contains($0.id) }).filter(hasExistingOriginal)
+        renameTemplate = trimmed
+        let real = renameTargets()
         guard !real.isEmpty else { push("仅可重命名已导入照片", "warning"); return }
         // a paired JPEG takes the RAW's new base name so the pair survives the rename
         let partners = Dictionary(uniqueKeysWithValues: real.map { primary in
             (primary.id, companions(of: primary).filter(hasExistingOriginal))
         }).filter { !$0.value.isEmpty }
         let fileCount = real.count + partners.values.reduce(0) { $0 + $1.count }
-        guard confirmDestructiveAction(
-            L("重命名原件？"),
-            L("将重命名 \(fileCount) 个磁盘原件，并更新目录库中的文件路径。"),
-            L("重命名")
-        ) else { return }
-        let map = RenameService.renameWithTemplate(real, template: template, companions: partners)
+        let map = RenameService.renameWithTemplate(real, template: template, start: start, companions: partners)
         guard !map.isEmpty else {
             push("重命名失败", "warning")
             return

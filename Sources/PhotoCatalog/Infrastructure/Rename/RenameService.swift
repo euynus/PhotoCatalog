@@ -5,19 +5,40 @@
 import Foundation
 
 enum RenameService {
-    /// Rename each asset's original from a token template (§4.2).
-    /// Supported tokens: {seq} {date} {time} {camera} {original}. The extension is preserved.
-    /// `companions` (keyed by asset id) move to the same new base name — a RAW's paired
-    /// JPEG stays paired — and a name is only taken when every file of the group is free.
+    /// The base name (no extension) `template` gives `asset` as number `sequence`. Tokens are
+    /// those of `FileNameTemplate`: {original} {seq} {date} {time} {camera} {title} {rating}.
+    static func baseName(for asset: Asset, template: String, sequence: Int) -> String {
+        let original = ((asset.localPath ?? asset.filename) as NSString).lastPathComponent
+        return FileNameTemplate.render(template, original: (original as NSString).deletingPathExtension,
+                                       sequence: sequence, date: asset.date, camera: asset.camera,
+                                       title: asset.title, rating: asset.rating)
+    }
+
+    /// What renaming would do, without touching the disk: each photo's current and new file
+    /// name, numbered from `start`. `clashes` counts new names used more than once in the batch
+    /// (renaming tells them apart with _1, _2…).
+    static func plan(_ assets: [Asset], template: String, start: Int = 1)
+        -> (names: [(id: String, from: String, to: String)], clashes: Int) {
+        var names: [(id: String, from: String, to: String)] = []
+        var seen: [String: Int] = [:]
+        for (offset, asset) in assets.enumerated() {
+            let from = ((asset.localPath ?? asset.filename) as NSString).lastPathComponent
+            let ext = (from as NSString).pathExtension
+            let base = baseName(for: asset, template: template, sequence: start + offset)
+            let to = ext.isEmpty ? base : "\(base).\(ext)"
+            names.append((asset.id, from, to))
+            seen[to.lowercased(), default: 0] += 1
+        }
+        return (names, seen.values.filter { $0 > 1 }.reduce(0) { $0 + $1 - 1 })
+    }
+
+    /// Rename each asset's original from a token template (§4.2), numbering from `start`; the
+    /// extension is preserved. `companions` (keyed by asset id) move to the same new base
+    /// name — a RAW's paired JPEG stays paired — and a name is only taken when every file of
+    /// the group is free.
     static func renameWithTemplate(_ assets: [Asset], template: String, start: Int = 1,
                                    companions: [String: [Asset]] = [:]) -> [String: URL] {
         let fm = FileManager.default
-        // {date}/{time} come from the capture wall-clock (UTC-anchored), so renamed files carry
-        // the time the camera recorded regardless of the machine's timezone
-        let dateFmt = DateFormatter(); dateFmt.dateFormat = "yyyyMMdd"; dateFmt.locale = Locale(identifier: "en_US_POSIX")
-        dateFmt.timeZone = TimeZone.captureWallClock
-        let timeFmt = DateFormatter(); timeFmt.dateFormat = "HHmmss"; timeFmt.locale = Locale(identifier: "en_US_POSIX")
-        timeFmt.timeZone = TimeZone.captureWallClock
         var result: [String: URL] = [:]
         var seq = start
         for a in assets {
@@ -26,15 +47,7 @@ enum RenameService {
             guard fm.fileExists(atPath: src.path) else { continue }
             let ext = src.pathExtension
             let dir = src.deletingLastPathComponent()
-            let original = src.deletingPathExtension().lastPathComponent
-            var name = template
-                .replacingOccurrences(of: "{seq}", with: String(format: "%04d", seq))
-                .replacingOccurrences(of: "{date}", with: dateFmt.string(from: a.date))
-                .replacingOccurrences(of: "{time}", with: timeFmt.string(from: a.date))
-                .replacingOccurrences(of: "{camera}", with: sanitize(a.camera))
-                .replacingOccurrences(of: "{original}", with: original)
-            name = sanitize(name)
-            let base = name.isEmpty ? original : name
+            let base = baseName(for: a, template: template, sequence: seq)
             let partners = (companions[a.id] ?? []).compactMap { partner in
                 partner.localPath.map { (id: partner.id, src: URL(fileURLWithPath: $0)) }
             }

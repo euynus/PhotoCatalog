@@ -72,6 +72,7 @@ struct PhotoContextMenu: View {
             Button("复位修图调整") { act { app.resetDevelopSelection() } }
         }
         Button("创建虚拟副本") { act { app.createVirtualCopies() } }
+        Button("重命名照片…") { act { app.showRenameSheet() } }
 
         Button("设置位置…") { act { app.showLocationEditor() } }
 

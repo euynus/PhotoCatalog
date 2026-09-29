@@ -543,10 +543,10 @@
 			<string>%lld originals</string>
 		</dict>
 	</dict>
-	<key>将重命名 %lld 个磁盘原件，并更新目录库中的文件路径。</key>
+	<key>将重命名 %lld 张照片的磁盘原件，并更新目录库中的路径。RAW+JPEG 配对的 JPEG 一起改名，扩展名保持不变。</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
-		<string>%#@n1@ on disk will be renamed and their paths updated in the catalog.</string>
+		<string>Renames the originals of %#@n1@ on disk and updates their paths in the catalog. A RAW's paired JPEG is renamed with it; extensions stay the same.</string>
 		<key>n1</key>
 		<dict>
 			<key>NSStringFormatSpecTypeKey</key>
@@ -554,9 +554,9 @@
 			<key>NSStringFormatValueTypeKey</key>
 			<string>lld</string>
 			<key>one</key>
-			<string>%lld original</string>
+			<string>%lld photo</string>
 			<key>other</key>
-			<string>%lld originals</string>
+			<string>%lld photos</string>
 		</dict>
 	</dict>
 	<key>已为 %lld 张照片设置位置</key>
@@ -1267,6 +1267,22 @@
 			<string>%lld star</string>
 			<key>other</key>
 			<string>%lld stars</string>
+		</dict>
+	</dict>
+	<key>重命名 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Rename %#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
 		</dict>
 	</dict>
 </dict>

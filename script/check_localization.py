@@ -63,7 +63,7 @@ SPEC_OVERRIDES = {
     'DateFmt.shortCapture(last)': '%@', 'DateFmt.shortCapture(first)': '%@',
     'shiftMinutes': '%lld', 'shiftHours': '%lld', 'pair': '%@', 'app.recentImportDays': '%lld',
     'singles': '%lld', 'unconfirmed': '%lld', 'person.unconfirmed': '%lld', 'k': '%@', 'active': '%lld',
-    'app.cacheLimitMB': '%lld', 'person': '%@',
+    'app.cacheLimitMB': '%lld', 'person': '%@', 'plan.clashes': '%lld',
 }
 # English plurals: "%lld <noun>" gets a singular form in the .stringsdict
 NOUNS = {'photos': 'photo', 'files': 'file', 'originals': 'original', 'faces': 'face', 'groups': 'group',

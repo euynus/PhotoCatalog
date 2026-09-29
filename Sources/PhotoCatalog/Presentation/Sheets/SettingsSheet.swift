@@ -6,7 +6,6 @@ import SwiftUI
 
 struct SettingsSheet: View {
     @Environment(AppState.self) var app
-    @State private var renamePrefix = "IMG"
     @State private var shiftHours = 1
     @State private var shiftMinutes = 0
     @State private var absoluteDate = Date()
@@ -316,17 +315,11 @@ struct SettingsSheet: View {
             }
 
             section(L("批量重命名"), category: .files) {
-                Text("按命名模板重命名选中已导入照片的原件。可用占位符：{seq} {date} {time} {camera} {original}（纯前缀等价于「前缀_{seq}」）。")
+                Text("按命名模板重命名选中已导入照片的原件，重命名前可预览新文件名（也可在「照片」菜单或右键菜单中打开）。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 HStack(spacing: 9) {
-                    TextField("如 {date}_{seq} 或 IMG", text: $renamePrefix)
-                        .textFieldStyle(.plain).font(.system(size: 13))
-                        .padding(.horizontal, 10).padding(.vertical, 7)
-                        .background(Theme.surface)
-                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .frame(width: 200)
-                    ghostButton(nil, L("重命名选中"), small: true) { app.batchRename(template: renamePrefix) }
+                    ghostButton(nil, L("重命名选中照片…"), small: true,
+                                disabled: !app.canOperateOnSelectedOriginals) { app.showRenameSheet() }
                     Spacer()
                 }
             }

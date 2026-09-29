@@ -158,10 +158,10 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>将移动 %lld 个磁盘原件，并更新目录库中的文件路径。</string>
 	</dict>
-	<key>将重命名 %lld 个磁盘原件，并更新目录库中的文件路径。</key>
+	<key>将重命名 %lld 张照片的磁盘原件，并更新目录库中的路径。RAW+JPEG 配对的 JPEG 一起改名，扩展名保持不变。</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
-		<string>将重命名 %lld 个磁盘原件，并更新目录库中的文件路径。</string>
+		<string>将重命名 %lld 张照片的磁盘原件，并更新目录库中的路径。RAW+JPEG 配对的 JPEG 一起改名，扩展名保持不变。</string>
 	</dict>
 	<key>已为 %lld 张照片设置位置</key>
 	<dict>
@@ -377,6 +377,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>评分 %lld 星</string>
+	</dict>
+	<key>重命名 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>重命名 %lld 张</string>
 	</dict>
 </dict>
 </plist>

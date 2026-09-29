@@ -105,7 +105,6 @@
 "将复制 %lld 个磁盘原件，目录库中的文件路径保持不变。" = "%lld originals on disk will be copied. Their paths in the catalog stay the same.";
 "将把 %lld 个重复照片的磁盘原件移到废纸篓，并从目录库移除对应记录。" = "The originals of %lld duplicate photos will be moved to the Trash and their records removed from the catalog.";
 "将移动 %lld 个磁盘原件，并更新目录库中的文件路径。" = "%lld originals on disk will be moved and their paths updated in the catalog.";
-"将重命名 %lld 个磁盘原件，并更新目录库中的文件路径。" = "%lld originals on disk will be renamed and their paths updated in the catalog.";
 "尚未备份" = "Not backed up yet";
 "已为 %lld 张照片设置位置" = "Set the location of %lld photos";
 "已从 %lld 张照片中删除关键词「%@」" = "Deleted keyword “%2$@” from %1$lld photos";
@@ -310,7 +309,6 @@
 "重命名" = "Rename";
 "重命名关键词" = "Rename Keyword";
 "重命名关键词「%@」" = "Rename Keyword “%@”";
-"重命名原件？" = "Rename Originals?";
 "重命名失败" = "Rename failed";
 "重命名未完成" = "Rename didn't finish";
 "重命名相册" = "Rename Album";
@@ -920,6 +918,7 @@
 "运行健康检查" = "Run Health Check";
 "重新扫描当前源" = "Rescan Current Source";
 "重置缩略图大小" = "Reset Thumbnail Size";
+"重命名照片…" = "Rename Photos…";
 
 /* Presentation/MainWindow/RootView.swift */
 "正在打开 %@…" = "Opening %@…";
@@ -1115,6 +1114,15 @@
 "轨迹点" = "Points";
 "选中的 %lld 张" = "%lld selected";
 
+/* Presentation/Sheets/RenameSheet.swift */
+"重命名照片" = "Rename Photos";
+"将重命名 %lld 张照片的磁盘原件，并更新目录库中的路径。RAW+JPEG 配对的 JPEG 一起改名，扩展名保持不变。" = "Renames the originals of %lld photos on disk and updates their paths in the catalog. A RAW's paired JPEG is renamed with it; extensions stay the same.";
+"命名模板" = "Name Template";
+"如 {date}_{seq}" = "e.g. {date}_{seq}";
+"…还有 %lld 张" = "…and %lld more";
+"%lld 个新文件名重复，将依次加上 _1、_2 区分；可加入 {seq} 避免" = "%lld new names repeat and will get _1, _2… — add {seq} to avoid it";
+"重命名 %lld 张" = "Rename %lld photos";
+
 /* Presentation/Sheets/RenderedExportSheet.swift */
 "%@ × %@ 以内" = "Within %@ × %@";
 "16 位/通道" = "16 bits/channel";
@@ -1158,7 +1166,6 @@
 "复制不会改变目录库路径；移动成功后会更新目录库中的原件位置。" = "Copying doesn't change paths in the catalog; after a successful move, the catalog points to the new location.";
 "复制选中原件" = "Copy Selected Originals";
 "外观" = "Appearance";
-"如 {date}_{seq} 或 IMG" = "e.g. {date}_{seq} or IMG";
 "如 © {year} 你的名字" = "e.g. © {year} Your Name";
 "完全在本机进行，照片不会离开设备。" = "Runs entirely on this Mac; photos never leave it.";
 "对选中照片整体平移拍摄时间（时区/相机时钟校正），或统一设为指定时间。" = "Shift the capture times of the selected photos (to correct a time zone or camera clock), or set them all to one time.";
@@ -1184,7 +1191,6 @@
 "托管式：导入时复制原件到目录库 Originals/YYYY/MM/DD。" = "Managed: originals are copied into the catalog's Originals/YYYY/MM/DD on import.";
 "批量调整拍摄时间" = "Shift Capture Times";
 "批量重命名" = "Batch Rename";
-"按命名模板重命名选中已导入照片的原件。可用占位符：{seq} {date} {time} {camera} {original}（纯前缀等价于「前缀_{seq}」）。" = "Renames the originals of the selected imported photos with a template. Placeholders: {seq} {date} {time} {camera} {original} (a plain prefix means “prefix_{seq}”).";
 "文件操作" = "Files";
 "新建目录库" = "New Catalog";
 "无" = "None";
@@ -1211,11 +1217,12 @@
 "设置" = "Settings";
 "评分 / 关键词 / 标题等改动会写入同名 .xmp，不改动原图。" = "Changes to ratings, keywords, titles and more are written to a .xmp file with the same name; the original isn't touched.";
 "语言" = "Language";
-"重命名选中" = "Rename Selected";
 "重建缩略图" = "Rebuild Thumbnails";
 "隐私" = "Privacy";
 "预览长边" = "Preview Long Edge";
 "预设名" = "Preset name";
+"按命名模板重命名选中已导入照片的原件，重命名前可预览新文件名（也可在「照片」菜单或右键菜单中打开）。" = "Rename the selected photos' originals from a name template, previewing the new names first (also in the Photo menu and the right-click menu).";
+"重命名选中照片…" = "Rename Selected Photos…";
 
 /* Presentation/Sheets/SmartAlbumBuilder.swift */
 "%lld 张照片符合规则" = "%lld photos match the rules";
