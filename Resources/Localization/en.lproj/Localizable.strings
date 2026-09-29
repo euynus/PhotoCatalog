@@ -711,6 +711,10 @@
 "导入预设“%@”" = "Import Preset “%@”";
 "导入预设未能保存到目录库" = "The import preset couldn’t be saved to the catalog";
 "已删除的预设" = "Deleted preset";
+"以当前设置存储为预设" = "Save the current settings as a preset";
+"已展开" = "Expanded";
+"已折叠" = "Collapsed";
+"悬停预览，点按应用" = "Hover to preview, click to apply";
 "导入时修图" = "Develop on Import";
 "修图预设" = "Develop Preset";
 "导入的照片都套用这个预设，之后仍可随时修改" = "Every imported photo gets this preset; you can still change it afterwards";

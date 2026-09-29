@@ -1050,6 +1050,23 @@ enum DevelopCheck {
         assert(app.developSettings[b.id]?.exposure == 0.6 && app.developSettings[b.id]?.vibrance == 0
                && app.developSettings[a.id] == edit, "sync copies the chosen settings from the selected photo")
 
+        // resting on a preset shows it without saving; leaving takes it away; a drag in
+        // progress is never replaced
+        let vivid = DevelopPreset.builtIns.first { $0.id == "builtin.vivid" }!
+        app.previewDevelopPreset(vivid, on: c)
+        assert(app.developSettings(for: c.id).vibrance == 35 && app.developSettings[c.id]?.vibrance != 35,
+               "a preset previews without saving")
+        app.endDevelopPresetPreview(vivid.id)
+        assert(app.developDraft == nil && app.developSettings(for: c.id).vibrance != 35, "leaving it ends the preview")
+        var dragging = app.developSettings(for: c.id)
+        dragging.contrast = 12
+        app.updateDevelopDraft(dragging, for: c.id)
+        app.previewDevelopPreset(vivid, on: c)
+        assert(app.developDraft?.settings == dragging, "a preview never replaces a drag")
+        app.endDevelopPresetPreview()
+        assert(app.developDraft?.settings == dragging, "and ending one leaves the drag alone")
+        app.developDraft = nil
+
         app.setPrimary(c.id)
         app.applyDevelopPreset(DevelopPreset.builtIns.first { $0.name == "黑白" }!)
         assert(app.developSettings[c.id]?.saturation == -100 && app.developSettings[c.id]?.exposure == 0.6,

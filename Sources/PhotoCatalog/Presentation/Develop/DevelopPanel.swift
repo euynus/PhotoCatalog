@@ -33,6 +33,12 @@ struct DevelopPanel: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header(asset, settings: settings)
+                section(L("预设"), accessory: {
+                    Button { app.showDevelopTransfer(.preset) } label: { Image(systemName: "plus") }
+                        .buttonStyle(.borderless)
+                        .help("以当前设置存储为预设")
+                        .accessibilityLabel("存储为预设…")
+                }) { DevelopPresetList(asset: asset) }
                 section(L("裁剪与旋转")) { geometry(asset, settings) }
                 section(L("蒙版")) { masks(asset, settings) }
                 section(L("污点去除")) { spots(asset, settings) }

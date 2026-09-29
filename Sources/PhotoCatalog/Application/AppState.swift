@@ -1161,7 +1161,31 @@ final class AppState {
     }
 
     func applyDevelopPreset(_ preset: DevelopPreset) {
+        developPresetPreview = nil   // the preview becomes the real thing
         applyDevelopTransfer(preset.transfer, to: developTargetIds, undoName: L("应用预设“\(preset.name)”"))
+    }
+
+    // ----- preset preview: the photo shows a preset's look while the pointer rests on it -----
+    private struct DevelopPresetPreview {
+        let presetId: String
+        let assetId: String
+        let settings: DevelopSettings
+    }
+    @ObservationIgnored private var developPresetPreview: DevelopPresetPreview?
+
+    /// Shows `preset` on the photo in Develop without saving anything. Never over a drag in progress.
+    func previewDevelopPreset(_ preset: DevelopPreset, on asset: Asset) {
+        if developDraft != nil, developPresetPreview == nil { return }
+        let settings = preset.transfer.applied(to: developSettings[asset.id] ?? .neutral, targetIsRaw: asset.isRaw)
+        developPresetPreview = DevelopPresetPreview(presetId: preset.id, assetId: asset.id, settings: settings)
+        updateDevelopDraft(settings, for: asset.id)
+    }
+
+    /// Takes the preview of `presetId` (or any) away, leaving whatever else is being dragged.
+    func endDevelopPresetPreview(_ presetId: String? = nil) {
+        guard let preview = developPresetPreview, presetId == nil || presetId == preview.presetId else { return }
+        developPresetPreview = nil
+        if developDraft == DevelopDraft(assetId: preview.assetId, settings: preview.settings) { developDraft = nil }
     }
 
     /// Saves the selected photo's `fields` as a preset; a preset of the same name is replaced.
