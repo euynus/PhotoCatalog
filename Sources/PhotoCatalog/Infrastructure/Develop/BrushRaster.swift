@@ -14,6 +14,8 @@ enum BrushRaster {
     private static let cache: NSCache<NSString, Box> = {
         let cache = NSCache<NSString, Box>()
         cache.countLimit = 12
+        // an export's full-size mask is tens of megabytes: a few, not a dozen
+        cache.totalCostLimit = 256 << 20
         return cache
     }()
 
@@ -81,7 +83,7 @@ enum BrushRaster {
                 painted = paint(strokes, onto: nil, width: width, height: height)
             }
             guard let painted else { return nil }
-            cache.setObject(Box(painted), forKey: key)
+            cache.setObject(Box(painted), forKey: key, cost: painted.bytesPerRow * painted.height)
             bitmap = painted
         }
         // raw values: the weight must not be color-managed on its way in

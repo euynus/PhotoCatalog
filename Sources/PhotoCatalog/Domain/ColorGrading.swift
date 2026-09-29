@@ -4,7 +4,8 @@
 import Foundation
 
 /// A tint and brightness for each tonal region and for the whole photo. Blending widens the
-/// hand-over between regions, balance moves it toward the shadows (-) or highlights (+).
+/// hand-over between regions; balance favors the shadows (-) or highlights (+), as in
+/// Lightroom, by moving the hand-over away from them.
 struct ColorGrading: Codable, Hashable, Sendable {
     /// One region's grade: hue 0…360°, saturation 0…100 (strength of the tint), luminance -100…100.
     struct Grade: Codable, Hashable, Sendable {

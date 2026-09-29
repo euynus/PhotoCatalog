@@ -71,9 +71,10 @@ struct BoostCurve: Sendable {
         var inputs: [Double] = [], outputs: [Double] = []
         for bin in 0..<count where hits[bin] >= 3 {
             let input = sumIn[bin] / Double(hits[bin])
-            // the curve never falls: noise between neighboring bins is flattened out
-            let output = max(sumOut[bin] / Double(hits[bin]), outputs.last ?? 0)
-            guard input > (inputs.last ?? 0) else { continue }
+            let output = sumOut[bin] / Double(hits[bin])
+            // the curve always rises, so it can be undone: a bin that noise put level with or
+            // below the one before is left out rather than flattened
+            guard input > (inputs.last ?? 0), output > (outputs.last ?? 0) else { continue }
             inputs.append(input)
             outputs.append(output)
         }
@@ -81,8 +82,8 @@ struct BoostCurve: Sendable {
         return BoostCurve(inputs: inputs, outputs: outputs)
     }
 
-    /// Engine output for unboosted input `x`: proportional below the samples, the last
-    /// segment's slope above them.
+    /// Engine output for unboosted input `x`: proportional outside the samples, so the curve
+    /// and its inverse stay finite however far exposure moves a tone.
     func apply(_ x: Double) -> Double { Self.interpolate(x, from: inputs, to: outputs) }
 
     /// The unboosted input that comes out as `y`.
@@ -107,11 +108,7 @@ struct BoostCurve: Sendable {
     private static func interpolate(_ x: Double, from xs: [Double], to ys: [Double]) -> Double {
         guard let first = xs.first, let last = xs.last else { return x }
         if x <= first { return first > 0 ? x * ys[0] / first : ys[0] }
-        if x >= last {
-            let n = xs.count
-            let slope = (ys[n - 1] - ys[n - 2]) / max(xs[n - 1] - xs[n - 2], 1e-12)
-            return ys[n - 1] + (x - last) * max(slope, 0)
-        }
+        if x >= last { return last > 0 ? x * ys[ys.count - 1] / last : ys[ys.count - 1] }
         // binary search for the segment
         var low = 0, high = xs.count - 1
         while high - low > 1 {

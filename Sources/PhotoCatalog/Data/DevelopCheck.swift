@@ -261,6 +261,20 @@ enum DevelopCheck {
         let shifted = mean(blue, s), original = mean(blue, .neutral)
         assert(shifted.r > original.r + 0.05, "a positive blue hue shift turns blue toward purple")
 
+        // a highlight brighter than white passes through where the mixer doesn't reach
+        var mixer = ColorMixer()
+        mixer.saturation[ColorMixer.Band.red.rawValue] = -100
+        let bright = CIImage(color: .white).cropped(to: CGRect(x: 0, y: 0, width: 2, height: 2))
+            .applyingFilter("CIExposureAdjust", parameters: ["inputEV": 1])
+        func firstRed(_ image: CIImage) -> Float {
+            var value = [Float](repeating: 0, count: 4)
+            DevelopRenderer.context.render(image, toBitmap: &value, rowBytes: 16,
+                                           bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBAf, colorSpace: nil)
+            return value[0]
+        }
+        assert(firstRed(bright) > 1.1 && abs(firstRed(DevelopKernels.colorMixer(bright, mixer)) - firstRed(bright)) < 0.001,
+               "the mixer leaves values outside 0…1 it doesn't change alone")
+
         let old = try! JSONDecoder().decode(DevelopSettings.self, from: Data(#"{"mixer":{"hue":[1,2]}}"#.utf8))
         assert(old.mixer.isNeutral, "a malformed mixer loads neutral")
         let carried = DevelopSettings().applying(s, fields: [.colorMixer])
@@ -283,6 +297,16 @@ enum DevelopCheck {
         let greenMid = mean((0.5, 0.5, 0.5), s), greenDark = mean((0.03, 0.03, 0.03), s)
         assert(greenMid.g > greenMid.r + 0.05 && greenDark.g - greenDark.r < greenMid.g - greenMid.r,
                "midtones tint the middle more than the ends")
+
+        // balance favors the highlights (+) or the shadows (-), as in Lightroom
+        s = DevelopSettings()
+        s.grading.shadows = ColorGrading.Grade(hue: 0, saturation: 100, luminance: 0)
+        s.grading.balance = -100
+        let favorShadows = mean((0.5, 0.5, 0.5), s)
+        s.grading.balance = 100
+        let favorHighlights = mean((0.5, 0.5, 0.5), s)
+        assert(favorShadows.r - favorShadows.g > favorHighlights.r - favorHighlights.g + 0.03,
+               "negative balance widens the shadows' tint, positive narrows it")
 
         s = DevelopSettings()
         s.grading.global.luminance = 100
@@ -543,6 +567,16 @@ enum DevelopCheck {
         let half = luma(develop(speckled, s), 32, 32)
         assert(half > luma(plain, 32, 32) + 20 && half < luma(healed, 32, 32) - 20, "half opacity heals halfway")
 
+        // a source just beside the speck: the speck is in the source's surroundings, and must not
+        // brighten the fix to make up for it
+        let flatSpeck = image { x, y in hypot(Double(x) - 32, Double(y) - 32) < 3 ? (0.02, 0.02, 0.02) : (0.5, 0.5, 0.5) }
+        var near = SpotRemoval(target: CGPoint(x: 0.5, y: 0.5), source: CGPoint(x: 0.5, y: 23.0 / 64), radius: 5.0 / 64)
+        near.feather = 20
+        var nearEdit = DevelopSettings(); nearEdit.spots = [near]
+        let nearPlain = develop(flatSpeck, .neutral), nearHealed = develop(flatSpeck, nearEdit)
+        assert([30, 32, 34, 36].allSatisfy { abs(luma(nearHealed, 32, $0) - luma(nearPlain, 32, 50)) < 3 },
+               "healing from beside the speck matches the surroundings, not the speck")
+
         // the source search avoids another speck and takes a place that matches
         var luma64 = [Double](repeating: 0, count: 64 * 64)
         for y in 0..<64 { for x in 0..<64 { luma64[y * 64 + x] = 0.25 + 0.5 * Double(x) / 63 } }
@@ -744,6 +778,18 @@ enum DevelopCheck {
         assert(brighter[400 * 3] > identity[400 * 3], "more exposure brightens")
         assert(BoostCurve.measure(boosted: [0.5, 0.5, 0.5, 1], flat: [0.25, 0.25, 0.25, 1]) == nil,
                "too few tones measure nothing")
+        // the brightest tones clip in the boosted decode: level at the top, as a real highlight does
+        let clipped = boosted.map { min($0, 0.8) }
+        if let top = BoostCurve.measure(boosted: clipped, flat: flat) {
+            assert(zip(top.outputs, top.outputs.dropFirst()).allSatisfy { $0 < $1 }, "the measured curve always rises")
+            let back = top.invert(0.95)
+            assert(back.isFinite && back < 100 && abs(top.apply(back) - 0.95) < 1e-6,
+                   "tones beyond the samples undo and redo to where they were")
+            let darker = top.exposureTable(delta: -1).withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+            assert(darker[1000 * 3] < 0.95, "less exposure darkens the brightest tones too")
+        } else {
+            assertionFailure("a curve is measured from a photo with clipped highlights")
+        }
     }
 
     private static func checkHistogram() {

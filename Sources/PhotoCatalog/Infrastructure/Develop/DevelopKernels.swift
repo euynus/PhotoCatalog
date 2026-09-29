@@ -90,7 +90,8 @@ enum DevelopKernels {
                                          float4 b4, float4 b5, float4 b6, float4 b7) {
             float4 bands[8] = { b0, b1, b2, b3, b4, b5, b6, b7 };
             const float centers[8] = { 0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 270.0, 300.0 };
-            float3 hsl = toHSL(clamp(s.rgb, 0.0, 1.0));
+            float3 c = clamp(s.rgb, 0.0, 1.0);
+            float3 hsl = toHSL(c);
             float weights[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
             for (int i = 0; i < 8; i++) {
                 float a = centers[i], b = i == 7 ? centers[0] + 360.0 : centers[i + 1];
@@ -105,26 +106,28 @@ enum DevelopKernels {
             for (int i = 0; i < 8; i++) { shift += weights[i] * bands[i].xyz; }
             // weight by chroma, not HSL saturation: near white and near black a sliver of color
             // has high saturation, and a white shirt's bluish shadows would count as blue
-            float3 c = clamp(s.rgb, 0.0, 1.0);
             float colorful = smoothstep(0.02, 0.2, max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)));
             hsl.x += shift.x * 30.0 * colorful;
             hsl.y = clamp(hsl.y * (1.0 + shift.y * colorful), 0.0, 1.0);
             hsl.z = clamp(hsl.z * exp2(shift.z * colorful), 0.0, 1.0);
-            return float4(fromHSL(hsl), s.a);
+            // only the change is added: colors outside 0…1 (highlights a mask may still bring
+            // back, wide-gamut color) pass through where the mixer doesn't reach
+            return float4(s.rgb + fromHSL(hsl) - fromHSL(toHSL(c)), s.a);
         }
         """,
         "colorGrading": """
         \(hsl)
         // Color grading on display-encoded color. Each grade is (hue°, saturation 0…1, luminance
         // -1…1) for shadows, midtones, highlights and the whole photo; shape is (blending 0…1,
-        // balance -1…1). Region weights split luma around a balance-shifted middle and always
-        // sum to one; tints are pure chroma, so they color without brightening.
+        // balance -1…1, positive favoring the highlights). Region weights split luma around a
+        // balance-shifted middle and always sum to one; tints are pure chroma, so they color
+        // without brightening.
         [[stitchable]] float4 colorGrading(sample_t s, float4 shadows, float4 midtones, float4 highlights,
                                            float4 global, float2 shape) {
             float3 luma = float3(0.299, 0.587, 0.114);
             float3 c = s.rgb;
             float l = clamp(dot(c, luma), 0.0, 1.0);
-            float middle = 0.5 + shape.y * 0.3;
+            float middle = 0.5 - shape.y * 0.3;
             float width = 0.12 + shape.x * 0.36;
             float ws = 1.0 - smoothstep(middle - width, middle, l);
             float wh = smoothstep(middle, middle + width, l);
@@ -190,7 +193,8 @@ enum DevelopKernels {
     ]
 
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var compiled: [String: CIKernel] = [:]
+    /// Each kernel once compiled, or nil once it failed to: a failure isn't retried every render.
+    nonisolated(unsafe) private static var compiled: [String: CIKernel?] = [:]
 
     /// The named kernel, compiled on first use (a fraction of a second, once per kernel).
     private static func kernel(_ name: String) -> CIKernel? {
@@ -199,7 +203,7 @@ enum DevelopKernels {
             guard let body = bodies[name] else { return nil }
             let source = "#include <CoreImage/CoreImage.h>\nextern \"C\" { namespace coreimage {\n\(body)\n}}\n"
             let kernel = (try? CIKernel.kernels(withMetalString: source))?.first { $0.name == name }
-            compiled[name] = kernel
+            compiled[name] = .some(kernel)
             return kernel
         }
     }
@@ -225,7 +229,10 @@ enum DevelopKernels {
         guard amount > 0, let kernel = kernel("filmGrain") as? CIColorKernel,
               let random = CIFilter(name: "CIRandomGenerator")?.outputImage else { return image }
         let extent = image.extent
-        let pixel = max(1, (1 + size / 100 * 3) * scale)
+        // grain smaller than a pixel of a reduced render averages out, as it does when the
+        // full-size photo is viewed at that size: fainter, not coarser
+        let grainPixel = (1 + size / 100 * 3) * scale
+        let pixel = max(1, grainPixel)
         // The random field's alpha is random too, and filters that unpremultiply (the color
         // matrix) would skew it bright; make it opaque over the area the grain samples first.
         let region = extent.insetBy(dx: -64, dy: -64)
@@ -243,7 +250,7 @@ enum DevelopKernels {
         let noise = coarse.applyingFilter("CIDissolveTransition", parameters: [
             kCIInputTargetImageKey: fine, "inputTime": roughness / 100 * 0.6,
         ]).cropped(to: extent)
-        return kernel.apply(extent: extent, arguments: [image, noise, amount / 100 * 0.25]) ?? image
+        return kernel.apply(extent: extent, arguments: [image, noise, amount / 100 * 0.25 * min(1, grainPixel)]) ?? image
     }
 
     /// Local contrast of display-encoded `image` at `sigma` pixels (see the kernel).

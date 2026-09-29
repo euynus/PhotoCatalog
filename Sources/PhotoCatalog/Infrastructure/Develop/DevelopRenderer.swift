@@ -418,13 +418,20 @@ enum DevelopRenderer {
             let shifted = image.clampedToExtent()
                 .transformed(by: CGAffineTransform(translationX: target.x - source.x, y: target.y - source.y))
             var patch = shifted.cropped(to: extent)
+            // where the speck lands in the moved copy: a source close to the spot has the speck
+            // in its own surroundings
+            let ghost = CGPoint(x: 2 * target.x - source.x, y: 2 * target.y - source.y)
             if spot.mode == .heal,
                let ring = DevelopKernels.disc(center: target, radius: radius * 1.05, feather: 0.05, invert: true,
-                                              extent: extent) {
-                // each side's surroundings, the spot itself left out: blur a copy whose alpha is the ring
+                                              extent: extent),
+               let speck = DevelopKernels.disc(center: ghost, radius: radius * 1.05, feather: 0.05, invert: true,
+                                               extent: extent) {
+                // each side's surroundings, the speck left out of both (the same window on each
+                // side, so they compare alike): blur a copy whose alpha is the ring
+                let window = ring.applyingFilter("CIMinimumCompositing", parameters: [kCIInputBackgroundImageKey: speck])
                 func surroundings(_ image: CIImage) -> CIImage {
                     image.applyingFilter("CIBlendWithMask", parameters: [
-                        kCIInputBackgroundImageKey: clear, kCIInputMaskImageKey: ring,
+                        kCIInputBackgroundImageKey: clear, kCIInputMaskImageKey: window,
                     ]).applyingGaussianBlur(sigma: Double(radius) * 0.6)
                 }
                 patch = DevelopKernels.heal(patch, sourceRing: surroundings(patch), targetRing: surroundings(image),

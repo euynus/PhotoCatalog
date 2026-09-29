@@ -65,7 +65,10 @@ enum SpotFinder {
                 }
             }
         }
-        // a spot too big to have room around it takes from beside it
-        return best?.point ?? CGPoint(x: min(1, Double(target.x) + radius * 2.5), y: Double(target.y))
+        // a spot too big to have room around it takes from beside it, on whichever side has room
+        if let best { return best.point }
+        let dx = r * 2.5 / Double(width)
+        let x = Double(target.x) + dx <= 1 ? Double(target.x) + dx : max(0, Double(target.x) - dx)
+        return CGPoint(x: x, y: Double(target.y))
     }
 }
