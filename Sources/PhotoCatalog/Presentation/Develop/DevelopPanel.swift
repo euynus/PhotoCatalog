@@ -7,6 +7,7 @@ struct DevelopPanel: View {
     @Environment(AppState.self) private var app
     let asset: Asset?
     @State private var mixerProperty: ColorMixer.Property = .hue
+    @State private var gradingRegion: ColorGrading.Region = .shadows
 
     var body: some View {
         Group {
@@ -70,6 +71,16 @@ struct DevelopPanel: View {
                     .labelsHidden()
                     .controlSize(.small)
                     ForEach(DevelopControl.mixer(mixerProperty)) { control in slider(control, asset, settings) }
+                }
+                section(L("颜色分级"), accessory: { gradingSwatch(settings) }) {
+                    Picker("颜色分级区域", selection: $gradingRegion) {
+                        ForEach(ColorGrading.Region.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    ForEach(DevelopControl.grading(gradingRegion)) { control in slider(control, asset, settings) }
+                    ForEach(DevelopControl.gradingShape) { control in slider(control, asset, settings) }
                 }
                 section(L("细节")) {
                     ForEach(DevelopControl.detail) { control in slider(control, asset, settings) }
@@ -158,6 +169,17 @@ struct DevelopPanel: View {
                           onReset: { commit(asset, settings, L("色调", table: "Context")) { $0.tint = nil } },
                           onCommit: { commitDraft(asset, L("色调", table: "Context")) })
         }
+    }
+
+    /// The chosen region's tint, so the hue slider's number reads as a color.
+    private func gradingSwatch(_ settings: DevelopSettings) -> some View {
+        let controls = DevelopControl.grading(gradingRegion)   // hue, saturation, luminance
+        let hue = settings[keyPath: controls[0].id], saturation = settings[keyPath: controls[1].id]
+        return Circle()
+            .fill(Color(hue: hue / 360, saturation: max(0.15, saturation / 100), brightness: 0.95))
+            .frame(width: 12, height: 12)
+            .overlay(Circle().strokeBorder(Theme.line2, lineWidth: 1))
+            .accessibilityHidden(true)
     }
 
     private var presetMenu: some View {

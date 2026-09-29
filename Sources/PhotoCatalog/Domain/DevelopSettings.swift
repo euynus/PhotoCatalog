@@ -27,6 +27,8 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var curve = ToneCurve()
     /// Hue, saturation and luminance per color band (see `ColorMixer`).
     var mixer = ColorMixer()
+    /// Tints for shadows, midtones and highlights (see `ColorGrading`).
+    var grading = ColorGrading()
     /// Detail, applied after tone on top of the camera's own RAW sharpening and noise reduction.
     /// Sharpening amount 0…150 (luminance only), radius 0.5…3 px at full resolution, masking
     /// 0…100 limits it to edges; noise reduction 0…100 for luminance and for color.
@@ -101,6 +103,7 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
         }
         if !curve.isLinear { text += "|c" + curve.fingerprintText }
         if !mixer.isNeutral { text += "|m" + mixer.fingerprintText }
+        if !grading.isNeutral { text += "|g" + grading.fingerprintText }
         if sharpening != 0 || sharpenRadius != 1 || sharpenMasking != 0 || luminanceNoise != 0 || colorNoise != 0 {
             // like geometry: only when set, so earlier edits keep their cache names
             text += String(format: "|d%.1f,%.2f,%.1f,%.1f,%.1f", sharpening, sharpenRadius, sharpenMasking,
@@ -143,6 +146,7 @@ extension DevelopSettings {
         dehaze = try container.decodeIfPresent(Double.self, forKey: .dehaze) ?? 0
         curve = try container.decodeIfPresent(ToneCurve.self, forKey: .curve) ?? ToneCurve()
         mixer = try container.decodeIfPresent(ColorMixer.self, forKey: .mixer) ?? ColorMixer()
+        grading = try container.decodeIfPresent(ColorGrading.self, forKey: .grading) ?? ColorGrading()
         sharpening = try container.decodeIfPresent(Double.self, forKey: .sharpening) ?? 0
         sharpenRadius = try container.decodeIfPresent(Double.self, forKey: .sharpenRadius) ?? 1
         sharpenMasking = try container.decodeIfPresent(Double.self, forKey: .sharpenMasking) ?? 0
@@ -427,6 +431,28 @@ struct DevelopControl: Identifiable {
             return signed(keyPath, band.title)
         }
     }
+
+    /// Hue, saturation and luminance of one color-grading region.
+    static func grading(_ region: ColorGrading.Region) -> [DevelopControl] {
+        let grade: WritableKeyPath<DevelopSettings, ColorGrading.Grade> = switch region {
+        case .shadows: \DevelopSettings.grading.shadows
+        case .midtones: \DevelopSettings.grading.midtones
+        case .highlights: \DevelopSettings.grading.highlights
+        case .global: \DevelopSettings.grading.global
+        }
+        return [
+            DevelopControl(id: grade.appending(path: \.hue), title: L("色相"), range: 0...360, step: 1) {
+                String(format: "%.0f°", $0)
+            },
+            amount(grade.appending(path: \.saturation), L("饱和度"), max: 100),
+            signed(grade.appending(path: \.luminance), L("明亮度")),
+        ]
+    }
+
+    static let gradingShape: [DevelopControl] = [
+        amount(\.grading.blending, L("混合"), max: 100, neutral: 50),
+        signed(\.grading.balance, L("平衡")),
+    ]
 
     static let detail: [DevelopControl] = [
         amount(\.sharpening, L("锐化"), max: 150),

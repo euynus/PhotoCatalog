@@ -254,10 +254,11 @@ enum DevelopRenderer {
         ])
     }
 
-    /// The HSL mixer, on display-encoded values.
+    /// The HSL mixer, then color grading, on display-encoded values.
     static func applyMixer(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
-        guard !s.mixer.isNeutral else { return input }
-        return DevelopKernels.colorMixer(input.applyingFilter("CILinearToSRGBToneCurve"), s.mixer)
+        guard !s.mixer.isNeutral || !s.grading.isNeutral else { return input }
+        let encoded = input.applyingFilter("CILinearToSRGBToneCurve")
+        return DevelopKernels.colorGrading(DevelopKernels.colorMixer(encoded, s.mixer), s.grading)
             .applyingFilter("CISRGBToneCurveToLinear")
     }
 

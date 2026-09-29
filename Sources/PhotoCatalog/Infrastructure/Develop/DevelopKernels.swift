@@ -3,12 +3,12 @@
 // ============================================================
 import CoreImage
 
-/// Lens distortion, radial gain, film grain, local contrast, haze removal and the color mixer,
-/// each compiled from Metal source the first time a render needs it: the package has no Metal
-/// build step, and Core Image compiles stitchable kernels at run time. A kernel that fails to
-/// compile leaves its adjustment out of the render.
+/// Lens distortion, radial gain, film grain, local contrast, haze removal, the color mixer and
+/// color grading, each compiled from Metal source the first time a render needs it: the package
+/// has no Metal build step, and Core Image compiles stitchable kernels at run time. A kernel
+/// that fails to compile leaves its adjustment out of the render.
 enum DevelopKernels {
-    /// Converts between RGB and HSL (hue in degrees), for the mixer.
+    /// Converts between RGB and HSL (hue in degrees), for the mixer and color grading.
     private static let hsl = """
     float3 toHSL(float3 c) {
         float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
@@ -113,6 +113,32 @@ enum DevelopKernels {
             return float4(fromHSL(hsl), s.a);
         }
         """,
+        "colorGrading": """
+        \(hsl)
+        // Color grading on display-encoded color. Each grade is (hue°, saturation 0…1, luminance
+        // -1…1) for shadows, midtones, highlights and the whole photo; shape is (blending 0…1,
+        // balance -1…1). Region weights split luma around a balance-shifted middle and always
+        // sum to one; tints are pure chroma, so they color without brightening.
+        [[stitchable]] float4 colorGrading(sample_t s, float4 shadows, float4 midtones, float4 highlights,
+                                           float4 global, float2 shape) {
+            float3 luma = float3(0.299, 0.587, 0.114);
+            float3 c = s.rgb;
+            float l = clamp(dot(c, luma), 0.0, 1.0);
+            float middle = 0.5 + shape.y * 0.3;
+            float width = 0.12 + shape.x * 0.36;
+            float ws = 1.0 - smoothstep(middle - width, middle, l);
+            float wh = smoothstep(middle, middle + width, l);
+            float4 grades[4] = { shadows, midtones, highlights, global };
+            float weights[4] = { ws, max(0.0, 1.0 - ws - wh), wh, 1.0 };
+            for (int i = 0; i < 4; i++) {
+                float4 g = grades[i];
+                float3 tint = fromHSL(float3(g.x, 1.0, 0.5));
+                tint -= dot(tint, luma);
+                c += weights[i] * (tint * g.y * 0.3 + g.z * 0.2);
+            }
+            return float4(c, s.a);
+        }
+        """,
         "filmGrain": """
         // Adds grain `n` (0.5 = none) to display-encoded color, strongest in the midtones as on film.
         [[stitchable]] float4 filmGrain(sample_t s, sample_t n, float amount) {
@@ -210,6 +236,16 @@ enum DevelopKernels {
             CIVector(x: mixer.hue[i] / 100, y: mixer.saturation[i] / 100, z: mixer.luminance[i] / 100, w: 0)
         }
         return kernel.apply(extent: image.extent, arguments: [image] + bands) ?? image
+    }
+
+    /// Color grading on display-encoded `image` (see the kernel).
+    static func colorGrading(_ image: CIImage, _ grading: ColorGrading) -> CIImage {
+        guard !grading.isNeutral, let kernel = kernel("colorGrading") as? CIColorKernel else { return image }
+        let grades = [grading.shadows, grading.midtones, grading.highlights, grading.global].map {
+            CIVector(x: $0.hue, y: $0.saturation / 100, z: $0.luminance / 100, w: 0)
+        }
+        let shape = CIVector(x: grading.blending / 100, y: grading.balance / 100)
+        return kernel.apply(extent: image.extent, arguments: [image] + grades + [shape]) ?? image
     }
 
     /// `image` with its brightness scaled toward the corners (see the kernel).

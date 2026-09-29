@@ -11,6 +11,7 @@ enum DevelopCheck {
         checkPresence()
         checkToneCurve()
         checkColorMixer()
+        checkColorGrading()
         checkLensCorrections()
         checkEffects()
         checkAutoAdjustments()
@@ -261,6 +262,37 @@ enum DevelopCheck {
         let carried = DevelopSettings().applying(s, fields: [.colorMixer])
         assert(carried.mixer == s.mixer && carried.fingerprint != DevelopSettings().fingerprint,
                "the mixer travels as one setting and changes the fingerprint")
+    }
+
+    private static func checkColorGrading() {
+        let dark = (0.15, 0.15, 0.15), light = (0.85, 0.85, 0.85)
+        var s = DevelopSettings()
+        s.grading.shadows = ColorGrading.Grade(hue: 30, saturation: 100, luminance: 0)     // orange shadows
+        s.grading.highlights = ColorGrading.Grade(hue: 220, saturation: 100, luminance: 0) // blue highlights
+        let warmShadows = mean(dark, s), coolHighlights = mean(light, s)
+        assert(warmShadows.r > warmShadows.b + 0.05 && coolHighlights.b > coolHighlights.r + 0.05,
+               "shadow and highlight tints land in their own tones")
+        assert(abs(luma(warmShadows) - luma(mean(dark, .neutral))) < 0.04, "a tint colors without brightening")
+
+        s = DevelopSettings()
+        s.grading.midtones = ColorGrading.Grade(hue: 120, saturation: 100, luminance: 0)
+        let greenMid = mean((0.5, 0.5, 0.5), s), greenDark = mean((0.03, 0.03, 0.03), s)
+        assert(greenMid.g > greenMid.r + 0.05 && greenDark.g - greenDark.r < greenMid.g - greenMid.r,
+               "midtones tint the middle more than the ends")
+
+        s = DevelopSettings()
+        s.grading.global.luminance = 100
+        assert(luma(mean((0.4, 0.4, 0.4), s)) > 0.45, "global luminance brightens everything")
+        s = DevelopSettings()
+        s.grading.shadows.hue = 200
+        s.grading.blending = 80
+        assert(s.grading.isNeutral && s.fingerprint == DevelopSettings().fingerprint,
+               "a hue without saturation, or blending alone, changes nothing")
+
+        var source = DevelopSettings()
+        source.grading.highlights = ColorGrading.Grade(hue: 45, saturation: 20, luminance: 5)
+        let carried = DevelopSettings().applying(source, fields: [.colorGrading])
+        assert(carried.grading == source.grading, "color grading travels as one setting")
     }
 
     private static func checkPresence() {
