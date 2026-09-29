@@ -47,6 +47,20 @@ struct DevelopPanel: View {
                 section(L("偏好")) {
                     ForEach(DevelopControl.presence) { control in slider(control, asset, settings) }
                 }
+                section(L("色调曲线")) {
+                    ToneCurveEditor(curve: settings.curve,
+                                    histogram: app.developHistogram?.assetId == asset.id
+                                        ? app.developHistogram?.histogram : nil,
+                                    onChange: { curve in
+                                        var next = app.developSettings(for: asset.id)
+                                        next.curve = curve
+                                        app.updateDevelopDraft(next, for: asset.id)
+                                    },
+                                    onCommit: { undoName in
+                                        guard let draft = app.developDraft, draft.assetId == asset.id else { return }
+                                        app.commitDevelop([asset.id: draft.settings], undoName: undoName)
+                                    })
+                }
                 section(L("细节")) {
                     ForEach(DevelopControl.detail) { control in slider(control, asset, settings) }
                     Text("锐化与降噪在 1:1 视图中看得最准")

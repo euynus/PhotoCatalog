@@ -77,7 +77,7 @@ enum DevelopRenderer {
             sourceSize = base.extent.integral.size
             let scale = max(base.extent.width, base.extent.height) / max(fullLongEdge, 1)
             let toned = DevelopRenderer.applyTone(DevelopRenderer.applyLens(base, settings), settings)
-            let present = DevelopRenderer.applyPresence(toned, settings)
+            let present = DevelopRenderer.applyPresence(DevelopRenderer.applyCurve(toned, settings), settings)
             let detailed = DevelopRenderer.applyDetail(present, settings, scale: min(1, scale))
             let framed = DevelopRenderer.applyGeometry(detailed, settings, wholeFrame: wholeFrame)
             // effects follow the crop, which the crop tool's whole-frame view doesn't apply yet
@@ -240,6 +240,36 @@ enum DevelopRenderer {
         let amount = s.lensVignette >= 0 ? s.lensVignette / 100 * 1.5 : s.lensVignette / 100 * 0.6
         let corrected = DevelopKernels.radialGain(input, amount: amount, start: start, width: 1 - start)
         return DevelopKernels.distort(corrected, k: s.distortion / 100 * 0.15)
+    }
+
+    /// The point curves, as one lookup table per channel applied to display-encoded values
+    /// (CIColorCurves converts to Display P3 for the table and back).
+    static func applyCurve(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
+        guard !s.curve.isLinear else { return input }
+        return input.applyingFilter("CIColorCurves", parameters: [
+            "inputCurvesData": curveTable(s.curve),
+            "inputCurvesDomain": CIVector(x: 0, y: 1),
+            "inputColorSpace": outputColorSpace,
+        ])
+    }
+
+    private static let curveTables = NSCache<NSString, NSData>()
+
+    /// 1024 RGB float triples: each channel's curve after the composite.
+    static func curveTable(_ curve: ToneCurve) -> Data {
+        let key = curve.fingerprintText as NSString
+        if let cached = curveTables.object(forKey: key) { return cached as Data }
+        let size = 1024
+        var values = [Float](repeating: 0, count: size * 3)
+        for i in 0..<size {
+            let x = Double(i) / Double(size - 1)
+            values[i * 3] = Float(curve.value(x, channel: .red))
+            values[i * 3 + 1] = Float(curve.value(x, channel: .green))
+            values[i * 3 + 2] = Float(curve.value(x, channel: .blue))
+        }
+        let data = values.withUnsafeBufferPointer { Data(buffer: $0) }
+        curveTables.setObject(data as NSData, forKey: key)
+        return data
     }
 
     /// Dehaze, clarity and texture, in display-encoded values. Their radii are fractions of the

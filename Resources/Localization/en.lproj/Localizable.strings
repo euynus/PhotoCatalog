@@ -386,6 +386,7 @@
 "黑色色阶" = "Blacks";
 
 /* Domain/DevelopTransfer.swift */
+"色调曲线" = "Tone Curve";
 "效果" = "Effects";
 "镜头校正" = "Lens Corrections";
 "减少杂色" = "Noise Reduction";
@@ -592,6 +593,19 @@
 "没有可修图的照片" = "No photo to develop";
 "演示照片或缺失的原件无法修图。" = "Demo photos and missing originals can't be developed.";
 
+/* Presentation/Develop/ToneCurveEditor.swift */
+"通道" = "Channel";
+"线性" = "Linear";
+"中对比度" = "Medium Contrast";
+"强对比度" = "Strong Contrast";
+"线性曲线" = "Linear Curve";
+"中对比度曲线" = "Medium Contrast Curve";
+"强对比度曲线" = "Strong Contrast Curve";
+"复位全部通道" = "Reset All Channels";
+"复位色调曲线" = "Reset Tone Curve";
+"曲线预设" = "Curve Presets";
+"点按曲线添加控制点，拖移调整，双击删除" = "Click the curve to add a point, drag to adjust, double-click to remove";
+"删除曲线控制点" = "Delete Curve Point";
 /* Presentation/Grid/GridView.swift */
 "在快捷收藏中 (B)" = "In the Quick Collection (B)";
 "在快捷收藏中" = "In the Quick Collection";

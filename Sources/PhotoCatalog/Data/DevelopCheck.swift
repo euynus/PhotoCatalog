@@ -9,6 +9,7 @@ enum DevelopCheck {
         checkRendering()
         checkDetail()
         checkPresence()
+        checkToneCurve()
         checkLensCorrections()
         checkEffects()
         checkAutoAdjustments()
@@ -205,6 +206,35 @@ enum DevelopCheck {
                && carried.colorNoise == 0, "sharpening travels as one setting, noise reduction as another")
         assert(DevelopField.noiseReduction.isAdjusted(in: source) && !DevelopField.noiseReduction.isAdjusted(in: carried),
                "adjusted detail fields are detected")
+    }
+
+    private static func checkToneCurve() {
+        // the spline: identity stays put, an S curve bends the right way without overshooting
+        assert(abs(ToneCurve.evaluate(ToneCurve.identity, at: 0.37) - 0.37) < 1e-9, "a straight curve changes nothing")
+        let s = ToneCurve.mediumContrast
+        let samples = stride(from: 0.0, through: 1.0, by: 0.01).map { ToneCurve.evaluate(s, at: $0) }
+        assert(zip(samples, samples.dropFirst()).allSatisfy { $0 <= $1 + 1e-9 } && samples.allSatisfy { (0...1).contains($0) },
+               "the curve rises monotonically inside the unit square")
+        assert(ToneCurve.evaluate(s, at: 0.25) < 0.25 && ToneCurve.evaluate(s, at: 0.75) > 0.75, "an S curve adds contrast")
+
+        var curve = ToneCurve()
+        curve.setPoints(ToneCurve.identity, for: .rgb)
+        assert(curve.isLinear && curve.rgb.isEmpty, "a straight line is stored as nothing")
+        let old = try! JSONDecoder().decode(DevelopSettings.self, from: Data(#"{"exposure":0.5}"#.utf8))
+        assert(old.curve.isLinear, "edits saved before curves load with a straight one")
+
+        // rendering: a darkening composite curve, then a red-only lift
+        var settings = DevelopSettings()
+        settings.curve.setPoints([CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.3), CurvePoint(x: 1, y: 1)], for: .rgb)
+        assert(luma(mean((0.5, 0.5, 0.5), settings)) < 0.4, "the composite curve darkens the midtones")
+        settings = DevelopSettings()
+        settings.curve.setPoints([CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.7), CurvePoint(x: 1, y: 1)], for: .red)
+        let lifted = mean((0.5, 0.5, 0.5), settings)
+        assert(lifted.r > 0.6 && abs(lifted.g - 0.5) < 0.03 && abs(lifted.b - 0.5) < 0.03, "a channel curve moves only its channel")
+
+        let carried = DevelopSettings().applying(settings, fields: [.toneCurve])
+        assert(carried.curve == settings.curve && carried.fingerprint != DevelopSettings().fingerprint,
+               "the curve travels as one setting and changes the fingerprint")
     }
 
     private static func checkPresence() {
