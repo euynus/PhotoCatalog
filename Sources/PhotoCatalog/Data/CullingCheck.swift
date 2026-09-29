@@ -49,6 +49,20 @@ enum CullingCheck {
                "a batch edit never moves the cursor")
         app.autoAdvance = false
 
+        app.setPrimary(ids[5])
+        _ = app.handleKey("6", hasCommand: false)
+        assert(app.asset(id: ids[5])?.colorLabel == .red, "6 sets the red label")
+        _ = app.handleKey("6", hasCommand: false)
+        assert(app.asset(id: ids[5])?.colorLabel == nil, "6 again clears it, as in Lightroom")
+        app.selectedIds = [ids[4], ids[5]]
+        _ = app.handleKey("7", hasCommand: false)
+        _ = app.handleKey("7", hasCommand: false)
+        assert(app.selectedIds.allSatisfy { app.asset(id: $0)?.colorLabel == nil }, "a batch toggles off together")
+        app.setColor(.yellow)
+        app.setPrimary(ids[5])
+        _ = app.handleKey("8", hasCommand: false)
+        assert(app.asset(id: ids[5])?.colorLabel == .green, "another color replaces the label")
+
         app.setPrimary(ids[0])
         app.prepareContextSelection(ids[2])
         assert(app.selectedIds == [ids[2]], "right-clicking outside the selection targets that photo")

@@ -148,6 +148,7 @@
 "已清除日志" = "Logs cleared";
 "已清除最近目录库" = "Recent catalogs cleared";
 "已清除评分" = "Rating cleared";
+"已清除颜色标签" = "Color label cleared";
 "已移到废纸篓 %lld 张" = "Moved %lld photos to the Trash";
 "已移到废纸篓 %lld 张重复照片" = "Moved %lld duplicate photos to the Trash";
 "已移到废纸篓 0 张" = "Moved 0 photos to the Trash";

@@ -6525,8 +6525,13 @@ final class AppState {
             if applied { push("已清除旗标") }
         default:
             let color: ColorLabel = ["6": .red, "7": .yellow, "8": .green][key] ?? .blue
-            applied = setColor(color)
-            if applied { push("颜色标签：\(color.name)", "tag") }
+            // as in Lightroom the key toggles: on photos that all carry the label it clears it
+            let index = assetIndex, assets = self.assets
+            let clears = selectionTargetIds.allSatisfy { id in index[id].map { assets[$0].colorLabel == color } ?? false }
+            applied = setColor(clears ? nil : color)
+            if applied {
+                if clears { push("已清除颜色标签", "tag") } else { push("颜色标签：\(color.name)", "tag") }
+            }
         }
         guard applied, let current, let slot, selectionTargetIds.count <= 1,
               view == .grid || view == .loupe else { return applied }
