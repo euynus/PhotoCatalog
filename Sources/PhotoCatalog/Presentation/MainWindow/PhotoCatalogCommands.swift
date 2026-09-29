@@ -98,6 +98,9 @@ struct PhotoCatalogCommands: Commands {
                 }
             }
             .disabled(!app.canTransformSelection)
+            Button("自动色调") { perform("照片.自动色调") { app.autoTone() } }
+                .keyboardShortcut("u", modifiers: .command)
+                .disabled(!app.canAutoTone)
             Button("复位修图调整") { perform("照片.复位修图调整") { app.resetDevelopSelection() } }
                 .disabled(!app.canResetDevelopSelection)
             Divider()

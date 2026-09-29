@@ -598,7 +598,7 @@ final class AppState {
     /// Bumped on every selection change; keys the selection summary.
     @ObservationIgnored private var selectionVersion = 0
     var view: ViewMode = .grid {
-        didSet { if view != .develop { developCropping = false } }
+        didSet { if view != .develop { developCropping = false; developPickingWhiteBalance = false } }
     }
     var thumbSize: CGFloat = 168
     var showInspector = true
@@ -798,15 +798,81 @@ final class AppState {
         commitDevelop(changes, undoName: L("水平翻转"))
     }
 
+    /// The file Develop works from: the original, or the cached preview while it is offline.
+    private func developSource(for asset: Asset) -> (url: URL, isRaw: Bool)? {
+        guard canDevelop(asset) else { return nil }
+        if asset.status == .ready, let path = asset.localPath { return (URL(fileURLWithPath: path), asset.isRaw) }
+        return (URL(fileURLWithPath: asset.preview), false)
+    }
+
+    /// Develop's white-balance eyedropper (W): the next click on the photo picks a neutral point.
+    var developPickingWhiteBalance = false
+
+    /// Sets temperature and tint so the photo renders gray at `point` (fractions of the finished
+    /// photo, top-left origin).
+    func pickWhiteBalance(_ asset: Asset, at point: CGPoint) {
+        developPickingWhiteBalance = false
+        guard let source = developSource(for: asset) else { return }
+        let settings = developSettings[asset.id] ?? .neutral
+        let id = asset.id
+        Task { [weak self] in
+            let balance = await ThumbnailRepairQueue.run(.visible) {
+                DevelopAuto.whiteBalance(url: source.url, isRaw: source.isRaw, settings: settings, point: point)
+            } ?? nil
+            guard let self else { return }
+            guard let balance else {
+                self.push("这里太暗或太亮，无法判断中性色，请点选灰色或白色的区域", "info")
+                return
+            }
+            var next = self.developSettings[id] ?? .neutral
+            next.temperature = balance.temperature
+            next.tint = balance.tint
+            self.commitDevelop([id: next], undoName: L("白平衡吸管"))
+        }
+    }
+
+    var canAutoTone: Bool { canTransformSelection }
+
+    /// Automatic tone (⌘U) for the photo in Develop, or every selected photo elsewhere; each
+    /// is measured on its own, and only the tone settings change.
+    func autoTone() {
+        let targets = developTargetIds.compactMap { id -> (id: String, url: URL, isRaw: Bool, settings: DevelopSettings)? in
+            guard let asset = assetIndex[id].map({ assets[$0] }), let source = developSource(for: asset) else { return nil }
+            return (id, source.url, source.isRaw, developSettings[id] ?? .neutral)
+        }
+        guard !targets.isEmpty else { return }
+        Task { [weak self] in
+            let toned = await ThumbnailRepairQueue.run(.visible) {
+                targets.compactMap { target in
+                    DevelopAuto.tone(url: target.url, isRaw: target.isRaw, settings: target.settings).map { (target.id, $0) }
+                }
+            } ?? []
+            guard let self else { return }
+            guard !toned.isEmpty else {
+                self.push("无法读取照片，未能自动调整", "warning")
+                return
+            }
+            // take only the tone from the measurement: edits made meanwhile stay
+            var changes: [String: DevelopSettings] = [:]
+            for (id, auto) in toned {
+                var next = self.developSettings[id] ?? .neutral
+                next.exposure = auto.exposure
+                next.contrast = auto.contrast
+                next.highlights = auto.highlights
+                next.shadows = auto.shadows
+                next.whites = auto.whites
+                next.blacks = auto.blacks
+                changes[id] = next
+            }
+            self.commitDevelop(changes, undoName: L("自动色调"))
+            if changes.count > 1 { self.push("已自动调整 \(changes.count) 张照片的色调", "wand") }
+        }
+    }
+
     /// Levels the photo from the horizon Vision finds in it.
     func autoStraighten(_ asset: Asset) {
-        guard canDevelop(asset) else { return }
+        guard let source = developSource(for: asset) else { return }
         let settings = developSettings[asset.id] ?? .neutral
-        let source: (url: URL, isRaw: Bool) = if asset.status == .ready, let path = asset.localPath {
-            (URL(fileURLWithPath: path), asset.isRaw)
-        } else {
-            (URL(fileURLWithPath: asset.preview), false)
-        }
         let id = asset.id
         Task { [weak self] in
             let angle = await ThumbnailRepairQueue.run(.visible) {
@@ -1078,6 +1144,10 @@ final class AppState {
         }
         if filterOpen {
             filterOpen = false
+            return true
+        }
+        if view == .develop, developPickingWhiteBalance {
+            developPickingWhiteBalance = false
             return true
         }
         if view == .develop, developCropping {
@@ -6503,6 +6573,10 @@ final class AppState {
             developShowsOriginal.toggle()
         case "r":
             toggleCropTool()
+        case "w":
+            guard view == .develop, let primary, canDevelop(primary) else { return false }
+            developCropping = false
+            developPickingWhiteBalance.toggle()
         case "a":
             switchView(.analysis)
         case "i":

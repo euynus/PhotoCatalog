@@ -10,6 +10,7 @@ enum DevelopCheck {
         checkDetail()
         checkLensCorrections()
         checkEffects()
+        checkAutoAdjustments()
         checkHistogram()
         checkGeometryMath()
         checkGeometryRendering()
@@ -286,6 +287,50 @@ enum DevelopCheck {
         assert(carried.vignette == -30 && carried.vignetteFeather == 80 && carried.grain == 0,
                "the vignette and grain travel separately")
         assert(!DevelopSettings().hasEffects && source.hasEffects, "effects are detected")
+    }
+
+    /// Writes `image` to a temporary PNG, as a photo on disk for the automatic adjustments.
+    private static func pngFile(_ image: CGImage) -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-auto-\(UUID().uuidString).png")
+        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, image, nil)
+        CGImageDestinationFinalize(destination)
+        return url
+    }
+
+    private static func checkAutoAdjustments() {
+        // eyedropper: a warm gray becomes neutral where it was picked
+        let warm = image { _, _ in (0.56, 0.5, 0.43) }
+        let warmFile = pngFile(warm)
+        defer { try? FileManager.default.removeItem(at: warmFile) }
+        let balance = DevelopAuto.whiteBalance(url: warmFile, isRaw: false, settings: .neutral, point: CGPoint(x: 0.5, y: 0.5))
+        var s = DevelopSettings()
+        s.temperature = balance?.temperature
+        s.tint = balance?.tint
+        let picked = pixel(develop(warm, s), 32, 32)
+        assert(balance != nil && abs(Int(picked.r) - Int(picked.b)) <= 6
+               && abs(Int(picked.g) - (Int(picked.r) + Int(picked.b)) / 2) <= 6,
+               "the eyedropper makes the picked color gray")
+        let black = pngFile(image { _, _ in (0, 0, 0) })
+        defer { try? FileManager.default.removeItem(at: black) }
+        assert(DevelopAuto.whiteBalance(url: black, isRaw: false, settings: .neutral, point: CGPoint(x: 0.5, y: 0.5)) == nil,
+               "a black point can't be judged")
+
+        // auto tone: dark photos brighten, bright ones darken, a full-range one barely moves
+        func gradient(_ from: Double, _ to: Double) -> URL {
+            pngFile(image { x, _ in let v = from + (to - from) * Double(x) / 63; return (v, v, v) })
+        }
+        let dark = gradient(0.03, 0.3), bright = gradient(0.7, 0.97), full = gradient(0.02, 0.98)
+        defer { for url in [dark, bright, full] { try? FileManager.default.removeItem(at: url) } }
+        var kept = DevelopSettings()
+        kept.saturation = -40
+        kept.exposure = 1.5
+        let lifted = DevelopAuto.tone(url: dark, isRaw: false, settings: kept)
+        assert((lifted?.exposure ?? 0) > 0.4 && lifted?.saturation == -40, "auto tone brightens a dark photo and keeps color edits")
+        assert((DevelopAuto.tone(url: bright, isRaw: false, settings: .neutral)?.exposure ?? 0) < -0.2,
+               "auto tone darkens a bright photo")
+        assert(abs(DevelopAuto.tone(url: full, isRaw: false, settings: .neutral)?.exposure ?? 9) < 0.35,
+               "auto tone leaves a well-exposed photo nearly alone")
     }
 
     private static func checkHistogram() {

@@ -27,8 +27,23 @@ struct DevelopPanel: View {
             VStack(alignment: .leading, spacing: 18) {
                 header(asset, settings: settings)
                 section(L("裁剪与旋转")) { geometry(asset, settings) }
-                section(L("白平衡")) { whiteBalance(asset, settings) }
+                section(L("白平衡")) {
+                    Toggle(isOn: Binding(get: { app.developPickingWhiteBalance },
+                                         set: { app.developPickingWhiteBalance = $0 })) {
+                        Label("白平衡吸管", systemImage: "eyedropper")
+                    }
+                    .toggleStyle(.button)
+                    .controlSize(.small)
+                    .help("点选照片中的中性灰色区域 (W)")
+                    whiteBalance(asset, settings)
+                }
                 section(L("色调")) {
+                    HStack {
+                        Spacer(minLength: 0)
+                        Button("自动") { app.autoTone() }
+                            .controlSize(.small)
+                            .help("自动设置曝光、高光、阴影、白色和黑色色阶 (⌘U)")
+                    }
                     ForEach(DevelopControl.tone) { control in slider(control, asset, settings) }
                 }
                 section(L("偏好")) {

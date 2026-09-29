@@ -55,12 +55,18 @@ private struct DevelopCanvas: View {
                         CropEditor(asset: asset, image: engine.wholeFrameImage(for: asset.id), settings: settings)
                     } else {
                         ZoomableImageView(image: engine.image(for: asset.id), pixelSize: pixelSize,
-                                          zoom: app.loupeZoom) { app.loupeZoom = $0 }
+                                          zoom: app.loupeZoom, onZoomChange: { app.loupeZoom = $0 },
+                                          onPick: app.developPickingWhiteBalance
+                                              ? { app.pickWhiteBalance(asset, at: $0) } : nil)
                             .padding(app.loupeZoom == nil ? 12 : 0)
                     }
                 }
                 .overlay(alignment: .topLeading) {
-                    if app.developShowsOriginal { badge(L("修改前（按 \\ 切换）")) }
+                    if app.developShowsOriginal {
+                        badge(L("修改前（按 \\ 切换）"))
+                    } else if app.developPickingWhiteBalance {
+                        badge(L("点选照片中应为灰色或白色的地方（Esc 取消）"))
+                    }
                 }
                 .overlay(alignment: .topTrailing) {
                     if engine.isRendering(asset.id) { ProgressView().controlSize(.small).padding(14) }

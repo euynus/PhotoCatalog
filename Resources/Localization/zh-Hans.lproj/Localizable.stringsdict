@@ -283,6 +283,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已粘贴到 %lld 张照片</string>
 	</dict>
+	<key>已自动调整 %lld 张照片的色调</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已自动调整 %lld 张照片的色调</string>
+	</dict>
 	<key>已调整 %lld 张拍摄时间 %@%lld时%lld分</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

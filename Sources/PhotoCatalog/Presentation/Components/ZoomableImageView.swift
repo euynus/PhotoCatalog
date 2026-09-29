@@ -21,6 +21,9 @@ struct ZoomableImageView: NSViewRepresentable {
     let pixelSize: CGSize
     let zoom: ImageZoom?
     let onZoomChange: (ImageZoom?) -> Void
+    /// When set, a click picks a point instead of starting a pan: fractions of the image,
+    /// top-left origin (Develop's white-balance eyedropper).
+    var onPick: ((CGPoint) -> Void)?
 
     func makeNSView(context: Context) -> ZoomScrollView {
         let view = ZoomScrollView()
@@ -30,12 +33,20 @@ struct ZoomableImageView: NSViewRepresentable {
 
     func updateNSView(_ view: ZoomScrollView, context: Context) {
         view.onZoomChange = onZoomChange
+        view.onPick = onPick
         view.update(image: image, pixelSize: pixelSize, zoom: zoom)
     }
 }
 
 final class ZoomScrollView: NSScrollView {
     var onZoomChange: ((ImageZoom?) -> Void)?
+    var onPick: ((CGPoint) -> Void)? {
+        didSet {
+            guard (onPick == nil) != (oldValue == nil) else { imageView.onPick = onPick; return }
+            imageView.onPick = onPick
+            window?.invalidateCursorRects(for: imageView)
+        }
+    }
     private let imageView = ZoomImageLayerView()
     private var pixelSize = CGSize(width: 1, height: 1)
     private var requestedZoom: ImageZoom?
@@ -201,6 +212,8 @@ private final class ZoomImageLayerView: NSView {
     var onDoubleClick: ((CGPoint) -> Void)?
     /// A drag moved the view (reported once the drag ends).
     var onPan: (() -> Void)?
+    /// Picking mode: a click reports its point as fractions of the image instead of panning.
+    var onPick: ((CGPoint) -> Void)?
     var image: CGImage? {
         didSet { if image !== oldValue { layer?.contents = image } }
     }
@@ -220,7 +233,16 @@ private final class ZoomImageLayerView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
 
+    override func resetCursorRects() {
+        if onPick != nil { addCursorRect(bounds, cursor: .crosshair) }
+    }
+
     override func mouseDown(with event: NSEvent) {
+        if let onPick, bounds.width > 0, bounds.height > 0 {
+            let point = convert(event.locationInWindow, from: nil)   // flipped: y grows downward
+            onPick(CGPoint(x: min(1, max(0, point.x / bounds.width)), y: min(1, max(0, point.y / bounds.height))))
+            return
+        }
         if event.clickCount == 2 {
             onDoubleClick?(convert(event.locationInWindow, from: nil))
             return

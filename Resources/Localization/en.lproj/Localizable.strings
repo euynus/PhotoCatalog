@@ -1,6 +1,11 @@
 /* English UI text. Keys are the Chinese source strings (see Domain/Localization.swift). */
 
 /* Application/AppState.swift */
+"白平衡吸管" = "White Balance Eyedropper";
+"这里太暗或太亮，无法判断中性色，请点选灰色或白色的区域" = "Too dark or too bright to judge the color here. Click an area that should be gray or white.";
+"自动色调" = "Auto Tone";
+"无法读取照片，未能自动调整" = "Couldn't read the photo, so nothing was adjusted";
+"已自动调整 %lld 张照片的色调" = "Auto-toned %lld photos";
 " · %lld 个 XMP 失败" = " · %lld XMP failed";
 " · %lld 失败" = " · %lld failed";
 " · %lld 张失败（%@）" = " · %lld failed (%@)";
@@ -532,6 +537,9 @@
 "裁剪" = "Crop";
 
 /* Presentation/Develop/DevelopPanel.swift */
+"点选照片中的中性灰色区域 (W)" = "Click a neutral gray area of the photo (W)";
+"自动" = "Auto";
+"自动设置曝光、高光、阴影、白色和黑色色阶 (⌘U)" = "Set exposure, highlights, shadows, whites and blacks automatically (⌘U)";
 "锐化与降噪在 1:1 视图中看得最准" = "Sharpening and noise reduction are judged best at 1:1";
 "修改前" = "Before";
 "修改前 / 修改后 (\\)" = "Before / After (\\)";
@@ -567,6 +575,7 @@
 "高光剪切" = "Highlight clipping";
 
 /* Presentation/Develop/DevelopView.swift */
+"点选照片中应为灰色或白色的地方（Esc 取消）" = "Click a spot in the photo that should be gray or white (Esc to cancel)";
 "修改前（按 \\ 切换）" = "Before (press \\ to toggle)";
 "原件不可用" = "Original unavailable";
 "没有可修图的照片" = "No photo to develop";

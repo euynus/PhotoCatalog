@@ -943,6 +943,22 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
+	<key>已自动调整 %lld 张照片的色调</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Auto-toned %#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>已调整 %lld 张拍摄时间 %@%lld时%lld分</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
