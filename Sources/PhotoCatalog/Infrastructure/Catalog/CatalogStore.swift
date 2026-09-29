@@ -105,7 +105,7 @@ struct AssetPage: Sendable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    static let latestSchemaVersion = 22
+    static let latestSchemaVersion = 23
     let packageURL: URL
     let db: Database
 
@@ -330,6 +330,16 @@ final class CatalogStore: @unchecked Sendable {
             if !existing.contains("copy_name") { try db.run("ALTER TABLE assets ADD COLUMN copy_name TEXT;") }
             try db.execChecked("CREATE INDEX IF NOT EXISTS idx_assets_master ON assets(master_id) WHERE master_id IS NOT NULL;")
             try recordMigration(22)
+        }
+        if current < 23 {
+            // each original's sidecar as of our last read or write, to notice other apps' changes
+            try db.execChecked("""
+            CREATE TABLE IF NOT EXISTS xmp_sync (
+              asset_id TEXT PRIMARY KEY,
+              modified_at REAL NOT NULL
+            );
+            """)
+            try recordMigration(23)
         }
     }
 
@@ -1098,6 +1108,28 @@ final class CatalogStore: @unchecked Sendable {
                     ON CONFLICT(asset_id) DO UPDATE SET settings=excluded.settings, updated_at=excluded.updated_at;
                     """, [.text(id), .text(json), .text(Self.iso(.now))])
                 }
+            }
+        }
+    }
+
+    // ---------- sidecars changed by other apps ----------
+    /// Each photo's sidecar modification time (seconds since 1970) as of our last read or write.
+    func loadXMPSyncTimes() throws -> [String: Double] {
+        var result: [String: Double] = [:]
+        for row in try db.query("SELECT asset_id, modified_at FROM xmp_sync;") {
+            if let id = row.text("asset_id"), let time = row.double("modified_at") { result[id] = time }
+        }
+        return result
+    }
+
+    func saveXMPSyncTimes(_ times: [String: Double]) throws {
+        guard !times.isEmpty else { return }
+        try db.transaction {
+            for (id, time) in times {
+                try db.run("""
+                INSERT INTO xmp_sync(asset_id, modified_at) VALUES(?, ?)
+                ON CONFLICT(asset_id) DO UPDATE SET modified_at=excluded.modified_at;
+                """, [.text(id), .double(time)])
             }
         }
     }

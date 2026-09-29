@@ -575,6 +575,22 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
+	<key>已从 %lld 个 XMP sidecar 读取元数据</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Read metadata from %#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld XMP sidecar</string>
+			<key>other</key>
+			<string>%lld XMP sidecars</string>
+		</dict>
+	</dict>
 	<key>已从 %lld 张照片中删除关键词「%@」</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

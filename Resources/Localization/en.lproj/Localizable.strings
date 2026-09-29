@@ -352,6 +352,9 @@
 "外部编辑的副本未能加入目录库" = "The copies for editing couldn't be added to the catalog";
 "无法生成用于外部编辑的 TIFF" = "Couldn't make the TIFF files for editing";
 "已在外部编辑器中打开 %lld 张" = "Opened %lld photos in the external editor";
+"所选照片旁没有 XMP sidecar" = "The selected photos have no XMP sidecar";
+"从文件读取元数据" = "Read Metadata from Files";
+"已从 %lld 个 XMP sidecar 读取元数据" = "Read metadata from %lld XMP sidecars";
 
 /* Application/ImportCoordinator.swift */
 "复制原件失败：%@" = "Couldn't copy the original: %@";
@@ -760,6 +763,7 @@
 "，" = ", ";
 "虚拟副本：%@" = "Virtual copy: %@";
 "虚拟副本：与原照共用同一原件，修图与元数据各自独立" = "Virtual copy: shares the original file with its master, with its own develop settings and metadata";
+"XMP 已被其他应用修改，可用「从文件读取元数据」更新" = "Another app changed the XMP sidecar — use Read Metadata from Files to update";
 
 /* Presentation/Inspector/InspectorView.swift */
 "%lld 张 · 批量编辑" = "%lld photos · batch edit";
@@ -941,6 +945,7 @@
 "在 %@ 中编辑" = "Edit in %@";
 "在外部编辑器中编辑…" = "Edit in External Editor…";
 "选择外部编辑器…" = "Choose External Editor…";
+"将元数据写入文件" = "Save Metadata to Files";
 
 /* Presentation/MainWindow/RootView.swift */
 "正在打开 %@…" = "Opening %@…";
@@ -1247,6 +1252,8 @@
 "重命名选中照片…" = "Rename Selected Photos…";
 "外部编辑器" = "External Editor";
 "「在外部编辑器中编辑」(⌥⌘E) 会把照片连同修图调整存为 16 位 TIFF 副本（原件旁的「…-编辑.tif」），加入目录库并与原片叠放，再用这个应用打开；原件不会被修改。" = "Edit in External Editor (⌥⌘E) saves the photo with its adjustments as a 16-bit TIFF copy (“…-Edit.tif” beside the original), adds it to the catalog stacked with the original, and opens it in this app; the original is never changed.";
+"自动读取外部修改的 XMP" = "Read XMP changed by other apps automatically";
+"其他应用改动 .xmp 后，直接用文件里的元数据更新目录库；关闭时只标出这些照片，可在「照片」菜单中读取。" = "When another app changes an .xmp, update the catalog from the file right away; when off, the photos are only marked, to read from the Photo menu.";
 
 /* Presentation/Sheets/SmartAlbumBuilder.swift */
 "%lld 张照片符合规则" = "%lld photos match the rules";
@@ -1317,6 +1324,7 @@
 "删除相册集…" = "Delete Album Set…";
 "顶层" = "Top Level";
 "移到相册集" = "Move to Album Set";
+"元数据已在外部更改" = "Metadata Changed Elsewhere";
 
 
 /* Presentation/Survey/SurveyView.swift */

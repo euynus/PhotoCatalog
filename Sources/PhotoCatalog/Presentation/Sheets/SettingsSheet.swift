@@ -254,6 +254,13 @@ struct SettingsSheet: View {
                             .font(.system(size: 11)).foregroundStyle(Theme.text3)
                     }
                 }.toggleStyle(.switch).tint(Theme.accent)
+                Toggle(isOn: $app.autoReadChangedXMP) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("自动读取外部修改的 XMP").font(.system(size: 13)).foregroundStyle(Theme.text)
+                        Text("其他应用改动 .xmp 后，直接用文件里的元数据更新目录库；关闭时只标出这些照片，可在「照片」菜单中读取。")
+                            .font(.system(size: 11)).foregroundStyle(Theme.text3)
+                    }
+                }.toggleStyle(.switch).tint(Theme.accent)
             }
 
             section(L("缩略图与缓存"), category: .cache) {

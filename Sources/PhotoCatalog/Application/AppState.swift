@@ -1653,6 +1653,7 @@ final class AppState {
         ensurePrimaryValid()
         backfillThumbnails()
         detectMissingRealAssets()
+        checkExternalXMPChanges()
         refreshStatusMetrics()
     }
 
@@ -1821,6 +1822,8 @@ final class AppState {
                        count: SmartMatcher.count(assets, album.rule), setId: album.setId)
         }
         albumSets = (try? store.loadAlbumSets()) ?? []
+        xmpSyncTimes = (try? store.loadXMPSyncTimes()) ?? [:]
+        externallyChangedXMPIds = []
     }
 
     private func restoreSourceRoots(from store: CatalogStore) {
@@ -3026,6 +3029,7 @@ final class AppState {
                 }
             }
             self.detectMissingRealAssets()
+            self.checkExternalXMPChanges()
         }
     }
 
@@ -3198,11 +3202,16 @@ final class AppState {
         let real = assets.filter { ids.contains($0.id) && !$0.isVirtualCopy && hasExistingOriginal($0) }
         guard !real.isEmpty else { push("仅可为已导入照片写入 XMP", "warning"); return }
         var count = 0
+        var written: [String: Double] = [:]
         for a in real {
             guard let path = a.localPath else { continue }
             let url = XMPSidecar.sidecarURL(for: URL(fileURLWithPath: path))
-            if XMPSidecar.write(a, to: url) { count += 1 }
+            if XMPSidecar.write(a, to: url) {
+                count += 1
+                written[a.id] = XMPSidecar.modificationTime(forOriginal: path)
+            }
         }
+        recordXMPSync(written)
         let failures = real.count - count
         if failures > 0 {
             push("已写入 \(count) 个 · \(failures) 失败", "warning")
@@ -3210,6 +3219,112 @@ final class AppState {
             push("已写入 \(count) 个 XMP sidecar", "check")
         }
     }
+
+    // ---------- sidecars changed by other apps ----------
+    /// Each photo's sidecar modification time as of our last read or write (seconds since 1970).
+    @ObservationIgnored private var xmpSyncTimes: [String: Double] = [:]
+    /// Photos whose sidecar another app changed since we last read or wrote it.
+    var externallyChangedXMPIds: Set<String> = []
+    @ObservationIgnored private var isCheckingXMP = false
+    /// Reads sidecar changes other apps make as soon as they're noticed.
+    var autoReadChangedXMP = UserDefaults.standard.bool(forKey: "pc_autoReadChangedXMP") {
+        didSet { UserDefaults.standard.set(autoReadChangedXMP, forKey: "pc_autoReadChangedXMP") }
+    }
+
+    /// Remembers sidecars as they are now: our own writes and reads never count as changes.
+    private func recordXMPSync(_ times: [String: Double]) {
+        guard !times.isEmpty else { return }
+        try? store?.saveXMPSyncTimes(times)
+        xmpSyncTimes.merge(times) { $1 }
+        let settled = externallyChangedXMPIds.intersection(times.keys)
+        if !settled.isEmpty { externallyChangedXMPIds.subtract(settled) }
+    }
+
+    /// Looks at every original's sidecar in the background: one newer than when we last read
+    /// or wrote it was changed by another app. A photo seen for the first time only sets its
+    /// starting point, so nothing old is taken for a change.
+    func checkExternalXMPChanges() {
+        guard runsBackgroundMaintenance, store != nil, !isCheckingXMP else { return }
+        let candidates = assets.compactMap { asset -> (id: String, path: String)? in
+            guard !asset.deleted, !asset.isDemo, !asset.isVirtualCopy, let path = asset.localPath else { return nil }
+            return (asset.id, path)
+        }
+        guard !candidates.isEmpty else { return }
+        isCheckingXMP = true
+        let known = xmpSyncTimes
+        let catalogURL = store?.packageURL
+        Task { [weak self, candidates, known] in
+            let found = await Task.detached(priority: .utility) {
+                Self.findChangedSidecars(candidates, known: known)
+            }.value
+            guard let self else { return }
+            self.isCheckingXMP = false
+            guard self.store?.packageURL == catalogURL else { return }
+            self.applyExternalXMPCheck(seeded: found.seeded, changed: found.changed)
+        }
+    }
+
+    /// Sidecars newer than their starting point (changed), and first sightings (seeded).
+    nonisolated static func findChangedSidecars(_ candidates: [(id: String, path: String)], known: [String: Double])
+        -> (seeded: [String: Double], changed: Set<String>) {
+        var seeded: [String: Double] = [:]
+        var changed = Set<String>()
+        for candidate in candidates {
+            guard let time = XMPSidecar.modificationTime(forOriginal: candidate.path) else { continue }
+            if let baseline = known[candidate.id] {
+                if time > baseline + 1 { changed.insert(candidate.id) }
+            } else {
+                seeded[candidate.id] = time
+            }
+        }
+        return (seeded, changed)
+    }
+
+    func applyExternalXMPCheck(seeded: [String: Double], changed: Set<String>) {
+        if !seeded.isEmpty {
+            try? store?.saveXMPSyncTimes(seeded)
+            xmpSyncTimes.merge(seeded) { $1 }
+        }
+        let live = changed.filter { id in assetIndex[id].map { !assets[$0].deleted } ?? false }
+        if externallyChangedXMPIds != live { externallyChangedXMPIds = live }
+        if autoReadChangedXMP, !live.isEmpty { readMetadataFromFiles(live) }
+    }
+
+    /// For checks: the sidecar check, run now and to completion.
+    func checkExternalXMPChangesNow() {
+        let candidates = assets.compactMap { asset -> (id: String, path: String)? in
+            guard !asset.deleted, !asset.isDemo, !asset.isVirtualCopy, let path = asset.localPath else { return nil }
+            return (asset.id, path)
+        }
+        let found = Self.findChangedSidecars(candidates, known: xmpSyncTimes)
+        applyExternalXMPCheck(seeded: found.seeded, changed: found.changed)
+    }
+
+    /// 照片 → 从文件读取元数据: takes the sidecars' metadata for the selection (or `ids`) over
+    /// the catalog's — what another app last wrote wins. Undoable; the sidecars aren't rewritten.
+    @discardableResult
+    func readMetadataFromFiles(_ ids: Set<String>? = nil) -> Int {
+        let targets = (ids ?? targetIds).compactMap { id -> (id: String, path: String, sidecar: SidecarMetadata)? in
+            guard let index = assetIndex[id], !assets[index].isVirtualCopy, let path = assets[index].localPath,
+                  let sidecar = XMPSidecar.read(XMPSidecar.sidecarURL(for: URL(fileURLWithPath: path))) else { return nil }
+            return (id, path, sidecar)
+        }
+        guard !targets.isEmpty else {
+            if ids == nil { push("所选照片旁没有 XMP sidecar", "info") }
+            return 0
+        }
+        let byId = Dictionary(uniqueKeysWithValues: targets.map { ($0.id, $0.sidecar) })
+        guard mutate(Set(byId.keys), undoName: L("从文件读取元数据"), writingSidecars: false, { asset in
+            if let sidecar = byId[asset.id] { XMPSidecar.apply(sidecar, to: &asset, replacingKeywords: true) }
+        }) else { return 0 }
+        var times: [String: Double] = [:]
+        for target in targets { times[target.id] = XMPSidecar.modificationTime(forOriginal: target.path) }
+        recordXMPSync(times)
+        push("已从 \(targets.count) 个 XMP sidecar 读取元数据", "refresh")
+        return targets.count
+    }
+
+    var canReadMetadataFromFiles: Bool { onboarded && sheet == nil && canOperateOnSelectedOriginals }
 
     // ---------- editing in another app ----------
     /// The app photos open in for pixel editing (Photoshop, Pixelmator Pro…); asked the first time.
@@ -4813,7 +4928,7 @@ final class AppState {
     }
 
     /// Saves these photos (demo photos are never persisted) and queues their XMP sidecars.
-    private func persistChanged(_ edited: [Asset]) -> Bool {
+    private func persistChanged(_ edited: [Asset], writingSidecars: Bool = true) -> Bool {
         let changed = edited.filter { !$0.isDemo }
         guard let store else { return true }
         if !changed.isEmpty {
@@ -4826,7 +4941,7 @@ final class AppState {
                 return false
             }
         }
-        enqueueAutomaticXMPWrite(changed)
+        if writingSidecars { enqueueAutomaticXMPWrite(changed) }
         return true
     }
 
@@ -4836,9 +4951,10 @@ final class AppState {
         let sequence = automaticXMPWriteSequence
         let writer = automaticXMPWriter
         Task { [weak self, writer, changed, sequence] in
-            let failures = await writer.write(changed, sequence: sequence)
-            guard failures > 0 else { return }
-            self?.push("\(failures) 个 XMP sidecar 写入失败", "warning")
+            let result = await writer.write(changed, sequence: sequence)
+            self?.recordXMPSync(result.written)
+            guard result.failures > 0 else { return }
+            self?.push("\(result.failures) 个 XMP sidecar 写入失败", "warning")
         }
     }
 
@@ -5386,6 +5502,9 @@ final class AppState {
                 belongs = { $0.flag == .reject }
             case "missing":
                 belongs = { $0.status == .missing || $0.status == .offline }
+            case "xmpChanged":
+                let changed = externallyChangedXMPIds
+                belongs = { changed.contains($0.id) }
             case "places":
                 belongs = { $0.hasGPS }
             case "people":
@@ -5820,7 +5939,7 @@ final class AppState {
 
     /// Apply an in-place edit to the current selection (or an explicit set).
     @discardableResult
-    func mutate(_ ids: Set<String>? = nil, undoName: String? = nil,
+    func mutate(_ ids: Set<String>? = nil, undoName: String? = nil, writingSidecars: Bool = true,
                 _ transform: (inout Asset) -> Void) -> Bool {
         let target = ids ?? targetIds
         guard !target.isEmpty else { return false }
@@ -5834,7 +5953,7 @@ final class AppState {
             return (offset, asset)
         }.sorted { $0.offset < $1.offset }
         guard !edits.isEmpty else { return false }
-        guard persistChanged(edits.map(\.asset)) else { return false }
+        guard persistChanged(edits.map(\.asset), writingSidecars: writingSidecars) else { return false }
         let before = edits.map { assets[$0.offset] }
         let scope = zip(before, edits).map { Self.editScope(from: $0, to: $1.asset) }.max() ?? .review
         applyAssetEdits(edits, scope: scope)

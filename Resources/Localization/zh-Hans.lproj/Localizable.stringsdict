@@ -168,6 +168,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已为 %lld 张照片设置位置</string>
 	</dict>
+	<key>已从 %lld 个 XMP sidecar 读取元数据</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已从 %lld 个 XMP sidecar 读取元数据</string>
+	</dict>
 	<key>已从 %lld 张照片中删除关键词「%@」</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

@@ -140,6 +140,10 @@ struct Sidebar: View {
             badge: pendingBadge ?? Text(c.missingOffline.formatted()))
         row("copy", L("重复文件"), .lib, "duplicates",
             badge: pendingBadge ?? Text("\(app.duplicateGroups.count.formatted()) 组"))
+        if !app.externallyChangedXMPIds.isEmpty {
+            row("arrow.down.doc", L("元数据已在外部更改"), .lib, "xmpChanged", tint: Theme.yellow,
+                badge: Text(app.externallyChangedXMPIds.count.formatted()))
+        }
     }
 
     private var collectionHeader: some View {

@@ -93,6 +93,36 @@ enum XMPSidecar {
         (try? xmp(for: a).data(using: .utf8)?.write(to: url)) != nil
     }
 
+    /// Applies a sidecar's metadata to `asset`: the sidecar's rating, label, text, credits,
+    /// capture time and location win; its keywords are merged ahead of the photo's own, or
+    /// replace them when `replacingKeywords` (reading changes another app made).
+    static func apply(_ sc: SidecarMetadata, to asset: inout Asset, replacingKeywords: Bool = false) {
+        asset.rating = sc.rating
+        asset.colorLabel = sc.colorLabel
+        if !sc.keywords.isEmpty {
+            asset.keywords = replacingKeywords ? KeywordService.normalize(sc.keywords)
+                                               : KeywordService.normalize(sc.keywords + asset.keywords)
+        }
+        if !sc.title.isEmpty { asset.title = sc.title }
+        if !sc.caption.isEmpty { asset.caption = sc.caption }
+        if !sc.author.isEmpty { asset.author = sc.author }
+        if !sc.copyright.isEmpty { asset.copyright = sc.copyright }
+        // a capture-time correction made in another app (or mirrored by us) takes precedence
+        if let d = sc.captureDate { asset.date = d; asset.captureDateSource = "sidecar" }
+        // a location set in another app (or by us) travels in the sidecar
+        if let gps = sc.gps {
+            asset.gps = gps
+            asset.location = Asset.locationLabel(gps)
+        }
+    }
+
+    /// The sidecar's modification time, or nil when there's none.
+    static func modificationTime(forOriginal path: String) -> Double? {
+        let sidecar = sidecarURL(for: URL(fileURLWithPath: path))
+        return ((try? FileManager.default.attributesOfItem(atPath: sidecar.path))?[.modificationDate] as? Date)?
+            .timeIntervalSince1970
+    }
+
     static func read(_ url: URL) -> SidecarMetadata? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         let parser = XMLParser(data: data)

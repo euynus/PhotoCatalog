@@ -241,22 +241,8 @@ final class ImportCoordinator: @unchecked Sendable {
 
         // apply XMP sidecar metadata next to the original, if present (§6.5 META-006, §17.4)
         if readSidecar, let sc = XMPSidecar.read(XMPSidecar.sidecarURL(for: url)) {
-            asset.rating = sc.rating
-            asset.colorLabel = sc.colorLabel
-            // merge, not overwrite, so sidecar keywords don't discard the Vision scene tags
-            // appended above (normalize de-dups, keeping sidecar keywords first)
-            if !sc.keywords.isEmpty { asset.keywords = KeywordService.normalize(sc.keywords + asset.keywords) }
-            if !sc.title.isEmpty { asset.title = sc.title }
-            if !sc.caption.isEmpty { asset.caption = sc.caption }
-            if !sc.author.isEmpty { asset.author = sc.author }
-            if !sc.copyright.isEmpty { asset.copyright = sc.copyright }
-            // a capture-time correction made in another app (or mirrored by us) takes precedence
-            if let d = sc.captureDate { asset.date = d; asset.captureDateSource = "sidecar" }
-            // a location set in another app (or by us) travels in the sidecar
-            if let gps = sc.gps {
-                asset.gps = gps
-                asset.location = Asset.locationLabel(gps)
-            }
+            // keywords merge, so sidecar keywords don't discard the Vision scene tags appended above
+            XMPSidecar.apply(sc, to: &asset)
         }
 
         // cache the perceptual hash from the just-generated thumbnail (avoids re-decoding later)

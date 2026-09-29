@@ -626,6 +626,69 @@ enum PipelineCheck {
         for (name, passed) in externalEdit.sorted(by: { $0.key < $1.key }) {
             check(passed, "external editor: \(name)")
         }
+        // sidecars another app changes: noticed, read on request (or automatically), never
+        // rewritten by the read, and our own writes don't count
+        let externalXMP: [String: Bool] = MainActor.assumeIsolated {
+            let scratch = fm.temporaryDirectory.appendingPathComponent("pc-xmp-\(UUID().uuidString)")
+            let previousAutoRead = UserDefaults.standard.object(forKey: "pc_autoReadChangedXMP")
+            defer {
+                try? fm.removeItem(at: scratch)
+                UserDefaults.standard.set(previousAutoRead, forKey: "pc_autoReadChangedXMP")
+            }
+            try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+            guard let sourcePath = reloaded[4].localPath,
+                  let xmpStore = try? CatalogStore(packageURL: scratch.appendingPathComponent("XMP.photolibrary"))
+            else { return ["scratch catalog": false] }
+            let originalURL = scratch.appendingPathComponent("IMG_xmp.jpg")
+            try? fm.copyItem(atPath: sourcePath, toPath: originalURL.path)
+            let sidecarURL = XMPSidecar.sidecarURL(for: originalURL)
+            var photo = reloaded[4]
+            photo.localPath = originalURL.path
+            photo.rating = 1
+            photo.keywords = ["mine"]
+            XMPSidecar.write(photo, to: sidecarURL)
+            try? xmpStore.upsert([photo])
+            let app = AppState.selfCheckFixture(store: xmpStore)
+            app.runsBackgroundMaintenance = false
+            app.applyLoadedCatalogForScaleCheck([photo], from: xmpStore)
+            app.checkExternalXMPChangesNow()
+            var results: [String: Bool] = ["first sighting isn't a change": app.externallyChangedXMPIds.isEmpty]
+            // another app rates, retags and titles the photo in its sidecar
+            func otherAppEdits(rating: Int, keyword: String, secondsLater: Double) {
+                var theirs = photo
+                theirs.rating = rating
+                theirs.keywords = [keyword]
+                theirs.title = "From \(keyword)"
+                XMPSidecar.write(theirs, to: sidecarURL)
+                try? fm.setAttributes([.modificationDate: Date().addingTimeInterval(secondsLater)],
+                                      ofItemAtPath: sidecarURL.path)
+            }
+            otherAppEdits(rating: 4, keyword: "lr", secondsLater: 10)
+            app.checkExternalXMPChangesNow()
+            results["change noticed"] = app.externallyChangedXMPIds == [photo.id]
+            let sidecarBefore = try? Data(contentsOf: sidecarURL)
+            app.readMetadataFromFiles([photo.id])
+            let read = app.assets.first { $0.id == photo.id }
+            results["read from the file"] = read?.rating == 4 && read?.keywords == ["lr"] && read?.title == "From lr"
+                && app.externallyChangedXMPIds.isEmpty
+            results["the read leaves the sidecar alone"] = (try? Data(contentsOf: sidecarURL)) == sidecarBefore
+            app.selectedIds = [photo.id]
+            app.setPrimary(photo.id)
+            _ = app.setRating(5)
+            app.writeXMPForSelection()
+            app.checkExternalXMPChangesNow()
+            results["our own write isn't a change"] = app.externallyChangedXMPIds.isEmpty
+            app.autoReadChangedXMP = true
+            otherAppEdits(rating: 2, keyword: "bridge", secondsLater: 30)
+            app.checkExternalXMPChangesNow()
+            let auto = app.assets.first { $0.id == photo.id }
+            results["read automatically when asked to"] = auto?.rating == 2 && auto?.keywords == ["bridge"]
+                && app.externallyChangedXMPIds.isEmpty
+            return results
+        }
+        for (name, passed) in externalXMP.sorted(by: { $0.key < $1.key }) {
+            check(passed, "external XMP: \(name)")
+        }
         // album sets: nest albums, smart albums and sets; deleting one moves its contents up
         let albumSets: [String: Bool] = MainActor.assumeIsolated {
             let scratch = fm.temporaryDirectory.appendingPathComponent("pc-sets-\(UUID().uuidString)")

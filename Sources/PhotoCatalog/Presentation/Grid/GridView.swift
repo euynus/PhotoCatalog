@@ -42,6 +42,7 @@ struct GridView: View {
                                      pairLabel: Self.pairLabel(pair),
                                      isEdited: app.developFingerprint(for: asset.id) != nil,
                                      inQuickCollection: app.quickCollection.contains(asset.id),
+                                     xmpChanged: app.externallyChangedXMPIds.contains(asset.id),
                                      onToggleStack: { app.toggleStack(containing: asset.id) })
                                 .equatable()
                                 // the first click selects at once; the second of a double-click opens
@@ -133,6 +134,7 @@ struct GridCell: View {
     let pairLabel: String?
     let isEdited: Bool
     let inQuickCollection: Bool
+    var xmpChanged = false
     let onToggleStack: () -> Void
     @State private var hover = false
 
@@ -246,6 +248,13 @@ struct GridCell: View {
                     .help("RAW + \(pairLabel) 显示为一张照片")
             }
             Spacer(minLength: 0)
+            if xmpChanged {
+                Image(systemName: "arrow.down.doc")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.yellow)
+                    .help("XMP 已被其他应用修改，可用「从文件读取元数据」更新")
+                    .accessibilityLabel("元数据已在外部更改")
+            }
             if isEdited {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 9, weight: .semibold))
@@ -339,7 +348,8 @@ extension GridCell: Equatable {
         l.stackCount == r.stackCount &&
         l.stackCollapsed == r.stackCollapsed &&
         l.pairLabel == r.pairLabel &&
-        l.isEdited == r.isEdited
+        l.isEdited == r.isEdited &&
+        l.xmpChanged == r.xmpChanged
     }
 }
 
