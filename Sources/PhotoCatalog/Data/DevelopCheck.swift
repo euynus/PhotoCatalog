@@ -401,6 +401,29 @@ enum DevelopCheck {
         let untinted = pixel(develop(gray, s, overlayMask: brush.id), 32, 8)
         assert(Int(tinted.r) > Int(tinted.b) + 40 && abs(Int(untinted.r) - Int(untinted.b)) < 4,
                "the overlay tints the selected mask's coverage red")
+        // refining other masks with the brush: erasing cuts into a gradient, painting extends it
+        var ring = LocalAdjustment(kind: .radial)
+        ring.radiusX = 0.4; ring.radiusY = 0.4; ring.feather = 10; ring.exposure = 1.5
+        var cut = BrushStroke()
+        cut.radius = 0.08; cut.feather = 0; cut.erase = true
+        cut.append(CGPoint(x: 0.5, y: 0.2)); cut.append(CGPoint(x: 0.5, y: 0.8))
+        ring.strokes = [cut]
+        s = DevelopSettings(); s.masks = [ring]
+        out = develop(gray, s)
+        assert(abs(luma(out, 32, 32) - base) < 3 && luma(out, 20, 32) > base + 30,
+               "an erase stroke takes a stripe out of a radial gradient")
+        var extended = linear
+        var patch = BrushStroke()
+        patch.radius = 0.1; patch.feather = 0
+        patch.append(CGPoint(x: 0.3, y: 0.85))
+        extended.strokes = [patch]
+        s = DevelopSettings(); s.masks = [extended]
+        out = develop(gray, s)
+        assert(luma(out, 19, 54) < base - 30 && abs(luma(out, 50, 54) - base) < 2,
+               "a paint stroke extends a linear gradient where it was painted")
+        var bare = DevelopSettings(); bare.masks = [linear]
+        assert(s.fingerprint != bare.fingerprint, "refinement strokes change the fingerprint")
+
         // sky: a blue gradient over grass is found, darkened, and the grass left alone; a plain
         // pale wall is not sky
         let landscape = CGContext(data: nil, width: 240, height: 160, bitsPerComponent: 8, bytesPerRow: 0,

@@ -65,6 +65,8 @@ struct MaskEditor: View {
         case .brush: L("在照片上涂抹 · 按住 ⌥ 擦除 · [ ] 调整大小 · Esc 取消")
         case nil, .subject, .sky: selectedIndex.map { settings.masks[$0].kind == .brush } == true
             ? L("涂抹添加 · 按住 ⌥ 擦除 · [ ] 调整大小 · 点按圆点选择其他蒙版 · Esc 完成")
+            : isPainting
+            ? L("涂抹扩大蒙版 · 按住 ⌥ 从蒙版中擦除 · [ ] 调整大小 · Esc 完成")
             : L("拖动控制点调整蒙版 · 点按圆点选择蒙版 · Delete 删除 · Esc 完成")
         }
         return Text(text)
@@ -85,7 +87,7 @@ struct MaskEditor: View {
         switch app.developMaskCreation {
         case .brush: true
         case .linear, .radial, .subject, .sky: false
-        case nil: selectedIndex.map { settings.masks[$0].kind == .brush } == true
+        case nil: selectedIndex.map { settings.masks[$0].kind == .brush || app.developRefiningMask } == true
         }
     }
 
@@ -111,7 +113,7 @@ struct MaskEditor: View {
     // ---- hit testing ----
     private func target(at point: CGPoint, _ mapper: MaskMapper) -> MaskDrag.Target? {
         if let kind = app.developMaskCreation { return .create(kind) }
-        if let index = selectedIndex, settings.masks[index].kind == .brush {
+        if let index = selectedIndex, settings.masks[index].kind == .brush || app.developRefiningMask {
             // another mask's pin still selects it; anywhere else paints
             for mask in settings.masks.reversed() where mask.id != settings.masks[index].id
                 && distance(mapper.pin(of: mask), point) <= Self.handleRadius {

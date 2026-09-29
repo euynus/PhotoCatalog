@@ -52,7 +52,8 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
     var radiusY = 0.18
     var angle = 0.0
     var feather = 50.0
-    /// Brush: strokes painted, and erased, in order.
+    /// Brush: strokes painted, and erased, in order. On other masks, strokes that add to or
+    /// erase from what the mask covers.
     var strokes: [BrushStroke] = []
     /// Applies outside the mask instead of inside it.
     var inverted = false
@@ -108,9 +109,10 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         }
         let values = [exposure, contrast, highlights, shadows, whites, blacks, temperature, tint,
                       texture, clarity, dehaze, saturation]
+        let refinement = kind != .brush && !strokes.isEmpty ? ":s\(strokes.count),\(BrushStroke.hash(strokes))" : ""
         return kind.rawValue + (inverted ? "!" : "") + ":"
             + geometry.map { String(format: "%.4f", $0) }.joined(separator: ",") + ":"
-            + values.map { String(format: "%.2f", $0) }.joined(separator: ",")
+            + values.map { String(format: "%.2f", $0) }.joined(separator: ",") + refinement
     }
 }
 

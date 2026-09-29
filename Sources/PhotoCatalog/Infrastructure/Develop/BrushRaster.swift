@@ -19,23 +19,51 @@ enum BrushRaster {
 
     /// The weight of a brush mask over `extent` (the source photo at the render's size).
     static func weight(_ mask: LocalAdjustment, extent: CGRect) -> CIImage? {
+        guard var image = layer(mask.strokes, extent: extent) else { return nil }
+        if mask.inverted {
+            image = image.applyingFilter("CIColorInvert")
+        }
+        return image
+    }
+
+    /// Another mask's weight with brush strokes added to it and erased from it. Erasing wins
+    /// where the two overlap, whatever order they were painted in.
+    static func refine(_ base: CIImage, strokes: [BrushStroke], extent: CGRect) -> CIImage {
+        var image = base
+        let added = strokes.filter { !$0.erase }
+        if !added.isEmpty, let painted = layer(added, extent: extent) {
+            image = image.applyingFilter("CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: painted])
+        }
+        // erased strokes painted as coverage, then taken away
+        let removed = strokes.filter(\.erase).map { stroke -> BrushStroke in
+            var coverage = stroke
+            coverage.erase = false
+            return coverage
+        }
+        if !removed.isEmpty, let erased = layer(removed, extent: extent) {
+            image = image.applyingFilter("CIMinimumCompositing", parameters: [
+                kCIInputBackgroundImageKey: erased.applyingFilter("CIColorInvert"),
+            ])
+        }
+        return image.cropped(to: extent)
+    }
+
+    /// The strokes painted in order over black, positioned on `extent`.
+    private static func layer(_ strokes: [BrushStroke], extent: CGRect) -> CIImage? {
         let width = Int(extent.width.rounded()), height = Int(extent.height.rounded())
         guard width > 0, height > 0 else { return nil }
-        let key = "\(BrushStroke.hash(mask.strokes))|\(mask.strokes.count)|\(width)x\(height)" as NSString
+        let key = "\(BrushStroke.hash(strokes))|\(strokes.count)|\(width)x\(height)" as NSString
         let bitmap: CGImage
         if let cached = cache.object(forKey: key) {
             bitmap = cached.image
         } else {
-            guard let painted = paint(mask.strokes, width: width, height: height) else { return nil }
+            guard let painted = paint(strokes, width: width, height: height) else { return nil }
             cache.setObject(Box(painted), forKey: key)
             bitmap = painted
         }
         // raw values: the weight must not be color-managed on its way in
-        var image = CIImage(cgImage: bitmap, options: [.colorSpace: NSNull()])
-        if mask.inverted {
-            image = image.applyingFilter("CIColorInvert")
-        }
-        return image.transformed(by: CGAffineTransform(translationX: extent.minX, y: extent.minY))
+        return CIImage(cgImage: bitmap, options: [.colorSpace: NSNull()])
+            .transformed(by: CGAffineTransform(translationX: extent.minX, y: extent.minY))
     }
 
     private static func paint(_ strokes: [BrushStroke], width: Int, height: Int) -> CGImage? {

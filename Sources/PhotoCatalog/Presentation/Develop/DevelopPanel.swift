@@ -324,7 +324,27 @@ struct DevelopPanel: View {
             .controlSize(.small)
             .help("让调整作用于渐变之外")
             if mask.kind == .radial { slider(DevelopControl.localFeather(index), asset, settings) }
-            if mask.kind == .brush { brushControls }
+            if mask.kind == .brush {
+                brushControls
+            } else {
+                HStack(spacing: 8) {
+                    Toggle("用画笔增减", isOn: Binding(get: { app.developRefiningMask },
+                                                   set: { app.developRefiningMask = $0 }))
+                        .toggleStyle(.checkbox)
+                        .help("在照片上涂抹扩大这个蒙版，按住 ⌥ 或选“擦除”从中去掉")
+                    Spacer(minLength: 0)
+                    if !mask.strokes.isEmpty {
+                        Button("清除修整") {
+                            var next = app.developSettings[asset.id] ?? .neutral
+                            guard next.masks.indices.contains(index) else { return }
+                            next.masks[index].strokes = []
+                            app.commitDevelop([asset.id: next], undoName: L("清除蒙版修整"))
+                        }
+                    }
+                }
+                .controlSize(.small)
+                if app.developRefiningMask { brushControls }
+            }
             ForEach(DevelopControl.local(index)) { control in slider(control, asset, settings) }
             HStack(spacing: 8) {
                 Button("复位滑块") {

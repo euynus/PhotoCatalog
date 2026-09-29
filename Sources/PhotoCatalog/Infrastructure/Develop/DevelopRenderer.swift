@@ -303,12 +303,19 @@ enum DevelopRenderer {
     }
 
     /// A mask's weight over `extent`: drawn masks from their shapes and strokes, a subject or
-    /// sky from the photo itself (`photo`, the file being rendered).
+    /// sky from the photo itself (`photo`, the file being rendered), then any brush strokes
+    /// that add to or erase from a mask that isn't itself a brush.
     static func maskWeight(_ mask: LocalAdjustment, _ s: DevelopSettings, extent: CGRect,
                            photo: (url: URL, isRaw: Bool)?) -> CIImage? {
-        guard mask.kind.isAutomatic else { return DevelopKernels.maskWeight(mask, extent: extent) }
-        guard let photo, let found = SemanticMasks.mask(mask.kind, url: photo.url, isRaw: photo.isRaw) else { return nil }
-        return SemanticMasks.weight(found, extent: extent, inverted: mask.inverted, distortion: s.distortion)
+        let base: CIImage?
+        if mask.kind.isAutomatic {
+            base = photo.flatMap { SemanticMasks.mask(mask.kind, url: $0.url, isRaw: $0.isRaw) }
+                .map { SemanticMasks.weight($0, extent: extent, inverted: mask.inverted, distortion: s.distortion) }
+        } else {
+            base = DevelopKernels.maskWeight(mask, extent: extent)
+        }
+        guard let base, mask.kind != .brush, !mask.strokes.isEmpty else { return base }
+        return BrushRaster.refine(base, strokes: mask.strokes, extent: extent)
     }
 
     /// Each mask's adjustments, blended in through its weight, in order: exposure and white

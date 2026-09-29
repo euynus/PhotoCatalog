@@ -652,7 +652,7 @@ final class AppState {
     var developMasking = false {
         didSet {
             if developMasking { loupeZoom = nil; developCropping = false; developPickingWhiteBalance = false }
-            if !developMasking { developMaskCreation = nil }
+            if !developMasking { developMaskCreation = nil; developRefiningMask = false }
         }
     }
     /// The mask whose handles and sliders are shown.
@@ -662,6 +662,8 @@ final class AppState {
     var developMaskCreation: LocalAdjustment.Kind?
     /// Brush size, feather, density and mode for new strokes.
     var developBrush = BrushSettings()
+    /// Painting on the selected gradient, subject or sky: strokes add to it, erasing takes away.
+    var developRefiningMask = false
     /// O: tints the selected mask's coverage red.
     var developShowsMaskOverlay = false
 

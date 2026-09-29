@@ -642,6 +642,10 @@
 "选择天空" = "Select Sky";
 "自动找出照片的主体（人物、动物或物体）并建立蒙版" = "Find the photo's subject (people, animals or objects) and mask it";
 "自动找出照片中的天空并建立蒙版" = "Find the sky in the photo and mask it";
+"用画笔增减" = "Refine with Brush";
+"在照片上涂抹扩大这个蒙版，按住 ⌥ 或选“擦除”从中去掉" = "Paint on the photo to extend this mask; hold ⌥ or choose Erase to take parts away";
+"清除修整" = "Clear Refinements";
+"清除蒙版修整" = "Clear Mask Refinements";
 
 /* Presentation/Develop/DevelopView.swift */
 "点选照片中应为灰色或白色的地方（Esc 取消）" = "Click a spot in the photo that should be gray or white (Esc to cancel)";
@@ -659,6 +663,7 @@
 "涂抹添加 · 按住 ⌥ 擦除 · [ ] 调整大小 · 点按圆点选择其他蒙版 · Esc 完成" = "Paint to add · Hold ⌥ to erase · [ ] to resize · Click a pin to select another mask · Esc when done";
 "画笔描边" = "Brush Stroke";
 "擦除蒙版" = "Erase Mask";
+"涂抹扩大蒙版 · 按住 ⌥ 从蒙版中擦除 · [ ] 调整大小 · Esc 完成" = "Paint to extend the mask · Hold ⌥ to erase from it · [ ] to resize · Esc when done";
 
 /* Presentation/Develop/ToneCurveEditor.swift */
 "通道" = "Channel";
