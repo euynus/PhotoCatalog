@@ -72,13 +72,15 @@ enum DevelopRenderer {
 
         /// The photo with `settings` applied. `wholeFrame` skips the crop and leaves the corners a
         /// straightened photo no longer covers empty, for the crop tool to draw over;
-        /// `overlayMask` tints that mask's coverage red, for the masking tool.
+        /// `overlayMask` tints that mask's coverage red, for the masking tool; `visualizeSpots`
+        /// shows only fine detail, where dust stands out, for the spot tool.
         func image(_ settings: DevelopSettings, draft: Bool = false, wholeFrame: Bool = false,
-                   overlayMask: String? = nil) -> CIImage? {
+                   overlayMask: String? = nil, visualizeSpots: Bool = false) -> CIImage? {
             guard let base = baseImage(settings, draft: draft) else { return nil }
             sourceSize = base.extent.integral.size
             let scale = max(base.extent.width, base.extent.height) / max(fullLongEdge, 1)
-            let toned = DevelopRenderer.applyTone(DevelopRenderer.applyLens(base, settings), settings)
+            let healed = DevelopRenderer.applySpots(DevelopRenderer.applyLens(base, settings), settings)
+            let toned = DevelopRenderer.applyTone(healed, settings)
             let colored = DevelopRenderer.applyMixer(DevelopRenderer.applyCurve(toned, settings), settings)
             let present = DevelopRenderer.applyPresence(colored, settings)
             let photo = (url: url, isRaw: isRaw)
@@ -87,7 +89,8 @@ enum DevelopRenderer {
             let detailed = DevelopRenderer.applyDetail(local, settings, scale: min(1, scale))
             let framed = DevelopRenderer.applyGeometry(detailed, settings, wholeFrame: wholeFrame)
             // effects follow the crop, which the crop tool's whole-frame view doesn't apply yet
-            return wholeFrame ? framed : DevelopRenderer.applyEffects(framed, settings, scale: min(1, scale))
+            let finished = wholeFrame ? framed : DevelopRenderer.applyEffects(framed, settings, scale: min(1, scale))
+            return visualizeSpots ? DevelopRenderer.visualizeSpots(finished) : finished
         }
 
         /// The decoded photo with white balance and exposure: linear light, before any other edit.
@@ -347,6 +350,62 @@ enum DevelopRenderer {
         return image
     }
 
+    /// Each spot healed or cloned over, in order, on the lens-corrected photo. Every spot's work
+    /// is cropped to its own disc, so Core Image only computes the neighborhood around it.
+    static func applySpots(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
+        guard !s.spots.isEmpty else { return input }
+        let extent = input.extent
+        let longEdge = max(extent.width, extent.height)
+        let clear = CIImage(color: .clear).cropped(to: extent)
+        var image = input
+        func pixel(_ p: CGPoint) -> CGPoint {
+            CGPoint(x: extent.minX + p.x * extent.width, y: extent.maxY - p.y * extent.height)
+        }
+        for spot in s.spots where spot.opacity > 0 {
+            let radius = max(1, CGFloat(spot.radius) * longEdge)
+            let target = pixel(spot.target), source = pixel(spot.source)
+            let region = CGRect(x: target.x - radius, y: target.y - radius, width: radius * 2, height: radius * 2)
+                .insetBy(dx: -2, dy: -2).intersection(extent)
+            guard !region.isNull,
+                  let disc = DevelopKernels.disc(center: target, radius: radius, feather: spot.feather / 100, extent: extent)
+            else { continue }
+            let shifted = image.clampedToExtent()
+                .transformed(by: CGAffineTransform(translationX: target.x - source.x, y: target.y - source.y))
+            var patch = shifted.cropped(to: extent)
+            if spot.mode == .heal,
+               let ring = DevelopKernels.disc(center: target, radius: radius * 1.05, feather: 0.05, invert: true,
+                                              extent: extent) {
+                // each side's surroundings, the spot itself left out: blur a copy whose alpha is the ring
+                func surroundings(_ image: CIImage) -> CIImage {
+                    image.applyingFilter("CIBlendWithMask", parameters: [
+                        kCIInputBackgroundImageKey: clear, kCIInputMaskImageKey: ring,
+                    ]).applyingGaussianBlur(sigma: Double(radius) * 0.6)
+                }
+                patch = DevelopKernels.heal(patch, sourceRing: surroundings(patch), targetRing: surroundings(image),
+                                            extent: extent) ?? patch
+            }
+            let strength = disc.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: spot.opacity / 100, y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: spot.opacity / 100, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: spot.opacity / 100, w: 0),
+            ])
+            image = patch.applyingFilter("CIBlendWithMask", parameters: [
+                kCIInputBackgroundImageKey: clear, kCIInputMaskImageKey: strength,
+            ]).cropped(to: region).composited(over: image)
+        }
+        return image.cropped(to: extent)
+    }
+
+    /// Fine detail only, white on black: dust and specks show up as small rings.
+    static func visualizeSpots(_ input: CIImage) -> CIImage {
+        let extent = input.extent
+        let gray = input.applyingFilter("CILinearToSRGBToneCurve")
+            .applyingFilter("CIColorControls", parameters: ["inputSaturation": 0])
+        let blurred = gray.clampedToExtent()
+            .applyingGaussianBlur(sigma: max(1.5, Double(max(extent.width, extent.height)) * 0.0015)).cropped(to: extent)
+        return DevelopKernels.highPass(gray, blurred: blurred, gain: 14).cropped(to: extent)
+    }
+
     /// The photo with a mask's coverage tinted red, as Lightroom's overlay shows it.
     static func applyOverlay(_ input: CIImage, _ s: DevelopSettings, maskId: String?,
                              photo: (url: URL, isRaw: Bool)? = nil) -> CIImage {
@@ -499,6 +558,7 @@ final class DevelopRenderWorker: @unchecked Sendable {
         let draft: Bool
         var wholeFrame = false
         var overlayMask: String?
+        var visualizeSpots = false
         let token: Int
     }
 
@@ -534,11 +594,12 @@ final class DevelopRenderWorker: @unchecked Sendable {
         }
         let image = autoreleasepool {
             source?.source.image(request.settings, draft: request.draft, wholeFrame: request.wholeFrame,
-                                 overlayMask: request.overlayMask)
+                                 overlayMask: request.overlayMask, visualizeSpots: request.visualizeSpots)
                 .flatMap(DevelopRenderer.render)
         }
         // the crop tool's empty corners and the mask overlay's tint would skew the histogram
-        let histogram = request.wholeFrame || request.overlayMask != nil ? nil : image.flatMap(DevelopRenderer.histogram)
+        let histogram = request.wholeFrame || request.overlayMask != nil || request.visualizeSpots
+            ? nil : image.flatMap(DevelopRenderer.histogram)
         completion(Result(request: request, image: image, histogram: histogram, sourceSize: source?.source.sourceSize,
                           asShotTemperature: source?.source.asShotTemperature,
                           asShotTint: source?.source.asShotTint))

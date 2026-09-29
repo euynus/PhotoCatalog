@@ -45,6 +45,8 @@ private struct DevelopCanvas: View {
         let cropping = app.developCropping && !app.developShowsOriginal
         let masking = app.developMasking && !app.developShowsOriginal
         let overlay = masking && app.developShowsMaskOverlay ? app.developSelectedMaskId : nil
+        let spotting = app.developSpotting && !app.developShowsOriginal
+        let visualize = spotting && app.developVisualizeSpots
         let dragging = app.developDraft?.assetId == asset.id
         let fullResolution = app.loupeZoom != nil && !dragging && !cropping
         // the crop tool draws the crop itself, so moving it never re-renders
@@ -55,6 +57,9 @@ private struct DevelopCanvas: View {
                 Group {
                     if cropping {
                         CropEditor(asset: asset, image: engine.wholeFrameImage(for: asset.id), settings: settings)
+                    } else if spotting {
+                        SpotEditor(asset: asset, image: engine.finishedImage(for: asset.id), settings: settings,
+                                   sourceSize: app.developSourceSize(for: asset))
                     } else if masking {
                         MaskEditor(asset: asset, image: engine.finishedImage(for: asset.id), settings: settings,
                                    sourceSize: app.developSourceSize(for: asset))
@@ -78,11 +83,12 @@ private struct DevelopCanvas: View {
                 }
                 .onChange(of: DevelopRenderKey(assetId: asset.id, settings: rendered, draft: dragging,
                                                fullResolution: fullResolution, wholeFrame: cropping,
-                                               overlayMask: overlay),
+                                               overlayMask: overlay, visualizeSpots: visualize),
                           initial: true) {
                     engine.render(assetId: asset.id, url: source.url, isRaw: source.isRaw, settings: rendered,
                                   draft: dragging, fullResolution: fullResolution,
-                                  wholeFrame: cropping, overlayMask: overlay) { result, histogram in
+                                  wholeFrame: cropping, overlayMask: overlay,
+                                  visualizeSpots: visualize) { result, histogram in
                         if let temperature = result.asShotTemperature, let tint = result.asShotTint {
                             app.recordAsShotWhiteBalance(asset.id, temperature: temperature, tint: tint)
                         }
@@ -129,6 +135,7 @@ private struct DevelopRenderKey: Equatable {
     let fullResolution: Bool
     let wholeFrame: Bool
     let overlayMask: String?
+    let visualizeSpots: Bool
 }
 
 /// Owns two render workers — preview size and full resolution — so switching zoom
@@ -169,7 +176,7 @@ final class DevelopPreviewEngine: ObservableObject {
     func isRendering(_ assetId: String) -> Bool { renderingAssetId == assetId }
 
     func render(assetId: String, url: URL, isRaw: Bool, settings: DevelopSettings, draft: Bool,
-                fullResolution: Bool, wholeFrame: Bool, overlayMask: String? = nil,
+                fullResolution: Bool, wholeFrame: Bool, overlayMask: String? = nil, visualizeSpots: Bool = false,
                 finished: @escaping (DevelopRenderWorker.Result, _ newestHistogram: DevelopHistogram?) -> Void) {
         token += 1
         var request = DevelopRenderWorker.Request(url: url, isRaw: isRaw,
@@ -177,6 +184,7 @@ final class DevelopPreviewEngine: ObservableObject {
                                                   settings: settings, draft: draft, token: token)
         request.wholeFrame = wholeFrame
         request.overlayMask = overlayMask
+        request.visualizeSpots = visualizeSpots
         renderingAssetId = assetId
         (fullResolution ? fullWorker : previewWorker).submit(request) { [weak self] result in
             Task { @MainActor [weak self] in

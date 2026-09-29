@@ -33,6 +33,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>%lld 个文件失败 · 可稍后重试</string>
 	</dict>
+	<key>%lld 处</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 处</string>
+	</dict>
 	<key>%lld 张</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

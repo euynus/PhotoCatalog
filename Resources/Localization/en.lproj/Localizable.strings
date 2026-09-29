@@ -327,6 +327,8 @@
 "删除%@" = "Delete %@";
 "没有找到明显的主体" = "No clear subject found";
 "没有找到天空" = "No sky found";
+"污点去除" = "Spot Removal";
+"删除污点" = "Delete Spot";
 
 /* Application/ImportCoordinator.swift */
 "复制原件失败：%@" = "Couldn't copy the original: %@";
@@ -479,6 +481,10 @@
 "文件状态" = "File Status";
 "文件类型" = "File Type";
 "日期范围" = "Date Range";
+
+/* Domain/SpotRemoval.swift */
+"修复" = "Heal";
+"仿制" = "Clone";
 
 /* Infrastructure/Catalog/CatalogHealth.swift */
 " · %lld 张资产 · 缺失原件 %lld · 缺失缩略图 %lld · 缺失预览 %lld" = " · %lld assets · missing originals %lld · missing thumbnails %lld · missing previews %lld";
@@ -646,6 +652,17 @@
 "在照片上涂抹扩大这个蒙版，按住 ⌥ 或选“擦除”从中去掉" = "Paint on the photo to extend this mask; hold ⌥ or choose Erase to take parts away";
 "清除修整" = "Clear Refinements";
 "清除蒙版修整" = "Clear Mask Refinements";
+"点按照片上的污点修复 (Q)" = "Click a spot on the photo to heal it (Q)";
+"%lld 处" = "%lld spots";
+"全部清除" = "Clear All";
+"清除污点去除" = "Clear Spot Removal";
+"污点模式" = "Spot Mode";
+"修复：取用纹理并匹配周围的颜色与亮度；仿制：原样复制" = "Heal takes the texture and matches the surrounding color and brightness; Clone copies as is";
+"污点大小" = "Spot Size";
+"不透明度" = "Opacity";
+"显示污点" = "Visualize Spots";
+"只显示细节，传感器灰尘等污点会显出圆圈" = "Show only fine detail, where sensor dust and other specks stand out as rings";
+"删除所选污点 (Delete)" = "Delete the selected spot (Delete)";
 
 /* Presentation/Develop/DevelopView.swift */
 "点选照片中应为灰色或白色的地方（Esc 取消）" = "Click a spot in the photo that should be gray or white (Esc to cancel)";
@@ -664,6 +681,10 @@
 "画笔描边" = "Brush Stroke";
 "擦除蒙版" = "Erase Mask";
 "涂抹扩大蒙版 · 按住 ⌥ 从蒙版中擦除 · [ ] 调整大小 · Esc 完成" = "Paint to extend the mask · Hold ⌥ to erase from it · [ ] to resize · Esc when done";
+
+/* Presentation/Develop/SpotEditor.swift */
+"点按污点修复 · 向外拖动设定大小 · 拖动圆圈移动，拖动边缘调整大小 · [ ] 画笔大小 · Delete 删除 · Esc 完成" = "Click a spot to heal it · Drag outward to size it · Drag a circle to move it, its edge to resize · [ ] brush size · Delete to remove · Esc when done";
+"编辑污点" = "Edit Spot";
 
 /* Presentation/Develop/ToneCurveEditor.swift */
 "通道" = "Channel";

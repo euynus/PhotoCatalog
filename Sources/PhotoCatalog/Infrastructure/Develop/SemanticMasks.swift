@@ -40,18 +40,12 @@ enum SemanticMasks {
     /// The mask for `kind` (subject or sky), or nil when the photo has none.
     static func mask(_ kind: LocalAdjustment.Kind, url: URL, isRaw: Bool) -> Result? {
         let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-        let file = "\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)"
-        let key = "\(kind.rawValue)|\(file)" as NSString
+        let key = "\(kind.rawValue)|\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)" as NSString
         if let cached = cache.object(forKey: key) { return cached.result }
         // one computation per file at a time; Vision and the RAW decode are the slow part
         return lock.withLock {
             if let cached = cache.object(forKey: key) { return cached.result }
-            var canonical = images.object(forKey: file as NSString)?.image
-            if canonical == nil, let decoded = canonicalImage(url: url, isRaw: isRaw) {
-                images.setObject(ImageBox(decoded), forKey: file as NSString)
-                canonical = decoded
-            }
-            let result = canonical.flatMap { image in
+            let result = canonical(url: url, isRaw: isRaw).flatMap { image in
                 switch kind {
                 case .subject: subject(in: image)
                 case .sky: sky(in: image)
@@ -61,6 +55,16 @@ enum SemanticMasks {
             cache.setObject(Box(result), forKey: key)
             return result
         }
+    }
+
+    /// The photo as shot at 1024 px, the image automatic masks and spot sources are found in.
+    static func canonical(url: URL, isRaw: Bool) -> CGImage? {
+        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        let file = "\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)" as NSString
+        if let cached = images.object(forKey: file) { return cached.image }
+        guard let decoded = canonicalImage(url: url, isRaw: isRaw) else { return nil }
+        images.setObject(ImageBox(decoded), forKey: file)
+        return decoded
     }
 
     /// The mask as a weight over `extent` (the source photo at the render's size), bent by the
@@ -242,7 +246,7 @@ enum SemanticMasks {
         return context.makeImage()
     }
 
-    private static func rgba(_ image: CGImage) -> [UInt8]? {
+    static func rgba(_ image: CGImage) -> [UInt8]? {
         var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
         guard let context = CGContext(data: &pixels, width: image.width, height: image.height, bitsPerComponent: 8,
                                       bytesPerRow: image.width * 4, space: DevelopRenderer.outputColorSpace,

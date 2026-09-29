@@ -13,6 +13,7 @@ enum DevelopCheck {
         checkColorMixer()
         checkColorGrading()
         checkLocalAdjustments()
+        checkSpotRemoval()
         checkLensCorrections()
         checkEffects()
         checkAutoAdjustments()
@@ -485,6 +486,56 @@ enum DevelopCheck {
         let carried = DevelopSettings().applying(s, fields: [.masks])
         assert(carried.masks == s.masks && carried.rotation == 0, "masks travel as one setting")
         assert(!DevelopField.defaultCopy.contains(.masks), "copy leaves masks behind unless asked")
+    }
+
+    private static func checkSpotRemoval() {
+        // a gradient from dark (left) to light (right) with a dark speck in the middle
+        let speckled = image { x, y in
+            let v = 0.25 + 0.5 * Double(x) / 63
+            let speck = hypot(Double(x) - 32, Double(y) - 32) < 3
+            return speck ? (0.02, 0.02, 0.02) : (v, v, v)
+        }
+        func luma(_ image: CGImage, _ x: Int, _ y: Int) -> Double {
+            let p = pixel(image, x, y)
+            return 0.3 * Double(p.r) + 0.59 * Double(p.g) + 0.11 * Double(p.b)
+        }
+        let plain = develop(speckled, .neutral)
+        let around = (luma(plain, 32, 26) + luma(plain, 32, 38)) / 2   // above and below: the same brightness
+        // the source sits to the left, where the gradient is darker
+        var spot = SpotRemoval(target: CGPoint(x: 0.5, y: 0.5), source: CGPoint(x: 0.25, y: 0.5), radius: 5.0 / 64)
+        spot.feather = 20
+        var s = DevelopSettings(); s.spots = [spot]
+        let healed = develop(speckled, s)
+        assert(abs(luma(healed, 32, 32) - around) < 8 && luma(healed, 32, 32) > luma(plain, 32, 32) + 60,
+               "healing removes the speck and matches the surrounding brightness")
+        s.spots[0].mode = .clone
+        let cloned = develop(speckled, s)
+        assert(luma(cloned, 32, 32) < around - 20, "cloning copies the source as it is, darker here")
+        assert(abs(luma(healed, 4, 4) - luma(plain, 4, 4)) < 2 && abs(luma(healed, 60, 60) - luma(plain, 60, 60)) < 2,
+               "a spot leaves the rest of the photo alone")
+        s.spots[0].mode = .heal
+        s.spots[0].opacity = 50
+        let half = luma(develop(speckled, s), 32, 32)
+        assert(half > luma(plain, 32, 32) + 20 && half < luma(healed, 32, 32) - 20, "half opacity heals halfway")
+
+        // the source search avoids another speck and takes a place that matches
+        var luma64 = [Double](repeating: 0, count: 64 * 64)
+        for y in 0..<64 { for x in 0..<64 { luma64[y * 64 + x] = 0.25 + 0.5 * Double(x) / 63 } }
+        for y in 0..<64 { for x in 0..<64 where hypot(Double(x) - 32, Double(y) - 20) < 3 { luma64[y * 64 + x] = 0.02 } }
+        let found = SpotFinder.source(for: CGPoint(x: 0.5, y: 0.5), radius: 3.0 / 64, luma: luma64, width: 64, height: 64)
+        let foundPixel = CGPoint(x: found.x * 64, y: found.y * 64)
+        assert(abs(foundPixel.x - 32) < 4 && hypot(foundPixel.x - 32, foundPixel.y - 20) > 6,
+               "the source is found in the same column of the gradient, away from the other speck")
+
+        let old = try! JSONDecoder().decode(DevelopSettings.self, from: Data(#"{"exposure":0.5}"#.utf8))
+        assert(old.spots.isEmpty, "edits saved before spot removal load without spots")
+        let partial = try! JSONDecoder().decode(SpotRemoval.self, from: Data(#"{"radius":0.02}"#.utf8))
+        assert(partial.radius == 0.02 && partial.mode == .heal && partial.opacity == 100, "a spot missing fields loads")
+        assert(DevelopSettings().applying(s, fields: [.spots]).spots == s.spots
+               && !DevelopField.defaultCopy.contains(.spots), "spots travel as one setting, off by default")
+        assert(s.fingerprint != DevelopSettings().fingerprint, "spots change the fingerprint")
+        let dust = DevelopRenderer.render(DevelopRenderer.visualizeSpots(CIImage(cgImage: speckled)))!
+        assert(luma(dust, 32, 29) > 100 && luma(dust, 8, 8) < 20, "the dust view shows a speck and not smooth areas")
     }
 
     private static func checkPresence() {
@@ -964,5 +1015,34 @@ enum DevelopCheck {
         app.view = .grid
         assert(!app.developMasking, "leaving Develop closes the masking tool")
         assert(!app.handleKey("[", hasCommand: false), "[ does nothing outside the masking tool")
+
+        // spot tool: exclusive with the other tools; Delete removes the selected spot, not the photo
+        app.view = .develop
+        var withSpot = app.developSettings["x"] ?? .neutral
+        let spot = SpotRemoval(target: CGPoint(x: 0.3, y: 0.3), source: CGPoint(x: 0.4, y: 0.3), radius: 0.02)
+        withSpot.spots = [spot]
+        undo.beginUndoGrouping()
+        app.commitDevelop(["x": withSpot], undoName: "spot")
+        undo.endUndoGrouping()
+        app.developMasking = true
+        app.developSpotting = true
+        assert(!app.developMasking && app.developSpotting, "the spot tool closes the masking tool")
+        app.developSelectedSpotId = spot.id
+        _ = app.handleKey("]", hasCommand: false)
+        assert(app.developSpotBrush.size == 14, "] enlarges the spot brush")
+        undo.beginUndoGrouping()
+        _ = app.handleKey("delete", hasCommand: false)
+        undo.endUndoGrouping()
+        assert(app.developSettings["x"]?.spots.isEmpty == true && app.view == .develop, "Delete removes the selected spot")
+        undo.undo()
+        assert(app.developSettings["x"]?.spots.count == 1, "undo brings the spot back")
+        app.developVisualizeSpots = true
+        _ = app.handleKey("escape", hasCommand: false)
+        assert(!app.developSpotting && !app.developVisualizeSpots && app.view == .develop,
+               "Esc closes the spot tool and its dust view")
+        app.developSpotting = true
+        app.developCropping = true
+        assert(!app.developSpotting, "the crop tool closes the spot tool")
+        app.view = .grid
     }
 }

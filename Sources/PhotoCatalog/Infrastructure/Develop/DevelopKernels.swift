@@ -4,7 +4,7 @@
 import CoreImage
 
 /// Lens distortion, radial gain, film grain, local contrast, haze removal, the color mixer,
-/// color grading and mask shapes, each compiled from Metal source the first time a render needs it: the package
+/// color grading, mask shapes, healing and a high-pass view, each compiled from Metal source the first time a render needs it: the package
 /// has no Metal build step, and Core Image compiles stitchable kernels at run time. A kernel
 /// that fails to compile leaves its adjustment out of the render.
 enum DevelopKernels {
@@ -162,6 +162,23 @@ enum DevelopKernels {
             return float4(w, w, w, 1.0);
         }
         """,
+        "heal": """
+        // Healing: the source patch `s` moved onto the target, offset by the difference between
+        // the target's surroundings `lt` and the source's `ls`. Both were blurred with the spot
+        // itself left out, so each is premultiplied by how much of the ring it saw.
+        [[stitchable]] float4 heal(sample_t s, sample_t ls, sample_t lt) {
+            float3 target = lt.rgb / max(lt.a, 1e-4);
+            float3 source = ls.rgb / max(ls.a, 1e-4);
+            return float4(max(s.rgb + target - source, 0.0), s.a);
+        }
+        """,
+        "highPass": """
+        // Fine detail as white on black: how far each pixel's gray `s` is from its blur `b`.
+        [[stitchable]] float4 highPass(sample_t s, sample_t b, float gain) {
+            float v = clamp(abs(s.r - b.r) * gain, 0.0, 1.0);
+            return float4(v, v, v, 1.0);
+        }
+        """,
         "filmGrain": """
         // Adds grain `n` (0.5 = none) to display-encoded color, strongest in the midtones as on film.
         [[stitchable]] float4 filmGrain(sample_t s, sample_t n, float amount) {
@@ -298,6 +315,28 @@ enum DevelopKernels {
         case .subject, .sky:
             return nil   // found in the photo: see SemanticMasks
         }
+    }
+
+    /// A soft disc: weight 1 inside `radius` pixels of `center`, falling to 0 over the outer
+    /// `feather` (0…1) of the radius; `invert` flips it.
+    static func disc(center: CGPoint, radius: CGFloat, feather: Double, invert: Bool = false,
+                     extent: CGRect) -> CIImage? {
+        guard let kernel = kernel("ellipseMask") as? CIColorKernel else { return nil }
+        let r = max(Double(radius), 0.5)
+        return kernel.apply(extent: extent, arguments: [
+            CIVector(x: center.x, y: center.y), CIVector(x: 1 / r, y: 0), CIVector(x: 0, y: 1 / r),
+            feather, invert ? 1.0 : 0.0,
+        ])
+    }
+
+    /// The healed patch (see the kernel), over `extent`.
+    static func heal(_ shifted: CIImage, sourceRing: CIImage, targetRing: CIImage, extent: CGRect) -> CIImage? {
+        (kernel("heal") as? CIColorKernel)?.apply(extent: extent, arguments: [shifted, sourceRing, targetRing])
+    }
+
+    /// Fine detail of display-encoded gray `image` against its `blurred` copy, white on black.
+    static func highPass(_ image: CIImage, blurred: CIImage, gain: Double) -> CIImage {
+        (kernel("highPass") as? CIColorKernel)?.apply(extent: image.extent, arguments: [image, blurred, gain]) ?? image
     }
 
     /// `image` with its brightness scaled toward the corners (see the kernel).

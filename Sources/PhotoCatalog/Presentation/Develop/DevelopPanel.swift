@@ -30,6 +30,7 @@ struct DevelopPanel: View {
                 header(asset, settings: settings)
                 section(L("裁剪与旋转")) { geometry(asset, settings) }
                 section(L("蒙版")) { masks(asset, settings) }
+                section(L("污点去除")) { spots(asset, settings) }
                 section(L("白平衡")) {
                     Toggle(isOn: Binding(get: { app.developPickingWhiteBalance },
                                          set: { app.developPickingWhiteBalance = $0 })) {
@@ -271,6 +272,90 @@ struct DevelopPanel: View {
             .disabled(settings.crop == nil && settings.straighten == 0)
         }
         .controlSize(.small)
+    }
+
+    // ---- spot removal: specks healed or cloned over ----
+    @ViewBuilder
+    private func spots(_ asset: Asset, _ settings: DevelopSettings) -> some View {
+        HStack(spacing: 6) {
+            Toggle(isOn: Binding(get: { app.developSpotting }, set: { _ in app.toggleSpotTool() })) {
+                Label("污点去除", systemImage: "bandage")
+            }
+            .toggleStyle(.button)
+            .help("点按照片上的污点修复 (Q)")
+            Spacer(minLength: 0)
+            if !settings.spots.isEmpty {
+                Text("\(settings.spots.count) 处").font(.system(size: 11)).foregroundStyle(Theme.text3)
+                Button("全部清除") {
+                    var next = app.developSettings[asset.id] ?? .neutral
+                    next.spots = []
+                    app.commitDevelop([asset.id: next], undoName: L("清除污点去除"))
+                }
+            }
+        }
+        .controlSize(.small)
+        if app.developSpotting {
+            let index = settings.spots.firstIndex { $0.id == app.developSelectedSpotId }
+            Picker("污点模式", selection: Binding(
+                get: { index.map { settings.spots[$0].mode } ?? app.developSpotBrush.mode },
+                set: { mode in
+                    app.developSpotBrush.mode = mode
+                    guard let index else { return }
+                    var next = app.developSettings[asset.id] ?? .neutral
+                    guard next.spots.indices.contains(index) else { return }
+                    next.spots[index].mode = mode
+                    app.commitDevelop([asset.id: next], undoName: L("污点模式"))
+                })) {
+                ForEach(SpotRemoval.Mode.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+            .help("修复：取用纹理并匹配周围的颜色与亮度；仿制：原样复制")
+            // with a spot selected the sliders edit it; otherwise they set up the next spot
+            if let index {
+                let spot = settings.spots[index]
+                DevelopSlider(title: L("大小"), value: SpotBrush.size(forRadius: spot.radius), range: 1...100, step: 1,
+                              format: { String(format: "%.0f", $0) }, isNeutral: true,
+                              onChange: { value in editSpot(asset, index) { $0.radius = value / 100 * 0.08 } },
+                              onReset: {}, onCommit: { commitDraft(asset, L("污点大小")) })
+                slider(DevelopControl(id: \DevelopSettings.spots[index].feather, title: L("羽化"), range: 0...100, step: 1,
+                                      neutral: 50) { String(format: "%.0f", $0) }, asset, settings)
+                slider(DevelopControl(id: \DevelopSettings.spots[index].opacity, title: L("不透明度"), range: 0...100,
+                                      step: 1, neutral: 100) { String(format: "%.0f", $0) }, asset, settings)
+            } else {
+                DevelopSlider(title: L("大小"), value: app.developSpotBrush.size, range: 1...100, step: 1,
+                              format: { String(format: "%.0f", $0) }, isNeutral: app.developSpotBrush.size == 12,
+                              onChange: { app.developSpotBrush.size = $0 }, onReset: { app.developSpotBrush.size = 12 },
+                              onCommit: {})
+                DevelopSlider(title: L("羽化"), value: app.developSpotBrush.feather, range: 0...100, step: 1,
+                              format: { String(format: "%.0f", $0) }, isNeutral: app.developSpotBrush.feather == 50,
+                              onChange: { app.developSpotBrush.feather = $0 }, onReset: { app.developSpotBrush.feather = 50 },
+                              onCommit: {})
+                DevelopSlider(title: L("不透明度"), value: app.developSpotBrush.opacity, range: 0...100, step: 1,
+                              format: { String(format: "%.0f", $0) }, isNeutral: app.developSpotBrush.opacity == 100,
+                              onChange: { app.developSpotBrush.opacity = $0 }, onReset: { app.developSpotBrush.opacity = 100 },
+                              onCommit: {})
+            }
+            HStack(spacing: 8) {
+                Toggle("显示污点", isOn: Binding(get: { app.developVisualizeSpots }, set: { app.developVisualizeSpots = $0 }))
+                    .toggleStyle(.checkbox)
+                    .help("只显示细节，传感器灰尘等污点会显出圆圈")
+                Spacer(minLength: 0)
+                if let id = app.developSelectedSpotId, settings.spots.contains(where: { $0.id == id }) {
+                    Button("删除污点", role: .destructive) { app.deleteSpot(id, from: asset.id) }
+                        .help("删除所选污点 (Delete)")
+                }
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private func editSpot(_ asset: Asset, _ index: Int, _ apply: (inout SpotRemoval) -> Void) {
+        var next = app.developSettings(for: asset.id)
+        guard next.spots.indices.contains(index) else { return }
+        apply(&next.spots[index])
+        app.updateDevelopDraft(next, for: asset.id)
     }
 
     // ---- masks: gradients with their own adjustments ----

@@ -54,6 +54,9 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     /// Linear and radial gradients with their own adjustments, applied in order after the
     /// global tone, color and presence (see `LocalAdjustment`).
     var masks: [LocalAdjustment] = []
+    /// Spots healed or cloned over, applied in order right after lens corrections (see
+    /// `SpotRemoval`).
+    var spots: [SpotRemoval] = []
     /// Geometry, applied in this order after tone: quarter turns clockwise (0…3), a left–right
     /// mirror, a straighten angle in degrees (-45…45, positive turns the photo clockwise), then
     /// the crop. A nil crop keeps the whole photo — or, once straightened, the largest
@@ -121,6 +124,7 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
                            grain, grainSize, grainRoughness)
         }
         if !masks.isEmpty { text += "|k" + masks.map(\.fingerprintText).joined(separator: ";") }
+        if !spots.isEmpty { text += "|r" + spots.map(\.fingerprintText).joined(separator: ";") }
         if hasGeometry {   // appended only when set, so earlier edits keep their cache names
             let crop = self.crop.map { String(format: "%.4f,%.4f,%.4f,%.4f", $0.x, $0.y, $0.width, $0.height) } ?? "-"
             text += String(format: "|%d,%d,%.2f,", rotation, flipped ? 1 : 0, straighten) + crop
@@ -166,6 +170,7 @@ extension DevelopSettings {
         grainSize = try container.decodeIfPresent(Double.self, forKey: .grainSize) ?? 25
         grainRoughness = try container.decodeIfPresent(Double.self, forKey: .grainRoughness) ?? 50
         masks = try container.decodeIfPresent([LocalAdjustment].self, forKey: .masks) ?? []
+        spots = try container.decodeIfPresent([SpotRemoval].self, forKey: .spots) ?? []
         rotation = try container.decodeIfPresent(Int.self, forKey: .rotation) ?? 0
         flipped = try container.decodeIfPresent(Bool.self, forKey: .flipped) ?? false
         straighten = try container.decodeIfPresent(Double.self, forKey: .straighten) ?? 0

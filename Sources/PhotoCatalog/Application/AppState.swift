@@ -599,7 +599,9 @@ final class AppState {
     @ObservationIgnored private var selectionVersion = 0
     var view: ViewMode = .grid {
         didSet {
-            if view != .develop { developCropping = false; developPickingWhiteBalance = false; developMasking = false }
+            if view != .develop {
+                developCropping = false; developPickingWhiteBalance = false; developMasking = false; developSpotting = false
+            }
             if oldValue == .survey && view != .survey { leaveSurvey() }
         }
     }
@@ -645,16 +647,74 @@ final class AppState {
 
     /// Crop & straighten tool (R). The photo is shown whole with the crop drawn over it.
     var developCropping = false {
-        didSet { if developCropping { loupeZoom = nil; developMasking = false } }
+        didSet { if developCropping { loupeZoom = nil; developMasking = false; developSpotting = false } }
     }
 
     /// Masking tool (M / ⇧M): the photo is shown whole with the selected mask's handles.
     var developMasking = false {
         didSet {
-            if developMasking { loupeZoom = nil; developCropping = false; developPickingWhiteBalance = false }
+            if developMasking {
+                loupeZoom = nil; developCropping = false; developPickingWhiteBalance = false; developSpotting = false
+            }
             if !developMasking { developMaskCreation = nil; developRefiningMask = false }
         }
     }
+    /// Spot removal tool (Q): the photo is shown whole; a click heals the speck under it.
+    var developSpotting = false {
+        didSet {
+            if developSpotting {
+                loupeZoom = nil; developCropping = false; developPickingWhiteBalance = false; developMasking = false
+            } else {
+                developVisualizeSpots = false
+            }
+        }
+    }
+    var developSelectedSpotId: String?
+    /// Size, feather, opacity and mode for new spots.
+    var developSpotBrush = SpotBrush()
+    /// Shows only fine detail, where sensor dust stands out.
+    var developVisualizeSpots = false
+
+    /// Q: opens the spot tool (from any view) or closes it; false when the photo can't be edited.
+    @discardableResult
+    func toggleSpotTool() -> Bool {
+        guard let primary, canDevelop(primary) else { return false }
+        if view != .develop { switchView(.develop) }
+        guard view == .develop else { return false }
+        developSpotting.toggle()
+        return true
+    }
+
+    /// Heals a spot at `target` (source-photo fractions) of `radius`, taking the replacement
+    /// from the best-matching place nearby.
+    func addSpot(at target: CGPoint, radius: Double, to assetId: String) {
+        guard let asset = assetIndex[assetId].map({ assets[$0] }), let source = developSource(for: asset) else { return }
+        let brush = developSpotBrush
+        Task { [weak self] in
+            let from = await ThumbnailRepairQueue.run(.visible) {
+                SpotFinder.source(for: target, radius: radius, url: source.url, isRaw: source.isRaw)
+            } ?? nil
+            guard let self else { return }
+            var spot = SpotRemoval(target: target, source: from ?? CGPoint(x: min(1, target.x + radius * 2.5), y: target.y),
+                                   radius: radius)
+            spot.mode = brush.mode
+            spot.feather = brush.feather
+            spot.opacity = brush.opacity
+            var next = self.developSettings[assetId] ?? .neutral
+            next.spots.append(spot)
+            self.developSelectedSpotId = spot.id
+            self.commitDevelop([assetId: next], undoName: L("污点去除"))
+        }
+    }
+
+    func deleteSpot(_ id: String, from assetId: String) {
+        var next = developSettings[assetId] ?? .neutral
+        guard let index = next.spots.firstIndex(where: { $0.id == id }) else { return }
+        next.spots.remove(at: index)
+        if developSelectedSpotId == id { developSelectedSpotId = next.spots.last?.id }
+        commitDevelop([assetId: next], undoName: L("删除污点"))
+    }
+
     /// The mask whose handles and sliders are shown.
     var developSelectedMaskId: String?
     /// A gradient the next drag on the photo draws (a click places one of default size), or the
@@ -700,12 +760,16 @@ final class AppState {
         developBrush.size = min(100, max(1, developBrush.size + delta))
     }
 
-    /// M / ⇧M or the panel's buttons: arms a new gradient, opening Develop and the masking tool.
-    func armMask(_ kind: LocalAdjustment.Kind) {
+    /// M / ⇧M / K or the panel's buttons: arms a new gradient or the brush, opening Develop and
+    /// the masking tool; false when the photo can't be edited.
+    @discardableResult
+    func armMask(_ kind: LocalAdjustment.Kind) -> Bool {
+        guard let primary, canDevelop(primary) else { return false }
         if view != .develop { switchView(.develop) }
-        guard view == .develop, let primary, canDevelop(primary) else { return }
+        guard view == .develop else { return false }
         developMasking = true
         developMaskCreation = developMaskCreation == kind ? nil : kind
+        return true
     }
 
     /// Saves `mask` as the photo's newest mask and selects it.
@@ -1241,6 +1305,10 @@ final class AppState {
         }
         if view == .develop, developCropping {
             developCropping = false
+            return true
+        }
+        if view == .develop, developSpotting {
+            developSpotting = false
             return true
         }
         if view == .develop, developMaskCreation != nil {
@@ -6802,14 +6870,21 @@ final class AppState {
             guard view == .develop, let primary, canDevelop(primary) else { return false }
             developCropping = false
             developMasking = false
+            developSpotting = false
             developPickingWhiteBalance.toggle()
         case "m":
-            armMask(hasShift ? .radial : .linear)
+            guard armMask(hasShift ? .radial : .linear) else { return false }
         case "k":
-            armMask(.brush)
+            guard armMask(.brush) else { return false }
         case "[", "]":
-            guard view == .develop, developMasking else { return false }
-            resizeBrush(by: key == "[" ? -5 : 5)
+            guard view == .develop, developMasking || developSpotting else { return false }
+            if developSpotting {
+                developSpotBrush.size = min(100, max(1, developSpotBrush.size + (key == "[" ? -2 : 2)))
+            } else {
+                resizeBrush(by: key == "[" ? -5 : 5)
+            }
+        case "q":
+            guard toggleSpotTool() else { return false }
         case "o":
             guard view == .develop, developMasking else { return false }
             developShowsMaskOverlay.toggle()
@@ -6824,7 +6899,11 @@ final class AppState {
             if view == .survey { moveInSurvey(key); return true }
             moveSelection(key)
         case "delete", "backspace":
-            // in the masking tool, Delete removes the selected mask, never the photo
+            // in the spot and masking tools, Delete removes the selected spot or mask, never the photo
+            if view == .develop, developSpotting {
+                if let id = developSelectedSpotId, let primaryId { deleteSpot(id, from: primaryId) }
+                return true
+            }
             if view == .develop, developMasking {
                 if let id = developSelectedMaskId, let primaryId { deleteMask(id, from: primaryId) }
                 return true
