@@ -337,6 +337,16 @@
 "创建虚拟副本失败，目录库未保存" = "Couldn't create the virtual copy; the catalog wasn't saved";
 "已创建%@" = "Created %@";
 "已创建 %lld 个虚拟副本" = "Created %lld virtual copies";
+"新建相册集" = "New Album Set";
+"相册集保存失败" = "Couldn't save the album set";
+"已创建相册集「%@」" = "Created album set “%@”";
+"重命名相册集" = "Rename Album Set";
+"删除相册集？" = "Delete Album Set?";
+"相册集「%@」中的相册会移到上一层，不会删除任何相册或照片。" = "The albums in “%@” move up a level; no albums or photos are deleted.";
+"删除相册集" = "Delete Album Set";
+"相册集删除失败" = "Couldn't delete the album set";
+"已删除相册集「%@」" = "Deleted album set “%@”";
+"移动失败，目录库未保存" = "Couldn't move it; the catalog wasn't saved";
 
 /* Application/ImportCoordinator.swift */
 "复制原件失败：%@" = "Couldn't copy the original: %@";
@@ -1287,6 +1297,12 @@
 "错误" = "Error";
 "需授权" = "Needs access";
 "项目" = "Projects";
+"在此新建相册" = "New Album Here";
+"在此新建相册集" = "New Album Set Here";
+"重命名相册集…" = "Rename Album Set…";
+"删除相册集…" = "Delete Album Set…";
+"顶层" = "Top Level";
+"移到相册集" = "Move to Album Set";
 
 
 /* Presentation/Survey/SurveyView.swift */

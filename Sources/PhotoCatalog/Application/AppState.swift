@@ -104,6 +104,8 @@ final class AppState {
             listInputsVersion &+= 1
         }
     }
+    /// Folders of albums in the sidebar; they hold no photos themselves.
+    var albumSets: [AlbumSet] = []
     var folders: [Folder] = DemoData.folders {
         didSet {
             folderTreeCache = nil
@@ -1452,6 +1454,7 @@ final class AppState {
         assets = a
         albums = DemoData.initialAlbums(a)
         smartAlbums = DemoData.initialSmartAlbums(a)
+        albumSets = []
         if deferCatalogLoading {
             deferredCatalogArguments = arguments
             if onboarded || Self.launchCatalogURL(from: arguments) != nil {
@@ -1603,6 +1606,7 @@ final class AppState {
             albums = []
             quickCollection = []
             smartAlbums = []
+            albumSets = []
             folders = []
             duplicateGroupsCache = []
             restoreSourceRoots(from: store)
@@ -1616,6 +1620,7 @@ final class AppState {
         albums = []
         quickCollection = []
         smartAlbums = []
+        albumSets = []
         folders = []
         restoreSourceRoots(from: store)
 
@@ -1809,8 +1814,9 @@ final class AppState {
         let loadedSmartAlbums = (try? store.loadSmartAlbums()) ?? []
         smartAlbums = loadedSmartAlbums.map { album in
             SmartAlbum(id: album.id, name: album.name, rule: album.rule,
-                       count: SmartMatcher.count(assets, album.rule))
+                       count: SmartMatcher.count(assets, album.rule), setId: album.setId)
         }
+        albumSets = (try? store.loadAlbumSets()) ?? []
     }
 
     private func restoreSourceRoots(from store: CatalogStore) {
@@ -4506,6 +4512,7 @@ final class AppState {
         albums = DemoData.initialAlbums(a)
         quickCollection = []
         smartAlbums = DemoData.initialSmartAlbums(a)
+        albumSets = []
         folders = DemoData.folders
         developSettings = [:]
         clearDevelopRecordCaches()
@@ -4532,6 +4539,7 @@ final class AppState {
         albums = []
         quickCollection = []
         smartAlbums = []
+        albumSets = []
         folders = []
         sourceRootPathsById = [:]
         sourceManagementModesById = [:]
@@ -5934,12 +5942,13 @@ final class AppState {
         undoManager.setActionName(undoName)
     }
 
-    func createAlbumFromSelection() {
+    func createAlbumFromSelection(in setId: String? = nil) {
         guard let name = promptAlbumName(defaultName: L("新建相册")) else { return }
         let album = Album(id: "al-" + UUID().uuidString.prefix(8), name: name,
                           assetIds: orderedTargetAssetIds())
         guard saveManualAlbum(album, sortOrder: albums.count) else { return }
         albums.append(album)
+        if let setId { moveToAlbumSet(album.id, setId: setId) }
         selection = Selection(type: .album, id: album.id, name: album.name)
         push("已创建相册「\(album.name)」", "album")
     }
@@ -6017,7 +6026,7 @@ final class AppState {
             return false
         }
         let previous = albums[index]
-        albums[index] = Album(id: previous.id, name: name, assetIds: previous.assetIds)
+        albums[index].name = name
         if selection.type == .album, selection.id == id {
             selection = Selection(type: .album, id: id, name: name)
         }
@@ -6085,6 +6094,103 @@ final class AppState {
             ensurePrimaryValid()
         }
         push("已删除智能相册「\(album.name)」", "trash")
+    }
+
+    // ---------- album sets ----------
+    /// A new album set, at the top level or inside `parentId`.
+    func createAlbumSet(in parentId: String? = nil) {
+        guard let name = promptAlbumName(defaultName: L("新建相册集"), messageText: L("新建相册集")) else { return }
+        let set = AlbumSet(id: "as-" + UUID().uuidString.prefix(8), name: name, parentId: parentId)
+        do {
+            try store?.saveAlbumSet(set, sortOrder: albumSets.count)
+        } catch {
+            push("相册集保存失败", "warning")
+            return
+        }
+        albumSets.append(set)
+        push("已创建相册集「\(name)」", "folder")
+    }
+
+    func renameAlbumSet(_ id: String) {
+        guard let index = albumSets.firstIndex(where: { $0.id == id }),
+              let name = promptAlbumName(defaultName: albumSets[index].name, messageText: L("重命名相册集"),
+                                         confirmTitle: L("保存")),
+              name != albumSets[index].name else { return }
+        var set = albumSets[index]
+        set.name = name
+        do {
+            try store?.saveAlbumSet(set, sortOrder: index)
+        } catch {
+            push("相册集保存失败", "warning")
+            return
+        }
+        albumSets[index] = set
+    }
+
+    /// Deletes a set; the albums and sets in it move up to where the set was.
+    func deleteAlbumSet(_ id: String) {
+        guard let index = albumSets.firstIndex(where: { $0.id == id }) else { return }
+        let set = albumSets[index]
+        guard confirmDestructiveAction(
+            L("删除相册集？"),
+            L("相册集「\(set.name)」中的相册会移到上一层，不会删除任何相册或照片。"),
+            L("删除相册集")
+        ) else { return }
+        do {
+            try store?.deleteAlbumSet(id: id)
+        } catch {
+            push("相册集删除失败", "warning")
+            return
+        }
+        for i in albums.indices where albums[i].setId == id { albums[i].setId = set.parentId }
+        for i in smartAlbums.indices where smartAlbums[i].setId == id { smartAlbums[i].setId = set.parentId }
+        for i in albumSets.indices where albumSets[i].parentId == id { albumSets[i].parentId = set.parentId }
+        albumSets.removeAll { $0.id == id }
+        push("已删除相册集「\(set.name)」", "trash")
+    }
+
+    /// Files an album, smart album or set into `setId` (nil: the top level). A set can't go
+    /// into itself or a set inside it.
+    func moveToAlbumSet(_ itemId: String, setId: String?) {
+        if let setId, albumSetDescendants(of: itemId).contains(setId) || setId == itemId { return }
+        do {
+            try store?.setAlbumParent(id: itemId, parentId: setId)
+        } catch {
+            push("移动失败，目录库未保存", "warning")
+            return
+        }
+        if let i = albums.firstIndex(where: { $0.id == itemId }) { albums[i].setId = setId }
+        if let i = smartAlbums.firstIndex(where: { $0.id == itemId }) { smartAlbums[i].setId = setId }
+        if let i = albumSets.firstIndex(where: { $0.id == itemId }) { albumSets[i].parentId = setId }
+    }
+
+    /// Every set nested inside `id`, however deep.
+    func albumSetDescendants(of id: String) -> Set<String> {
+        var found = Set<String>()
+        var frontier = [id]
+        while let current = frontier.popLast() {
+            for set in albumSets where set.parentId == current && found.insert(set.id).inserted {
+                frontier.append(set.id)
+            }
+        }
+        return found
+    }
+
+    /// The sets an item can move into, in sidebar order with their depth: all but the item
+    /// itself and the sets inside it.
+    func albumSetChoices(for itemId: String) -> [(set: AlbumSet, depth: Int)] {
+        let excluded = albumSetDescendants(of: itemId).union([itemId])
+        var result: [(set: AlbumSet, depth: Int)] = []
+        let known = Set(albumSets.map(\.id))
+        func visit(_ parentId: String?, depth: Int) {
+            for set in albumSets where !excluded.contains(set.id)
+                && (set.parentId == parentId || (parentId == nil && set.parentId.map { !known.contains($0) } == true)) {
+                result.append((set, depth))
+                visit(set.id, depth: depth + 1)
+            }
+        }
+        visit(nil, depth: 0)
+        return result
     }
 
     private func orderedTargetAssetIds() -> [String] {
@@ -6966,7 +7072,7 @@ final class AppState {
                 return
             }
             let previous = smartAlbums[index]
-            let album = SmartAlbum(id: id, name: name, rule: rule, count: count)
+            let album = SmartAlbum(id: id, name: name, rule: rule, count: count, setId: previous.setId)
             if let store {
                 do {
                     try store.saveSmartAlbum(album, sortOrder: index)

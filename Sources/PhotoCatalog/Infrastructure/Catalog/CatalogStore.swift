@@ -1236,7 +1236,7 @@ final class CatalogStore: @unchecked Sendable {
 
     func loadAlbums() throws -> [Album] {
         let rows = try db.query("""
-        SELECT id, name
+        SELECT id, name, parent_id
         FROM albums
         WHERE type='album'
         ORDER BY sort_order ASC, created_at ASC;
@@ -1248,7 +1248,7 @@ final class CatalogStore: @unchecked Sendable {
             WHERE album_id=?
             ORDER BY position ASC, added_at ASC;
             """, [.text(id)]).compactMap { $0.text("asset_id") }
-            return Album(id: id, name: name, assetIds: assetIds)
+            return Album(id: id, name: name, assetIds: assetIds, setId: row.text("parent_id"))
         }
     }
 
@@ -1289,7 +1289,7 @@ final class CatalogStore: @unchecked Sendable {
     func loadSmartAlbums() throws -> [SmartAlbum] {
         let decoder = JSONDecoder()
         return try db.query("""
-        SELECT albums.id, albums.name, smart_album_rules.rule_json
+        SELECT albums.id, albums.name, albums.parent_id, smart_album_rules.rule_json
         FROM albums
         JOIN smart_album_rules ON smart_album_rules.album_id = albums.id
         WHERE albums.type='smart'
@@ -1300,7 +1300,7 @@ final class CatalogStore: @unchecked Sendable {
                   let json = row.text("rule_json"),
                   let data = json.data(using: .utf8),
                   let rule = try? decoder.decode(SmartRule.self, from: data) else { return nil }
-            return SmartAlbum(id: id, name: name, rule: rule, count: 0)
+            return SmartAlbum(id: id, name: name, rule: rule, count: 0, setId: row.text("parent_id"))
         }
     }
 
@@ -1332,6 +1332,44 @@ final class CatalogStore: @unchecked Sendable {
 
     func deleteSmartAlbum(id: String) throws {
         try db.run("DELETE FROM albums WHERE id=? AND type='smart';", [.text(id)])
+    }
+
+    // album sets: rows of type 'set'; albums, smart albums and sets point at theirs by parent_id
+    func loadAlbumSets() throws -> [AlbumSet] {
+        try db.query("""
+        SELECT id, name, parent_id FROM albums WHERE type='set' ORDER BY sort_order ASC, created_at ASC;
+        """).compactMap { row in
+            guard let id = row.text("id"), let name = row.text("name") else { return nil }
+            return AlbumSet(id: id, name: name, parentId: row.text("parent_id"))
+        }
+    }
+
+    func saveAlbumSet(_ set: AlbumSet, sortOrder: Int = 0, updatedAt: Date = .now) throws {
+        let now = Self.iso(updatedAt)
+        try db.run("""
+        INSERT INTO albums(id, parent_id, type, name, sort_order, created_at, updated_at)
+        VALUES(?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET name=excluded.name, sort_order=excluded.sort_order,
+          updated_at=excluded.updated_at;
+        """, [.text(set.id), set.parentId.map { .text($0) } ?? .null, .text("set"), .text(set.name),
+              .int(sortOrder), .text(now), .text(now)])
+    }
+
+    /// Files an album, smart album or set into `parentId` (nil: the top level).
+    func setAlbumParent(id: String, parentId: String?, updatedAt: Date = .now) throws {
+        try db.run("UPDATE albums SET parent_id=?, updated_at=? WHERE id=?;",
+                   [parentId.map { .text($0) } ?? .null, .text(Self.iso(updatedAt)), .text(id)])
+    }
+
+    /// Deletes a set; what it held moves up to the set's own parent (the parent link would
+    /// otherwise cascade and delete it).
+    func deleteAlbumSet(id: String) throws {
+        try db.transaction {
+            let parent = try db.queryMap("SELECT parent_id FROM albums WHERE id=?;", [.text(id)],
+                                         transform: { $0.text("parent_id") }).first ?? nil
+            try db.run("UPDATE albums SET parent_id=? WHERE parent_id=?;", [parent.map { .text($0) } ?? .null, .text(id)])
+            try db.run("DELETE FROM albums WHERE id=? AND type='set';", [.text(id)])
+        }
     }
 
     // ---------- import sessions (§10.2 / §12.2) ----------

@@ -153,6 +153,9 @@ struct Sidebar: View {
                 Button { app.showNewSmartAlbumBuilder() } label: {
                     Label("新建智能相册", systemImage: "sparkles")
                 }
+                Button { app.createAlbumSet() } label: {
+                    Label("新建相册集", systemImage: "folder.badge.plus")
+                }
             } label: {
                 Image(systemName: "plus")
             }
@@ -170,34 +173,82 @@ struct Sidebar: View {
             row(pinnedIcon(item), item.name, item.type, item.selectionId,
                 badge: Text(app.countForPinnedSidebarItem(item)))
         }
-        ForEach(app.albums) { album in
+        OutlineGroup(CollectionNode.build(sets: app.albumSets, albums: app.albums, smart: app.smartAlbums),
+                     children: \.children) { node in
+            collectionRow(node)
+        }
+        if app.pinnedSidebarFavorites.isEmpty && app.albums.isEmpty && app.smartAlbums.isEmpty && app.albumSets.isEmpty {
+            Text("用 + 新建相册或智能相册")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func collectionRow(_ node: CollectionNode) -> some View {
+        switch node.item {
+        case .set(let set):
+            // a set only files albums away: it has no photos to select
+            Label {
+                Text(set.name).lineLimit(1)
+            } icon: {
+                Image(systemName: "folder").foregroundStyle(.secondary)
+            }
+            .help(set.name)
+            .contextMenu {
+                Button { app.createAlbumFromSelection(in: set.id) } label: {
+                    Label("在此新建相册", systemImage: "rectangle.stack.badge.plus")
+                }
+                Button { app.createAlbumSet(in: set.id) } label: {
+                    Label("在此新建相册集", systemImage: "folder.badge.plus")
+                }
+                Divider()
+                Button { app.renameAlbumSet(set.id) } label: { Label("重命名相册集…", systemImage: "pencil") }
+                moveMenu(set.id)
+                Button(role: .destructive) { app.deleteAlbumSet(set.id) } label: {
+                    Label("删除相册集…", systemImage: "trash")
+                }
+            }
+        case .album(let album):
             row("album", album.name, .album, album.id, badge: Text(app.countForAlbum(album).formatted()))
                 .contextMenu {
                     Button { app.renameAlbum(album.id) } label: {
                         Label("重命名相册…", systemImage: "pencil")
                     }
+                    moveMenu(album.id)
                     Button(role: .destructive) { app.deleteAlbum(album.id) } label: {
                         Label("删除相册…", systemImage: "trash")
                     }
                 }
-        }
-        ForEach(app.smartAlbums) { smart in
+        case .smart(let smart):
             row("sparkles", smart.name, .smart, smart.id,
                 badge: Text(app.countForSmartAlbum(smart).formatted()))
                 .contextMenu {
                     Button { app.editSmartAlbum(smart.id) } label: {
                         Label("编辑智能相册…", systemImage: "slider.horizontal.3")
                     }
+                    moveMenu(smart.id)
                     Button(role: .destructive) { app.deleteSmartAlbum(smart.id) } label: {
                         Label("删除智能相册…", systemImage: "trash")
                     }
                 }
         }
-        if app.pinnedSidebarFavorites.isEmpty && app.albums.isEmpty && app.smartAlbums.isEmpty {
-            Text("用 + 新建相册或智能相册")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+    }
+
+    /// Files an album, smart album or set into another set, or back to the top level.
+    private func moveMenu(_ itemId: String) -> some View {
+        Menu {
+            Button("顶层") { app.moveToAlbumSet(itemId, setId: nil) }
+            Divider()
+            ForEach(app.albumSetChoices(for: itemId), id: \.set.id) { choice in
+                Button(String(repeating: "    ", count: choice.depth) + choice.set.name) {
+                    app.moveToAlbumSet(itemId, setId: choice.set.id)
+                }
+            }
+        } label: {
+            Label("移到相册集", systemImage: "folder")
         }
+        .disabled(app.albumSets.isEmpty)
     }
 
     private var hasTags: Bool {
@@ -321,5 +372,45 @@ private struct FolderNode: Identifiable {
             return nodes
         }
         return level(items.first?.depth ?? 0)
+    }
+}
+
+/// The albums section as a tree: sets hold their sub-sets, albums and smart albums. Anything
+/// filed in a set that no longer exists shows at the top level.
+struct CollectionNode: Identifiable {
+    enum Item {
+        case set(AlbumSet), album(Album), smart(SmartAlbum)
+    }
+
+    let item: Item
+    /// A set's contents (possibly none); nil for albums, which have no disclosure triangle.
+    var children: [CollectionNode]?
+
+    var id: String {
+        switch item {
+        case .set(let set): "set:" + set.id
+        case .album(let album): "album:" + album.id
+        case .smart(let smart): "smart:" + smart.id
+        }
+    }
+
+    static func build(sets: [AlbumSet], albums: [Album], smart: [SmartAlbum]) -> [CollectionNode] {
+        let known = Set(sets.map(\.id))
+        func parent(_ id: String?) -> String? { id.flatMap { known.contains($0) ? $0 : nil } }
+        var placed = Set<String>()   // a looped parent chain is shown once, at the top
+        func nodes(in parentId: String?) -> [CollectionNode] {
+            let childSets = sets.filter { parent($0.parentId) == parentId && !placed.contains($0.id) }
+            childSets.forEach { placed.insert($0.id) }
+            return childSets.map { CollectionNode(item: .set($0), children: nodes(in: $0.id)) }
+                + albums.filter { parent($0.setId) == parentId }.map { CollectionNode(item: .album($0), children: nil) }
+                + smart.filter { parent($0.setId) == parentId }.map { CollectionNode(item: .smart($0), children: nil) }
+        }
+        var top = nodes(in: nil)
+        // sets caught in a parent loop never hang under the top level: list them there
+        for set in sets where !placed.contains(set.id) {
+            placed.insert(set.id)
+            top.append(CollectionNode(item: .set(set), children: nodes(in: set.id)))
+        }
+        return top
     }
 }

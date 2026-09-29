@@ -576,6 +576,56 @@ enum PipelineCheck {
         for (name, passed) in virtualCopies.sorted(by: { $0.key < $1.key }) {
             check(passed, "virtual copies: \(name)")
         }
+        // album sets: nest albums, smart albums and sets; deleting one moves its contents up
+        let albumSets: [String: Bool] = MainActor.assumeIsolated {
+            let scratch = fm.temporaryDirectory.appendingPathComponent("pc-sets-\(UUID().uuidString)")
+            defer { try? fm.removeItem(at: scratch) }
+            guard let setStore = try? CatalogStore(packageURL: scratch.appendingPathComponent("Sets.photolibrary"))
+            else { return ["scratch catalog": false] }
+            try? setStore.upsert(Array(reloaded.prefix(2)))
+            try? setStore.saveAlbum(Album(id: "al-trip", name: "Trip", assetIds: reloaded.prefix(2).map(\.id)))
+            let rawRule = SmartRule(match: "all", conditions: [SmartCondition(field: "type", op: "=", value: "CR3")])
+            try? setStore.saveSmartAlbum(SmartAlbum(id: "sm-raw", name: "RAW", rule: rawRule, count: 0))
+            let app = AppState.selfCheckFixture(store: setStore)
+            app.runsBackgroundMaintenance = false
+            app.applyLoadedCatalogForScaleCheck(Array(reloaded.prefix(2)), from: setStore)
+            let outer = AlbumSet(id: "as-outer", name: "2026")
+            let inner = AlbumSet(id: "as-inner", name: "Summer", parentId: "as-outer")
+            try? setStore.saveAlbumSet(outer)
+            try? setStore.saveAlbumSet(inner, sortOrder: 1)
+            app.albumSets = [outer, inner]
+            app.moveToAlbumSet("al-trip", setId: "as-inner")
+            app.moveToAlbumSet("sm-raw", setId: "as-outer")
+            app.moveToAlbumSet("as-outer", setId: "as-inner")   // into its own child: refused
+            let reopened = AppState.selfCheckFixture(store: setStore)
+            reopened.runsBackgroundMaintenance = false
+            reopened.applyLoadedCatalogForScaleCheck(Array(reloaded.prefix(2)), from: setStore)
+            let tree = CollectionNode.build(sets: reopened.albumSets, albums: reopened.albums, smart: reopened.smartAlbums)
+            let outerChildren = tree.first { $0.id == "set:as-outer" }?.children?.map(\.id) ?? []
+            let innerChildren = tree.first { $0.id == "set:as-outer" }?.children?
+                .first { $0.id == "set:as-inner" }?.children?.map(\.id) ?? []
+            var results: [String: Bool] = [
+                "nesting persists": reopened.albums.first?.setId == "as-inner"
+                    && reopened.smartAlbums.first?.setId == "as-outer"
+                    && reopened.albumSets.first { $0.id == "as-outer" }?.parentId == nil,
+                "sidebar tree": tree.map(\.id) == ["set:as-outer"] && outerChildren == ["set:as-inner", "smart:sm-raw"]
+                    && innerChildren == ["album:al-trip"],
+                "no set inside itself": app.albumSetChoices(for: "as-outer").isEmpty
+                    && app.albumSetChoices(for: "al-trip").map(\.set.id) == ["as-outer", "as-inner"],
+            ]
+            try? setStore.deleteAlbumSet(id: "as-inner")
+            let albumsAfter = (try? setStore.loadAlbums()) ?? []
+            results["deleting a set moves its albums up"] = albumsAfter.first?.setId == "as-outer"
+                && albumsAfter.first?.assetIds.count == 2
+                && ((try? setStore.loadAlbumSets()) ?? []).map(\.id) == ["as-outer"]
+            let looped = CollectionNode.build(sets: [AlbumSet(id: "a", name: "A", parentId: "b"),
+                                                     AlbumSet(id: "b", name: "B", parentId: "a")], albums: [], smart: [])
+            results["looped sets still show"] = looped.count == 1 && looped[0].children?.count == 1
+            return results
+        }
+        for (name, passed) in albumSets.sorted(by: { $0.key < $1.key }) {
+            check(passed, "album sets: \(name)")
+        }
         // renaming photos: the preview matches what happens on disk and in the catalog
         let renaming: [String: Bool] = MainActor.assumeIsolated {
             let scratch = fm.temporaryDirectory.appendingPathComponent("pc-rename-\(UUID().uuidString)")

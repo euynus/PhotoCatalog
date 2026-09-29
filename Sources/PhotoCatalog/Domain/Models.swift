@@ -438,16 +438,27 @@ enum ImportDuplicateStrategy: String, CaseIterable, Sendable {
 /// Manual album (`albums` table, type = album).
 struct Album: Identifiable, Hashable {
     let id: String
-    let name: String
+    var name: String
     var assetIds: [String]
+    /// The album set it's filed in; nil at the top level.
+    var setId: String? = nil
+}
+
+/// A folder of albums, smart albums and other sets in the sidebar (Lightroom's collection
+/// set; `albums` table, type = set). It holds no photos itself.
+struct AlbumSet: Identifiable, Hashable {
+    let id: String
+    var name: String
+    var parentId: String? = nil
 }
 
 /// Smart album — name + rule + cached match count.
 struct SmartAlbum: Identifiable {
     let id: String
-    let name: String
+    var name: String
     var rule: SmartRule
     var count: Int
+    var setId: String? = nil
 }
 
 /// A keyword with its asset count for the sidebar.
