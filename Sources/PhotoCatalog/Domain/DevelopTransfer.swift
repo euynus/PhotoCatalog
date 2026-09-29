@@ -8,7 +8,7 @@ import Foundation
 enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
     case whiteBalance, exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze
     case vibrance, saturation, toneCurve, colorMixer, colorGrading
-    case sharpening, noiseReduction, lensCorrections, vignette, grain
+    case sharpening, noiseReduction, lensCorrections, vignette, grain, masks
     case orientation, crop
 
     var id: Self { self }
@@ -35,6 +35,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         case .lensCorrections: L("镜头校正")
         case .vignette: L("裁剪后暗角")
         case .grain: L("颗粒")
+        case .masks: L("蒙版")
         case .orientation: L("旋转与翻转")
         case .crop: L("裁剪与拉直")
         }
@@ -51,11 +52,12 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         (L("细节"), [.sharpening, .noiseReduction]),
         (L("镜头校正"), [.lensCorrections]),
         (L("效果"), [.vignette, .grain]),
+        (L("蒙版"), [.masks]),
         (L("裁剪与旋转"), [.orientation, .crop]),
     ]
 
-    /// Copy leaves framing alone unless asked: crops rarely fit another photo.
-    static let defaultCopy = Set(allCases).subtracting([.orientation, .crop])
+    /// Copy leaves framing and masks alone unless asked: they belong to one photo's content.
+    static let defaultCopy = Set(allCases).subtracting([.orientation, .crop, .masks])
 
     /// Whether `settings` differ from as shot in this field.
     func isAdjusted(in settings: DevelopSettings) -> Bool {
@@ -106,6 +108,7 @@ extension DevelopSettings {
                 next.grain = source.grain
                 next.grainSize = source.grainSize
                 next.grainRoughness = source.grainRoughness
+            case .masks: next.masks = source.masks
             case .orientation:
                 if next.flipped != source.flipped { next = DevelopGeometry.mirrored(next) }
                 for _ in 0..<4 where next.rotation != source.rotation {

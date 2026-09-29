@@ -3,8 +3,8 @@
 // ============================================================
 import CoreImage
 
-/// Lens distortion, radial gain, film grain, local contrast, haze removal, the color mixer and
-/// color grading, each compiled from Metal source the first time a render needs it: the package
+/// Lens distortion, radial gain, film grain, local contrast, haze removal, the color mixer,
+/// color grading and mask shapes, each compiled from Metal source the first time a render needs it: the package
 /// has no Metal build step, and Core Image compiles stitchable kernels at run time. A kernel
 /// that fails to compile leaves its adjustment out of the render.
 enum DevelopKernels {
@@ -139,6 +139,29 @@ enum DevelopKernels {
             return float4(c, s.a);
         }
         """,
+        "linearMask": """
+        // Mask weight of a linear gradient: 1 at `start`, 0 at `end`, a smooth fall-off between
+        // (flipped by `invert` = 1). Weight in every channel, opaque.
+        [[stitchable]] float4 linearMask(float2 start, float2 end, float invert, destination dest) {
+            float2 d = end - start;
+            float t = clamp(dot(dest.coord() - start, d) / max(dot(d, d), 1e-6), 0.0, 1.0);
+            float w = mix(1.0 - smoothstep(0.0, 1.0, t), smoothstep(0.0, 1.0, t), invert);
+            return float4(w, w, w, 1.0);
+        }
+        """,
+        "ellipseMask": """
+        // Mask weight of an ellipse around `center`: `u` and `v` are its axes divided by their
+        // radii, so the edge sits at distance 1. The weight falls from 1 to 0 over the outer
+        // `feather` of the radius (flipped by `invert` = 1).
+        [[stitchable]] float4 ellipseMask(float2 center, float2 u, float2 v, float feather, float invert,
+                                          destination dest) {
+            float2 p = dest.coord() - center;
+            float d = length(float2(dot(p, u), dot(p, v)));
+            float w = 1.0 - smoothstep(1.0 - max(feather, 0.01), 1.0, d);
+            w = mix(w, 1.0 - w, invert);
+            return float4(w, w, w, 1.0);
+        }
+        """,
         "filmGrain": """
         // Adds grain `n` (0.5 = none) to display-encoded color, strongest in the midtones as on film.
         [[stitchable]] float4 filmGrain(sample_t s, sample_t n, float amount) {
@@ -246,6 +269,31 @@ enum DevelopKernels {
         }
         let shape = CIVector(x: grading.blending / 100, y: grading.balance / 100)
         return kernel.apply(extent: image.extent, arguments: [image] + grades + [shape]) ?? image
+    }
+
+    /// The weight of `mask` over `extent`, the source photo at the render's size: 1 where the
+    /// mask applies fully, 0 where it doesn't.
+    static func maskWeight(_ mask: LocalAdjustment, extent: CGRect) -> CIImage? {
+        // mask positions are top-left fractions of the source photo; kernels see Core Image's
+        // bottom-left pixel coordinates
+        func pixel(_ p: CGPoint) -> CIVector {
+            CIVector(x: extent.minX + p.x * extent.width, y: extent.maxY - p.y * extent.height)
+        }
+        let invert: Double = mask.inverted ? 1 : 0
+        switch mask.kind {
+        case .linear:
+            guard let kernel = kernel("linearMask") as? CIColorKernel else { return nil }
+            return kernel.apply(extent: extent, arguments: [pixel(mask.start), pixel(mask.end), invert])
+        case .radial:
+            guard let kernel = kernel("ellipseMask") as? CIColorKernel else { return nil }
+            let longEdge = Double(max(extent.width, extent.height))
+            let rx = max(mask.radiusX * longEdge, 0.5), ry = max(mask.radiusY * longEdge, 0.5)
+            // the angle turns clockwise on screen, where y points down; Core Image's y points up
+            let a = mask.angle * .pi / 180
+            let u = CIVector(x: cos(a) / rx, y: -sin(a) / rx)
+            let v = CIVector(x: -sin(a) / ry, y: -cos(a) / ry)
+            return kernel.apply(extent: extent, arguments: [pixel(mask.center), u, v, mask.feather / 100, invert])
+        }
     }
 
     /// `image` with its brightness scaled toward the corners (see the kernel).

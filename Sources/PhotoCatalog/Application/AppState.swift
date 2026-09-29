@@ -599,7 +599,7 @@ final class AppState {
     @ObservationIgnored private var selectionVersion = 0
     var view: ViewMode = .grid {
         didSet {
-            if view != .develop { developCropping = false; developPickingWhiteBalance = false }
+            if view != .develop { developCropping = false; developPickingWhiteBalance = false; developMasking = false }
             if oldValue == .survey && view != .survey { leaveSurvey() }
         }
     }
@@ -645,7 +645,44 @@ final class AppState {
 
     /// Crop & straighten tool (R). The photo is shown whole with the crop drawn over it.
     var developCropping = false {
-        didSet { if developCropping { loupeZoom = nil } }
+        didSet { if developCropping { loupeZoom = nil; developMasking = false } }
+    }
+
+    /// Masking tool (M / ⇧M): the photo is shown whole with the selected mask's handles.
+    var developMasking = false {
+        didSet {
+            if developMasking { loupeZoom = nil; developCropping = false; developPickingWhiteBalance = false }
+            if !developMasking { developMaskCreation = nil }
+        }
+    }
+    /// The mask whose handles and sliders are shown.
+    var developSelectedMaskId: String?
+    /// A gradient the next drag on the photo draws (a click places one of default size).
+    var developMaskCreation: LocalAdjustment.Kind?
+
+    /// M / ⇧M or the panel's buttons: arms a new gradient, opening Develop and the masking tool.
+    func armMask(_ kind: LocalAdjustment.Kind) {
+        if view != .develop { switchView(.develop) }
+        guard view == .develop, let primary, canDevelop(primary) else { return }
+        developMasking = true
+        developMaskCreation = developMaskCreation == kind ? nil : kind
+    }
+
+    /// Saves `mask` as the photo's newest mask and selects it.
+    func addMask(_ mask: LocalAdjustment, to assetId: String) {
+        var next = developSettings[assetId] ?? .neutral
+        next.masks.append(mask)
+        developMaskCreation = nil
+        developSelectedMaskId = mask.id
+        commitDevelop([assetId: next], undoName: L("添加\(mask.kind.title)"))
+    }
+
+    func deleteMask(_ id: String, from assetId: String) {
+        var next = developSettings[assetId] ?? .neutral
+        guard let index = next.masks.firstIndex(where: { $0.id == id }) else { return }
+        let removed = next.masks.remove(at: index)
+        if developSelectedMaskId == id { developSelectedMaskId = next.masks.last?.id }
+        commitDevelop([assetId: next], undoName: L("删除\(removed.kind.title)"))
     }
     /// Crop shape the tool holds while resizing.
     var developCropAspect: CropAspect = .original
@@ -653,6 +690,11 @@ final class AppState {
     @ObservationIgnored private var developSourceSizes: [String: CGSize] = [:]
 
     func recordDevelopSourceSize(_ size: CGSize, for id: String) { developSourceSizes[id] = size }
+
+    /// The decoded photo's size before quarter turns: the space masks are stored in.
+    func developSourceSize(for asset: Asset) -> CGSize {
+        developSourceSizes[asset.id] ?? CGSize(width: max(asset.width, 1), height: max(asset.height, 1))
+    }
 
     /// The frame crops are expressed in: the photo after its quarter turns.
     func developFrame(for asset: Asset, settings: DevelopSettings) -> CGSize {
@@ -1159,6 +1201,14 @@ final class AppState {
         }
         if view == .develop, developCropping {
             developCropping = false
+            return true
+        }
+        if view == .develop, developMaskCreation != nil {
+            developMaskCreation = nil
+            return true
+        }
+        if view == .develop, developMasking {
+            developMasking = false
             return true
         }
         if view == .loupe || view == .develop, loupeZoom != nil {
@@ -6711,7 +6761,10 @@ final class AppState {
         case "w":
             guard view == .develop, let primary, canDevelop(primary) else { return false }
             developCropping = false
+            developMasking = false
             developPickingWhiteBalance.toggle()
+        case "m":
+            armMask(hasShift ? .radial : .linear)
         case "a":
             switchView(.analysis)
         case "i":
@@ -6723,6 +6776,11 @@ final class AppState {
             if view == .survey { moveInSurvey(key); return true }
             moveSelection(key)
         case "delete", "backspace":
+            // in the masking tool, Delete removes the selected mask, never the photo
+            if view == .develop, developMasking {
+                if let id = developSelectedMaskId, let primaryId { deleteMask(id, from: primaryId) }
+                return true
+            }
             confirmDeleteSelected()
         default:
             return false

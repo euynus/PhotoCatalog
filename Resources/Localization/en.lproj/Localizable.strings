@@ -323,6 +323,8 @@
 "重新授权失败" = "Couldn't authorize the folder again";
 "颜色标签" = "Color Label";
 "颜色标签：%@" = "Color label: %@";
+"添加%@" = "Add %@";
+"删除%@" = "Delete %@";
 
 /* Application/ImportCoordinator.swift */
 "复制原件失败：%@" = "Couldn't copy the original: %@";
@@ -402,6 +404,7 @@
 "高光" = "Highlights";
 "鲜艳度" = "Vibrance";
 "黑色色阶" = "Blacks";
+"羽化" = "Feather";
 
 /* Domain/DevelopTransfer.swift */
 "颜色分级" = "Color Grading";
@@ -424,6 +427,7 @@
 "鲜艳" = "Vivid";
 "黑白" = "Black & White";
 "黑白 · 高对比" = "Black & White · High Contrast";
+"蒙版" = "Masks";
 
 /* Domain/ExportSettings.swift */
 "HEIC · 高效存档" = "HEIC · Efficient Archive";
@@ -450,6 +454,10 @@
 
 /* Domain/FileNameTemplate.swift */
 "%lld星" = "%lld-star";
+
+/* Domain/LocalAdjustment.swift */
+"线性渐变" = "Linear Gradient";
+"径向渐变" = "Radial Gradient";
 
 /* Domain/Models.swift */
 "导入时间" = "Import Date";
@@ -607,6 +615,17 @@
 "阴影剪切" = "Shadow clipping";
 "预设" = "Presets";
 "高光剪切" = "Highlight clipping";
+"新建线性渐变，在照片上拖动绘制 (M)" = "New linear gradient — drag on the photo to draw it (M)";
+"新建径向渐变，在照片上拖动绘制 (⇧M)" = "New radial gradient — drag on the photo to draw it (⇧M)";
+"用渐变只调整照片的一部分，例如压暗天空或提亮主体" = "Use a gradient to adjust part of the photo, such as darkening the sky or brightening the subject";
+"反相" = "Invert";
+"反相蒙版" = "Invert Mask";
+"让调整作用于渐变之外" = "Apply the adjustments outside the gradient";
+"复位滑块" = "Reset Sliders";
+"复位蒙版调整" = "Reset Mask Adjustments";
+"删除蒙版" = "Delete Mask";
+"删除所选蒙版 (Delete)" = "Delete the selected mask (Delete)";
+"无调整" = "No adjustments";
 
 /* Presentation/Develop/DevelopView.swift */
 "点选照片中应为灰色或白色的地方（Esc 取消）" = "Click a spot in the photo that should be gray or white (Esc to cancel)";
@@ -614,6 +633,12 @@
 "原件不可用" = "Original unavailable";
 "没有可修图的照片" = "No photo to develop";
 "演示照片或缺失的原件无法修图。" = "Demo photos and missing originals can't be developed.";
+
+/* Presentation/Develop/MaskEditor.swift */
+"拖动绘制线性渐变：起点处效果最强，终点处消失 · 点按放置 · Esc 取消" = "Drag to draw a linear gradient: full effect where you start, none where you end · Click to place · Esc to cancel";
+"从中心向外拖动绘制径向渐变 · 点按放置 · Esc 取消" = "Drag out from the center to draw a radial gradient · Click to place · Esc to cancel";
+"拖动控制点调整蒙版 · 点按圆点选择蒙版 · Delete 删除 · Esc 完成" = "Drag the handles to adjust the mask · Click a pin to select a mask · Delete to remove · Esc when done";
+"编辑蒙版" = "Edit Mask";
 
 /* Presentation/Develop/ToneCurveEditor.swift */
 "通道" = "Channel";

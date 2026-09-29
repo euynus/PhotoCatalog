@@ -29,6 +29,7 @@ struct DevelopPanel: View {
             VStack(alignment: .leading, spacing: 18) {
                 header(asset, settings: settings)
                 section(L("裁剪与旋转")) { geometry(asset, settings) }
+                section(L("蒙版")) { masks(asset, settings) }
                 section(L("白平衡")) {
                     Toggle(isOn: Binding(get: { app.developPickingWhiteBalance },
                                          set: { app.developPickingWhiteBalance = $0 })) {
@@ -270,6 +271,82 @@ struct DevelopPanel: View {
             .disabled(settings.crop == nil && settings.straighten == 0)
         }
         .controlSize(.small)
+    }
+
+    // ---- masks: gradients with their own adjustments ----
+    @ViewBuilder
+    private func masks(_ asset: Asset, _ settings: DevelopSettings) -> some View {
+        HStack(spacing: 6) {
+            ForEach(LocalAdjustment.Kind.allCases, id: \.self) { kind in
+                Toggle(isOn: Binding(get: { app.developMaskCreation == kind }, set: { _ in app.armMask(kind) })) {
+                    Label(kind.title, systemImage: kind.symbol)
+                }
+                .toggleStyle(.button)
+                .help(kind == .linear ? L("新建线性渐变，在照片上拖动绘制 (M)") : L("新建径向渐变，在照片上拖动绘制 (⇧M)"))
+            }
+            Spacer(minLength: 0)
+        }
+        .controlSize(.small)
+        if settings.masks.isEmpty {
+            Text("用渐变只调整照片的一部分，例如压暗天空或提亮主体")
+                .font(.system(size: 11)).foregroundStyle(Theme.text3)
+        } else {
+            VStack(spacing: 2) {
+                ForEach(settings.masks) { mask in maskRow(mask, in: settings.masks) }
+            }
+        }
+        if let index = settings.masks.firstIndex(where: { $0.id == app.developSelectedMaskId }) {
+            let mask = settings.masks[index]
+            Toggle("反相", isOn: Binding(get: { mask.inverted }, set: { inverted in
+                var next = app.developSettings[asset.id] ?? .neutral
+                guard next.masks.indices.contains(index) else { return }
+                next.masks[index].inverted = inverted
+                app.commitDevelop([asset.id: next], undoName: L("反相蒙版"))
+            }))
+            .toggleStyle(.checkbox)
+            .controlSize(.small)
+            .help("让调整作用于渐变之外")
+            if mask.kind == .radial { slider(DevelopControl.localFeather(index), asset, settings) }
+            ForEach(DevelopControl.local(index)) { control in slider(control, asset, settings) }
+            HStack(spacing: 8) {
+                Button("复位滑块") {
+                    var next = app.developSettings[asset.id] ?? .neutral
+                    guard next.masks.indices.contains(index) else { return }
+                    next.masks[index] = mask.withoutAdjustments
+                    app.commitDevelop([asset.id: next], undoName: L("复位蒙版调整"))
+                }
+                .disabled(!mask.hasEffect)
+                Spacer(minLength: 0)
+                Button("删除蒙版", role: .destructive) { app.deleteMask(mask.id, from: asset.id) }
+                    .help("删除所选蒙版 (Delete)")
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private func maskRow(_ mask: LocalAdjustment, in masks: [LocalAdjustment]) -> some View {
+        let selected = mask.id == app.developSelectedMaskId
+        let ordinal = masks.filter { $0.kind == mask.kind }.firstIndex { $0.id == mask.id }.map { $0 + 1 } ?? 1
+        return Button {
+            app.developSelectedMaskId = mask.id
+            app.developMasking = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: mask.kind.symbol).frame(width: 16)
+                Text("\(mask.kind.title) \(ordinal)").lineLimit(1)
+                Spacer(minLength: 4)
+                if !mask.hasEffect {
+                    Text("无调整").font(.system(size: 11)).foregroundStyle(Theme.text3)
+                }
+            }
+            .font(.system(size: 12))
+            .padding(.horizontal, 8).padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(selected ? Theme.accentFill.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     // ---- crop: fractions of the rotated frame, kept inside the straightened photo ----

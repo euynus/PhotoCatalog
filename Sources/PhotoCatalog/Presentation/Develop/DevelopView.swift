@@ -43,6 +43,7 @@ private struct DevelopCanvas: View {
     var body: some View {
         let settings = app.developShowsOriginal ? .neutral : app.developSettings(for: asset.id)
         let cropping = app.developCropping && !app.developShowsOriginal
+        let masking = app.developMasking && !app.developShowsOriginal
         let dragging = app.developDraft?.assetId == asset.id
         let fullResolution = app.loupeZoom != nil && !dragging && !cropping
         // the crop tool draws the crop itself, so moving it never re-renders
@@ -53,6 +54,9 @@ private struct DevelopCanvas: View {
                 Group {
                     if cropping {
                         CropEditor(asset: asset, image: engine.wholeFrameImage(for: asset.id), settings: settings)
+                    } else if masking {
+                        MaskEditor(asset: asset, image: engine.finishedImage(for: asset.id), settings: settings,
+                                   sourceSize: app.developSourceSize(for: asset))
                     } else {
                         ZoomableImageView(image: engine.image(for: asset.id), pixelSize: pixelSize,
                                           zoom: app.loupeZoom, onZoomChange: { app.loupeZoom = $0 },
@@ -148,6 +152,11 @@ final class DevelopPreviewEngine: ObservableObject {
     func shown(for assetId: String) -> Shown? { shown?.assetId == assetId ? shown : nil }
 
     func image(for assetId: String) -> CGImage? { shown(for: assetId)?.image }
+
+    /// Only a finished (cropped) render: masks are drawn over the photo as it will look.
+    func finishedImage(for assetId: String) -> CGImage? {
+        shown(for: assetId).flatMap { $0.wholeFrame ? nil : $0.image }
+    }
 
     /// Only an uncropped render: the crop tool lays its rectangle over the whole frame.
     func wholeFrameImage(for assetId: String) -> CGImage? {

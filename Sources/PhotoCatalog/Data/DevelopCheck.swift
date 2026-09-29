@@ -12,6 +12,7 @@ enum DevelopCheck {
         checkToneCurve()
         checkColorMixer()
         checkColorGrading()
+        checkLocalAdjustments()
         checkLensCorrections()
         checkEffects()
         checkAutoAdjustments()
@@ -293,6 +294,96 @@ enum DevelopCheck {
         source.grading.highlights = ColorGrading.Grade(hue: 45, saturation: 20, luminance: 5)
         let carried = DevelopSettings().applying(source, fields: [.colorGrading])
         assert(carried.grading == source.grading, "color grading travels as one setting")
+    }
+
+    private static func checkLocalAdjustments() {
+        let gray = image { _, _ in (0.4, 0.4, 0.4) }
+        func luma(_ image: CGImage, _ x: Int, _ y: Int) -> Double {
+            let p = pixel(image, x, y)
+            return 0.3 * Double(p.r) + 0.59 * Double(p.g) + 0.11 * Double(p.b)
+        }
+        let base = luma(develop(gray, .neutral), 32, 32)
+
+        var s = DevelopSettings()
+        var radial = LocalAdjustment(kind: .radial)
+        radial.center = CGPoint(x: 0.25, y: 0.25)
+        radial.radiusX = 0.15; radial.radiusY = 0.15; radial.feather = 20
+        radial.exposure = 1.5
+        s.masks = [radial]
+        var out = develop(gray, s)
+        assert(luma(out, 16, 16) > base + 30 && abs(luma(out, 48, 48) - base) < 2,
+               "a radial gradient brightens inside and leaves the rest alone")
+        s.masks[0].inverted = true
+        out = develop(gray, s)
+        assert(abs(luma(out, 16, 16) - base) < 2 && luma(out, 48, 48) > base + 30, "an inverted gradient works outside")
+
+        var linear = LocalAdjustment(kind: .linear)
+        linear.start = CGPoint(x: 0.5, y: 0); linear.end = CGPoint(x: 0.5, y: 0.5)
+        linear.exposure = -1.5
+        s.masks = [linear]
+        out = develop(gray, s)
+        assert(luma(out, 32, 2) < base - 30 && luma(out, 32, 16) < base - 5 && abs(luma(out, 32, 56) - base) < 2,
+               "a linear gradient fades from full effect at its start to none past its end")
+
+        s.masks = [linear.withoutAdjustments]
+        assert(!s.masks[0].hasEffect && abs(luma(develop(gray, s), 32, 2) - base) < 2, "a mask without adjustments changes nothing")
+        var warm = LocalAdjustment(kind: .radial)
+        warm.radiusX = 1; warm.radiusY = 1; warm.temperature = 60; warm.saturation = 20
+        s.masks = [warm]
+        let warmed = pixel(develop(gray, s), 32, 32)
+        assert(Int(warmed.r) > Int(warmed.b) + 10, "local temperature warms")
+
+        // masks live on the source photo: after turning, mirroring, straightening and
+        // cropping, the effect lands where the overlay maps the mask's center
+        let wide = CGContext(data: nil, width: 96, height: 64, bitsPerComponent: 8, bytesPerRow: 0,
+                             space: DevelopRenderer.outputColorSpace, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        wide.setFillColor(CGColor(colorSpace: DevelopRenderer.outputColorSpace, components: [0.3, 0.3, 0.3, 1])!)
+        wide.fill(CGRect(x: 0, y: 0, width: 96, height: 64))
+        s = DevelopSettings()
+        s.rotation = 1; s.flipped = true; s.straighten = 8
+        s.crop = DevelopCrop(x: 0.1, y: 0.15, width: 0.8, height: 0.7)
+        var spot = LocalAdjustment(kind: .radial)
+        spot.center = CGPoint(x: 0.35, y: 0.6)
+        spot.radiusX = 0.08; spot.radiusY = 0.08; spot.feather = 10; spot.exposure = 2.5
+        s.masks = [spot]
+        let placed = develop(wide.makeImage()!, s)
+        var data = [UInt8](repeating: 0, count: placed.width * placed.height * 4)
+        CGContext(data: &data, width: placed.width, height: placed.height, bitsPerComponent: 8,
+                  bytesPerRow: placed.width * 4, space: DevelopRenderer.outputColorSpace,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            .draw(placed, in: CGRect(x: 0, y: 0, width: placed.width, height: placed.height))
+        var sumX = 0.0, sumY = 0.0, count = 0.0
+        for y in 0..<placed.height {
+            for x in 0..<placed.width where data[(y * placed.width + x) * 4 + 1] > 125 {   // ~77 around, ~170 inside
+                sumX += Double(x) + 0.5; sumY += Double(y) + 0.5; count += 1
+            }
+        }
+        let expected = DevelopGeometry.finishedPoint(fromSource: spot.center, settings: s,
+                                                     sourceSize: CGSize(width: 96, height: 64))
+        assert(count > 10 && abs(sumX / count - expected.x * Double(placed.width)) < 2
+               && abs(sumY / count - expected.y * Double(placed.height)) < 2,
+               "a mask follows the photo through rotation, mirroring, straightening and crop")
+        for point in [CGPoint(x: 0.1, y: 0.2), CGPoint(x: 0.7, y: 0.9)] {
+            for rotation in 0..<4 {
+                var t = s; t.rotation = rotation; t.flipped = rotation % 2 == 0
+                let size = CGSize(width: 96, height: 64)
+                let back = DevelopGeometry.sourcePoint(
+                    fromFinished: DevelopGeometry.finishedPoint(fromSource: point, settings: t, sourceSize: size),
+                    settings: t, sourceSize: size)
+                assert(abs(back.x - point.x) < 1e-9 && abs(back.y - point.y) < 1e-9, "source and finished points round-trip")
+            }
+        }
+
+        let old = try! JSONDecoder().decode(DevelopSettings.self, from: Data(#"{"exposure":0.5}"#.utf8))
+        assert(old.masks.isEmpty && old.fingerprint == { var e = DevelopSettings(); e.exposure = 0.5; return e }().fingerprint,
+               "edits saved before masks load without any and keep their cache names")
+        let partial = try! JSONDecoder().decode(LocalAdjustment.self, from: Data(#"{"kind":"linear","exposure":1}"#.utf8))
+        assert(partial.kind == .linear && partial.exposure == 1 && partial.feather == 50, "a mask missing fields loads with defaults")
+        let saved = try! JSONDecoder().decode(DevelopSettings.self, from: JSONEncoder().encode(s))
+        assert(saved == s, "masks round-trip through storage")
+        let carried = DevelopSettings().applying(s, fields: [.masks])
+        assert(carried.masks == s.masks && carried.rotation == 0, "masks travel as one setting")
+        assert(!DevelopField.defaultCopy.contains(.masks), "copy leaves masks behind unless asked")
     }
 
     private static func checkPresence() {
@@ -734,5 +825,36 @@ enum DevelopCheck {
         _ = app.handleKey("r", hasCommand: false)
         app.view = .grid
         assert(!app.developCropping, "leaving Develop closes the crop tool")
+
+        // masks: saved and selected when drawn; in the tool, Delete removes the selected mask
+        // and never the photo, and Esc disarms a gradient before it closes the tool
+        app.view = .develop
+        app.primaryId = "x"
+        var mask = LocalAdjustment(kind: .radial)
+        mask.exposure = 0.5
+        undo.beginUndoGrouping()
+        app.addMask(mask, to: "x")
+        undo.endUndoGrouping()
+        assert(app.developSettings["x"]?.masks.map(\.id) == [mask.id] && app.developSelectedMaskId == mask.id,
+               "a new mask is saved and selected")
+        app.developMasking = true
+        app.developMaskCreation = .linear
+        _ = app.handleKey("escape", hasCommand: false)
+        assert(app.developMasking && app.developMaskCreation == nil, "Esc first disarms a gradient")
+        undo.beginUndoGrouping()
+        _ = app.handleKey("delete", hasCommand: false)
+        undo.endUndoGrouping()
+        assert(app.developSettings["x"]?.masks.isEmpty == true && app.view == .develop, "Delete removes the selected mask")
+        undo.undo()
+        assert(app.developSettings["x"]?.masks.count == 1, "undo brings the mask back")
+        _ = app.handleKey("escape", hasCommand: false)
+        assert(!app.developMasking && app.view == .develop, "Esc closes the masking tool")
+        app.developMasking = true
+        app.developCropping = true
+        assert(!app.developMasking, "the crop tool closes the masking tool")
+        app.developMasking = true
+        assert(!app.developCropping, "the masking tool closes the crop tool")
+        app.view = .grid
+        assert(!app.developMasking, "leaving Develop closes the masking tool")
     }
 }

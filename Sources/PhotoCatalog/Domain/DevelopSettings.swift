@@ -51,6 +51,9 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var grain: Double = 0
     var grainSize: Double = 25
     var grainRoughness: Double = 50
+    /// Linear and radial gradients with their own adjustments, applied in order after the
+    /// global tone, color and presence (see `LocalAdjustment`).
+    var masks: [LocalAdjustment] = []
     /// Geometry, applied in this order after tone: quarter turns clockwise (0…3), a left–right
     /// mirror, a straighten angle in degrees (-45…45, positive turns the photo clockwise), then
     /// the crop. A nil crop keeps the whole photo — or, once straightened, the largest
@@ -117,6 +120,7 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
             text += String(format: "|e%.1f,%.1f,%.1f,%.1f,%.1f,%.1f", vignette, vignetteMidpoint, vignetteFeather,
                            grain, grainSize, grainRoughness)
         }
+        if !masks.isEmpty { text += "|k" + masks.map(\.fingerprintText).joined(separator: ";") }
         if hasGeometry {   // appended only when set, so earlier edits keep their cache names
             let crop = self.crop.map { String(format: "%.4f,%.4f,%.4f,%.4f", $0.x, $0.y, $0.width, $0.height) } ?? "-"
             text += String(format: "|%d,%d,%.2f,", rotation, flipped ? 1 : 0, straighten) + crop
@@ -161,6 +165,7 @@ extension DevelopSettings {
         grain = try container.decodeIfPresent(Double.self, forKey: .grain) ?? 0
         grainSize = try container.decodeIfPresent(Double.self, forKey: .grainSize) ?? 25
         grainRoughness = try container.decodeIfPresent(Double.self, forKey: .grainRoughness) ?? 50
+        masks = try container.decodeIfPresent([LocalAdjustment].self, forKey: .masks) ?? []
         rotation = try container.decodeIfPresent(Int.self, forKey: .rotation) ?? 0
         flipped = try container.decodeIfPresent(Bool.self, forKey: .flipped) ?? false
         straighten = try container.decodeIfPresent(Double.self, forKey: .straighten) ?? 0
@@ -478,6 +483,32 @@ struct DevelopControl: Identifiable {
         amount(\.grainSize, L("颗粒大小"), max: 100, neutral: 25),
         amount(\.grainRoughness, L("颗粒粗糙度"), max: 100, neutral: 50),
     ]
+
+    /// The sliders of the mask at `index`: its tone, white balance and presence.
+    static func local(_ index: Int) -> [DevelopControl] {
+        let mask: WritableKeyPath<DevelopSettings, LocalAdjustment> = \DevelopSettings.masks[index]
+        return [
+            DevelopControl(id: mask.appending(path: \.exposure), title: L("曝光度"), range: -4...4, step: 0.01) {
+                String(format: "%+.2f", $0)
+            },
+            signed(mask.appending(path: \.contrast), L("对比度")),
+            signed(mask.appending(path: \.highlights), L("高光")),
+            signed(mask.appending(path: \.shadows), L("阴影")),
+            signed(mask.appending(path: \.whites), L("白色色阶")),
+            signed(mask.appending(path: \.blacks), L("黑色色阶")),
+            signed(mask.appending(path: \.temperature), L("色温")),
+            signed(mask.appending(path: \.tint), L("色调", table: "Context")),
+            signed(mask.appending(path: \.texture), L("纹理")),
+            signed(mask.appending(path: \.clarity), L("清晰度")),
+            signed(mask.appending(path: \.dehaze), L("去朦胧")),
+            signed(mask.appending(path: \.saturation), L("饱和度")),
+        ]
+    }
+
+    /// A radial gradient's feather.
+    static func localFeather(_ index: Int) -> DevelopControl {
+        amount(\DevelopSettings.masks[index].feather, L("羽化"), max: 100, neutral: 50)
+    }
 
     private static func amount(_ keyPath: WritableKeyPath<DevelopSettings, Double>, _ title: String,
                                max: Double, neutral: Double = 0) -> DevelopControl {

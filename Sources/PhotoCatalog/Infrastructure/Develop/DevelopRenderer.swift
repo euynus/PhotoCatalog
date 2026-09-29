@@ -79,7 +79,8 @@ enum DevelopRenderer {
             let toned = DevelopRenderer.applyTone(DevelopRenderer.applyLens(base, settings), settings)
             let colored = DevelopRenderer.applyMixer(DevelopRenderer.applyCurve(toned, settings), settings)
             let present = DevelopRenderer.applyPresence(colored, settings)
-            let detailed = DevelopRenderer.applyDetail(present, settings, scale: min(1, scale))
+            let local = DevelopRenderer.applyMasks(present, settings)
+            let detailed = DevelopRenderer.applyDetail(local, settings, scale: min(1, scale))
             let framed = DevelopRenderer.applyGeometry(detailed, settings, wholeFrame: wholeFrame)
             // effects follow the crop, which the crop tool's whole-frame view doesn't apply yet
             return wholeFrame ? framed : DevelopRenderer.applyEffects(framed, settings, scale: min(1, scale))
@@ -295,6 +296,35 @@ enum DevelopRenderer {
         image = DevelopKernels.localContrast(image, sigma: max(0.7, longEdge * 0.0012), amount: gain(s.texture, up: 1.5),
                                              bias: 0.5)
         return image.applyingFilter("CISRGBToneCurveToLinear").cropped(to: extent)
+    }
+
+    /// Each mask's adjustments, blended in through its weight, in order: exposure and white
+    /// balance as on the whole photo, then the shared tone and presence code.
+    static func applyMasks(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
+        guard s.masks.contains(where: \.hasEffect) else { return input }
+        let extent = input.extent
+        var image = input
+        for mask in s.masks where mask.hasEffect {
+            guard let weight = DevelopKernels.maskWeight(mask, extent: extent) else { continue }
+            var adjusted = image
+            if mask.exposure != 0 {
+                adjusted = adjusted.applyingFilter("CIExposureAdjust", parameters: ["inputEV": mask.exposure])
+            }
+            if mask.temperature != 0 || mask.tint != 0 {
+                // the relative scale of non-RAW white balance: a cooler assumed light warms
+                adjusted = adjusted.applyingFilter("CITemperatureAndTint", parameters: [
+                    "inputNeutral": CIVector(x: 6500 + mask.temperature * 25, y: mask.tint * 0.5),
+                    "inputTargetNeutral": CIVector(x: 6500, y: 0),
+                ])
+            }
+            let tone = mask.toneSettings
+            adjusted = applyPresence(applyTone(adjusted, tone), tone)
+            image = adjusted.applyingFilter("CIBlendWithMask", parameters: [
+                kCIInputBackgroundImageKey: image,
+                kCIInputMaskImageKey: weight,
+            ]).cropped(to: extent)
+        }
+        return image
     }
 
     /// Post-crop vignette (on linear light, so darkening behaves like exposure), then grain.

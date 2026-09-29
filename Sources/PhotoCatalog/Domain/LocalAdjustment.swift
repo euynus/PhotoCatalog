@@ -1,0 +1,174 @@
+// ============================================================
+//  Local adjustments — Lightroom's masks: linear and radial gradients
+// ============================================================
+import Foundation
+import CoreGraphics
+
+/// Adjustments applied through a mask, on top of the photo's global settings. Positions are
+/// fractions of the source photo (top-left origin, before quarter turns, mirroring, straighten
+/// and crop), so a mask stays on the same part of the picture when the framing changes.
+struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
+    enum Kind: String, Codable, CaseIterable, Sendable {
+        case linear, radial
+
+        var title: String {
+            switch self {
+            case .linear: L("线性渐变")
+            case .radial: L("径向渐变")
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .linear: "rectangle.tophalf.inset.filled"
+            case .radial: "circle.dashed"
+            }
+        }
+    }
+
+    var id = UUID().uuidString
+    var kind: Kind
+    /// Linear: full effect at `start`, none at `end`, a smooth fall-off between.
+    var start = CGPoint(x: 0.5, y: 0.1)
+    var end = CGPoint(x: 0.5, y: 0.45)
+    /// Radial: an ellipse around `center`; radii are fractions of the source's long edge and
+    /// `angle` turns the ellipse's first axis clockwise, in degrees. Feather 0…100 is how much
+    /// of the radius the effect fades over.
+    var center = CGPoint(x: 0.5, y: 0.5)
+    var radiusX = 0.25
+    var radiusY = 0.18
+    var angle = 0.0
+    var feather = 50.0
+    /// Applies outside the gradient instead of inside it.
+    var inverted = false
+
+    // adjustments, -100…100 unless noted
+    var exposure = 0.0      // EV, -4…4
+    var contrast = 0.0
+    var highlights = 0.0
+    var shadows = 0.0
+    var whites = 0.0
+    var blacks = 0.0
+    var temperature = 0.0   // relative warmth
+    var tint = 0.0
+    var texture = 0.0
+    var clarity = 0.0
+    var dehaze = 0.0
+    var saturation = 0.0
+
+    init(kind: Kind) { self.kind = kind }
+
+    /// Whether any adjustment is set; a mask without one changes nothing.
+    var hasEffect: Bool {
+        [exposure, contrast, highlights, shadows, whites, blacks, temperature, tint, texture, clarity, dehaze, saturation]
+            .contains { $0 != 0 }
+    }
+
+    /// The same mask with every adjustment back at zero.
+    var withoutAdjustments: LocalAdjustment {
+        var copy = LocalAdjustment(kind: kind)
+        copy.id = id
+        copy.start = start; copy.end = end
+        copy.center = center; copy.radiusX = radiusX; copy.radiusY = radiusY; copy.angle = angle
+        copy.feather = feather; copy.inverted = inverted
+        return copy
+    }
+
+    /// Global settings carrying this mask's tone and presence adjustments, for the renderer's
+    /// shared tone code (white balance and exposure are applied separately).
+    var toneSettings: DevelopSettings {
+        var s = DevelopSettings()
+        s.contrast = contrast; s.highlights = highlights; s.shadows = shadows
+        s.whites = whites; s.blacks = blacks; s.saturation = saturation
+        s.texture = texture; s.clarity = clarity; s.dehaze = dehaze
+        return s
+    }
+
+    var fingerprintText: String {
+        let geometry: [Double] = switch kind {
+        case .linear: [start.x, start.y, end.x, end.y]
+        case .radial: [center.x, center.y, radiusX, radiusY, angle, feather]
+        }
+        let values = [exposure, contrast, highlights, shadows, whites, blacks, temperature, tint,
+                      texture, clarity, dehaze, saturation]
+        return kind.rawValue + (inverted ? "!" : "") + ":"
+            + geometry.map { String(format: "%.4f", $0) }.joined(separator: ",") + ":"
+            + values.map { String(format: "%.2f", $0) }.joined(separator: ",")
+    }
+}
+
+extension LocalAdjustment {
+    /// Every field is optional in storage, so masks saved by an older version still load.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try c.decodeIfPresent(Kind.self, forKey: .kind) ?? .radial
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        start = try c.decodeIfPresent(CGPoint.self, forKey: .start) ?? CGPoint(x: 0.5, y: 0.1)
+        end = try c.decodeIfPresent(CGPoint.self, forKey: .end) ?? CGPoint(x: 0.5, y: 0.45)
+        center = try c.decodeIfPresent(CGPoint.self, forKey: .center) ?? CGPoint(x: 0.5, y: 0.5)
+        radiusX = try c.decodeIfPresent(Double.self, forKey: .radiusX) ?? 0.25
+        radiusY = try c.decodeIfPresent(Double.self, forKey: .radiusY) ?? 0.18
+        angle = try c.decodeIfPresent(Double.self, forKey: .angle) ?? 0
+        feather = try c.decodeIfPresent(Double.self, forKey: .feather) ?? 50
+        inverted = try c.decodeIfPresent(Bool.self, forKey: .inverted) ?? false
+        func value(_ key: CodingKeys) throws -> Double { try c.decodeIfPresent(Double.self, forKey: key) ?? 0 }
+        exposure = try value(.exposure)
+        contrast = try value(.contrast)
+        highlights = try value(.highlights)
+        shadows = try value(.shadows)
+        whites = try value(.whites)
+        blacks = try value(.blacks)
+        temperature = try value(.temperature)
+        tint = try value(.tint)
+        texture = try value(.texture)
+        clarity = try value(.clarity)
+        dehaze = try value(.dehaze)
+        saturation = try value(.saturation)
+    }
+}
+
+/// Converting between the source photo, where masks live, and the finished photo on screen.
+/// Both in fractions with a top-left origin; `sourceSize` is the decoded photo's pixel size
+/// before quarter turns (any scale — only its shape matters).
+extension DevelopGeometry {
+    static func finishedPoint(fromSource p: CGPoint, settings s: DevelopSettings, sourceSize: CGSize) -> CGPoint {
+        let w = Double(sourceSize.width), h = Double(sourceSize.height)
+        var x = Double(p.x) * w, y = Double(p.y) * h
+        switch ((s.rotation % 4) + 4) % 4 {   // quarter turns clockwise
+        case 1: (x, y) = (h - y, x)
+        case 2: (x, y) = (w - x, h - y)
+        case 3: (x, y) = (y, w - x)
+        default: break
+        }
+        let frame = rotatedSize(sourceSize, s.rotation)
+        let fw = Double(frame.width), fh = Double(frame.height)
+        if s.flipped { x = fw - x }
+        if s.straighten != 0 {
+            // y points down, so this matrix turns clockwise for a positive angle
+            let a = s.straighten * .pi / 180, dx = x - fw / 2, dy = y - fh / 2
+            (x, y) = (fw / 2 + dx * cos(a) - dy * sin(a), fh / 2 + dx * sin(a) + dy * cos(a))
+        }
+        let crop = effectiveCrop(s, frame: frame)
+        return CGPoint(x: (x / fw - crop.x) / crop.width, y: (y / fh - crop.y) / crop.height)
+    }
+
+    static func sourcePoint(fromFinished p: CGPoint, settings s: DevelopSettings, sourceSize: CGSize) -> CGPoint {
+        let w = Double(sourceSize.width), h = Double(sourceSize.height)
+        let frame = rotatedSize(sourceSize, s.rotation)
+        let fw = Double(frame.width), fh = Double(frame.height)
+        let crop = effectiveCrop(s, frame: frame)
+        var x = (crop.x + Double(p.x) * crop.width) * fw, y = (crop.y + Double(p.y) * crop.height) * fh
+        if s.straighten != 0 {
+            let a = -s.straighten * .pi / 180, dx = x - fw / 2, dy = y - fh / 2
+            (x, y) = (fw / 2 + dx * cos(a) - dy * sin(a), fh / 2 + dx * sin(a) + dy * cos(a))
+        }
+        if s.flipped { x = fw - x }
+        switch ((s.rotation % 4) + 4) % 4 {
+        case 1: (x, y) = (y, h - x)
+        case 2: (x, y) = (w - x, h - y)
+        case 3: (x, y) = (w - y, x)
+        default: break
+        }
+        return CGPoint(x: x / max(w, 1e-9), y: y / max(h, 1e-9))
+    }
+}
