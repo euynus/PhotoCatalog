@@ -8,6 +8,7 @@ enum DevelopCheck {
     static func run() {
         checkRendering()
         checkDetail()
+        checkPresence()
         checkLensCorrections()
         checkEffects()
         checkAutoAdjustments()
@@ -204,6 +205,37 @@ enum DevelopCheck {
                && carried.colorNoise == 0, "sharpening travels as one setting, noise reduction as another")
         assert(DevelopField.noiseReduction.isAdjusted(in: source) && !DevelopField.noiseReduction.isAdjusted(in: carried),
                "adjusted detail fields are detected")
+    }
+
+    private static func checkPresence() {
+        // a fine mid-gray checkerboard: clarity and texture raise or lower its local contrast
+        let checker = image { x, y in (x / 2 + y / 2) % 2 == 0 ? (0.4, 0.4, 0.4) : (0.6, 0.6, 0.6) }
+        let base = spread(develop(checker, .neutral)).luma
+        for keyPath in [\DevelopSettings.clarity, \DevelopSettings.texture] {
+            var s = DevelopSettings()
+            s[keyPath: keyPath] = 100
+            let more = spread(develop(checker, s)).luma
+            s[keyPath: keyPath] = -100
+            let less = spread(develop(checker, s)).luma
+            assert(more > base * 1.1 && less < base * 0.9, "clarity and texture add and remove local contrast")
+        }
+
+        // a hazy scene: low contrast lifted toward light gray, with some variation
+        let hazy = image { x, y in let v = 0.58 + 0.12 * Double((x * 7 + y * 3) % 10) / 10; return (v, v, v * 0.98) }
+        let hazyBase = develop(hazy, .neutral)
+        var s = DevelopSettings(); s.dehaze = 80
+        let cleared = develop(hazy, s)
+        assert(averageLuma(cleared) < averageLuma(hazyBase) - 10 && spread(cleared).luma > spread(hazyBase).luma * 1.3,
+               "dehaze lifts the veil: darker and more contrasty")
+        s.dehaze = -80
+        let fogged = develop(hazy, s)
+        assert(spread(fogged).luma < spread(hazyBase).luma * 0.8, "negative dehaze adds haze")
+
+        var source = DevelopSettings()
+        source.texture = 20; source.clarity = 35; source.dehaze = 15
+        let carried = DevelopSettings().applying(source, fields: [.clarity])
+        assert(carried.clarity == 35 && carried.texture == 0 && carried.dehaze == 0, "presence settings travel one by one")
+        assert(source.hasPresence && DevelopSettings().fingerprint != carried.fingerprint, "presence changes the fingerprint")
     }
 
     private static func checkLensCorrections() {

@@ -19,6 +19,10 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var blacks: Double = 0
     var vibrance: Double = 0
     var saturation: Double = 0
+    /// Presence, -100…100: texture (fine detail), clarity (midtone local contrast) and dehaze.
+    var texture: Double = 0
+    var clarity: Double = 0
+    var dehaze: Double = 0
     /// Detail, applied after tone on top of the camera's own RAW sharpening and noise reduction.
     /// Sharpening amount 0…150 (luminance only), radius 0.5…3 px at full resolution, masking
     /// 0…100 limits it to edges; noise reduction 0…100 for luminance and for color.
@@ -58,6 +62,8 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
 
     var hasDetail: Bool { sharpening != 0 || luminanceNoise != 0 || colorNoise != 0 }
 
+    var hasPresence: Bool { texture != 0 || clarity != 0 || dehaze != 0 }
+
     var hasLensCorrection: Bool { distortion != 0 || lensVignette != 0 }
 
     var hasEffects: Bool { vignette != 0 || grain != 0 }
@@ -86,6 +92,9 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
         let fields: [Double?] = [temperature, tint, exposure, contrast, highlights, shadows,
                                  whites, blacks, vibrance, saturation]
         var text = fields.map { $0.map { String(format: "%.3f", $0) } ?? "-" }.joined(separator: ",")
+        if hasPresence {
+            text += String(format: "|p%.1f,%.1f,%.1f", texture, clarity, dehaze)
+        }
         if sharpening != 0 || sharpenRadius != 1 || sharpenMasking != 0 || luminanceNoise != 0 || colorNoise != 0 {
             // like geometry: only when set, so earlier edits keep their cache names
             text += String(format: "|d%.1f,%.2f,%.1f,%.1f,%.1f", sharpening, sharpenRadius, sharpenMasking,
@@ -123,6 +132,9 @@ extension DevelopSettings {
         blacks = try container.decodeIfPresent(Double.self, forKey: .blacks) ?? 0
         vibrance = try container.decodeIfPresent(Double.self, forKey: .vibrance) ?? 0
         saturation = try container.decodeIfPresent(Double.self, forKey: .saturation) ?? 0
+        texture = try container.decodeIfPresent(Double.self, forKey: .texture) ?? 0
+        clarity = try container.decodeIfPresent(Double.self, forKey: .clarity) ?? 0
+        dehaze = try container.decodeIfPresent(Double.self, forKey: .dehaze) ?? 0
         sharpening = try container.decodeIfPresent(Double.self, forKey: .sharpening) ?? 0
         sharpenRadius = try container.decodeIfPresent(Double.self, forKey: .sharpenRadius) ?? 1
         sharpenMasking = try container.decodeIfPresent(Double.self, forKey: .sharpenMasking) ?? 0
@@ -389,6 +401,9 @@ struct DevelopControl: Identifiable {
         signed(\.blacks, L("黑色色阶")),
     ]
     static let presence: [DevelopControl] = [
+        signed(\.texture, L("纹理")),
+        signed(\.clarity, L("清晰度")),
+        signed(\.dehaze, L("去朦胧")),
         signed(\.vibrance, L("鲜艳度")),
         signed(\.saturation, L("饱和度")),
     ]

@@ -77,7 +77,8 @@ enum DevelopRenderer {
             sourceSize = base.extent.integral.size
             let scale = max(base.extent.width, base.extent.height) / max(fullLongEdge, 1)
             let toned = DevelopRenderer.applyTone(DevelopRenderer.applyLens(base, settings), settings)
-            let detailed = DevelopRenderer.applyDetail(toned, settings, scale: min(1, scale))
+            let present = DevelopRenderer.applyPresence(toned, settings)
+            let detailed = DevelopRenderer.applyDetail(present, settings, scale: min(1, scale))
             let framed = DevelopRenderer.applyGeometry(detailed, settings, wholeFrame: wholeFrame)
             // effects follow the crop, which the crop tool's whole-frame view doesn't apply yet
             return wholeFrame ? framed : DevelopRenderer.applyEffects(framed, settings, scale: min(1, scale))
@@ -239,6 +240,22 @@ enum DevelopRenderer {
         let amount = s.lensVignette >= 0 ? s.lensVignette / 100 * 1.5 : s.lensVignette / 100 * 0.6
         let corrected = DevelopKernels.radialGain(input, amount: amount, start: start, width: 1 - start)
         return DevelopKernels.distort(corrected, k: s.distortion / 100 * 0.15)
+    }
+
+    /// Dehaze, clarity and texture, in display-encoded values. Their radii are fractions of the
+    /// photo's long edge, so a preview and the full photo look alike.
+    static func applyPresence(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
+        guard s.hasPresence else { return input }
+        let extent = input.extent
+        let longEdge = Double(max(extent.width, extent.height))
+        var image = input.applyingFilter("CILinearToSRGBToneCurve")
+        image = DevelopKernels.dehaze(image, amount: s.dehaze / 100)
+        // negative amounts stop at removing the detail at that scale, never inverting it
+        func gain(_ value: Double, up: Double) -> Double { value >= 0 ? value / 100 * up : value / 100 }
+        image = DevelopKernels.localContrast(image, sigma: longEdge * 0.008, amount: gain(s.clarity, up: 2), bias: 1)
+        image = DevelopKernels.localContrast(image, sigma: max(0.7, longEdge * 0.0012), amount: gain(s.texture, up: 1.5),
+                                             bias: 0.5)
+        return image.applyingFilter("CISRGBToneCurveToLinear").cropped(to: extent)
     }
 
     /// Post-crop vignette (on linear light, so darkening behaves like exposure), then grain.

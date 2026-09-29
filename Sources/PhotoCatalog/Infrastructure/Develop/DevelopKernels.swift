@@ -3,7 +3,7 @@
 // ============================================================
 import CoreImage
 
-/// Lens distortion, radial gain and film grain, compiled from Metal source the first time a render needs
+/// Lens distortion, radial gain, film grain, local contrast and haze removal, compiled from Metal source the first time a render needs
 /// them (~0.5 s, once): the package has no Metal build step, and Core Image compiles stitchable
 /// kernels at run time. A kernel that fails to compile leaves its adjustment out of the render.
 enum DevelopKernels {
@@ -27,6 +27,29 @@ enum DevelopKernels {
             float r = sqrt(dot(p, p) * invRadius2);
             float w = smoothstep(start, start + max(width, 0.001), r);
             return float4(s.rgb * max(0.0, 1.0 + amount * w), s.a);
+        }
+
+        // Adds the luminance difference between `s` and its blur `b` back `amount` times, weighted
+        // toward the midtones by `bias` (1 = midtones only, 0 = evenly) so edges don't halo in
+        // the highlights and shadows. Negative amounts soften.
+        [[stitchable]] float4 localContrast(sample_t s, sample_t b, float amount, float bias) {
+            float3 luma = float3(0.299, 0.587, 0.114);
+            float l = clamp(dot(s.rgb, luma), 0.0, 1.0);
+            float w = mix(1.0, 4.0 * l * (1.0 - l), bias);
+            return float4(s.rgb + (l - dot(b.rgb, luma)) * amount * w, s.a);
+        }
+
+        // Haze on display-encoded color, from `d`, the blurred dark channel (how thick the veil
+        // is): positive amounts invert the veil toward `air`, negative ones add it.
+        [[stitchable]] float4 dehaze(sample_t s, sample_t d, float amount, float air) {
+            float3 c = s.rgb;
+            if (amount >= 0.0) {
+                float t = max(1.0 - 0.95 * amount * d.r / air, 0.25);
+                c = (c - air) / t + air;
+            } else {
+                c = mix(c, float3(air), -amount * 0.6 * (0.4 + 0.6 * d.r));
+            }
+            return float4(c, s.a);
         }
 
         // Adds grain `n` (0.5 = none) to display-encoded color, strongest in the midtones as on film.
@@ -83,6 +106,29 @@ enum DevelopKernels {
             kCIInputTargetImageKey: fine, "inputTime": roughness / 100 * 0.6,
         ]).cropped(to: extent)
         return kernel.apply(extent: extent, arguments: [image, noise, amount / 100 * 0.25]) ?? image
+    }
+
+    /// Local contrast of display-encoded `image` at `sigma` pixels (see the kernel).
+    static func localContrast(_ image: CIImage, sigma: Double, amount: Double, bias: Double) -> CIImage {
+        guard amount != 0, let kernel = kernels["localContrast"] as? CIColorKernel else { return image }
+        let extent = image.extent
+        let blurred = image.clampedToExtent().applyingGaussianBlur(sigma: sigma).cropped(to: extent)
+        return kernel.apply(extent: extent, arguments: [image, blurred, amount, bias]) ?? image
+    }
+
+    /// Haze removal (amount > 0) or added haze (< 0) on display-encoded `image`, -1…1, using the
+    /// dark-channel prior: haze lifts the darkest channel of every patch, so its blurred minimum
+    /// maps the veil.
+    static func dehaze(_ image: CIImage, amount: Double) -> CIImage {
+        guard amount != 0, let kernel = kernels["dehaze"] as? CIColorKernel else { return image }
+        let extent = image.extent
+        let longEdge = Double(max(extent.width, extent.height))
+        let veil = image.applyingFilter("CIMinimumComponent")
+            .clampedToExtent()
+            .applyingFilter("CIMorphologyMinimum", parameters: ["inputRadius": max(1, longEdge * 0.004)])
+            .applyingGaussianBlur(sigma: longEdge * 0.01)
+            .cropped(to: extent)
+        return kernel.apply(extent: extent, arguments: [image, veil, amount, 0.92]) ?? image
     }
 
     /// `image` with its brightness scaled toward the corners (see the kernel).

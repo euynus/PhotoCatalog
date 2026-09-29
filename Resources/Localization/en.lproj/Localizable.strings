@@ -357,6 +357,9 @@
 "文件创建时间" = "File creation date";
 
 /* Domain/DevelopSettings.swift */
+"纹理" = "Texture";
+"清晰度" = "Clarity";
+"去朦胧" = "Dehaze";
 "裁剪后暗角" = "Post-Crop Vignette";
 "暗角中点" = "Vignette Midpoint";
 "暗角羽化" = "Vignette Feather";

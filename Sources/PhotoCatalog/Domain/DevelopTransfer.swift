@@ -6,7 +6,8 @@ import Foundation
 /// One setting that copy, sync and presets can carry, as in Lightroom's Copy Settings dialog.
 /// Orientation comes before crop so a copied crop lands in the copied frame.
 enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
-    case whiteBalance, exposure, contrast, highlights, shadows, whites, blacks, vibrance, saturation
+    case whiteBalance, exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze
+    case vibrance, saturation
     case sharpening, noiseReduction, lensCorrections, vignette, grain
     case orientation, crop
 
@@ -21,6 +22,9 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         case .shadows: L("阴影")
         case .whites: L("白色色阶")
         case .blacks: L("黑色色阶")
+        case .texture: L("纹理")
+        case .clarity: L("清晰度")
+        case .dehaze: L("去朦胧")
         case .vibrance: L("鲜艳度")
         case .saturation: L("饱和度")
         case .sharpening: L("锐化")
@@ -37,7 +41,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
     static let groups: [(title: String, fields: [DevelopField])] = [
         (L("白平衡"), [.whiteBalance]),
         (L("色调"), [.exposure, .contrast, .highlights, .shadows, .whites, .blacks]),
-        (L("偏好"), [.vibrance, .saturation]),
+        (L("偏好"), [.texture, .clarity, .dehaze, .vibrance, .saturation]),
         (L("细节"), [.sharpening, .noiseReduction]),
         (L("镜头校正"), [.lensCorrections]),
         (L("效果"), [.vignette, .grain]),
@@ -69,6 +73,9 @@ extension DevelopSettings {
             case .shadows: next.shadows = source.shadows
             case .whites: next.whites = source.whites
             case .blacks: next.blacks = source.blacks
+            case .texture: next.texture = source.texture
+            case .clarity: next.clarity = source.clarity
+            case .dehaze: next.dehaze = source.dehaze
             case .vibrance: next.vibrance = source.vibrance
             case .saturation: next.saturation = source.saturation
             case .sharpening:
