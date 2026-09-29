@@ -253,6 +253,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已复制 %lld 个原件</string>
 	</dict>
+	<key>已导入 %lld 个 LUT</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已导入 %lld 个 LUT</string>
+	</dict>
 	<key>已导入 %lld 个预设</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

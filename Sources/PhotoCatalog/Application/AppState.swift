@@ -1403,6 +1403,66 @@ final class AppState {
         return developPresets.compactMap(\.group).filter { seen.insert($0).inserted }
     }
 
+    // ----- LUTs: creative looks from .cube files, kept in the app's own folder -----
+    var developLUTs: [DevelopLUT] = AppState.loadLUTs() {
+        didSet { AppState.store(developLUTs, forKey: "pc_luts") }
+    }
+
+    private static func loadLUTs() -> [DevelopLUT] {
+        UserDefaults.standard.data(forKey: "pc_luts").flatMap { try? JSONDecoder().decode([DevelopLUT].self, from: $0) } ?? []
+    }
+
+    /// Adds the 3D LUTs in `urls` to the library, named by their title or file name.
+    @discardableResult
+    func importLUTs(from urls: [URL]) -> (added: Int, failed: Int) {
+        var added = 0, failed = 0
+        for url in urls {
+            let id = UUID().uuidString
+            guard LUTLibrary.add(url, id: id) else { failed += 1; continue }
+            let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            let name = LUTLibrary.title(of: text) ?? url.deletingPathExtension().lastPathComponent
+            developLUTs.append(DevelopLUT(id: id, name: name))
+            added += 1
+        }
+        return (added, failed)
+    }
+
+    /// 导入 LUT…: picks `.cube` files.
+    func chooseAndImportLUTs() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [UTType(filenameExtension: "cube") ?? .data]
+        panel.prompt = L("导入")
+        panel.message = L("选择 3D LUT 文件（.cube）")
+        guard panel.runModal() == .OK else { return }
+        let result = importLUTs(from: panel.urls)
+        guard result.added > 0 else {
+            push("所选文件不是可用的 3D LUT", "warning")
+            return
+        }
+        push(verbatim: L("已导入 \(result.added) 个 LUT") + (result.failed > 0 ? L(" · \(result.failed) 个无法读取") : ""),
+             result.failed > 0 ? "warning" : "square.and.arrow.down")
+    }
+
+    /// Asks first; photos using it render without it until it's imported again.
+    func confirmDeleteLUT(_ id: String) {
+        guard let lut = developLUTs.first(where: { $0.id == id }),
+              confirmDestructiveAction(L("删除 LUT“\(lut.name)”？"), L("用了这个 LUT 的照片将不再显示它的效果。"), L("删除"))
+        else { return }
+        developLUTs.removeAll { $0.id == id }
+        LUTLibrary.remove(id: id)
+    }
+
+    /// The photo's LUT (nil: none), as one undoable step.
+    func setDevelopLUT(_ id: String?, for asset: Asset) {
+        var next = developSettings[asset.id] ?? .neutral
+        guard next.lutId != id else { return }
+        next.lutId = id
+        if id != nil, next.lutAmount == 0 { next.lutAmount = 100 }
+        commitDevelop([asset.id: next], undoName: L("LUT"))
+    }
+
     // ----- preset files -----
     /// Adds the presets in `urls` — XMP files from this app, Lightroom or Camera Raw; a name
     /// already taken gets a number. How many were added, how many couldn't be read, and what

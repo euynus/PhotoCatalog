@@ -117,6 +117,22 @@ struct DevelopPanel: View {
                     ForEach(DevelopControl.grading(gradingRegion)) { control in slider(control, asset, settings) }
                     ForEach(DevelopControl.gradingShape) { control in slider(control, asset, settings) }
                 }
+                section(L("LUT"), accessory: {
+                    Menu {
+                        Button("导入 LUT…") { app.chooseAndImportLUTs() }
+                        if !app.developLUTs.isEmpty {
+                            Menu("删除 LUT") {
+                                ForEach(app.developLUTs) { lut in
+                                    Button(lut.name, role: .destructive) { app.confirmDeleteLUT(lut.id) }
+                                }
+                            }
+                        }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("导入或删除 LUT（.cube）")
+                }) { lut(asset, settings) }
                 section(L("细节")) {
                     ForEach(DevelopControl.detail) { control in slider(control, asset, settings) }
                     Text("锐化与降噪在 1:1 视图中看得最准")
@@ -700,6 +716,32 @@ struct DevelopPanel: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    // ---- LUT: a creative look from the library ----
+    @ViewBuilder
+    private func lut(_ asset: Asset, _ settings: DevelopSettings) -> some View {
+        if app.developLUTs.isEmpty && settings.lutId == nil {
+            HStack {
+                Text("导入 .cube 文件，为照片套用电影感等风格").font(.system(size: 11)).foregroundStyle(Theme.text3)
+                Spacer(minLength: 4)
+                Button("导入 LUT…") { app.chooseAndImportLUTs() }.controlSize(.small)
+            }
+        } else {
+            Picker("LUT", selection: Binding(get: { settings.lutId ?? "" }, set: { id in
+                app.setDevelopLUT(id.isEmpty ? nil : id, for: asset)
+            })) {
+                Text("无").tag("")
+                ForEach(app.developLUTs) { lut in Text(lut.name).tag(lut.id) }
+                if let id = settings.lutId, !app.developLUTs.contains(where: { $0.id == id }) {
+                    Text("已删除的 LUT").tag(id)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .controlSize(.small)
+            if settings.lutId != nil { slider(DevelopControl.lutAmount, asset, settings) }
+        }
     }
 
     // ---- transform: perspective, the crop kept inside the corrected photo ----

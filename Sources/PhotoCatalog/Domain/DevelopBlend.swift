@@ -70,6 +70,7 @@ extension DevelopSettings {
         let mixer = ColorMixer.Property.allCases.flatMap { DevelopControl.mixer($0) }
         return DevelopControl.tone + DevelopControl.presence + Array(regions) + DevelopControl.gradingShape + mixer
             + DevelopControl.detail + DevelopControl.lens + DevelopControl.effects + DevelopControl.transform
+            + [DevelopControl.lutAmount]
     }()
 
     private static let localAdjustments: [(WritableKeyPath<LocalAdjustment, Double>, ClosedRange<Double>)] = [

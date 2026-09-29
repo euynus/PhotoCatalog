@@ -847,6 +847,22 @@
 			<string>%lld originals</string>
 		</dict>
 	</dict>
+	<key>已导入 %lld 个 LUT</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Imported %#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld LUT</string>
+			<key>other</key>
+			<string>%lld LUTs</string>
+		</dict>
+	</dict>
 	<key>已导入 %lld 个预设</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

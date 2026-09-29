@@ -90,7 +90,8 @@ enum DevelopRenderer {
             let scale = max(base.extent.width, base.extent.height) / max(fullLongEdge, 1)
             let healed = DevelopRenderer.applySpots(DevelopRenderer.applyLens(base, settings), settings)
             let toned = DevelopRenderer.applyTone(healed, settings)
-            let colored = DevelopRenderer.applyMixer(DevelopRenderer.applyCurve(toned, settings), settings)
+            let colored = DevelopRenderer.applyLUT(
+                DevelopRenderer.applyMixer(DevelopRenderer.applyCurve(toned, settings), settings), settings)
             let present = DevelopRenderer.applyPresence(colored, settings)
             let photo = (url: url, isRaw: isRaw)
             let local = DevelopRenderer.applyOverlay(DevelopRenderer.applyMasks(present, settings, photo: photo), settings,
@@ -338,6 +339,20 @@ enum DevelopRenderer {
         let encoded = input.applyingFilter("CILinearToSRGBToneCurve")
         return DevelopKernels.colorGrading(DevelopKernels.colorMixer(encoded, s.mixer), s.grading)
             .applyingFilter("CISRGBToneCurveToLinear")
+    }
+
+    /// The LUT's look, in sRGB as LUTs are made, mixed in at its amount. A LUT no longer in
+    /// the library leaves the photo as it is.
+    static func applyLUT(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
+        guard let id = s.lutId, s.lutAmount > 0, let cube = LUTLibrary.cube(id: id) else { return input }
+        let looked = input.applyingFilter("CIColorCubeWithColorSpace", parameters: [
+            "inputCubeDimension": cube.size, "inputCubeData": cube.data,
+            "inputColorSpace": CGColorSpace(name: CGColorSpace.sRGB)!,
+        ])
+        guard s.lutAmount < 100 else { return looked.cropped(to: input.extent) }
+        return looked.applyingFilter("CIDissolveTransition", parameters: [
+            kCIInputTargetImageKey: input, "inputTime": 1 - s.lutAmount / 100,
+        ]).cropped(to: input.extent)
     }
 
     private static let curveTables = NSCache<NSString, NSData>()

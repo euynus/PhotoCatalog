@@ -29,6 +29,10 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var mixer = ColorMixer()
     /// Tints for shadows, midtones and highlights (see `ColorGrading`).
     var grading = ColorGrading()
+    /// A creative look from the LUT library (see `LUTLibrary`), after the curves, mixer and
+    /// grading, at `lutAmount` 0…100.
+    var lutId: String?
+    var lutAmount: Double = 100
     /// Detail, applied after tone on top of the camera's own RAW sharpening and noise reduction.
     /// Sharpening amount 0…150 (luminance only), radius 0.5…3 px at full resolution, masking
     /// 0…100 limits it to edges; noise reduction 0…100 for luminance and for color.
@@ -119,6 +123,7 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
         if !curve.isLinear { text += "|c" + curve.fingerprintText }
         if !mixer.isNeutral { text += "|m" + mixer.fingerprintText }
         if !grading.isNeutral { text += "|g" + grading.fingerprintText }
+        if let lutId { text += String(format: "|u%.0f,", lutAmount) + lutId }
         if sharpening != 0 || sharpenRadius != 1 || sharpenMasking != 0 || luminanceNoise != 0 || colorNoise != 0 {
             // like geometry: only when set, so earlier edits keep their cache names
             text += String(format: "|d%.1f,%.2f,%.1f,%.1f,%.1f", sharpening, sharpenRadius, sharpenMasking,
@@ -165,6 +170,8 @@ extension DevelopSettings {
         curve = try container.decodeIfPresent(ToneCurve.self, forKey: .curve) ?? ToneCurve()
         mixer = try container.decodeIfPresent(ColorMixer.self, forKey: .mixer) ?? ColorMixer()
         grading = try container.decodeIfPresent(ColorGrading.self, forKey: .grading) ?? ColorGrading()
+        lutId = try container.decodeIfPresent(String.self, forKey: .lutId)
+        lutAmount = try container.decodeIfPresent(Double.self, forKey: .lutAmount) ?? 100
         sharpening = try container.decodeIfPresent(Double.self, forKey: .sharpening) ?? 0
         sharpenRadius = try container.decodeIfPresent(Double.self, forKey: .sharpenRadius) ?? 1
         sharpenMasking = try container.decodeIfPresent(Double.self, forKey: .sharpenMasking) ?? 0
@@ -556,6 +563,8 @@ struct DevelopControl: Identifiable {
         signed(\.lensVignette, L("镜头暗角")),
         amount(\.lensVignetteMidpoint, L("镜头暗角中点"), max: 100, neutral: 50),
     ]
+
+    static let lutAmount = amount(\.lutAmount, L("LUT 强度"), max: 100, neutral: 100)
 
     static let transform: [DevelopControl] = [
         signed(\.perspectiveVertical, L("垂直")),

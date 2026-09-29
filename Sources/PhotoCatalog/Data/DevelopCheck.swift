@@ -27,6 +27,7 @@ enum DevelopCheck {
         checkPerspective()
         checkRangeMasks()
         MainActor.assumeIsolated {
+            checkLUTs()
             checkEditsAndUndo()
             checkCopyPasteAndPresets()
             checkPresetFiles()
@@ -1170,6 +1171,64 @@ enum DevelopCheck {
         app.view = .grid
         app.importDevelopPresetId = ""
         app.rawDefaultPresetIds = [:]
+    }
+
+    /// LUTs: .cube files parsed (resampled when their size isn't a power of two), applied in
+    /// sRGB at their amount, and kept in the library.
+    @MainActor
+    private static func checkLUTs() {
+        func cube(size: Int, title: String = "Test", _ f: (Double, Double, Double) -> (Double, Double, Double)) -> String {
+            var lines = ["TITLE \"\(title)\"", "# a comment", "LUT_3D_SIZE \(size)"]
+            for b in 0..<size { for g in 0..<size { for r in 0..<size {
+                let v = f(Double(r) / Double(size - 1), Double(g) / Double(size - 1), Double(b) / Double(size - 1))
+                lines.append(String(format: "%.6f %.6f %.6f", v.0, v.1, v.2))
+            } } }
+            return lines.joined(separator: "\n")
+        }
+        let identity = cube(size: 17) { ($0, $1, $2) }
+        assert(LUTLibrary.parse(identity)?.size == 32 && LUTLibrary.title(of: identity) == "Test",
+               "a 17-point LUT is resampled to 32 points and keeps its title")
+        assert(LUTLibrary.parse("LUT_1D_SIZE 2\n0 0 0\n1 1 1") == nil && LUTLibrary.parse("LUT_3D_SIZE 2\n0 0 0") == nil,
+               "1D LUTs and files missing values are refused")
+
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("pc-luts-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let identityURL = folder.appendingPathComponent("identity.cube"), invertURL = folder.appendingPathComponent("Invert.cube")
+        try? identity.write(to: identityURL, atomically: true, encoding: .utf8)
+        try? cube(size: 2, title: "") { (1 - $0, 1 - $1, 1 - $2) }.write(to: invertURL, atomically: true, encoding: .utf8)
+        try? "not a lut".write(to: folder.appendingPathComponent("bad.cube"), atomically: true, encoding: .utf8)
+
+        let app = AppState.selfCheckFixture()
+        let savedLUTs = app.developLUTs
+        let result = app.importLUTs(from: ["identity.cube", "Invert.cube", "bad.cube"].map { folder.appendingPathComponent($0) })
+        let added = Array(app.developLUTs.dropFirst(savedLUTs.count))
+        defer {
+            for lut in added { LUTLibrary.remove(id: lut.id) }
+            app.developLUTs = savedLUTs
+        }
+        assert(result.added == 2 && result.failed == 1 && added.map(\.name) == ["Test", "Invert"],
+               "LUTs are imported under their title or file name, and bad files counted")
+
+        let color = image { _, _ in (0.7, 0.4, 0.2) }
+        let plain = develop(color, .neutral)
+        var s = DevelopSettings()
+        s.lutId = added[0].id
+        let same = pixel(develop(color, s), 32, 32), before = pixel(plain, 32, 32)
+        assert(abs(Int(same.r) - Int(before.r)) < 4 && abs(Int(same.b) - Int(before.b)) < 4, "an identity LUT changes nothing")
+        s.lutId = added[1].id
+        let inverted = pixel(develop(color, s), 32, 32)
+        assert(Int(inverted.b) > Int(inverted.r) + 60, "a LUT's look is applied")
+        s.lutAmount = 50
+        let half = pixel(develop(color, s), 32, 32)
+        assert(half.b > before.b + 20 && half.b < inverted.b - 20, "half the amount goes halfway")
+        var other = s
+        other.lutAmount = 80
+        assert(other.fingerprint != s.fingerprint && DevelopSettings().applying(s, fields: [.lut]).lutId == s.lutId,
+               "the LUT changes the fingerprint and travels as one setting")
+        s.lutId = "gone"
+        let missing = pixel(develop(color, s), 32, 32)
+        assert(abs(Int(missing.r) - Int(before.r)) < 3, "a LUT no longer in the library leaves the photo as it is")
     }
 
     /// Color and luminance range masks, alone or narrowing another mask.

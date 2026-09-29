@@ -785,6 +785,17 @@
 "限定范围" = "Set Range";
 "颜色取样" = "Sample Color";
 "颜色范围" = "Color Range";
+"LUT 强度" = "LUT Amount";
+"删除 LUT" = "Delete LUT";
+"删除 LUT“%@”？" = "Delete the LUT “%@”?";
+"导入 .cube 文件，为照片套用电影感等风格" = "Import .cube files to give photos a film look or other styles";
+"导入 LUT…" = "Import LUT…";
+"导入或删除 LUT（.cube）" = "Import or delete LUTs (.cube)";
+"已删除的 LUT" = "Deleted LUT";
+"已导入 %lld 个 LUT" = "Imported %lld LUTs";
+"所选文件不是可用的 3D LUT" = "The chosen files aren’t 3D LUTs";
+"用了这个 LUT 的照片将不再显示它的效果。" = "Photos using this LUT will no longer show its look.";
+"选择 3D LUT 文件（.cube）" = "Choose 3D LUT files (.cube)";
 "预设删除后无法恢复，已用它修过的照片不受影响。" = "A deleted preset can’t be brought back. Photos already edited with it stay as they are.";
 "导入时修图" = "Develop on Import";
 "修图预设" = "Develop Preset";
