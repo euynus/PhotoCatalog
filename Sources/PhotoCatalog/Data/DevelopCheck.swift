@@ -17,6 +17,7 @@ enum DevelopCheck {
         checkLensCorrections()
         checkEffects()
         checkAutoAdjustments()
+        checkBoostCurve()
         checkHistogram()
         checkGeometryMath()
         checkGeometryRendering()
@@ -694,6 +695,31 @@ enum DevelopCheck {
                "auto tone darkens a bright photo")
         assert(abs(DevelopAuto.tone(url: full, isRaw: false, settings: .neutral)?.exposure ?? 9) < 0.35,
                "auto tone leaves a well-exposed photo nearly alone")
+    }
+
+    /// Exposure drafts move exposure under the RAW engine's tone curve, measured per photo.
+    private static func checkBoostCurve() {
+        // a known curve, y = sqrt(x), sampled from gray pixels across ten stops
+        var flat: [Float] = [], boosted: [Float] = []
+        for i in 0..<4000 {
+            let x = pow(2, -10 + Double(i) / 400)   // 2^-10 … 2^0
+            let y = x.squareRoot()
+            flat += [Float(x), Float(x), Float(x), 1]
+            boosted += [Float(y), Float(y), Float(y), 1]
+        }
+        guard let curve = BoostCurve.measure(boosted: boosted, flat: flat) else {
+            assertionFailure("a curve is measured from enough tones")
+            return
+        }
+        assert(abs(curve.apply(0.25) - 0.5) < 0.02 && abs(curve.invert(0.5) - 0.25) < 0.02,
+               "the measured curve and its inverse follow the photo's tones")
+        let identity = curve.exposureTable(delta: 0).withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+        assert(identity.count == 1024 * 3 && abs(Double(identity[512 * 3]) - 512.0 / 1023) < 0.01,
+               "no exposure change leaves tones where they are")
+        let brighter = curve.exposureTable(delta: 1).withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+        assert(brighter[400 * 3] > identity[400 * 3], "more exposure brightens")
+        assert(BoostCurve.measure(boosted: [0.5, 0.5, 0.5, 1], flat: [0.25, 0.25, 0.25, 1]) == nil,
+               "too few tones measure nothing")
     }
 
     private static func checkHistogram() {

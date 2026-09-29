@@ -30,6 +30,15 @@ enum DevelopRenderer {
         /// half-float bitmap. Re-running CIRAWFilter costs ~0.5–2 s per change, so tone and color
         /// render from this cache; white balance and exposure drags apply as deltas on it.
         private var rawStage: (key: RawStageKey, image: CIImage)?
+        /// The engine's tone curve for this photo, measured in the background from the first
+        /// exposure draft on (guarded by `boostLock`: the measurement finishes on another queue).
+        private let boostLock = NSLock()
+        private var measuredBoost: BoostCurve?
+        private var boostRequested = false
+        private lazy var cameraModel: String = {
+            ((raw?.properties["{TIFF}"] as? [String: Any])?["Model"] as? String) ?? ""
+        }()
+        private static let boostQueue = DispatchQueue(label: "PhotoCatalog.boost-curve", qos: .utility)
         /// Size of the decoded photo before rotation and crop, known after the first render.
         private(set) var sourceSize: CGSize?
         /// Long edge of the original at full resolution: detail radii are given at that size and
@@ -110,7 +119,17 @@ enum DevelopRenderer {
                 guard let stage = rawStage else { return nil }
                 var image = stage.image
                 if stage.key.exposure != key.exposure {
-                    image = image.applyingFilter("CIExposureAdjust", parameters: ["inputEV": key.exposure - stage.key.exposure])
+                    let delta = key.exposure - stage.key.exposure
+                    if let curve = boostCurve() {
+                        // exposure acts before the engine's tone curve, as in the settled render
+                        image = image.applyingFilter("CIColorCurves", parameters: [
+                            "inputCurvesData": curve.exposureTable(delta: delta),
+                            "inputCurvesDomain": CIVector(x: 0, y: 1),
+                            "inputColorSpace": DevelopRenderer.outputColorSpace,
+                        ])
+                    } else {
+                        image = image.applyingFilter("CIExposureAdjust", parameters: ["inputEV": delta])
+                    }
                 }
                 if stage.key.temperature != key.temperature || stage.key.tint != key.tint {
                     // a higher Kelvin setting treats the light as warmer-neutral, so the photo warms
@@ -135,6 +154,26 @@ enum DevelopRenderer {
                 ])
             }
             return image
+        }
+
+        /// The engine's tone curve for exposure drafts. The first call starts measuring this
+        /// photo's in the background — two decodes take seconds, too long to hold up a drag —
+        /// and until it's ready the last one measured for the same camera stands in (or none).
+        private func boostCurve() -> BoostCurve? {
+            let (measured, requested) = boostLock.withLock { (measuredBoost, boostRequested) }
+            if let measured { return measured }
+            let camera = cameraModel
+            if !requested {
+                boostLock.withLock { boostRequested = true }
+                let url = self.url
+                Self.boostQueue.async { [weak self] in
+                    guard let curve = BoostCurve.measure(url: url) else { return }
+                    BoostCurve.remember(curve, camera: camera)
+                    guard let self else { return }
+                    self.boostLock.withLock { self.measuredBoost = curve }
+                }
+            }
+            return BoostCurve.remembered(camera: camera)
         }
 
         private func rawOutput(_ raw: CIRAWFilter, _ key: RawStageKey, draft: Bool) -> CIImage? {
