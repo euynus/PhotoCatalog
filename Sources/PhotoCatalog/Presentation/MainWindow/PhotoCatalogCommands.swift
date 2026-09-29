@@ -147,6 +147,8 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.onboarded)
             Button("比较视图") { perform("视图.比较视图") { app.enterCompare() } }
                 .disabled(app.sheet != nil || !app.onboarded)
+            Button("筛选视图 (N)") { perform("视图.筛选视图") { app.switchView(.survey) } }
+                .disabled(app.sheet != nil || !app.onboarded)
             Button("修图 (D)") { perform("视图.修图") { app.switchView(.develop) } }
                 .disabled(app.sheet != nil || !app.onboarded)
             Button("裁剪与拉直 (R)") { perform("视图.裁剪与拉直") { app.toggleCropTool() } }

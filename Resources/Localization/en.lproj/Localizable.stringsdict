@@ -1173,6 +1173,22 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
+	<key>筛选 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Surveying %#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>设置位置 · %lld 张照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

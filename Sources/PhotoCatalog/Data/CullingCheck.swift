@@ -86,6 +86,25 @@ enum CullingCheck {
         app.undoManager = nil
         app.select(Selection(type: .lib, id: "all", name: "全部照片"))
 
+        // Survey: N lays the selection out in list order; keys act on the active photo alone
+        app.selectedIds = [ids[4], ids[0], ids[2]]
+        app.primaryId = ids[2]
+        _ = app.handleKey("n", hasCommand: false)
+        assert(app.view == .survey && app.surveyIds == [ids[0], ids[2], ids[4]] && app.selectedIds == [ids[2]],
+               "N surveys the selection, the primary photo active")
+        let untouched = app.asset(id: ids[0])?.rating
+        _ = app.handleKey("right", hasCommand: false)
+        _ = app.handleKey("5", hasCommand: false)
+        assert(app.primaryId == ids[4] && app.asset(id: ids[4])?.rating == 5 && app.asset(id: ids[0])?.rating == untouched,
+               "arrows move through the survey and a rating lands on the active photo only")
+        app.removeFromSurvey(ids[4])
+        assert(app.surveyIds == [ids[0], ids[2]] && app.primaryId == ids[2], "taking the active photo out activates the next")
+        _ = app.handleKey("g", hasCommand: false)
+        assert(app.view == .grid && app.selectedIds == [ids[0], ids[2]], "back in the grid, what was left is selected")
+        app.setPrimary(ids[1])
+        _ = app.handleKey("n", hasCommand: false)
+        assert(app.view == .grid, "one photo doesn't make a survey")
+
         app.setPrimary(ids[0])
         app.prepareContextSelection(ids[2])
         assert(app.selectedIds == [ids[2]], "right-clicking outside the selection targets that photo")

@@ -184,6 +184,7 @@ struct ContentColumn: View {
             case .grid: GridView(assetRevision: assetRevision)
             case .loupe: Loupe()
             case .compare: CompareView()
+            case .survey: SurveyView()
             case .develop: DevelopView()
             case .analysis: CaptureAnalysisView()
             }

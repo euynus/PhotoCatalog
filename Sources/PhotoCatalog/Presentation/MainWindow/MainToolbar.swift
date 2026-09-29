@@ -33,13 +33,14 @@ private struct ViewModePicker: View {
             Label("网格 (G)", systemImage: "square.grid.2x2").tag(ViewMode.grid)
             Label("单张 (E)", systemImage: "photo").tag(ViewMode.loupe)
             Label("比较 (C)", systemImage: "rectangle.split.2x1").tag(ViewMode.compare)
+            Label("筛选 (N)", systemImage: "square.grid.3x2").tag(ViewMode.survey)
             Label("修图 (D)", systemImage: "slider.horizontal.3").tag(ViewMode.develop)
             Label("拍摄参数分析 (A)", systemImage: "chart.bar.xaxis").tag(ViewMode.analysis)
         }
         .pickerStyle(.segmented)
         .labelStyle(.iconOnly)
         .disabled(app.isDuplicates)
-        .help("视图：网格 G · 单张 E · 比较 C · 修图 D · 分析 A")
+        .help("视图：网格 G · 单张 E · 比较 C · 筛选 N · 修图 D · 分析 A")
     }
 }
 

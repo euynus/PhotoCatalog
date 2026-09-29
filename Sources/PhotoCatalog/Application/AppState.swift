@@ -598,7 +598,10 @@ final class AppState {
     /// Bumped on every selection change; keys the selection summary.
     @ObservationIgnored private var selectionVersion = 0
     var view: ViewMode = .grid {
-        didSet { if view != .develop { developCropping = false; developPickingWhiteBalance = false } }
+        didSet {
+            if view != .develop { developCropping = false; developPickingWhiteBalance = false }
+            if oldValue == .survey && view != .survey { leaveSurvey() }
+        }
     }
     var thumbSize: CGFloat = 168
     var showInspector = true
@@ -1089,6 +1092,10 @@ final class AppState {
             compareZoom = compareZoom == nil ? .actualSize : nil
         case .develop:
             loupeZoom = loupeZoom == nil ? .actualSize : nil
+        case .survey:
+            guard let primaryId else { return false }
+            openLoupe(primaryId)
+            loupeZoom = .actualSize
         case .analysis:
             return false
         }
@@ -5115,7 +5122,7 @@ final class AppState {
     }
 
     var canChangeVisibleSelection: Bool {
-        onboarded && !isLoadingCatalog && sheet == nil && view != .compare
+        onboarded && !isLoadingCatalog && sheet == nil && view != .compare && view != .survey
     }
 
     @discardableResult
@@ -5170,6 +5177,8 @@ final class AppState {
     }
 
     private func normalizeSelectionToVisibleList() {
+        // Survey keeps its own photos, even one a rating just filtered out of the list
+        guard view != .survey else { return }
         let visibleList = list
         guard !visibleList.isEmpty else {
             selectedIds = []
@@ -6443,7 +6452,69 @@ final class AppState {
         if (v == .analysis || v == .develop) && isDuplicates {
             select(Selection(type: .lib, id: "all", name: L("全部照片")))
         }
-        if v == .compare { enterCompare() } else { view = v }
+        switch v {
+        case .compare: enterCompare()
+        case .survey: enterSurvey()
+        default: view = v
+        }
+    }
+
+    // ---------- survey (N) ----------
+    /// Photos laid out side by side in Survey, in list order. The primary one is active and is
+    /// the whole selection, so rating and flag keys act on it alone, as in Lightroom.
+    var surveyIds: [String] = []
+    static let surveyLimit = 30
+
+    func enterSurvey() {
+        let positions = listPositions(of: selectedIds)
+        var ids = selectedIds.compactMap { id in positions[id].map { (id, $0) } }.sorted { $0.1 < $1.1 }.map(\.0)
+        guard ids.count >= 2 else {
+            push("选择两张或更多照片后按 N 进入筛选视图", "info")
+            return
+        }
+        if ids.count > Self.surveyLimit {
+            ids = Array(ids.prefix(Self.surveyLimit))
+            push("筛选视图一次最多显示 \(String(Self.surveyLimit)) 张", "info")
+        }
+        let active = primaryId.flatMap { ids.contains($0) ? $0 : nil } ?? ids[0]
+        surveyIds = ids
+        primaryId = active
+        selectedIds = [active]
+        view = .survey
+    }
+
+    func activateInSurvey(_ id: String) {
+        guard surveyIds.contains(id) else { return }
+        primaryId = id
+        selectedIds = [id]
+    }
+
+    /// Takes a photo out of the survey; the next one becomes active, and the last one leaves.
+    func removeFromSurvey(_ id: String) {
+        guard let index = surveyIds.firstIndex(of: id) else { return }
+        surveyIds.remove(at: index)
+        guard !surveyIds.isEmpty else {
+            view = .grid
+            return
+        }
+        if primaryId == id { activateInSurvey(surveyIds[min(index, surveyIds.count - 1)]) }
+    }
+
+    private func moveInSurvey(_ key: String) {
+        guard let current = primaryId.flatMap({ surveyIds.firstIndex(of: $0) }) else { return }
+        let next = key == "left" || key == "up" ? current - 1 : current + 1
+        guard surveyIds.indices.contains(next) else { return }
+        activateInSurvey(surveyIds[next])
+    }
+
+    /// Back in the grid, the photos still in the survey are the selection.
+    private func leaveSurvey() {
+        let remaining = surveyIds.filter { assetIndex[$0] != nil }
+        surveyIds = []
+        if view == .grid, !remaining.isEmpty {
+            selectedIds = Set(remaining)
+            if primaryId.map({ !remaining.contains($0) }) ?? true { primaryId = remaining.first }
+        }
     }
 
     // ---------- onboarding ----------
@@ -6623,6 +6694,9 @@ final class AppState {
             view = (view == .loupe) ? .grid : .loupe
         case "c":
             enterCompare()
+        case "n":
+            guard view != .survey else { return true }
+            switchView(.survey)
         case "z":
             guard toggleZoom() else { return false }
         case "d":
@@ -6646,6 +6720,7 @@ final class AppState {
             toggleStackForPrimary()
         case "up", "down", "left", "right":
             if view == .compare || view == .analysis { return false }
+            if view == .survey { moveInSurvey(key); return true }
             moveSelection(key)
         case "delete", "backspace":
             confirmDeleteSelected()

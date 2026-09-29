@@ -348,6 +348,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>用于 %lld 张照片，下级关键词一并更新。输入已有的关键词即合并。</string>
 	</dict>
+	<key>筛选 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>筛选 %lld 张</string>
+	</dict>
 	<key>设置位置 · %lld 张照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

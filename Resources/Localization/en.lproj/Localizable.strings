@@ -1,6 +1,8 @@
 /* English UI text. Keys are the Chinese source strings (see Domain/Localization.swift). */
 
 /* Application/AppState.swift */
+"选择两张或更多照片后按 N 进入筛选视图" = "Select two or more photos, then press N to survey them";
+"筛选视图一次最多显示 %@ 张" = "Survey shows up to %@ photos at a time";
 "快捷收藏" = "Quick Collection";
 "加入快捷收藏" = "Add to Quick Collection";
 "移出快捷收藏" = "Remove from Quick Collection";
@@ -723,7 +725,8 @@
 "筛选（%lld 项）" = "Filter (%lld)";
 "网格 (G)" = "Grid (G)";
 "视图" = "View";
-"视图：网格 G · 单张 E · 比较 C · 修图 D · 分析 A" = "View: Grid G · Loupe E · Compare C · Develop D · Analysis A";
+"视图：网格 G · 单张 E · 比较 C · 筛选 N · 修图 D · 分析 A" = "View: Grid G · Loupe E · Compare C · Survey N · Develop D · Analysis A";
+"筛选 (N)" = "Survey (N)";
 "设置…" = "Settings…";
 "重新授权源…" = "Authorize Source Again…";
 "降低源优先级" = "Lower Source Priority";
@@ -738,6 +741,7 @@
 "松开以导入文件夹" = "Drop to import the folder";
 
 /* Presentation/MainWindow/PhotoCatalogCommands.swift */
+"筛选视图 (N)" = "Survey (N)";
 "加入或移出快捷收藏" = "Add to or Remove from Quick Collection";
 "从目录库移除…" = "Remove from Catalog…";
 "全选当前列表" = "Select All in View";
@@ -1143,6 +1147,11 @@
 "需授权" = "Needs access";
 "项目" = "Projects";
 
+
+/* Presentation/Survey/SurveyView.swift */
+"筛选 %lld 张" = "Surveying %lld photos";
+"← → 切换 · 1–5 评分 · P / X 旗标 · 悬停点 × 移出 · G 返回网格" = "← → switch · 1–5 rate · P / X flag · hover and click × to remove · G back to the grid";
+"移出筛选" = "Remove from Survey";
 /* Theme/Theme.swift */
 "橙" = "Orange";
 "紫" = "Purple";

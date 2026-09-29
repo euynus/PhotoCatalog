@@ -461,7 +461,7 @@ struct PinnedSidebarItem: Identifiable, Equatable, Codable, Sendable {
     var id: String { "\(type.rawValue):\(selectionId)" }
 }
 
-enum ViewMode: String { case grid, loupe, compare, develop, analysis }
+enum ViewMode: String { case grid, loupe, compare, survey, develop, analysis }
 
 /// Workspace appearance preference; the photo canvas is dark in every mode.
 enum AppAppearance: String, CaseIterable, Sendable {
