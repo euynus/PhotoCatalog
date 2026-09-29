@@ -48,7 +48,7 @@ private struct DevelopCanvas: View {
         let spotting = app.developSpotting && !app.developShowsOriginal
         let visualize = spotting && app.developVisualizeSpots
         let dragging = app.developDraft?.assetId == asset.id
-        let fullResolution = app.loupeZoom != nil && !dragging && !cropping
+        let fullResolution = app.loupeZoom != nil && !dragging && !cropping && !app.developMasking && !app.developSpotting
         // the crop tool draws the crop itself, so moving it never re-renders
         var rendered = settings
         if cropping { rendered.crop = nil }
@@ -59,10 +59,14 @@ private struct DevelopCanvas: View {
                         CropEditor(asset: asset, image: engine.wholeFrameImage(for: asset.id), settings: settings)
                     } else if spotting {
                         SpotEditor(asset: asset, image: engine.finishedImage(for: asset.id), settings: settings,
+                                   frameSettings: engine.shown(for: asset.id)?.settings,
                                    sourceSize: app.developSourceSize(for: asset))
+                            .id(asset.id)   // a new photo starts with no drag in progress
                     } else if masking {
                         MaskEditor(asset: asset, image: engine.finishedImage(for: asset.id), settings: settings,
+                                   frameSettings: engine.shown(for: asset.id)?.settings,
                                    sourceSize: app.developSourceSize(for: asset))
+                            .id(asset.id)
                     } else {
                         ZoomableImageView(image: engine.image(for: asset.id), pixelSize: pixelSize,
                                           zoom: app.loupeZoom, onZoomChange: { app.loupeZoom = $0 },
@@ -150,6 +154,8 @@ final class DevelopPreviewEngine: ObservableObject {
         let image: CGImage
         let fullResolution: Bool
         let wholeFrame: Bool
+        /// What the render was made with: its crop and turns place masks and spots on it.
+        let settings: DevelopSettings
     }
 
     @Published private var shown: Shown?
@@ -202,7 +208,8 @@ final class DevelopPreviewEngine: ObservableObject {
                       self.shown?.assetId != assetId || result.request.token >= (self.shown?.token ?? 0) else { return }
                 self.shown = Shown(assetId: assetId, token: result.request.token, image: image,
                                    fullResolution: result.request.maxPixel == nil,
-                                   wholeFrame: result.request.wholeFrame)
+                                   wholeFrame: result.request.wholeFrame,
+                                   settings: result.request.settings)
             }
         }
     }

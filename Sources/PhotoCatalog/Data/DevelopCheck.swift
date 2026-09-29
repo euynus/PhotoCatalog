@@ -1049,6 +1049,10 @@ enum DevelopCheck {
         app.developMaskCreation = .linear
         _ = app.handleKey("escape", hasCommand: false)
         assert(app.developMasking && app.developMaskCreation == nil, "Esc first disarms a gradient")
+        app.developShowsOriginal = true
+        _ = app.handleKey("delete", hasCommand: false)
+        assert(app.developSettings["x"]?.masks.count == 1, "with the before view up, Delete removes nothing it doesn't show")
+        app.developShowsOriginal = false
         undo.beginUndoGrouping()
         _ = app.handleKey("delete", hasCommand: false)
         undo.endUndoGrouping()
@@ -1101,6 +1105,23 @@ enum DevelopCheck {
         assert(!app.developSpotting, "the crop tool closes the spot tool")
         app.view = .grid
 
+        // background work (a spot's source found, auto tone measured) saves its change and keeps
+        // a drag in progress, adding the change to it; a commit for another photo leaves it alone
+        var dragging = DevelopSettings()
+        dragging.exposure = 1
+        app.updateDevelopDraft(dragging, for: "d")
+        app.commitDevelop(["other": DevelopSettings()], undoName: "other")
+        assert(app.developDraft?.assetId == "d", "saving another photo keeps the drag")
+        undo.beginUndoGrouping()
+        app.commitDevelopChange(["d"], undoName: "spot") { _, settings in
+            settings.spots.append(SpotRemoval(target: CGPoint(x: 0.4, y: 0.4), source: CGPoint(x: 0.5, y: 0.4), radius: 0.01))
+        }
+        undo.endUndoGrouping()
+        assert(app.developSettings["d"]?.spots.count == 1 && app.developSettings["d"]?.exposure == 0
+               && app.developDraft?.settings.spots.count == 1 && app.developDraft?.settings.exposure == 1,
+               "a background change is saved and reaches the drag in progress")
+        app.developDraft = nil
+
         // history: each edit adds a step, undo takes it away, redo puts it back; returning to a
         // step is itself a step
         assert(app.developHistory(for: "h").isEmpty, "a new photo has no history")
@@ -1122,6 +1143,15 @@ enum DevelopCheck {
         undo.endUndoGrouping()
         assert(app.developSettings["h"] == first && app.developHistory(for: "h").count == 3,
                "returning to a step restores it as a new step")
+        undo.beginUndoGrouping()
+        app.applyDevelopHistoryStep(app.developHistory(for: "h")[1], to: "h")
+        undo.endUndoGrouping()
+        undo.beginUndoGrouping()
+        app.applyDevelopHistoryStep(app.developHistory(for: "h")[2], to: "h")
+        undo.endUndoGrouping()
+        let names = app.developHistory(for: "h").map(\.name)
+        assert(names.last == L("历史记录：\("调整曝光度")") && !names.contains { $0.hasPrefix(L("历史记录：") + L("历史记录：")) },
+               "returning to a history step doesn't nest its name")
 
         // snapshots keep a state to come back to
         app.createDevelopSnapshot(for: "h")

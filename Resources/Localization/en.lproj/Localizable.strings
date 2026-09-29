@@ -705,6 +705,9 @@
 "只显示最近的步骤" = "Show recent steps only";
 "显示全部 %lld 步" = "Show all %lld steps";
 "历史记录：原照设置" = "History: As Shot";
+"历史记录：" = "History: ";
+"清除历史记录？" = "Clear History?";
+"这张照片的修图步骤将被清除，当前设置和快照保持不变。" = "This photo's editing steps will be cleared. Its current settings and snapshots stay as they are.";
 
 /* Presentation/Develop/DevelopView.swift */
 "点选照片中应为灰色或白色的地方（Esc 取消）" = "Click a spot in the photo that should be gray or white (Esc to cancel)";

@@ -12,6 +12,9 @@ struct SpotEditor: View {
     let asset: Asset
     let image: CGImage?
     let settings: DevelopSettings
+    /// The settings the photo on screen was rendered with: its crop and turns place the handles
+    /// until a render of the current settings lands.
+    var frameSettings: DevelopSettings?
     let sourceSize: CGSize
 
     @State private var drag: SpotDrag?
@@ -25,7 +28,7 @@ struct SpotEditor: View {
         GeometryReader { proxy in
             if let image {
                 let display = CropEditor.fitted(CGSize(width: image.width, height: image.height), in: proxy.size)
-                let mapper = MaskMapper(display: display, settings: settings, sourceSize: sourceSize)
+                let mapper = MaskMapper(display: display, settings: frameSettings ?? settings, sourceSize: sourceSize)
                 ZStack(alignment: .topLeading) {
                     Image(decorative: image, scale: 1)
                         .resizable()
@@ -52,6 +55,9 @@ struct SpotEditor: View {
                 .clipped()
                 .contentShape(Rectangle())
                 .gesture(gesture(mapper))
+                .onDisappear {   // the tool closed mid-drag
+                    if app.developDraft?.assetId == asset.id { app.developDraft = nil }
+                }
                 .onContinuousHover { phase in
                     switch phase {
                     case .active(let location):
@@ -84,7 +90,11 @@ struct SpotEditor: View {
         if let spot = settings.spots.first(where: { $0.id == app.developSelectedSpotId }) {
             let center = mapper.screen(spot.target), radius = mapper.screenLength(ofSourceLength: spot.radius)
             let d = distance(point, center)
-            if abs(d - radius) <= Self.rimTolerance { return .resize(spot.id) }
+            // the inside moves the spot; only a thin band at the rim resizes it, so a small spot
+            // can still be grabbed and moved
+            let rim = min(Self.rimTolerance, radius * 0.35)
+            if d < radius - rim { return .moveTarget(spot.id) }
+            if abs(d - radius) <= max(rim, 3) { return .resize(spot.id) }
             if d < radius { return .moveTarget(spot.id) }
             let source = mapper.screen(spot.source)
             if distance(point, source) < radius { return .moveSource(spot.id) }
@@ -108,6 +118,7 @@ struct SpotEditor: View {
     private func gesture(_ mapper: MaskMapper) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .local)
             .onChanged { value in
+                hover = value.location   // hover events stop while the button is down
                 if drag == nil {
                     let saved = app.developSettings[asset.id] ?? .neutral
                     let hit = target(at: value.startLocation, mapper)
@@ -149,14 +160,19 @@ struct SpotEditor: View {
                 let moved = hypot(value.translation.width, value.translation.height) >= 2
                 switch drag.target {
                 case nil:
-                    // a new spot: the brush's size, or as big as the drag
+                    // a new spot, on the photo only: the brush's size, or as big as the drag
+                    guard mapper.display.contains(value.startLocation) else { return }
                     let radius = moved ? max(0.002, mapper.sourceLength(from: value.startLocation, to: value.location))
                                        : app.developSpotBrush.radius
                     app.addSpot(at: mapper.source(value.startLocation), radius: radius, to: asset.id)
                 case .select(let id) where !moved:
                     app.developSelectedSpotId = id
                 default:
-                    guard moved, let draft = app.developDraft, draft.assetId == asset.id else { return }
+                    // moved back to where it started: nothing to save, and no preview left behind
+                    guard moved, let draft = app.developDraft, draft.assetId == asset.id else {
+                        if app.developDraft?.assetId == asset.id { app.developDraft = nil }
+                        return
+                    }
                     app.commitDevelop([asset.id: draft.settings], undoName: L("编辑污点"))
                 }
             }

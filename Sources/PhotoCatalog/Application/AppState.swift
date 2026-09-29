@@ -656,7 +656,11 @@ final class AppState {
 
     /// Crop & straighten tool (R). The photo is shown whole with the crop drawn over it.
     var developCropping = false {
-        didSet { if developCropping { loupeZoom = nil; developMasking = false; developSpotting = false } }
+        didSet {
+            if developCropping {
+                loupeZoom = nil; developMasking = false; developSpotting = false; developPickingWhiteBalance = false
+            }
+        }
     }
 
     /// Masking tool (M / ⇧M): the photo is shown whole with the selected mask's handles.
@@ -709,10 +713,8 @@ final class AppState {
             spot.mode = brush.mode
             spot.feather = brush.feather
             spot.opacity = brush.opacity
-            var next = self.developSettings[assetId] ?? .neutral
-            next.spots.append(spot)
             self.developSelectedSpotId = spot.id
-            self.commitDevelop([assetId: next], undoName: L("污点去除"))
+            self.commitDevelopChange([assetId], undoName: L("污点去除")) { _, settings in settings.spots.append(spot) }
         }
     }
 
@@ -760,7 +762,11 @@ final class AppState {
             var mask = LocalAdjustment(kind: kind)
             mask.center = found.centroid
             mask.exposure = kind == .sky ? -0.3 : 0.3   // a visible start, as with the gradients
-            self.addMask(mask, to: id)
+            self.developMaskCreation = nil
+            self.developSelectedMaskId = mask.id
+            self.commitDevelopChange([id], undoName: L("添加\(mask.kind.title)")) { _, settings in
+                settings.masks.append(mask)
+            }
         }
     }
 
@@ -964,7 +970,12 @@ final class AppState {
     }
 
     /// Develop's white-balance eyedropper (W): the next click on the photo picks a neutral point.
-    var developPickingWhiteBalance = false
+    var developPickingWhiteBalance = false {
+        didSet {
+            // the eyedropper clicks on the photo itself: the other tools make way
+            if developPickingWhiteBalance { developCropping = false; developMasking = false; developSpotting = false }
+        }
+    }
 
     /// Sets temperature and tint so the photo renders gray at `point` (fractions of the finished
     /// photo, top-left origin).
@@ -982,10 +993,10 @@ final class AppState {
                 self.push("这里太暗或太亮，无法判断中性色，请点选灰色或白色的区域", "info")
                 return
             }
-            var next = self.developSettings[id] ?? .neutral
-            next.temperature = balance.temperature
-            next.tint = balance.tint
-            self.commitDevelop([id: next], undoName: L("白平衡吸管"))
+            self.commitDevelopChange([id], undoName: L("白平衡吸管")) { _, settings in
+                settings.temperature = balance.temperature
+                settings.tint = balance.tint
+            }
         }
     }
 
@@ -1011,19 +1022,17 @@ final class AppState {
                 return
             }
             // take only the tone from the measurement: edits made meanwhile stay
-            var changes: [String: DevelopSettings] = [:]
-            for (id, auto) in toned {
-                var next = self.developSettings[id] ?? .neutral
-                next.exposure = auto.exposure
-                next.contrast = auto.contrast
-                next.highlights = auto.highlights
-                next.shadows = auto.shadows
-                next.whites = auto.whites
-                next.blacks = auto.blacks
-                changes[id] = next
+            let measured = Dictionary(uniqueKeysWithValues: toned)
+            self.commitDevelopChange(Array(measured.keys), undoName: L("自动色调")) { id, settings in
+                guard let auto = measured[id] else { return }
+                settings.exposure = auto.exposure
+                settings.contrast = auto.contrast
+                settings.highlights = auto.highlights
+                settings.shadows = auto.shadows
+                settings.whites = auto.whites
+                settings.blacks = auto.blacks
             }
-            self.commitDevelop(changes, undoName: L("自动色调"))
-            if changes.count > 1 { self.push("已自动调整 \(changes.count) 张照片的色调", "wand") }
+            if measured.count > 1 { self.push("已自动调整 \(measured.count) 张照片的色调", "wand") }
         }
     }
 
@@ -1041,13 +1050,14 @@ final class AppState {
                 self.push("未找到可用于拉直的地平线", "info")
                 return
             }
-            var next = self.developSettings[id] ?? .neutral
-            next.straighten = (angle * 10).rounded() / 10
-            if let asset = self.assetIndex[id].map({ self.assets[$0] }) {
-                let frame = self.developFrame(for: asset, settings: next)
-                next.crop = next.crop.map { DevelopGeometry.fit($0, angle: next.straighten, frame: frame) }
+            let asset = self.assetIndex[id].map { self.assets[$0] }
+            self.commitDevelopChange([id], undoName: L("自动拉直")) { _, settings in
+                settings.straighten = (angle * 10).rounded() / 10
+                if let asset {
+                    let frame = self.developFrame(for: asset, settings: settings)
+                    settings.crop = settings.crop.map { DevelopGeometry.fit($0, angle: settings.straighten, frame: frame) }
+                }
             }
-            self.commitDevelop([id: next], undoName: L("自动拉直"))
         }
     }
 
@@ -1217,7 +1227,8 @@ final class AppState {
     /// Each changed photo gets a history step named `undoName`; undoing takes it away again.
     func commitDevelop(_ settings: [String: DevelopSettings], undoName: String,
                        history change: DevelopHistoryChange = .append) {
-        developDraft = nil
+        // a drag on another photo carries on
+        if let draft = developDraft, settings[draft.assetId] != nil { developDraft = nil }
         let before = Dictionary(uniqueKeysWithValues: settings.keys.map { ($0, developSettings[$0] ?? .neutral) })
         guard before != settings else { return }
         do {
@@ -1235,6 +1246,25 @@ final class AppState {
             }
         }
         undoManager.setActionName(undoName)
+    }
+
+    /// Saves a change background work made (a spot's source found, a subject masked, auto tone
+    /// measured) to each photo's saved settings — and, when the user is mid-drag on one of
+    /// them, to the drag as well, so neither the change nor the drag is lost on release.
+    func commitDevelopChange(_ ids: [String], undoName: String, _ change: (String, inout DevelopSettings) -> Void) {
+        var next: [String: DevelopSettings] = [:]
+        for id in ids {
+            var settings = developSettings[id] ?? .neutral
+            change(id, &settings)
+            next[id] = settings
+        }
+        var draft = developDraft
+        if var dragging = draft, next[dragging.assetId] != nil {
+            change(dragging.assetId, &dragging.settings)
+            draft = dragging
+        }
+        commitDevelop(next, undoName: undoName)
+        developDraft = draft
     }
 
     // ----- develop history and snapshots, loaded per photo when first shown -----
@@ -1266,6 +1296,8 @@ final class AppState {
         case .append:
             let stored = (try? store?.appendDevelopHistory(changed.mapValues { (name: name, settings: $0) })) ?? [:]
             for (id, value) in changed where developHistoryCache[id] != nil {
+                // with a catalog, only what was stored is listed, so undo removes the same step from both
+                if store != nil, stored[id] == nil { continue }
                 let seq = stored[id]?.seq ?? (developHistoryCache[id]?.last?.seq ?? 0) + 1
                 developHistoryCache[id]?.append(stored[id] ?? DevelopHistoryStep(seq: seq, name: name, date: .now,
                                                                                  settings: value))
@@ -1284,7 +1316,17 @@ final class AppState {
 
     /// Returns the photo to a history step's settings, as a new step (undoable).
     func applyDevelopHistoryStep(_ step: DevelopHistoryStep, to id: String) {
-        commitDevelop([id: step.settings], undoName: L("历史记录：\(step.name)"))
+        // returning to "History: X" names the new step after X, not History: History: X
+        let prefix = L("历史记录：")
+        let name = step.name.hasPrefix(prefix) ? String(step.name.dropFirst(prefix.count)) : step.name
+        commitDevelop([id: step.settings], undoName: L("历史记录：\(name)"))
+    }
+
+    /// Asks first: the history can't be brought back.
+    func confirmClearDevelopHistory(for id: String) {
+        guard confirmDestructiveAction(L("清除历史记录？"), L("这张照片的修图步骤将被清除，当前设置和快照保持不变。"),
+                                       L("清除")) else { return }
+        clearDevelopHistory(for: id)
     }
 
     func clearDevelopHistory(for id: String) {
@@ -1358,6 +1400,8 @@ final class AppState {
         case .compare:
             compareZoom = compareZoom == nil ? .actualSize : nil
         case .develop:
+            // the crop, mask and spot tools show the whole photo; zoom would only slow them down
+            guard !developCropping, !developMasking, !developSpotting else { return true }
             loupeZoom = loupeZoom == nil ? .actualSize : nil
         case .survey:
             guard let primaryId else { return false }
@@ -7487,8 +7531,10 @@ final class AppState {
         case "escape":
             guard dismissTransientUI() else { return false }
         case "return":
-            if view == .develop, developCropping {
+            if view == .develop, developCropping || developMasking || developSpotting {
                 developCropping = false
+                developMasking = false
+                developSpotting = false
                 return true
             }
             guard let primaryId else { return false }
@@ -7553,12 +7599,13 @@ final class AppState {
             moveSelection(key)
         case "delete", "backspace":
             // in the spot and masking tools, Delete removes the selected spot or mask, never the photo
+            // (with the before view up, the tool isn't showing what it would delete: nothing happens)
             if view == .develop, developSpotting {
-                if let id = developSelectedSpotId, let primaryId { deleteSpot(id, from: primaryId) }
+                if !developShowsOriginal, let id = developSelectedSpotId, let primaryId { deleteSpot(id, from: primaryId) }
                 return true
             }
             if view == .develop, developMasking {
-                if let id = developSelectedMaskId, let primaryId { deleteMask(id, from: primaryId) }
+                if !developShowsOriginal, let id = developSelectedMaskId, let primaryId { deleteMask(id, from: primaryId) }
                 return true
             }
             confirmDeleteSelected()

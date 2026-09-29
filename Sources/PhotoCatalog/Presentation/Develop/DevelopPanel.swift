@@ -10,6 +10,8 @@ struct DevelopPanel: View {
     @State private var gradingRegion: ColorGrading.Region = .shadows
     @State private var renamingSnapshot: String?
     @State private var snapshotName = ""
+    /// Typing a snapshot name must reach the field, not the photo shortcuts.
+    @FocusState private var snapshotNameFocused: Bool
     @State private var showsFullHistory = false
 
     var body: some View {
@@ -105,7 +107,7 @@ struct DevelopPanel: View {
                         .accessibilityLabel("新建快照")
                 }) { snapshots(asset) }
                 section(L("历史记录"), accessory: {
-                    Button("清除") { app.clearDevelopHistory(for: asset.id) }
+                    Button("清除") { app.confirmClearDevelopHistory(for: asset.id) }
                         .controlSize(.small)
                         .disabled(app.developHistory(for: asset.id).isEmpty)
                         .help("清除这张照片的历史记录（不改变当前设置）")
@@ -302,6 +304,8 @@ struct DevelopPanel: View {
                 TextField("快照名称", text: $snapshotName)
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.small)
+                    .focused($snapshotNameFocused)
+                    .onAppear { snapshotNameFocused = true }
                     .onSubmit {
                         app.renameDevelopSnapshot(snapshot.id, to: snapshotName, for: asset.id)
                         renamingSnapshot = nil
@@ -491,7 +495,8 @@ struct DevelopPanel: View {
                 .controlSize(.small)
                 .help("用红色标出所选蒙版覆盖的范围 (O)")
         }
-        if let index = settings.masks.firstIndex(where: { $0.id == app.developSelectedMaskId }) {
+        // the selected mask's controls belong to the open tool, where Delete removes the mask
+        if app.developMasking, let index = settings.masks.firstIndex(where: { $0.id == app.developSelectedMaskId }) {
             let mask = settings.masks[index]
             Toggle("反相", isOn: Binding(get: { mask.inverted }, set: { inverted in
                 var next = app.developSettings[asset.id] ?? .neutral

@@ -14,6 +14,9 @@ struct MaskEditor: View {
     /// The finished render, as the photo is shown outside the tool.
     let image: CGImage?
     let settings: DevelopSettings
+    /// The settings the photo on screen was rendered with: its crop and turns place the handles
+    /// until a render of the current settings lands.
+    var frameSettings: DevelopSettings?
     /// The decoded photo's size before quarter turns — the space masks are stored in.
     let sourceSize: CGSize
 
@@ -26,7 +29,7 @@ struct MaskEditor: View {
         GeometryReader { proxy in
             if let image {
                 let display = CropEditor.fitted(CGSize(width: image.width, height: image.height), in: proxy.size)
-                let mapper = MaskMapper(display: display, settings: settings, sourceSize: sourceSize)
+                let mapper = MaskMapper(display: display, settings: frameSettings ?? settings, sourceSize: sourceSize)
                 ZStack(alignment: .topLeading) {
                     Image(decorative: image, scale: 1)
                         .resizable()
@@ -40,6 +43,7 @@ struct MaskEditor: View {
                 .clipped()
                 .contentShape(Rectangle())
                 .gesture(gesture(mapper))
+                .onDisappear { discardDraft() }   // the tool closed mid-drag
                 .onContinuousHover { phase in
                     switch phase {
                     case .active(let location):
@@ -152,6 +156,7 @@ struct MaskEditor: View {
     private func gesture(_ mapper: MaskMapper) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .local)
             .onChanged { value in
+                hover = value.location   // hover events stop while the button is down
                 if drag == nil {
                     guard let target = target(at: value.startLocation, mapper) else { return }
                     // the saved edit, not this view's copy, which can trail a commit made just before
@@ -181,6 +186,11 @@ struct MaskEditor: View {
                 defer { drag = nil }
                 guard let drag else { return }
                 let moved = hypot(value.translation.width, value.translation.height) >= 2
+                // Esc (or leaving the tool) while drawing takes the drawing back
+                if case .create(let kind) = drag.target, app.developMaskCreation != kind {
+                    discardDraft()
+                    return
+                }
                 if let painted = drag.painted {
                     // a click paints a single dab
                     if case .create = drag.target {
@@ -199,7 +209,8 @@ struct MaskEditor: View {
                         : placed(kind, id: drag.newId, at: value.startLocation, mapper)
                     if let mask { app.addMask(mask, to: asset.id) }
                 case .handle:
-                    guard moved, let draft = app.developDraft, draft.assetId == asset.id else { return }
+                    // dragged back to where it started: nothing to save, and no preview left behind
+                    guard moved, let draft = app.developDraft, draft.assetId == asset.id else { discardDraft(); return }
                     app.commitDevelop([asset.id: draft.settings], undoName: L("编辑蒙版"))
                 case .select(let id):
                     app.developSelectedMaskId = id
@@ -207,6 +218,11 @@ struct MaskEditor: View {
                     break
                 }
             }
+    }
+
+    /// Drops this photo's unsaved preview, left by a drag that ends without saving.
+    private func discardDraft() {
+        if app.developDraft?.assetId == asset.id { app.developDraft = nil }
     }
 
     /// Starts a stroke when the drag paints: on a new brush mask, or on the selected one.
@@ -229,7 +245,9 @@ struct MaskEditor: View {
         stroke.radius = brush.radius
         stroke.feather = brush.feather
         stroke.density = brush.density
-        stroke.erase = brush.erase != NSEvent.modifierFlags.contains(.option)
+        // a new brush mask starts by painting: an erase stroke would leave it empty
+        let creating: Bool = if case .create = drag.target { true } else { false }
+        stroke.erase = !creating && brush.erase != NSEvent.modifierFlags.contains(.option)
         stroke.append(mapper.source(point))
         mask.strokes.append(stroke)
         self.drag?.painted = mask
