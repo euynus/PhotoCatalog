@@ -671,6 +671,22 @@
 			<string>%lld XMP sidecars</string>
 		</dict>
 	</dict>
+	<key>已创建 %lld 个虚拟副本</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Created %#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld virtual copy</string>
+			<key>other</key>
+			<string>%lld virtual copies</string>
+		</dict>
+	</dict>
 	<key>已加入 %lld 张照片到「%@」</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

@@ -198,6 +198,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已写入 %lld 个 XMP sidecar</string>
 	</dict>
+	<key>已创建 %lld 个虚拟副本</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已创建 %lld 个虚拟副本</string>
+	</dict>
 	<key>已加入 %lld 张照片到「%@」</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

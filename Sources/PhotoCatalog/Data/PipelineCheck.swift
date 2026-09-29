@@ -500,6 +500,82 @@ enum PipelineCheck {
             return listedAsAlbum ? nil : reopened.quickCollection
         }
         check(reopenedQuick == Set(quickIds), "the quick collection survives reopening, apart from albums")
+        // virtual copies: another entry for the same original, with its own settings and metadata,
+        // never taken for a duplicate, a RAW+JPEG pair or the file's owner
+        let virtualCopies: [String: Bool] = MainActor.assumeIsolated {
+            var results: [String: Bool] = [:]
+            // a scratch catalog and file of its own: renaming and removing must not touch the others
+            let scratch = fm.temporaryDirectory.appendingPathComponent("pc-virtual-\(UUID().uuidString)")
+            defer { try? fm.removeItem(at: scratch) }
+            try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+            guard let sourcePath = reloaded[3].localPath,
+                  let copyStore = try? CatalogStore(packageURL: scratch.appendingPathComponent("Copies.photolibrary"))
+            else { return ["scratch catalog": false] }
+            let scratchFile = scratch.appendingPathComponent(URL(fileURLWithPath: sourcePath).lastPathComponent)
+            try? fm.copyItem(atPath: sourcePath, toPath: scratchFile.path)
+            var master = reloaded[3]
+            master.localPath = scratchFile.path
+            try? copyStore.upsert([master])
+            let store = copyStore
+            let undo = UndoManager()
+            undo.groupsByEvent = false
+            let app = AppState.selfCheckFixture(store: store)
+            app.runsBackgroundMaintenance = false
+            app.undoManager = undo
+            app.applyLoadedCatalogForScaleCheck([master], from: store)
+            var edit = DevelopSettings()
+            edit.exposure = 0.6
+            undo.beginUndoGrouping(); app.commitDevelop([master.id: edit], undoName: "edit"); undo.endUndoGrouping()
+            app.selectedIds = [master.id]
+            app.setPrimary(master.id)
+            undo.beginUndoGrouping(); app.createVirtualCopies(); undo.endUndoGrouping()
+            guard let copy = app.assets.first(where: { $0.masterId == master.id && !$0.deleted }) else { return ["created": false] }
+            results["created"] = copy.localPath == master.localPath && copy.copyName != nil && copy.id != master.id
+                && app.developSettings[copy.id] == edit && app.selectedIds == [copy.id] && !copy.isDemo
+            var blackAndWhite = edit
+            blackAndWhite.saturation = -100
+            undo.beginUndoGrouping(); app.commitDevelop([copy.id: blackAndWhite], undoName: "bw"); undo.endUndoGrouping()
+            undo.beginUndoGrouping(); _ = app.applyRatingShortcut(4); undo.endUndoGrouping()
+            let reopened = AppState.selfCheckFixture(store: store)
+            reopened.runsBackgroundMaintenance = false
+            reopened.applyLoadedCatalogForScaleCheck((try? store.loadAssets()) ?? [], from: store)
+            let reopenedCopy = reopened.assets.first { $0.id == copy.id }
+            let reopenedMaster = reopened.assets.first { $0.id == master.id }
+            results["independent"] = reopenedCopy?.masterId == master.id && reopenedCopy?.copyName == copy.copyName
+                && reopened.developSettings[copy.id] == blackAndWhite && reopened.developSettings[master.id] == edit
+                && reopenedCopy?.rating == 4 && reopenedMaster?.rating == master.rating
+            results["not a pair or owner"] = AssetPairing.rawJpeg(app.assets).primaryByCompanion[copy.id] == nil
+                && AssetPairing.rawJpeg(app.assets).companionsByPrimary[copy.id] == nil
+                && app.fileOwners([copy, master]).map(\.id) == [master.id]
+            // renaming the original through the copy moves the master and carries the path to the copy
+            app.selectedIds = [copy.id]
+            app.setPrimary(copy.id)
+            let renamed = RenameService.renameWithTemplate(app.fileOwners([copy]), template: "vc_{seq}", companions: [:])
+            _ = app.applyMovedOriginalLocations(renamed)
+            let movedMaster = app.assets.first { $0.id == master.id }, movedCopy = app.assets.first { $0.id == copy.id }
+            results["file changes follow"] = renamed[master.id] != nil && movedCopy?.localPath == movedMaster?.localPath
+                && movedCopy?.filename == movedMaster?.filename && renamed[copy.id] == nil
+            // removing the master takes its copy along; undo brings both back
+            app.selectedIds = [master.id]
+            app.setPrimary(master.id)
+            undo.beginUndoGrouping(); app.removeSelected(); undo.endUndoGrouping()
+            let bothRemoved = app.assets.first { $0.id == copy.id }?.deleted == true
+                && app.assets.first { $0.id == master.id }?.deleted == true
+            undo.undo()
+            results["removed with master"] = bothRemoved && app.assets.first { $0.id == copy.id }?.deleted == false
+            // undoing the creation removes the copy
+            app.selectedIds = [master.id]
+            app.setPrimary(master.id)
+            undo.beginUndoGrouping(); app.createVirtualCopies(); undo.endUndoGrouping()
+            let second = app.assets.first { $0.masterId == master.id && $0.id != copy.id }
+            undo.undo()
+            results["undo creation"] = second != nil && second?.copyName != copy.copyName
+                && app.assets.first { $0.id == second?.id }?.deleted == true
+            return results
+        }
+        for (name, passed) in virtualCopies.sorted(by: { $0.key < $1.key }) {
+            check(passed, "virtual copies: \(name)")
+        }
         let smartRule = SmartRule(match: "all", conditions: [
             SmartCondition(field: "type", op: "=", value: assets[0].type),
         ])

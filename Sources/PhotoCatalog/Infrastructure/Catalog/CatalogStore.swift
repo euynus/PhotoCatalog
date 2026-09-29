@@ -105,7 +105,7 @@ struct AssetPage: Sendable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    static let latestSchemaVersion = 21
+    static let latestSchemaVersion = 22
     let packageURL: URL
     let db: Database
 
@@ -322,6 +322,15 @@ final class CatalogStore: @unchecked Sendable {
             """)
             try recordMigration(21)
         }
+        if current < 22 {
+            // virtual copies: another entry for the same original, with its own settings. Added
+            // only when missing, so replaying the migration (a restored backup) doesn't fail.
+            let existing = Set(try db.queryMap("PRAGMA table_info(assets);", [], transform: { $0.text("name") }))
+            if !existing.contains("master_id") { try db.run("ALTER TABLE assets ADD COLUMN master_id TEXT;") }
+            if !existing.contains("copy_name") { try db.run("ALTER TABLE assets ADD COLUMN copy_name TEXT;") }
+            try db.execChecked("CREATE INDEX IF NOT EXISTS idx_assets_master ON assets(master_id) WHERE master_id IS NOT NULL;")
+            try recordMigration(22)
+        }
     }
 
     private func recordMigration(_ version: Int) throws {
@@ -446,7 +455,7 @@ final class CatalogStore: @unchecked Sendable {
     capture_date,width,height,orientation,camera,lens,focal,aperture,shutter,iso,\
     color_space,has_icc_profile,file_mb,rating,flag,color_label,keywords,title,caption,author,copyright,maker_notes,project,client,location,gps_lat,gps_lon,gps_altitude,\
     status,imported_at,deleted,is_demo,local_path,capture_date_source,content_hash,quick_hash,faces,\
-    file_modified_at,file_created_at,perceptual_hash
+    file_modified_at,file_created_at,perceptual_hash,master_id,copy_name
     """
 
     func upsert(_ assets: [Asset]) throws {
@@ -569,7 +578,7 @@ final class CatalogStore: @unchecked Sendable {
                     colorSpace, hasICCProfile, fileMB, rating, flag, colorLabel, keywords, title, caption,
                     author, copyright, makerNotes, project, client, location, gpsLat, gpsLon, gpsAltitude,
                     status, importedAt, deleted, isDemo, localPath, captureDateSource, contentHash,
-                    quickHash, faces, fileModifiedAt, fileCreatedAt, perceptualHash: Int32
+                    quickHash, faces, fileModifiedAt, fileCreatedAt, perceptualHash, masterId, copyName: Int32
 
         init(columns: [String]) {
             let index = Dictionary(uniqueKeysWithValues: columns.enumerated().map { ($1, Int32($0)) })
@@ -588,6 +597,7 @@ final class CatalogStore: @unchecked Sendable {
             captureDateSource = c("capture_date_source"); contentHash = c("content_hash")
             quickHash = c("quick_hash"); faces = c("faces"); fileModifiedAt = c("file_modified_at")
             fileCreatedAt = c("file_created_at"); perceptualHash = c("perceptual_hash")
+            masterId = c("master_id"); copyName = c("copy_name")
         }
 
         func asset(from row: SQLiteRow) -> Asset? {
@@ -635,7 +645,8 @@ final class CatalogStore: @unchecked Sendable {
                     ? "EXIF · DateTimeOriginal" : sharedText(row, captureDateSource),
                 contentHash: row.text(contentHash), quickHash: row.text(quickHash),
                 isDemo: row.int(isDemo) != 0, faces: row.int(faces),
-                perceptualHash: row.isNull(perceptualHash) ? nil : UInt64(bitPattern: Int64(row.int(perceptualHash))))
+                perceptualHash: row.isNull(perceptualHash) ? nil : UInt64(bitPattern: Int64(row.int(perceptualHash))),
+                masterId: masterId < 0 ? nil : row.text(masterId), copyName: copyName < 0 ? nil : row.text(copyName))
         }
 
         private func shared(_ value: String) -> String {
@@ -1513,6 +1524,8 @@ final class CatalogStore: @unchecked Sendable {
             a.fileModifiedAt.map { SQLValue.double($0.timeIntervalSince1970) } ?? .null,
             a.fileCreatedAt.map { SQLValue.double($0.timeIntervalSince1970) } ?? .null,
             a.perceptualHash.map { SQLValue.int(Int(Int64(bitPattern: $0))) } ?? .null,
+            a.masterId.map { SQLValue.text($0) } ?? .null,
+            a.copyName.map { SQLValue.text($0) } ?? .null,
         ]
     }
 
@@ -1554,7 +1567,8 @@ final class CatalogStore: @unchecked Sendable {
             captureDateSource: row.text("capture_date_source") ?? "EXIF · DateTimeOriginal",
             contentHash: row.text("content_hash"), quickHash: row.text("quick_hash"),
             isDemo: row.bool("is_demo"), faces: row.int("faces") ?? 0,
-            perceptualHash: row.int("perceptual_hash").map { UInt64(bitPattern: Int64($0)) })
+            perceptualHash: row.int("perceptual_hash").map { UInt64(bitPattern: Int64($0)) },
+            masterId: row.text("master_id"), copyName: row.text("copy_name"))
     }
 
     private static func importSession(from row: Row) -> ImportSessionRecord? {

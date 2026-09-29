@@ -107,6 +107,7 @@ struct GridView: View {
                                            pair: [Asset]) -> String {
         var parts = [asset.filename, asset.isRaw ? "\(asset.type) RAW" : asset.type]
         if let label = pairLabel(pair) { parts.append(L("含 \(label)")) }
+        if let copyName = asset.copyName { parts.append(L("虚拟副本：\(copyName)")) }
         parts.append(asset.rating > 0 ? L("\(asset.rating) 星") : L("未评分"))
         switch asset.flag {
         case .pick: parts.append(L("精选"))
@@ -193,6 +194,19 @@ struct GridCell: View {
                     }
                 }
                 .padding(Self.pad + 4)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if let copyName = asset.copyName {
+                    Label(copyName, systemImage: "doc.on.doc")
+                        .labelStyle(.titleAndIcon)
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(Theme.canvasText)
+                        .lineLimit(1)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 4))
+                        .padding(Self.pad + 4)
+                        .help("虚拟副本：与原照共用同一原件，修图与元数据各自独立")
+                }
             }
             .overlay(alignment: .bottomLeading) {
                 if asset.flag != .none {
@@ -316,6 +330,7 @@ extension GridCell: Equatable {
         l.asset.filename == r.asset.filename &&
         l.asset.thumb == r.asset.thumb &&
         l.asset.localPath == r.asset.localPath &&
+        l.asset.copyName == r.asset.copyName &&
         l.size == r.size &&
         l.selected == r.selected &&
         l.isPrimary == r.isPrimary &&

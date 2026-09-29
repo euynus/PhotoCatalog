@@ -71,8 +71,10 @@ struct Asset: Identifiable, Equatable, Sendable {
         var isDemo: Bool
         var faces: Int
         var perceptualHash: UInt64?
+        var masterId: String?
+        var copyName: String?
 
-        init(id: String, pid: Int, ori: String, thumb: String, preview: String, filename: String, type: String, isRaw: Bool, folderId: String, folderName: String, date: Date, width: Int, height: Int, orientation: Int, camera: String, lens: String, focal: Int, aperture: Double, shutter: String, iso: Int, colorSpace: String, hasICCProfile: Bool, fileMB: Double, fileModifiedAt: Date?, fileCreatedAt: Date?, rating: Int, flag: Flag, colorLabel: ColorLabel?, keywords: [String], title: String, caption: String, author: String, copyright: String, makerNotes: String, project: String, client: String, location: String, gps: (Double, Double), gpsAltitude: Double?, status: AssetStatus, importedAt: Date, deleted: Bool, localPath: String?, captureDateSource: String, contentHash: String?, quickHash: String?, isDemo: Bool, faces: Int, perceptualHash: UInt64?) {
+        init(id: String, pid: Int, ori: String, thumb: String, preview: String, filename: String, type: String, isRaw: Bool, folderId: String, folderName: String, date: Date, width: Int, height: Int, orientation: Int, camera: String, lens: String, focal: Int, aperture: Double, shutter: String, iso: Int, colorSpace: String, hasICCProfile: Bool, fileMB: Double, fileModifiedAt: Date?, fileCreatedAt: Date?, rating: Int, flag: Flag, colorLabel: ColorLabel?, keywords: [String], title: String, caption: String, author: String, copyright: String, makerNotes: String, project: String, client: String, location: String, gps: (Double, Double), gpsAltitude: Double?, status: AssetStatus, importedAt: Date, deleted: Bool, localPath: String?, captureDateSource: String, contentHash: String?, quickHash: String?, isDemo: Bool, faces: Int, perceptualHash: UInt64?, masterId: String?, copyName: String?) {
             self.id = id
             self.pid = pid
             self.ori = ori
@@ -122,10 +124,12 @@ struct Asset: Identifiable, Equatable, Sendable {
             self.isDemo = isDemo
             self.faces = faces
             self.perceptualHash = perceptualHash
+            self.masterId = masterId
+            self.copyName = copyName
         }
 
         func copy() -> Storage {
-            Storage(id: id, pid: pid, ori: ori, thumb: thumb, preview: preview, filename: filename, type: type, isRaw: isRaw, folderId: folderId, folderName: folderName, date: date, width: width, height: height, orientation: orientation, camera: camera, lens: lens, focal: focal, aperture: aperture, shutter: shutter, iso: iso, colorSpace: colorSpace, hasICCProfile: hasICCProfile, fileMB: fileMB, fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt, rating: rating, flag: flag, colorLabel: colorLabel, keywords: keywords, title: title, caption: caption, author: author, copyright: copyright, makerNotes: makerNotes, project: project, client: client, location: location, gps: gps, gpsAltitude: gpsAltitude, status: status, importedAt: importedAt, deleted: deleted, localPath: localPath, captureDateSource: captureDateSource, contentHash: contentHash, quickHash: quickHash, isDemo: isDemo, faces: faces, perceptualHash: perceptualHash)
+            Storage(id: id, pid: pid, ori: ori, thumb: thumb, preview: preview, filename: filename, type: type, isRaw: isRaw, folderId: folderId, folderName: folderName, date: date, width: width, height: height, orientation: orientation, camera: camera, lens: lens, focal: focal, aperture: aperture, shutter: shutter, iso: iso, colorSpace: colorSpace, hasICCProfile: hasICCProfile, fileMB: fileMB, fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt, rating: rating, flag: flag, colorLabel: colorLabel, keywords: keywords, title: title, caption: caption, author: author, copyright: copyright, makerNotes: makerNotes, project: project, client: client, location: location, gps: gps, gpsAltitude: gpsAltitude, status: status, importedAt: importedAt, deleted: deleted, localPath: localPath, captureDateSource: captureDateSource, contentHash: contentHash, quickHash: quickHash, isDemo: isDemo, faces: faces, perceptualHash: perceptualHash, masterId: masterId, copyName: copyName)
         }
     }
 
@@ -179,8 +183,10 @@ struct Asset: Identifiable, Equatable, Sendable {
          quickHash: String? = nil,
          isDemo: Bool = true,
          faces: Int = 0,
-         perceptualHash: UInt64? = nil) {
-        storage = Storage(id: id, pid: pid, ori: ori, thumb: thumb, preview: preview, filename: filename, type: type, isRaw: isRaw, folderId: folderId, folderName: folderName, date: date, width: width, height: height, orientation: orientation, camera: camera, lens: lens, focal: focal, aperture: aperture, shutter: shutter, iso: iso, colorSpace: colorSpace, hasICCProfile: hasICCProfile, fileMB: fileMB, fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt, rating: rating, flag: flag, colorLabel: colorLabel, keywords: keywords, title: title, caption: caption, author: author, copyright: copyright, makerNotes: makerNotes, project: project, client: client, location: location, gps: gps, gpsAltitude: gpsAltitude, status: status, importedAt: importedAt, deleted: deleted, localPath: localPath, captureDateSource: captureDateSource, contentHash: contentHash, quickHash: quickHash, isDemo: isDemo, faces: faces, perceptualHash: perceptualHash)
+         perceptualHash: UInt64? = nil,
+         masterId: String? = nil,
+         copyName: String? = nil) {
+        storage = Storage(id: id, pid: pid, ori: ori, thumb: thumb, preview: preview, filename: filename, type: type, isRaw: isRaw, folderId: folderId, folderName: folderName, date: date, width: width, height: height, orientation: orientation, camera: camera, lens: lens, focal: focal, aperture: aperture, shutter: shutter, iso: iso, colorSpace: colorSpace, hasICCProfile: hasICCProfile, fileMB: fileMB, fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt, rating: rating, flag: flag, colorLabel: colorLabel, keywords: keywords, title: title, caption: caption, author: author, copyright: copyright, makerNotes: makerNotes, project: project, client: client, location: location, gps: gps, gpsAltitude: gpsAltitude, status: status, importedAt: importedAt, deleted: deleted, localPath: localPath, captureDateSource: captureDateSource, contentHash: contentHash, quickHash: quickHash, isDemo: isDemo, faces: faces, perceptualHash: perceptualHash, masterId: masterId, copyName: copyName)
     }
 
     private mutating func uniqueStorage() -> Storage {
@@ -342,6 +348,33 @@ struct Asset: Identifiable, Equatable, Sendable {
     var perceptualHash: UInt64? {
         get { storage.perceptualHash }
         set { uniqueStorage().perceptualHash = newValue }
+    }
+    /// The photo this is a virtual copy of: the same original file, with its own develop
+    /// settings and metadata. Nil for a photo that owns its file.
+    var masterId: String? {
+        get { storage.masterId }
+        set { uniqueStorage().masterId = newValue }
+    }
+    /// A virtual copy's name, such as "副本 1".
+    var copyName: String? {
+        get { storage.copyName }
+        set { uniqueStorage().copyName = newValue }
+    }
+    var isVirtualCopy: Bool { storage.masterId != nil }
+
+    /// A virtual copy of this photo: everything carried over, with a new id and name.
+    func virtualCopy(id: String, name: String) -> Asset {
+        Asset(id: id, pid: pid, ori: ori, thumb: thumb, preview: preview, filename: filename, type: type, isRaw: isRaw,
+              folderId: folderId, folderName: folderName, date: date, width: width, height: height,
+              orientation: orientation, camera: camera, lens: lens, focal: focal, aperture: aperture, shutter: shutter,
+              iso: iso, colorSpace: colorSpace, hasICCProfile: hasICCProfile, fileMB: fileMB,
+              fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt, rating: rating, flag: flag,
+              colorLabel: colorLabel, keywords: keywords, title: title, caption: caption, author: author,
+              copyright: copyright, makerNotes: makerNotes, project: project, client: client, location: location,
+              gps: gps, gpsAltitude: gpsAltitude, status: status, importedAt: .now, deleted: false,
+              localPath: localPath, captureDateSource: captureDateSource, contentHash: contentHash,
+              quickHash: quickHash, isDemo: false, faces: 0, perceptualHash: perceptualHash,
+              masterId: masterId ?? self.id, copyName: name)
     }
 
     var megapixels: Double { Double(width * height) / 1_000_000 }

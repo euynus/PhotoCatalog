@@ -71,6 +71,7 @@ struct PhotoContextMenu: View {
             Button("向右旋转") { act { app.rotateSelection(clockwise: true) } }
             Button("复位修图调整") { act { app.resetDevelopSelection() } }
         }
+        Button("创建虚拟副本") { act { app.createVirtualCopies() } }
 
         Button("设置位置…") { act { app.showLocationEditor() } }
 

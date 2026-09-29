@@ -103,6 +103,9 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(!app.canAutoTone)
             Button("复位修图调整") { perform("照片.复位修图调整") { app.resetDevelopSelection() } }
                 .disabled(!app.canResetDevelopSelection)
+            Button("创建虚拟副本") { perform("照片.创建虚拟副本") { app.createVirtualCopies() } }
+                .keyboardShortcut("'", modifiers: .command)
+                .disabled(!app.canCreateVirtualCopies)
             Divider()
             Toggle("评分后自动前进", isOn: Binding(get: { app.autoAdvance }, set: { app.autoAdvance = $0 }))
                 .help("评分、旗标或颜色后跳到下一张；按住 Shift 可单次前进")

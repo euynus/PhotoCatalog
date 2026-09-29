@@ -333,6 +333,12 @@
 "快照 %lld" = "Snapshot %lld";
 "快照：%@" = "Snapshot: %@";
 "保存快照失败" = "Couldn't save the snapshot";
+"创建虚拟副本" = "Create Virtual Copy";
+"只能为已导入的照片创建虚拟副本" = "Virtual copies can only be made of imported photos";
+"副本 %lld" = "Copy %lld";
+"创建虚拟副本失败，目录库未保存" = "Couldn't create the virtual copy; the catalog wasn't saved";
+"已创建%@" = "Created %@";
+"已创建 %lld 个虚拟副本" = "Created %lld virtual copies";
 
 /* Application/ImportCoordinator.swift */
 "复制原件失败：%@" = "Couldn't copy the original: %@";
@@ -735,6 +741,8 @@
 "没有与“%@”匹配的照片。" = "No photos match “%@”.";
 "重置搜索和筛选" = "Reset Search and Filters";
 "，" = ", ";
+"虚拟副本：%@" = "Virtual copy: %@";
+"虚拟副本：与原照共用同一原件，修图与元数据各自独立" = "Virtual copy: shares the original file with its master, with its own develop settings and metadata";
 
 /* Presentation/Inspector/InspectorView.swift */
 "%lld 张 · 批量编辑" = "%lld photos · batch edit";

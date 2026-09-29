@@ -10,7 +10,8 @@ actor AutomaticXMPWriter {
             guard sequence >= latest else { continue }
             latestSequenceByAssetID[asset.id] = sequence
 
-            guard !asset.deleted, !asset.isDemo, let path = asset.localPath,
+            // a virtual copy shares its master's sidecar and never writes it, as in Lightroom
+            guard !asset.deleted, !asset.isDemo, !asset.isVirtualCopy, let path = asset.localPath,
                   FileManager.default.fileExists(atPath: path) else { continue }
             let sidecar = XMPSidecar.sidecarURL(for: URL(fileURLWithPath: path))
             if !XMPSidecar.write(asset, to: sidecar) { failures += 1 }

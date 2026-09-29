@@ -287,7 +287,8 @@ final class AppState {
             || old.hasICCProfile != new.hasICCProfile || old.fileMB != new.fileMB
             || old.fileModifiedAt != new.fileModifiedAt || old.fileCreatedAt != new.fileCreatedAt
             || old.captureDateSource != new.captureDateSource || old.contentHash != new.contentHash
-            || old.quickHash != new.quickHash || old.isDemo != new.isDemo || old.perceptualHash != new.perceptualHash {
+            || old.quickHash != new.quickHash || old.isDemo != new.isDemo || old.perceptualHash != new.perceptualHash
+            || old.masterId != new.masterId || old.copyName != new.copyName {
             return .any
         }
         if old.keywords != new.keywords || old.title != new.title || old.caption != new.caption
@@ -2945,7 +2946,8 @@ final class AppState {
             let delta = await Task.detached(priority: .utility) {
                 // build the path index off the main thread (resolvingSymlinksInPath stats each asset)
                 var knownAssetsByPath: [String: Asset] = [:]
-                for asset in liveAssets {
+                // a path belongs to the photo that owns the file, never to its virtual copies
+                for asset in liveAssets where !asset.isVirtualCopy {
                     if let path = asset.localPath {
                         for alias in PathIdentity.aliases(forPath: path) {
                             knownAssetsByPath[alias] = asset
@@ -3000,6 +3002,9 @@ final class AppState {
                 for asset in changedAssets {
                     if let index = indexById[asset.id] { updated[index] = asset }
                 }
+                // the changed files' virtual copies take on their new state too
+                let copies = self.carryFileChanges(from: Set(changedAssets.map(\.id)), in: &updated)
+                if !copies.isEmpty { try? store.upsert(updated.filter { copies.contains($0.id) }) }
                 self.replaceAssetsForMutation(updated)
                 self.recomputeDuplicates()
                 self.enforceCacheLimitIfNeeded()
@@ -3179,7 +3184,8 @@ final class AppState {
     // ---------- XMP sidecar write (§6.5 META-007) ----------
     func writeXMPForSelection() {
         let ids = targetIds
-        let real = assets.filter { ids.contains($0.id) && hasExistingOriginal($0) }
+        // virtual copies share their master's sidecar and never write it
+        let real = assets.filter { ids.contains($0.id) && !$0.isVirtualCopy && hasExistingOriginal($0) }
         guard !real.isEmpty else { push("仅可为已导入照片写入 XMP", "warning"); return }
         var count = 0
         for a in real {
@@ -3195,6 +3201,60 @@ final class AppState {
         }
     }
 
+    // ---------- virtual copies ----------
+    /// ⌘': a virtual copy of each selected photo — another catalog entry for the same original,
+    /// starting from its metadata and develop settings, to take in another direction. A copy of
+    /// a copy belongs to the same master. Copies made inside an album join it. Undoable.
+    func createVirtualCopies() {
+        let ids = selectionTargetIds
+        let sources = list.filter { ids.contains($0.id) && !$0.isDemo && !$0.deleted }
+        guard !sources.isEmpty else {
+            push("只能为已导入的照片创建虚拟副本", "warning")
+            return
+        }
+        // copy numbers keep counting per master, removed copies included, so a name never repeats
+        var numbers: [String: Int] = [:]
+        for asset in assets { if let masterId = asset.masterId { numbers[masterId, default: 0] += 1 } }
+        var copies: [Asset] = []
+        var settings: [String: DevelopSettings] = [:]
+        for source in sources {
+            let masterId = source.masterId ?? source.id
+            numbers[masterId, default: 0] += 1
+            let id = "v" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16).lowercased()
+            copies.append(source.virtualCopy(id: id, name: L("副本 \(numbers[masterId] ?? 1)")))
+            if let edit = developSettings[source.id] { settings[id] = edit }
+        }
+        do {
+            try store?.upsert(copies)
+            try store?.saveDevelopSettings(settings)
+        } catch {
+            push("创建虚拟副本失败，目录库未保存", "warning")
+            return
+        }
+        for (id, edit) in settings { developSettings[id] = edit }
+        replaceAssetsForMutation(assets + copies)
+        let copyIds = copies.map(\.id)
+        if selection.type == .album, let index = albums.firstIndex(where: { $0.id == selection.id }) {
+            var album = albums[index]
+            album.assetIds.append(contentsOf: copyIds)
+            if saveManualAlbum(album, sortOrder: index) { albums[index] = album }
+        }
+        selectedIds = Set(copyIds)
+        setPrimary(copyIds[0])
+        if let undoManager {
+            undoManager.registerUndo(withTarget: self) { app in
+                MainActor.assumeIsolated {
+                    _ = app.mutate(Set(copyIds), undoName: L("创建虚拟副本")) { $0.deleted = true }
+                    app.ensurePrimaryValid()
+                }
+            }
+            undoManager.setActionName(L("创建虚拟副本"))
+        }
+        push(copies.count == 1 ? "已创建\(copies[0].copyName ?? "")" : "已创建 \(copies.count) 个虚拟副本", "copy")
+    }
+
+    var canCreateVirtualCopies: Bool { canTransformSelection }
+
     // ---------- batch rename (§4.2) ----------
     /// Rename selected originals from a token template ({seq}/{date}/{time}/{camera}/{original}).
     /// A plain prefix with no token becomes "<prefix>_{seq}".
@@ -3203,7 +3263,7 @@ final class AppState {
         guard !trimmed.isEmpty else { return }
         let template = trimmed.contains("{") ? trimmed : "\(trimmed)_{seq}"
         let ids = selectionTargetIds
-        let real = list.filter { ids.contains($0.id) && hasExistingOriginal($0) }
+        let real = fileOwners(list.filter { ids.contains($0.id) }).filter(hasExistingOriginal)
         guard !real.isEmpty else { push("仅可重命名已导入照片", "warning"); return }
         // a paired JPEG takes the RAW's new base name so the pair survives the rename
         let partners = Dictionary(uniqueKeysWithValues: real.map { primary in
@@ -3221,13 +3281,14 @@ final class AppState {
             return
         }
 
-        let changedIds = Set(map.keys)
+        var changedIds = Set(map.keys)
         var updated = assets
         for index in updated.indices {
             guard let url = map[updated[index].id] else { continue }
             updated[index].filename = url.lastPathComponent
             updated[index].localPath = url.path
         }
+        changedIds.formUnion(carryFileChanges(from: changedIds, in: &updated))
         guard persist(changedIds, in: updated) else {
             let rolledBack = OriginalFileOperationService.rollBackMoves(
                 map, originals: real + partners.values.flatMap { $0 })
@@ -3302,11 +3363,56 @@ final class AppState {
         }
     }
 
-    private func selectedRealAssetsWithOriginals() -> [Asset] {
+    /// The selection's originals on disk, one entry per file. A virtual copy stands for its
+    /// master's file where the operation reaches the file (move, copy, export); where it would
+    /// destroy the file (trash), copies are left out — they're only catalog entries.
+    private func selectedRealAssetsWithOriginals(copiesStandForMaster: Bool = true) -> [Asset] {
         let ids = targetIds
-        return assets.filter { asset in
-            ids.contains(asset.id) && hasExistingOriginal(asset)
+        let selected = assets.filter { ids.contains($0.id) }
+        return (copiesStandForMaster ? fileOwners(selected) : selected.filter { !$0.isVirtualCopy })
+            .filter(hasExistingOriginal)
+    }
+
+    /// The photos owning the files behind `selected`, in order and each once: a virtual copy's
+    /// file is its master's (the copy itself stands in only when its master is gone).
+    func fileOwners(_ selected: [Asset]) -> [Asset] {
+        var seen = Set<String>()
+        var owners: [Asset] = []
+        for asset in selected {
+            var owner = asset
+            if let masterId = asset.masterId, let index = assetIndex[masterId], !assets[index].deleted {
+                owner = assets[index]
+            }
+            if seen.insert(owner.id).inserted { owners.append(owner) }
         }
+        return owners
+    }
+
+    /// Live virtual copies of the given photos.
+    func virtualCopyIds(of ids: Set<String>) -> Set<String> {
+        guard !ids.isEmpty else { return [] }
+        return Set(assets.lazy.filter { !$0.deleted && $0.masterId.map(ids.contains) == true }.map(\.id))
+    }
+
+    /// Gives each virtual copy of the photos in `ids` its master's file path, name and state, in
+    /// `updated`; returns the copies changed.
+    private func carryFileChanges(from ids: Set<String>, in updated: inout [Asset]) -> Set<String> {
+        var masters: [String: Asset] = [:]
+        for asset in updated where ids.contains(asset.id) { masters[asset.id] = asset }
+        var changed = Set<String>()
+        for index in updated.indices {
+            guard let masterId = updated[index].masterId, let master = masters[masterId] else { continue }
+            updated[index].filename = master.filename
+            updated[index].localPath = master.localPath
+            updated[index].fileMB = master.fileMB
+            updated[index].fileModifiedAt = master.fileModifiedAt
+            updated[index].fileCreatedAt = master.fileCreatedAt
+            updated[index].quickHash = master.quickHash
+            updated[index].contentHash = master.contentHash
+            updated[index].status = master.status
+            changed.insert(updated[index].id)
+        }
+        return changed
     }
 
     private func hasExistingOriginal(_ asset: Asset) -> Bool {
@@ -3343,7 +3449,7 @@ final class AppState {
     func applyMovedOriginalLocations(_ locations: [String: URL], expectedCatalogURL: URL? = nil) -> Bool {
         guard !locations.isEmpty else { return true }
         if let expectedCatalogURL, store?.packageURL != expectedCatalogURL { return false }
-        let ids = Set(locations.keys)
+        var ids = Set(locations.keys)
         var updated = assets
         for index in updated.indices {
             guard let url = locations[updated[index].id] else { continue }
@@ -3354,6 +3460,7 @@ final class AppState {
             updated[index].fileCreatedAt = attrs?[.creationDate] as? Date
             updated[index].status = .ready
         }
+        ids.formUnion(carryFileChanges(from: ids, in: &updated))
         guard persist(ids, in: updated) else { return false }
         replaceAssetsForMutation(updated)
         return true
@@ -3986,7 +4093,9 @@ final class AppState {
             return RenderedExportItem(assetId: asset.id, sourcePath: path, isRaw: asset.isRaw,
                                       develop: developSettings[asset.id] ?? .neutral,
                                       originalSize: CGSize(width: asset.width, height: asset.height),
-                                      baseName: (asset.filename as NSString).deletingPathExtension,
+                                      // a virtual copy renders its own look: name it apart from its master's
+                                      baseName: (asset.filename as NSString).deletingPathExtension
+                                          + (asset.copyName.map { "-" + $0.replacingOccurrences(of: " ", with: "") } ?? ""),
                                       date: asset.date, camera: asset.camera, title: asset.title,
                                       caption: asset.caption, keywords: asset.keywords, rating: asset.rating,
                                       author: asset.author, copyright: asset.copyright)
@@ -4426,7 +4535,8 @@ final class AppState {
         guard runsBackgroundMaintenance else { return }
         duplicateRecomputeGeneration &+= 1
         let generation = duplicateRecomputeGeneration
-        let live = assets.filter { !$0.isDemo && !$0.deleted }
+        // a virtual copy shares its master's file: an exact duplicate by definition, never a problem
+        let live = assets.filter { !$0.isDemo && !$0.deleted && !$0.isVirtualCopy }
         guard !live.isEmpty else {
             let demoLiveIds = Set(assets.filter { $0.isDemo && !$0.deleted }.map(\.id))
             duplicateGroupsCache = DemoData.duplicateGroups.filter { group in
@@ -4488,7 +4598,11 @@ final class AppState {
             return false
         }
 
-        guard persist(report.removedIds, in: updated) else {
+        // the removed duplicates' virtual copies go with them
+        let copies = virtualCopyIds(of: Set(report.removedIds))
+        for index in updated.indices where copies.contains(updated[index].id) { updated[index].deleted = true }
+        let removedIds = Set(report.removedIds).union(copies)
+        guard persist(removedIds, in: updated) else {
             if action == .moveToTrash {
                 let rolledBack = OriginalFileOperationService.rollBackTrash(report.trashedLocations)
                 push(verbatim: L("重复文件处理未完成")
@@ -4499,7 +4613,7 @@ final class AppState {
             return false
         }
         replaceAssetsForMutation(updated)
-        purgeCacheFiles(forAssetIds: report.removedIds)
+        purgeCacheFiles(forAssetIds: removedIds)
         duplicateGroupsCache.removeAll { $0.id == group.id }
         recomputeDuplicates()
         ensurePrimaryValid()
@@ -6013,6 +6127,7 @@ final class AppState {
             .flatMap { [$0] + (companions[$0.id] ?? []).compactMap { id in assetIndex[id].map { assets[$0] } } }
             .compactMap { $0.localPath }
             .filter { fm.fileExists(atPath: $0) }
+            .reduce(into: [String]()) { paths, path in if !paths.contains(path) { paths.append(path) } }   // copies share a file
             .map { URL(fileURLWithPath: $0) }
     }
 
@@ -6054,7 +6169,10 @@ final class AppState {
     }
 
     func locate(_ id: String) {
-        guard let asset = assets.first(where: { $0.id == id }) else { return }
+        guard let selected = assets.first(where: { $0.id == id }) else { return }
+        // a virtual copy's file is its master's: relocate that, and the copies follow
+        let asset = fileOwners([selected])[0]
+        let id = asset.id
         guard !asset.isDemo else {
             push("演示照片没有本地原件", "warning")
             return
@@ -6088,6 +6206,9 @@ final class AppState {
             $0.contentHash = HashService.contentHash(replacement)
             $0.status = .ready
         }) else { return }
+        var updated = assets
+        let copies = carryFileChanges(from: [id], in: &updated)
+        if !copies.isEmpty, persist(copies, in: updated) { replaceAssetsForMutation(updated) }
         recomputeDuplicates()
         push("已重新定位原件", "link")
     }
@@ -6262,7 +6383,7 @@ final class AppState {
     /// Photos not yet analysed (a RAW's paired JPEG is covered by the RAW).
     var faceUnscannedCount: Int {
         _ = facesRevision
-        return presentedAssets().filter { !$0.isDemo && !faceScannedAssetIds.contains($0.id) }.count
+        return presentedAssets().filter { !$0.isDemo && !$0.isVirtualCopy && !faceScannedAssetIds.contains($0.id) }.count
     }
 
     var faceScannedCount: Int {
@@ -6297,7 +6418,10 @@ final class AppState {
     /// original — then names new faces that closely match someone already named.
     func startFaceAnalysis() {
         guard faceAnalysis == nil, store != nil else { return }
-        let pending = presentedAssets().filter { !$0.isDemo && !faceScannedAssetIds.contains($0.id) }
+        // a virtual copy's faces are its master's: scanning it would list each face twice
+        let pending = presentedAssets().filter {
+            !$0.isDemo && !$0.isVirtualCopy && !faceScannedAssetIds.contains($0.id)
+        }
         guard !pending.isEmpty else { return }
         faceAnalysisGeneration &+= 1
         let generation = faceAnalysisGeneration
@@ -6584,7 +6708,8 @@ final class AppState {
     }
 
     func removeSelected() {
-        let ids = targetIds
+        // a master's virtual copies go with it: they have nothing left to point at
+        let ids = targetIds.union(virtualCopyIds(of: targetIds))
         guard !ids.isEmpty else { return }
         let photoCount = selectionTargetIds.count
         guard mutate(ids, undoName: L("从目录库移除"), { $0.deleted = true }) else { return }
@@ -6602,7 +6727,7 @@ final class AppState {
     func confirmDeleteSelected() {
         let ids = targetIds
         guard !ids.isEmpty else { return }
-        let real = selectedRealAssetsWithOriginals()
+        let real = selectedRealAssetsWithOriginals(copiesStandForMaster: false)
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = L("移除照片")
@@ -6619,7 +6744,7 @@ final class AppState {
     }
 
     func trashSelectedOriginals() {
-        let real = selectedRealAssetsWithOriginals()
+        let real = selectedRealAssetsWithOriginals(copiesStandForMaster: false)
         guard !real.isEmpty else {
             push("仅可将已导入照片的原件移到废纸篓", "warning")
             return
@@ -6671,9 +6796,12 @@ final class AppState {
             return true
         }
         if let expectedCatalogURL, store?.packageURL != expectedCatalogURL { return false }
-        guard mutate(result.trashedIds, { $0.deleted = true }) else { return false }
-        purgeCacheFiles(forAssetIds: result.trashedIds)
-        selectedIds.subtract(result.trashedIds)
+        // the trashed files' virtual copies, and any copies in the selection, leave the catalog too
+        let selectedCopies = targetIds.filter { id in assetIndex[id].map { assets[$0].isVirtualCopy } ?? false }
+        let removed = result.trashedIds.union(virtualCopyIds(of: result.trashedIds)).union(selectedCopies)
+        guard mutate(removed, { $0.deleted = true }) else { return false }
+        purgeCacheFiles(forAssetIds: removed)
+        selectedIds.subtract(removed)
         ensurePrimaryValid()
         recomputeDuplicates()
         push(verbatim: L("已移到废纸篓 \(result.trashedIds.count) 张")

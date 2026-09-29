@@ -69,8 +69,8 @@ SPEC_OVERRIDES = {
 NOUNS = {'photos': 'photo', 'files': 'file', 'originals': 'original', 'faces': 'face', 'groups': 'group',
          'people': 'person', 'days': 'day', 'stars': 'star', 'jobs': 'job', 'sidecars': 'sidecar',
          'conditions': 'condition', 'values': 'value', 'locations': 'location', 'previews': 'preview',
-         'assets': 'asset', 'records': 'record', 'spots': 'spot', 'steps': 'step'}
-ADJECTIVES = r'(?:(?:duplicate|new|changed|failed|automatically|recognized|unnamed|XMP|disk|photo) )*'
+         'assets': 'asset', 'records': 'record', 'spots': 'spot', 'steps': 'step', 'copies': 'copy'}
+ADJECTIVES = r'(?:(?:duplicate|new|changed|failed|automatically|recognized|unnamed|XMP|disk|photo|virtual) )*'
 
 
 def literals(line):

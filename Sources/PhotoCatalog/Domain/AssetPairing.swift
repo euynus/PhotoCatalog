@@ -27,7 +27,8 @@ struct AssetPairing: Sendable {
     }
 
     /// Pairs live assets sharing a folder and base name, when exactly one is a RAW and the
-    /// others are JPEG/HEIC. Ambiguous groups (two RAWs, other formats) stay separate.
+    /// others are JPEG/HEIC. Ambiguous groups (two RAWs, other formats) stay separate, and
+    /// virtual copies always stand alone.
     static func rawJpeg(_ assets: [Asset]) -> AssetPairing {
         // Candidates sorted by a hash of their case-folded folder + base name, computed from
         // UTF-8 without allocating: a string and an array per photo made this ~0.7 s at 500k.
@@ -35,7 +36,7 @@ struct AssetPairing: Sendable {
         keyed.reserveCapacity(assets.count)
         for index in assets.indices {
             let asset = assets[index]
-            guard !asset.deleted, let path = asset.localPath else { continue }
+            guard !asset.deleted, !asset.isVirtualCopy, let path = asset.localPath else { continue }
             let (stem, ext) = PathString.splitExtension(path)
             guard asset.isRaw || companionExtensions.contains(ext.lowercased()) else { continue }
             keyed.append((stemHash(stem), index))
