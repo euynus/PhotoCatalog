@@ -25,6 +25,8 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var dehaze: Double = 0
     /// Point curves after the Basic tone controls (see `ToneCurve`).
     var curve = ToneCurve()
+    /// Hue, saturation and luminance per color band (see `ColorMixer`).
+    var mixer = ColorMixer()
     /// Detail, applied after tone on top of the camera's own RAW sharpening and noise reduction.
     /// Sharpening amount 0…150 (luminance only), radius 0.5…3 px at full resolution, masking
     /// 0…100 limits it to edges; noise reduction 0…100 for luminance and for color.
@@ -98,6 +100,7 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
             text += String(format: "|p%.1f,%.1f,%.1f", texture, clarity, dehaze)
         }
         if !curve.isLinear { text += "|c" + curve.fingerprintText }
+        if !mixer.isNeutral { text += "|m" + mixer.fingerprintText }
         if sharpening != 0 || sharpenRadius != 1 || sharpenMasking != 0 || luminanceNoise != 0 || colorNoise != 0 {
             // like geometry: only when set, so earlier edits keep their cache names
             text += String(format: "|d%.1f,%.2f,%.1f,%.1f,%.1f", sharpening, sharpenRadius, sharpenMasking,
@@ -139,6 +142,7 @@ extension DevelopSettings {
         clarity = try container.decodeIfPresent(Double.self, forKey: .clarity) ?? 0
         dehaze = try container.decodeIfPresent(Double.self, forKey: .dehaze) ?? 0
         curve = try container.decodeIfPresent(ToneCurve.self, forKey: .curve) ?? ToneCurve()
+        mixer = try container.decodeIfPresent(ColorMixer.self, forKey: .mixer) ?? ColorMixer()
         sharpening = try container.decodeIfPresent(Double.self, forKey: .sharpening) ?? 0
         sharpenRadius = try container.decodeIfPresent(Double.self, forKey: .sharpenRadius) ?? 1
         sharpenMasking = try container.decodeIfPresent(Double.self, forKey: .sharpenMasking) ?? 0
@@ -411,6 +415,18 @@ struct DevelopControl: Identifiable {
         signed(\.vibrance, L("鲜艳度")),
         signed(\.saturation, L("饱和度")),
     ]
+
+    /// One slider per color band for the chosen property.
+    static func mixer(_ property: ColorMixer.Property) -> [DevelopControl] {
+        ColorMixer.Band.allCases.map { band in
+            let keyPath: WritableKeyPath<DevelopSettings, Double> = switch property {
+            case .hue: \DevelopSettings.mixer.hue[band.rawValue]
+            case .saturation: \DevelopSettings.mixer.saturation[band.rawValue]
+            case .luminance: \DevelopSettings.mixer.luminance[band.rawValue]
+            }
+            return signed(keyPath, band.title)
+        }
+    }
 
     static let detail: [DevelopControl] = [
         amount(\.sharpening, L("锐化"), max: 150),

@@ -356,6 +356,18 @@
 "文件修改时间" = "File modification date";
 "文件创建时间" = "File creation date";
 
+/* Domain/ColorMixer.swift */
+"红色" = "Red";
+"橙色" = "Orange";
+"黄色" = "Yellow";
+"绿色" = "Green";
+"浅绿色" = "Aqua";
+"蓝色" = "Blue";
+"紫色" = "Purple";
+"洋红色" = "Magenta";
+"色相" = "Hue";
+"明亮度" = "Luminance";
+
 /* Domain/DevelopSettings.swift */
 "纹理" = "Texture";
 "清晰度" = "Clarity";
@@ -386,6 +398,7 @@
 "黑色色阶" = "Blacks";
 
 /* Domain/DevelopTransfer.swift */
+"混色器" = "Color Mixer";
 "色调曲线" = "Tone Curve";
 "效果" = "Effects";
 "镜头校正" = "Lens Corrections";
@@ -549,6 +562,7 @@
 "裁剪" = "Crop";
 
 /* Presentation/Develop/DevelopPanel.swift */
+"混色器属性" = "Color Mixer Property";
 "点选照片中的中性灰色区域 (W)" = "Click a neutral gray area of the photo (W)";
 "自动" = "Auto";
 "自动设置曝光、高光、阴影、白色和黑色色阶 (⌘U)" = "Set exposure, highlights, shadows, whites and blacks automatically (⌘U)";

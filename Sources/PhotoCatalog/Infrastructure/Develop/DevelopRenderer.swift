@@ -77,7 +77,8 @@ enum DevelopRenderer {
             sourceSize = base.extent.integral.size
             let scale = max(base.extent.width, base.extent.height) / max(fullLongEdge, 1)
             let toned = DevelopRenderer.applyTone(DevelopRenderer.applyLens(base, settings), settings)
-            let present = DevelopRenderer.applyPresence(DevelopRenderer.applyCurve(toned, settings), settings)
+            let colored = DevelopRenderer.applyMixer(DevelopRenderer.applyCurve(toned, settings), settings)
+            let present = DevelopRenderer.applyPresence(colored, settings)
             let detailed = DevelopRenderer.applyDetail(present, settings, scale: min(1, scale))
             let framed = DevelopRenderer.applyGeometry(detailed, settings, wholeFrame: wholeFrame)
             // effects follow the crop, which the crop tool's whole-frame view doesn't apply yet
@@ -251,6 +252,13 @@ enum DevelopRenderer {
             "inputCurvesDomain": CIVector(x: 0, y: 1),
             "inputColorSpace": outputColorSpace,
         ])
+    }
+
+    /// The HSL mixer, on display-encoded values.
+    static func applyMixer(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
+        guard !s.mixer.isNeutral else { return input }
+        return DevelopKernels.colorMixer(input.applyingFilter("CILinearToSRGBToneCurve"), s.mixer)
+            .applyingFilter("CISRGBToneCurveToLinear")
     }
 
     private static let curveTables = NSCache<NSString, NSData>()

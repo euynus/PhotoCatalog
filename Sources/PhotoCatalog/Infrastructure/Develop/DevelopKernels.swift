@@ -3,7 +3,7 @@
 // ============================================================
 import CoreImage
 
-/// Lens distortion, radial gain, film grain, local contrast and haze removal, compiled from Metal source the first time a render needs
+/// Lens distortion, radial gain, film grain, local contrast, haze removal and the color mixer, compiled from Metal source the first time a render needs
 /// them (~0.5 s, once): the package has no Metal build step, and Core Image compiles stitchable
 /// kernels at run time. A kernel that fails to compile leaves its adjustment out of the render.
 enum DevelopKernels {
@@ -50,6 +50,56 @@ enum DevelopKernels {
                 c = mix(c, float3(air), -amount * 0.6 * (0.4 + 0.6 * d.r));
             }
             return float4(c, s.a);
+        }
+
+        // HSL mixer on display-encoded color. b0…b7 hold each band's (hue, saturation, luminance)
+        // shift, -1…1; band centers match ColorMixer.Band.hue. Neighboring bands cross-fade, so
+        // the weights always sum to one, and everything scales with how colorful the pixel is.
+        float3 toHSL(float3 c) {
+            float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
+            float l = (mx + mn) * 0.5, d = mx - mn, h = 0.0, s = 0.0;
+            if (d > 1e-5) {
+                s = d / max(1.0 - abs(2.0 * l - 1.0), 1e-5);
+                if (mx == c.r) { h = fmod((c.g - c.b) / d + 6.0, 6.0); }
+                else if (mx == c.g) { h = (c.b - c.r) / d + 2.0; }
+                else { h = (c.r - c.g) / d + 4.0; }
+                h *= 60.0;
+            }
+            return float3(h, s, l);
+        }
+        float3 fromHSL(float3 hsl) {
+            float h = fmod(hsl.x + 360.0, 360.0) / 60.0, s = hsl.y, l = hsl.z;
+            float c = (1.0 - abs(2.0 * l - 1.0)) * s;
+            float x = c * (1.0 - abs(fmod(h, 2.0) - 1.0));
+            float3 rgb = h < 1.0 ? float3(c, x, 0) : h < 2.0 ? float3(x, c, 0) : h < 3.0 ? float3(0, c, x)
+                       : h < 4.0 ? float3(0, x, c) : h < 5.0 ? float3(x, 0, c) : float3(c, 0, x);
+            return rgb + (l - c * 0.5);
+        }
+        [[stitchable]] float4 colorMixer(sample_t s, float4 b0, float4 b1, float4 b2, float4 b3,
+                                         float4 b4, float4 b5, float4 b6, float4 b7) {
+            float4 bands[8] = { b0, b1, b2, b3, b4, b5, b6, b7 };
+            const float centers[8] = { 0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 270.0, 300.0 };
+            float3 hsl = toHSL(clamp(s.rgb, 0.0, 1.0));
+            float weights[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+            for (int i = 0; i < 8; i++) {
+                float a = centers[i], b = i == 7 ? centers[0] + 360.0 : centers[i + 1];
+                float h = hsl.x < a ? hsl.x + 360.0 : hsl.x;
+                if (h >= a && h < b) {
+                    float t = smoothstep(0.0, 1.0, (h - a) / (b - a));
+                    weights[i] += 1.0 - t;
+                    weights[(i + 1) % 8] += t;
+                }
+            }
+            float3 shift = float3(0.0);
+            for (int i = 0; i < 8; i++) { shift += weights[i] * bands[i].xyz; }
+            // weight by chroma, not HSL saturation: near white and near black a sliver of color
+            // has high saturation, and a white shirt's bluish shadows would count as blue
+            float3 c = clamp(s.rgb, 0.0, 1.0);
+            float colorful = smoothstep(0.02, 0.2, max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)));
+            hsl.x += shift.x * 30.0 * colorful;
+            hsl.y = clamp(hsl.y * (1.0 + shift.y * colorful), 0.0, 1.0);
+            hsl.z = clamp(hsl.z * exp2(shift.z * colorful), 0.0, 1.0);
+            return float4(fromHSL(hsl), s.a);
         }
 
         // Adds grain `n` (0.5 = none) to display-encoded color, strongest in the midtones as on film.
@@ -129,6 +179,15 @@ enum DevelopKernels {
             .applyingGaussianBlur(sigma: longEdge * 0.01)
             .cropped(to: extent)
         return kernel.apply(extent: extent, arguments: [image, veil, amount, 0.92]) ?? image
+    }
+
+    /// The HSL mixer on display-encoded `image` (see the kernel).
+    static func colorMixer(_ image: CIImage, _ mixer: ColorMixer) -> CIImage {
+        guard !mixer.isNeutral, let kernel = kernels["colorMixer"] as? CIColorKernel else { return image }
+        let bands = (0..<8).map { i in
+            CIVector(x: mixer.hue[i] / 100, y: mixer.saturation[i] / 100, z: mixer.luminance[i] / 100, w: 0)
+        }
+        return kernel.apply(extent: image.extent, arguments: [image] + bands) ?? image
     }
 
     /// `image` with its brightness scaled toward the corners (see the kernel).

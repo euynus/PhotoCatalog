@@ -10,6 +10,7 @@ enum DevelopCheck {
         checkDetail()
         checkPresence()
         checkToneCurve()
+        checkColorMixer()
         checkLensCorrections()
         checkEffects()
         checkAutoAdjustments()
@@ -235,6 +236,31 @@ enum DevelopCheck {
         let carried = DevelopSettings().applying(settings, fields: [.toneCurve])
         assert(carried.curve == settings.curve && carried.fingerprint != DevelopSettings().fingerprint,
                "the curve travels as one setting and changes the fingerprint")
+    }
+
+    private static func checkColorMixer() {
+        let red = (0.8, 0.15, 0.15), blue = (0.15, 0.25, 0.85), gray = (0.5, 0.5, 0.5)
+        var s = DevelopSettings()
+        s.mixer.saturation[ColorMixer.Band.red.rawValue] = -100
+        let grayed = mean(red, s), untouched = mean(blue, s)
+        assert(abs(grayed.r - grayed.g) < 0.05 && abs(grayed.g - grayed.b) < 0.05, "-100 red saturation turns red gray")
+        assert(untouched.b > untouched.r + 0.4, "and leaves blue alone")
+        let neutral = mean(gray, s)
+        assert(abs(neutral.r - 0.5) < 0.02 && abs(neutral.b - 0.5) < 0.02, "grays are never touched")
+
+        s = DevelopSettings()
+        s.mixer.luminance[ColorMixer.Band.blue.rawValue] = -100
+        assert(luma(mean(blue, s)) < luma(mean(blue, .neutral)) - 0.03, "lowering blue luminance darkens blue")
+        s = DevelopSettings()
+        s.mixer.hue[ColorMixer.Band.blue.rawValue] = 100
+        let shifted = mean(blue, s), original = mean(blue, .neutral)
+        assert(shifted.r > original.r + 0.05, "a positive blue hue shift turns blue toward purple")
+
+        let old = try! JSONDecoder().decode(DevelopSettings.self, from: Data(#"{"mixer":{"hue":[1,2]}}"#.utf8))
+        assert(old.mixer.isNeutral, "a malformed mixer loads neutral")
+        let carried = DevelopSettings().applying(s, fields: [.colorMixer])
+        assert(carried.mixer == s.mixer && carried.fingerprint != DevelopSettings().fingerprint,
+               "the mixer travels as one setting and changes the fingerprint")
     }
 
     private static func checkPresence() {

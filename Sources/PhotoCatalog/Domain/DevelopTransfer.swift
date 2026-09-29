@@ -7,7 +7,7 @@ import Foundation
 /// Orientation comes before crop so a copied crop lands in the copied frame.
 enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
     case whiteBalance, exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze
-    case vibrance, saturation, toneCurve
+    case vibrance, saturation, toneCurve, colorMixer
     case sharpening, noiseReduction, lensCorrections, vignette, grain
     case orientation, crop
 
@@ -26,6 +26,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         case .clarity: L("清晰度")
         case .dehaze: L("去朦胧")
         case .toneCurve: L("色调曲线")
+        case .colorMixer: L("混色器")
         case .vibrance: L("鲜艳度")
         case .saturation: L("饱和度")
         case .sharpening: L("锐化")
@@ -44,6 +45,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         (L("色调"), [.exposure, .contrast, .highlights, .shadows, .whites, .blacks]),
         (L("偏好"), [.texture, .clarity, .dehaze, .vibrance, .saturation]),
         (L("色调曲线"), [.toneCurve]),
+        (L("混色器"), [.colorMixer]),
         (L("细节"), [.sharpening, .noiseReduction]),
         (L("镜头校正"), [.lensCorrections]),
         (L("效果"), [.vignette, .grain]),
@@ -79,6 +81,7 @@ extension DevelopSettings {
             case .clarity: next.clarity = source.clarity
             case .dehaze: next.dehaze = source.dehaze
             case .toneCurve: next.curve = source.curve
+            case .colorMixer: next.mixer = source.mixer
             case .vibrance: next.vibrance = source.vibrance
             case .saturation: next.saturation = source.saturation
             case .sharpening:

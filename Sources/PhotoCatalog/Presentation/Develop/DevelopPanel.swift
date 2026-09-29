@@ -6,6 +6,7 @@ import SwiftUI
 struct DevelopPanel: View {
     @Environment(AppState.self) private var app
     let asset: Asset?
+    @State private var mixerProperty: ColorMixer.Property = .hue
 
     var body: some View {
         Group {
@@ -60,6 +61,15 @@ struct DevelopPanel: View {
                                         guard let draft = app.developDraft, draft.assetId == asset.id else { return }
                                         app.commitDevelop([asset.id: draft.settings], undoName: undoName)
                                     })
+                }
+                section(L("混色器")) {
+                    Picker("混色器属性", selection: $mixerProperty) {
+                        ForEach(ColorMixer.Property.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    ForEach(DevelopControl.mixer(mixerProperty)) { control in slider(control, asset, settings) }
                 }
                 section(L("细节")) {
                     ForEach(DevelopControl.detail) { control in slider(control, asset, settings) }
