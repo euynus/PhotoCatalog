@@ -19,6 +19,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        // decoded photos are drawn for the screen the window is on (see DisplayBitmap)
+        DisplayBitmap.use(NSScreen.main)
+        for name in [NSApplication.didChangeScreenParametersNotification, NSWindow.didChangeScreenNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { DisplayBitmap.use(NSApp.mainWindow?.screen ?? NSScreen.main) }
+            }
+        }
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {

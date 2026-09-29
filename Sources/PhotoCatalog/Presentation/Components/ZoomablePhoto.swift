@@ -170,7 +170,8 @@ final class FullResolutionLoader: ObservableObject {
             kCGImageSourceShouldCacheImmediately: true,
             kCGImageSourceThumbnailMaxPixelSize: max(width, height, 1),
         ]
-        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return DisplayBitmap.converting(image) ?? image
     }
 }
 

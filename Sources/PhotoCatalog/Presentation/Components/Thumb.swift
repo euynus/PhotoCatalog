@@ -5,6 +5,32 @@ import SwiftUI
 import AppKit
 import ImageIO
 
+/// Bitmaps in the form the screen draws as they are. Image I/O hands decodes over in RGBX byte
+/// order in the file's color space; Core Animation then re-rendered and color-matched each new
+/// image on the main thread as it was committed (~18 ms per 2048 px preview on a P3 display,
+/// several times that at full resolution). Redrawing in the decode task moves that off it.
+enum DisplayBitmap {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var screenSpace: CGColorSpace?
+
+    /// The color space of the screen the window is on; call when that may have changed.
+    @MainActor static func use(_ screen: NSScreen?) {
+        let space = screen?.colorSpace?.cgColorSpace
+        lock.withLock { screenSpace = space }
+    }
+
+    /// `image` redrawn as premultiplied BGRA in the screen's color space (nil if that fails).
+    nonisolated static func converting(_ image: CGImage) -> CGImage? {
+        guard let space = lock.withLock({ screenSpace }) ?? CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                          | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return context.makeImage()
+    }
+}
+
 /// Bounds synchronous Image I/O work so a fast grid scroll cannot flood the
 /// cooperative thread pool with decodes that are already off screen.
 private actor ThumbDecodeLimiter {
@@ -205,7 +231,7 @@ final class ThumbLoader: ObservableObject {
         ]
         guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary),
               !Task.isCancelled else { return nil }
-        return NSImage(cgImage: cg, size: .zero)
+        return NSImage(cgImage: DisplayBitmap.converting(cg) ?? cg, size: .zero)
     }
 
     private func finish(_ key: String, _ img: NSImage?) {
