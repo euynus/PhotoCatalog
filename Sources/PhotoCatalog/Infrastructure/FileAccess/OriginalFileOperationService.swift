@@ -58,9 +58,12 @@ enum OriginalFileOperationService {
                 case .copy:
                     try fm.copyItem(at: source, to: target)
                     preserveModificationDate(from: source, to: target, fm: fm)
+                    XMPSidecar.copySidecar(from: source, to: target)
                     report.copied += 1
                 case .move:
                     try fm.moveItem(at: source, to: target)
+                    // the sidecar goes along, or the photo's metadata stays behind for other apps
+                    XMPSidecar.moveSidecar(from: source, to: target)
                     report.updatedLocations[asset.id] = target
                     report.moved += 1
                 }
@@ -84,6 +87,7 @@ enum OriginalFileOperationService {
                   !fm.fileExists(atPath: original.path) else { continue }
             do {
                 try fm.moveItem(at: moved, to: original)
+                XMPSidecar.moveSidecar(from: moved, to: original)
                 rolledBack += 1
             } catch {}
         }

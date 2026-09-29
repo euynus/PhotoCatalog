@@ -352,6 +352,7 @@
 "外部编辑的副本未能加入目录库" = "The copies for editing couldn't be added to the catalog";
 "无法生成用于外部编辑的 TIFF" = "Couldn't make the TIFF files for editing";
 "%lld 张照片所在的文件夹是只读的，无法在原件旁生成 TIFF" = "No TIFF can be made beside %lld photos in read-only folders";
+"%lld 张照片所在的文件夹是只读的，无法重命名" = "Can't rename %lld photos in read-only folders";
 "已在外部编辑器中打开 %lld 张" = "Opened %lld photos in the external editor";
 "所选照片旁没有 XMP sidecar" = "The selected photos have no XMP sidecar";
 "从文件读取元数据" = "Read Metadata from Files";
@@ -1152,6 +1153,7 @@
 "如 {date}_{seq}" = "e.g. {date}_{seq}";
 "…还有 %lld 张" = "…and %lld more";
 "%lld 个新文件名重复，将依次加上 _1、_2 区分；可加入 {seq} 避免" = "%lld new names repeat and will get _1, _2… — add {seq} to avoid it";
+"%lld 个新文件名已被文件夹中的其他文件使用，将加上 _1、_2 区分" = "%lld new names are used by other files in the folder and will get _1, _2…";
 "重命名 %lld 张" = "Rename %lld photos";
 
 /* Presentation/Sheets/RenderedExportSheet.swift */

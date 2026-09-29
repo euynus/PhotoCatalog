@@ -24,10 +24,23 @@ enum FileNameTemplate {
     }
 
     static func format(_ date: Date, _ pattern: String) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = pattern
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .captureWallClock
-        return formatter.string(from: date)
+        formatter(pattern).string(from: date)
+    }
+
+    /// One formatter per pattern, made once: a rename preview formats two dates per photo on
+    /// every keystroke. Formatting from several threads is safe once a formatter is set up.
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var formatters: [String: DateFormatter] = [:]
+
+    private static func formatter(_ pattern: String) -> DateFormatter {
+        lock.withLock {
+            if let formatter = formatters[pattern] { return formatter }
+            let formatter = DateFormatter()
+            formatter.dateFormat = pattern
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = .captureWallClock
+            formatters[pattern] = formatter
+            return formatter
+        }
     }
 }

@@ -87,7 +87,7 @@ struct MainView: View {
             RenderedExportSheet(settings: app.renderedExportSettings, folder: app.renderedExportFolder,
                                 sample: items.first, count: items.count)
         case "rename":
-            RenameSheet(targets: app.renameTargets(), template: app.renameTemplate)
+            RenameSheet(targets: app.renameSheetTargets, template: app.renameTemplate)
         case "developTransfer":
             DevelopTransferSheet(mode: app.developTransferMode,
                                  fields: app.developTransferMode == .preset

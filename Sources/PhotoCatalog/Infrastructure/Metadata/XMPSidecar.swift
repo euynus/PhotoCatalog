@@ -44,6 +44,29 @@ enum XMPSidecar {
         original.deletingPathExtension().appendingPathExtension("xmp")
     }
 
+    /// Moves an original's sidecar with it (`original` is where the file was, `moved` where it
+    /// is now). True when it moved or there was none; a RAW+JPEG pair shares one sidecar, which
+    /// the first file of the pair takes along.
+    @discardableResult
+    static func moveSidecar(from original: URL, to moved: URL) -> Bool {
+        let fm = FileManager.default
+        let source = sidecarURL(for: original), target = sidecarURL(for: moved)
+        guard source.path != target.path, fm.fileExists(atPath: source.path) else { return true }
+        // another file's sidecar is never replaced (a change of case only is the same file)
+        guard !fm.fileExists(atPath: target.path) || source.path.lowercased() == target.path.lowercased() else {
+            return false
+        }
+        return (try? fm.moveItem(at: source, to: target)) != nil
+    }
+
+    /// Copies an original's sidecar beside a copy of it, unless one is already there.
+    static func copySidecar(from original: URL, to copy: URL) {
+        let fm = FileManager.default
+        let source = sidecarURL(for: original), target = sidecarURL(for: copy)
+        guard fm.fileExists(atPath: source.path), !fm.fileExists(atPath: target.path) else { return }
+        try? fm.copyItem(at: source, to: target)
+    }
+
     /// XMP's GPS form: degrees, decimal minutes and a hemisphere letter ("30,30.500000N").
     static func gpsCoordinate(_ degrees: Double, positive: Character, negative: Character) -> String {
         let value = abs(degrees)

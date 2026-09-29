@@ -251,7 +251,7 @@ enum PairingCheck {
         let dir = fm.temporaryDirectory.appendingPathComponent("pc-pair-rename-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: dir) }
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        for name in ["A.CR3", "A.JPG", "Shoot_0001.JPG"] {
+        for name in ["A.CR3", "A.JPG", "A.xmp", "Shoot_0001.JPG", "C.CR3", "Other_0001.tif"] {
             fm.createFile(atPath: dir.appendingPathComponent(name).path, contents: Data(name.utf8))
         }
         var raw = DemoData.assets.first(where: \.isRaw)!
@@ -265,5 +265,33 @@ enum PairingCheck {
                && map[jpeg.id]?.lastPathComponent == "Shoot_0001_1.JPG"
                && fm.fileExists(atPath: dir.appendingPathComponent("Shoot_0001.JPG").path),
                "batch rename moves a RAW and its JPEG to one free base name")
+        assert(fm.fileExists(atPath: dir.appendingPathComponent("Shoot_0001_1.xmp").path)
+               && !fm.fileExists(atPath: dir.appendingPathComponent("A.xmp").path),
+               "the pair's sidecar is renamed with it")
+
+        // a name another file has, in any extension, is taken: C.CR3 beside Other_0001.tif
+        // would otherwise pair with it
+        var solo = DemoData.assets.filter(\.isRaw)[1]
+        solo.localPath = dir.appendingPathComponent("C.CR3").path
+        let preview = RenameService.plan([solo], template: "Other_{seq}", folders: RenameService.FolderNames(for: [solo]))
+        assert(preview.taken == 1, "the preview warns of a name already used in the folder")
+        let soloMap = RenameService.renameWithTemplate([solo], template: "Other_{seq}")
+        assert(soloMap[solo.id]?.lastPathComponent == "Other_0001_1.CR3", "a stem used by another file is skipped")
+        let kept = RenameService.renameWithTemplate([solo].map { var a = $0; a.localPath = soloMap[solo.id]?.path; return a },
+                                                    template: "{original}")
+        assert(kept[solo.id]?.lastPathComponent == "Other_0001_1.CR3", "a photo can keep its own name")
+
+        // moving an original takes its sidecar along, and putting it back brings it back
+        fm.createFile(atPath: dir.appendingPathComponent("Other_0001_1.xmp").path, contents: Data("xmp".utf8))
+        var moving = solo
+        moving.localPath = soloMap[solo.id]?.path
+        let elsewhere = dir.appendingPathComponent("elsewhere")
+        let report = OriginalFileOperationService.perform(.move, assets: [moving], destination: elsewhere)
+        assert(report.moved == 1 && fm.fileExists(atPath: elsewhere.appendingPathComponent("Other_0001_1.xmp").path)
+               && !fm.fileExists(atPath: dir.appendingPathComponent("Other_0001_1.xmp").path),
+               "moving an original moves its sidecar")
+        _ = OriginalFileOperationService.rollBackMoves(report.updatedLocations, originals: [moving])
+        assert(fm.fileExists(atPath: dir.appendingPathComponent("Other_0001_1.xmp").path),
+               "rolling a move back brings the sidecar back")
     }
 }

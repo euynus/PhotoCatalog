@@ -78,6 +78,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>%lld 张照片所在的文件夹是只读的，无法在原件旁生成 TIFF</string>
 	</dict>
+	<key>%lld 张照片所在的文件夹是只读的，无法重命名</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 张照片所在的文件夹是只读的，无法重命名</string>
+	</dict>
 	<key>%lld 张照片有位置信息</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

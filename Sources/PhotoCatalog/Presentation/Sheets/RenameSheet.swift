@@ -12,6 +12,9 @@ struct RenameSheet: View {
 
     @State private var template: String
     @State private var start = 1
+    /// The files already in the photos' folders, listed once: new names that another file
+    /// has will get a _1 suffix.
+    private let folders: RenameService.FolderNames
 
     private static let tokens: [(token: String, title: String)] = [
         ("{original}", L("原文件名")), ("{seq}", L("序号")), ("{date}", L("拍摄日期")), ("{time}", L("拍摄时间")),
@@ -21,6 +24,7 @@ struct RenameSheet: View {
     init(targets: [Asset], template: String) {
         self.targets = targets
         _template = State(initialValue: template)
+        folders = RenameService.FolderNames(for: targets)
     }
 
     /// A plain prefix numbers the photos after it, as renaming does.
@@ -34,7 +38,7 @@ struct RenameSheet: View {
     }
 
     var body: some View {
-        let plan = RenameService.plan(targets, template: effectiveTemplate, start: start)
+        let plan = RenameService.plan(targets, template: effectiveTemplate, start: start, folders: folders)
         VStack(spacing: 0) {
             HStack {
                 Text("重命名照片").font(.system(size: 17, weight: .semibold))
@@ -89,6 +93,11 @@ struct RenameSheet: View {
                               systemImage: "exclamationmark.triangle")
                             .font(.system(size: 11)).foregroundStyle(Theme.text2)
                     }
+                    if plan.taken > 0 {
+                        Label("\(plan.taken) 个新文件名已被文件夹中的其他文件使用，将加上 _1、_2 区分",
+                              systemImage: "exclamationmark.triangle")
+                            .font(.system(size: 11)).foregroundStyle(Theme.text2)
+                    }
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -124,6 +133,6 @@ struct RenameSheet: View {
     private func confirm() {
         guard canConfirm else { return }
         app.sheet = nil
-        app.renameOriginals(template: template, start: start)
+        app.renameOriginals(template: template, start: start, targets: targets)
     }
 }

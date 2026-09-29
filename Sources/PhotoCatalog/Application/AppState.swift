@@ -3676,25 +3676,43 @@ final class AppState {
         set { UserDefaults.standard.set(newValue, forKey: "pc_renameTemplate") }
     }
 
+    /// The photos the open rename dialog reaches, taken as it opened: its preview and the
+    /// rename itself stay on them whatever the selection does meanwhile.
+    @ObservationIgnored private(set) var renameSheetTargets: [Asset] = []
+
     /// 照片 → 重命名照片…: the rename dialog, with a preview of the new names.
     func showRenameSheet() {
-        guard !renameTargets().isEmpty else {
+        let targets = renameTargets()
+        guard !targets.isEmpty else {
             push("仅可重命名已导入照片", "warning")
             return
         }
+        renameSheetTargets = targets
         sheet = "rename"
     }
 
-    /// Renames the selection's originals from `template`, numbering from `start`; a paired JPEG
-    /// takes its RAW's new name, and virtual copies follow their master. The dialog asked.
-    func renameOriginals(template rawTemplate: String, start: Int = 1) {
+    /// Renames the originals of `targets` (the selection's by default) from `template`,
+    /// numbering from `start`; a paired JPEG takes its RAW's new name, sidecars go along, and
+    /// virtual copies follow their master. The dialog asked.
+    func renameOriginals(template rawTemplate: String, start: Int = 1, targets: [Asset]? = nil) {
         let trimmed = rawTemplate.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         // a plain prefix numbers the photos after it
         let template = trimmed.contains("{") ? trimmed : "\(trimmed)_{seq}"
         renameTemplate = trimmed
-        let real = renameTargets()
-        guard !real.isEmpty else { push("仅可重命名已导入照片", "warning"); return }
+        // the photos as they are now (a rescan may have changed them since the dialog opened)
+        let chosen = (targets ?? renameTargets()).compactMap { assetIndex[$0.id].map { assets[$0] } }
+            .filter { !$0.deleted && hasExistingOriginal($0) }
+        guard !chosen.isEmpty else { push("仅可重命名已导入照片", "warning"); return }
+        // renaming changes the folder, so it must be writable
+        let real = chosen.filter { asset in
+            asset.localPath.map { FileManager.default.isWritableFile(atPath: ($0 as NSString).deletingLastPathComponent) }
+                ?? false
+        }
+        if real.count < chosen.count {
+            push("\(chosen.count - real.count) 张照片所在的文件夹是只读的，无法重命名", "warning")
+        }
+        guard !real.isEmpty else { return }
         // a paired JPEG takes the RAW's new base name so the pair survives the rename
         let partners = Dictionary(uniqueKeysWithValues: real.map { primary in
             (primary.id, companions(of: primary).filter(hasExistingOriginal))
