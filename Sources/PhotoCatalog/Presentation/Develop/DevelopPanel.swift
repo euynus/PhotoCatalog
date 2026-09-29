@@ -153,10 +153,15 @@ struct DevelopPanel: View {
             Text(asset.filename).font(.system(size: 13, weight: .semibold)).lineLimit(1).truncationMode(.middle)
             HStack(spacing: 8) {
                 Toggle(isOn: Binding(get: { app.developShowsOriginal }, set: { app.developShowsOriginal = $0 })) {
-                    Label("修改前", systemImage: "rectangle.split.2x1")
+                    Label("修改前", systemImage: "circle.righthalf.filled")
                 }
                 .toggleStyle(.button)
                 .help("修改前 / 修改后 (\\)")
+                Toggle(isOn: Binding(get: { app.developComparing }, set: { app.developComparing = $0 })) {
+                    Label("对比", systemImage: "rectangle.split.2x1")
+                }
+                .toggleStyle(.button)
+                .help("修改前与修改后并排 (Y)")
                 Spacer(minLength: 0)
                 Button("复位") { app.resetDevelop(asset) }
                 .disabled(settings == app.defaultDevelopSettings(for: asset))

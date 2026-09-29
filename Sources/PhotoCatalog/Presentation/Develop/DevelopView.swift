@@ -29,6 +29,8 @@ private struct DevelopCanvas: View {
     @Environment(AppState.self) private var app
     let asset: Asset
     @StateObject private var engine = DevelopPreviewEngine()
+    /// Renders the before side of a side-by-side comparison.
+    @StateObject private var beforeEngine = DevelopPreviewEngine()
 
     private var source: (url: URL, isRaw: Bool)? {
         if asset.status == .ready, let path = asset.localPath { return (URL(fileURLWithPath: path), asset.isRaw) }
@@ -55,7 +57,9 @@ private struct DevelopCanvas: View {
         return Group {
             if let source {
                 Group {
-                    if cropping {
+                    if app.developComparing {
+                        BeforeAfterPanes(before: beforeEngine.image(for: asset.id), after: engine.image(for: asset.id))
+                    } else if cropping {
                         CropEditor(asset: asset, image: engine.wholeFrameImage(for: asset.id), settings: settings)
                     } else if spotting {
                         SpotEditor(asset: asset, image: engine.finishedImage(for: asset.id), settings: settings,
@@ -100,6 +104,12 @@ private struct DevelopCanvas: View {
                         if let histogram { app.recordDevelopHistogram(histogram, for: asset.id) }
                     }
                 }
+                .onChange(of: app.developComparing ? Self.before(settings) : nil, initial: true) { _, before in
+                    guard let before else { return }
+                    beforeEngine.render(assetId: asset.id, url: source.url, isRaw: source.isRaw, settings: before,
+                                        draft: false, fullResolution: false, wholeFrame: false, overlayMask: nil,
+                                        visualizeSpots: false) { _, _ in }
+                }
             } else {
                 ContentUnavailableView("原件不可用",
                                        systemImage: "exclamationmark.triangle",
@@ -107,6 +117,20 @@ private struct DevelopCanvas: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The photo as shot, framed like `after`: its turns, perspective, straighten angle, crop
+    /// and lens distortion, so the two sides line up and differ only in tone and color.
+    private static func before(_ after: DevelopSettings) -> DevelopSettings {
+        var before = DevelopSettings()
+        before.rotation = after.rotation
+        before.flipped = after.flipped
+        before.perspectiveVertical = after.perspectiveVertical
+        before.perspectiveHorizontal = after.perspectiveHorizontal
+        before.straighten = after.straighten
+        before.crop = after.crop
+        before.distortion = after.distortion
+        return before
     }
 
     /// The finished photo's size at 1:1. Previews render the uncropped photo at 2048 px on the
@@ -129,6 +153,58 @@ private struct DevelopCanvas: View {
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(.black.opacity(0.55), in: Capsule())
             .padding(14)
+    }
+}
+
+/// Before and after, side by side or one above the other — whichever shows the photo larger.
+private struct BeforeAfterPanes: View {
+    let before: CGImage?
+    let after: CGImage?
+
+    private static let gap: CGFloat = 8
+
+    var body: some View {
+        GeometryReader { proxy in
+            let layout = sideBySide(in: proxy.size)
+                ? AnyLayout(HStackLayout(spacing: Self.gap)) : AnyLayout(VStackLayout(spacing: Self.gap))
+            layout {
+                pane(before, L("修改前"))
+                pane(after, L("修改后"))
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .padding(12)
+    }
+
+    /// Whether the photo comes out larger side by side than one above the other.
+    private func sideBySide(in size: CGSize) -> Bool {
+        let aspect = after.map { CGFloat($0.width) / CGFloat(max($0.height, 1)) } ?? 1.5
+        func fitted(_ box: CGSize) -> CGFloat {
+            let width = min(box.width, box.height * aspect)
+            return width * width / aspect
+        }
+        return fitted(CGSize(width: (size.width - Self.gap) / 2, height: size.height))
+            >= fitted(CGSize(width: size.width, height: (size.height - Self.gap) / 2))
+    }
+
+    private func pane(_ image: CGImage?, _ title: String) -> some View {
+        ZStack(alignment: .topLeading) {
+            if let image {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.canvasText)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(.black.opacity(0.55), in: Capsule())
+                .padding(8)
+        }
     }
 }
 

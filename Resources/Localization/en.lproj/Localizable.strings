@@ -760,6 +760,11 @@
 "自动透视" = "Auto Upright";
 "让竖直线条竖直，水平线条也尽量平行" = "Set vertical lines upright, and horizontal lines parallel where possible";
 "透视" = "Perspective";
+"修改前与修改后并排 (Y)" = "Before and after side by side (Y)";
+"修改前后对比 (Y)" = "Before & After (Y)";
+"修改后" = "After";
+"对比" = "Compare";
+"结束修改前后对比 (Y)" = "End Before & After (Y)";
 "预设删除后无法恢复，已用它修过的照片不受影响。" = "A deleted preset can’t be brought back. Photos already edited with it stay as they are.";
 "导入时修图" = "Develop on Import";
 "修图预设" = "Develop Preset";

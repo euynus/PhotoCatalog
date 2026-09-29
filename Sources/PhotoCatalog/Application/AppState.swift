@@ -624,6 +624,7 @@ final class AppState {
         didSet {
             if view != .develop {
                 developCropping = false; developPickingWhiteBalance = false; developMasking = false; developSpotting = false
+                developComparing = false
             }
             if oldValue == .survey && view != .survey { leaveSurvey() }
         }
@@ -663,7 +664,19 @@ final class AppState {
     /// Settings while a slider drags — drives the live preview; saved on release.
     var developDraft: DevelopDraft?
     /// Before / after (\): show the photo as shot.
-    var developShowsOriginal = false
+    var developShowsOriginal = false {
+        didSet { if developShowsOriginal { developComparing = false } }
+    }
+    /// Before and after side by side (Y): the photo as shot, framed like the edit, beside it.
+    /// The tools and zoom make way.
+    var developComparing = false {
+        didSet {
+            if developComparing {
+                developShowsOriginal = false; loupeZoom = nil
+                developCropping = false; developMasking = false; developSpotting = false; developPickingWhiteBalance = false
+            }
+        }
+    }
     struct DevelopAsShot: Equatable { let temperature: Double; let tint: Double }
     /// Camera-recorded RAW white balance, learned when a photo is first rendered.
     var developAsShot: [String: DevelopAsShot] = [:]
@@ -673,6 +686,7 @@ final class AppState {
         didSet {
             if developCropping {
                 loupeZoom = nil; developMasking = false; developSpotting = false; developPickingWhiteBalance = false
+                developComparing = false
             }
         }
     }
@@ -682,6 +696,7 @@ final class AppState {
         didSet {
             if developMasking {
                 loupeZoom = nil; developCropping = false; developPickingWhiteBalance = false; developSpotting = false
+                developComparing = false
             }
             if !developMasking { developMaskCreation = nil; developRefiningMask = false }
         }
@@ -691,6 +706,7 @@ final class AppState {
         didSet {
             if developSpotting {
                 loupeZoom = nil; developCropping = false; developPickingWhiteBalance = false; developMasking = false
+                developComparing = false
             } else {
                 developVisualizeSpots = false
             }
@@ -1692,7 +1708,7 @@ final class AppState {
             compareZoom = compareZoom == nil ? .actualSize : nil
         case .develop:
             // the crop, mask and spot tools show the whole photo; zoom would only slow them down
-            guard !developCropping, !developMasking, !developSpotting else { return true }
+            guard !developCropping, !developMasking, !developSpotting, !developComparing else { return true }
             loupeZoom = loupeZoom == nil ? .actualSize : nil
         case .survey:
             guard let primaryId else { return false }
@@ -1773,6 +1789,10 @@ final class AppState {
         }
         if view == .develop, developMasking {
             developMasking = false
+            return true
+        }
+        if view == .develop, developComparing {
+            developComparing = false
             return true
         }
         if view == .loupe || view == .develop, loupeZoom != nil {
@@ -8017,6 +8037,9 @@ final class AppState {
         case "\\":
             guard view == .develop else { return false }
             developShowsOriginal.toggle()
+        case "y":
+            guard view == .develop else { return false }
+            developComparing.toggle()
         case "r":
             toggleCropTool()
         case "b":

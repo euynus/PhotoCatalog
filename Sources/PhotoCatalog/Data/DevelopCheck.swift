@@ -1439,6 +1439,17 @@ enum DevelopCheck {
         assert(app.view == .develop, "D opens Develop")
         _ = app.handleKey("\\", hasCommand: false)
         assert(app.developShowsOriginal, "\\ shows the photo before adjustments")
+        _ = app.handleKey("y", hasCommand: false)
+        assert(app.developComparing && !app.developShowsOriginal, "Y puts before and after side by side")
+        app.developCropping = true
+        assert(!app.developComparing, "a tool ends the comparison")
+        app.developCropping = false
+        app.developComparing = true
+        _ = app.handleKey("z", hasCommand: false)
+        assert(app.loupeZoom == nil && app.developComparing, "zoom stays off while comparing")
+        _ = app.handleKey("escape", hasCommand: false)
+        assert(!app.developComparing && app.view == .develop, "Esc ends the comparison and stays in Develop")
+        app.developShowsOriginal = true
 
         app.view = .grid
         _ = app.handleKey("r", hasCommand: false)

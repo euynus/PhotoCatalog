@@ -169,6 +169,10 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.onboarded)
             Button("裁剪与拉直 (R)") { perform("视图.裁剪与拉直") { app.toggleCropTool() } }
                 .disabled(app.sheet != nil || !app.onboarded)
+            Button(app.developComparing ? "结束修改前后对比 (Y)" : "修改前后对比 (Y)") {
+                perform("视图.修改前后对比") { app.developComparing.toggle() }
+            }
+            .disabled(app.sheet != nil || !app.onboarded || app.view != .develop)
             Button("拍摄参数分析") { perform("视图.拍摄参数分析") { app.switchView(.analysis) } }
                 .disabled(app.sheet != nil || !app.onboarded)
             Divider()
