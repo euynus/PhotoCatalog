@@ -89,6 +89,18 @@ struct KeyCatcher: NSViewRepresentable {
         ].contains(key)
     }
 
+    /// SwiftUI writes a command's enabled state into its menu item only when that menu opens,
+    /// so a shortcut is matched against whatever the item showed last: ⇧⌘E stayed disabled
+    /// from launch (no selection yet) until the 照片 menu was opened by hand.
+    @MainActor
+    static func refreshMenuItems() {
+        func refresh(_ menu: NSMenu) {
+            menu.delegate?.menuNeedsUpdate?(menu)
+            for item in menu.items { if let submenu = item.submenu { refresh(submenu) } }
+        }
+        if let menu = NSApp.mainMenu { refresh(menu) }
+    }
+
     @MainActor
     static func isEditingText() -> Bool {
         if let responder = NSApp.keyWindow?.firstResponder, responder is NSTextView { return true }
@@ -181,8 +193,9 @@ struct KeyCatcher: NSViewRepresentable {
         private func handle(_ event: NSEvent) -> NSEvent? {
             let app = app
             let handled = MainActor.assumeIsolated {
-                KeyCatcher.routeEvent(event, isMenuTracking: menuTrackingDepth > 0,
-                                      isEditingText: KeyCatcher.isEditingText()) { key, command, shift in
+                if event.modifierFlags.contains(.command) { KeyCatcher.refreshMenuItems() }
+                return KeyCatcher.routeEvent(event, isMenuTracking: menuTrackingDepth > 0,
+                                             isEditingText: KeyCatcher.isEditingText()) { key, command, shift in
                     app.handleKey(key, hasCommand: command, hasShift: shift)
                 } == nil
             }
