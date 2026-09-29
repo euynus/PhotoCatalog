@@ -8,7 +8,8 @@ struct Loupe: View {
 
     var body: some View {
         let list = app.list
-        let idx = max(0, list.firstIndex { $0.id == app.primaryId } ?? 0)
+        // the position hint answers this without scanning the list after each arrow key
+        let idx = max(0, app.primaryId.flatMap(app.listPosition(of:)) ?? 0)
         if list.isEmpty {
             VStack(spacing: 10) {
                 Icon("loupe", size: 40).foregroundStyle(Theme.canvasText3)
@@ -43,7 +44,7 @@ struct Loupe: View {
     private func go(_ delta: Int) {
         let list = app.list
         guard !list.isEmpty else { return }
-        let idx = max(0, list.firstIndex { $0.id == app.primaryId } ?? 0)
+        let idx = max(0, app.primaryId.flatMap(app.listPosition(of:)) ?? 0)
         let target = idx + delta
         guard target >= 0, target < list.count else { return }  // clamp at ends, like the arrow keys
         app.setPrimary(list[target].id)
@@ -188,44 +189,19 @@ struct Filmstrip: View {
 
     var body: some View {
         let _ = assetRevision
+        // read once here: a cell reading it made every visible cell re-render on each photo change
+        let primaryId = app.primaryId
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 8) {
                     // positions as item ids, like the grid: a new list doesn't re-index every photo
                     ForEach(0..<photos.count, id: \.self) { position in
                         let a = photos[position]
-                        Hover { hover in
-                            Button {
-                                TextEditing.end()
-                                app.setPrimary(a.id)
-                            } label: {
-                                VStack(spacing: 4) {
-                                    Thumb(asset: a, radius: 2, contentMode: .fit, maxDecodePixel: 216)
-                                        .frame(width: 108, height: 72)
-                                        .background(Theme.canvas)
-                                    HStack(spacing: 5) {
-                                        if a.rating > 0 {
-                                            StarsView(value: a.rating, size: 8, dim: true, filledOnly: true)
-                                        }
-                                        Spacer(minLength: 0)
-                                        FlagPill(flag: a.flag, size: 10)
-                                    }
-                                    .frame(height: 12)
-                                    .background(Theme.canvasSurface)
-                                }
-                                .padding(4)
-                                .frame(width: 116, height: 96)
-                                .background(a.id == app.primaryId || hover ? Theme.canvasSurfaceHi : Theme.canvas)
-                                .clipShape(RoundedRectangle(cornerRadius: 2))
-                            }
-                            .buttonStyle(.plain)
-                            .overlay(RoundedRectangle(cornerRadius: 2)
-                                .strokeBorder(a.id == app.primaryId ? Theme.canvasText : Theme.canvasLine,
-                                              lineWidth: a.id == app.primaryId ? 1.5 : 1))
-                            .help(a.filename)
-                            .accessibilityLabel(a.filename)
-                            .accessibilityAddTraits(a.id == app.primaryId ? .isSelected : [])
+                        FilmstripCell(asset: a, isPrimary: a.id == primaryId) {
+                            TextEditing.end()
+                            app.setPrimary(a.id)
                         }
+                        .equatable()
                         .id(a.id)   // a position showing another photo starts fresh
                     }
                 }
@@ -245,7 +221,51 @@ struct Filmstrip: View {
     }
 
     private var primaryPosition: Int? {
-        guard let id = app.primaryId else { return nil }
-        return photos.assets.firstIndex { $0.id == id }
+        app.primaryId.flatMap(app.listPosition(of:))
+    }
+}
+
+/// One filmstrip thumbnail; equal cells skip their body, so a new selection re-renders only
+/// the two cells whose highlight changes. (The catalog identity of `Asset` is just its id.)
+private struct FilmstripCell: View, Equatable {
+    let asset: Asset
+    let isPrimary: Bool
+    let select: () -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.isPrimary == rhs.isPrimary && lhs.asset.id == rhs.asset.id && lhs.asset.rating == rhs.asset.rating
+            && lhs.asset.flag == rhs.asset.flag && lhs.asset.thumb == rhs.asset.thumb
+            && lhs.asset.filename == rhs.asset.filename && lhs.asset.status == rhs.asset.status
+    }
+
+    var body: some View {
+        Hover { hover in
+            Button(action: select) {
+                VStack(spacing: 4) {
+                    Thumb(asset: asset, radius: 2, contentMode: .fit, maxDecodePixel: 216)
+                        .frame(width: 108, height: 72)
+                        .background(Theme.canvas)
+                    HStack(spacing: 5) {
+                        if asset.rating > 0 {
+                            StarsView(value: asset.rating, size: 8, dim: true, filledOnly: true)
+                        }
+                        Spacer(minLength: 0)
+                        FlagPill(flag: asset.flag, size: 10)
+                    }
+                    .frame(height: 12)
+                    .background(Theme.canvasSurface)
+                }
+                .padding(4)
+                .frame(width: 116, height: 96)
+                .background(isPrimary || hover ? Theme.canvasSurfaceHi : Theme.canvas)
+                .clipShape(RoundedRectangle(cornerRadius: 2))
+            }
+            .buttonStyle(.plain)
+            .overlay(RoundedRectangle(cornerRadius: 2)
+                .strokeBorder(isPrimary ? Theme.canvasText : Theme.canvasLine, lineWidth: isPrimary ? 1.5 : 1))
+            .help(asset.filename)
+            .accessibilityLabel(asset.filename)
+            .accessibilityAddTraits(isPrimary ? .isSelected : [])
+        }
     }
 }

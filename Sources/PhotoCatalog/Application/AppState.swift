@@ -4755,7 +4755,7 @@ final class AppState {
 
     /// Where `id` sits in `list`: the index if this list already has one, else the hint,
     /// else one pass.
-    private func listPosition(of id: String) -> Int? {
+    func listPosition(of id: String) -> Int? {
         listPositions(of: CollectionOfOne(id))[id]
     }
 
