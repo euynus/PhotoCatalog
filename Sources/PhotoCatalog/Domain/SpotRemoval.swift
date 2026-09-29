@@ -47,7 +47,7 @@ extension SpotRemoval {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
-        mode = try c.decodeIfPresent(Mode.self, forKey: .mode) ?? .heal
+        mode = (try? c.decodeIfPresent(Mode.self, forKey: .mode)) ?? .heal   // a mode added later heals
         target = try c.decodeIfPresent(CGPoint.self, forKey: .target) ?? CGPoint(x: 0.5, y: 0.5)
         source = try c.decodeIfPresent(CGPoint.self, forKey: .source) ?? CGPoint(x: 0.55, y: 0.5)
         radius = try c.decodeIfPresent(Double.self, forKey: .radius) ?? 0.01

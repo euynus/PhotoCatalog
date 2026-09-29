@@ -496,6 +496,11 @@ enum DevelopCheck {
         rounded.append(CGPoint(x: 0.123456789, y: 0.5))
         assert(rounded.points == [0.1235, 0.5], "stroke points are stored rounded")
 
+        let newer = try! JSONDecoder().decode(DevelopSettings.self, from: Data(
+            #"{"exposure":0.5,"masks":[{"kind":"colorRange"},{"kind":"linear"}],"spots":[{"mode":"patch","radius":0.02}]}"#.utf8))
+        assert(newer.exposure == 0.5 && newer.masks.map(\.kind) == [.linear]
+               && newer.spots.first?.mode == .heal && newer.spots.first?.radius == 0.02,
+               "a mask or spot from a newer version is left out or read as it can be, not the whole edit")
         let old = try! JSONDecoder().decode(DevelopSettings.self, from: Data(#"{"exposure":0.5}"#.utf8))
         assert(old.masks.isEmpty && old.fingerprint == { var e = DevelopSettings(); e.exposure = 0.5; return e }().fingerprint,
                "edits saved before masks load without any and keep their cache names")

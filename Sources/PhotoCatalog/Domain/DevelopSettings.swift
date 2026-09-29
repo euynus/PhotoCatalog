@@ -169,12 +169,35 @@ extension DevelopSettings {
         grain = try container.decodeIfPresent(Double.self, forKey: .grain) ?? 0
         grainSize = try container.decodeIfPresent(Double.self, forKey: .grainSize) ?? 25
         grainRoughness = try container.decodeIfPresent(Double.self, forKey: .grainRoughness) ?? 50
-        masks = try container.decodeIfPresent([LocalAdjustment].self, forKey: .masks) ?? []
-        spots = try container.decodeIfPresent([SpotRemoval].self, forKey: .spots) ?? []
+        // one by one: a mask of a kind this version doesn't know is left out, not the photo's edit
+        masks = try container.decodeIfPresent(Lenient<LocalAdjustment>.self, forKey: .masks)?.elements ?? []
+        spots = try container.decodeIfPresent(Lenient<SpotRemoval>.self, forKey: .spots)?.elements ?? []
         rotation = try container.decodeIfPresent(Int.self, forKey: .rotation) ?? 0
         flipped = try container.decodeIfPresent(Bool.self, forKey: .flipped) ?? false
         straighten = try container.decodeIfPresent(Double.self, forKey: .straighten) ?? 0
         crop = try container.decodeIfPresent(DevelopCrop.self, forKey: .crop)
+    }
+}
+
+/// An array decoded element by element, skipping the elements that don't decode.
+private struct Lenient<Element: Decodable>: Decodable {
+    let elements: [Element]
+
+    private struct Skip: Decodable {
+        init(from decoder: Decoder) throws {}
+    }
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var elements: [Element] = []
+        while !container.isAtEnd {
+            if let element = try? container.decode(Element.self) {
+                elements.append(element)
+            } else {
+                _ = try container.decode(Skip.self)
+            }
+        }
+        self.elements = elements
     }
 }
 
