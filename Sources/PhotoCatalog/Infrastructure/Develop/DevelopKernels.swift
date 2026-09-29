@@ -221,6 +221,30 @@ enum DevelopKernels {
             return float4(w, w, w, 1.0);
         }
         """,
+        "cylinderWarp": """
+        // A photo projected onto a cylinder of radius `f` (pixels) around the camera, as a
+        // panorama is: `center` is where the photo's middle lands, `halfSize` its half size. The
+        // cylinder's axis is vertical, or horizontal when `vertical` is 1 (a panorama shot upward).
+        [[stitchable]] float2 cylinderWarp(float2 center, float f, float2 halfSize, float vertical, destination dest) {
+            float2 d = dest.coord() - center;
+            if (vertical > 0.5) {
+                float theta = d.y / f;
+                return float2(d.x / cos(theta), f * tan(theta)) + halfSize;
+            }
+            float theta = d.x / f;
+            return float2(f * tan(theta), d.y / cos(theta)) + halfSize;
+        }
+        """,
+        "edgeWeight": """
+        // A frame's blending weight: 1 in the middle, falling linearly to 0 at every edge of
+        // the photo (`size` pixels, origin at zero).
+        [[stitchable]] float4 edgeWeight(float2 size, destination dest) {
+            float2 p = dest.coord();
+            float2 d = min(p, size - p) / (size * 0.5);
+            float w = clamp(d.x, 0.0, 1.0) * clamp(d.y, 0.0, 1.0);
+            return float4(w, w, w, 1.0);
+        }
+        """,
         "mergeAdd": """
         [[stitchable]] float4 mergeAdd(sample_t a, sample_t b) { return float4(a.rgb + b.rgb, 1.0); }
         """,
@@ -440,6 +464,28 @@ enum DevelopKernels {
             return CIImage(color: .black).cropped(to: extent)
         }
         return image
+    }
+
+    /// `image` (origin at zero) projected onto a cylinder of radius `f`, its middle at `center`;
+    /// outside the photo is empty.
+    static func cylinderWarp(_ image: CIImage, f: Double, center: CGPoint, vertical: Bool) -> CIImage {
+        guard let warp = kernel("cylinderWarp") as? CIWarpKernel else { return image }
+        let size = image.extent.size
+        // what the projection covers: narrower than the photo along the turn, as tall across it
+        let along = vertical ? size.height : size.width, across = vertical ? size.width : size.height
+        let span = 2 * CGFloat(f) * CGFloat(atan(Double(along) / 2 / f))
+        let extent = vertical
+            ? CGRect(x: center.x - across / 2, y: center.y - span / 2, width: across, height: span)
+            : CGRect(x: center.x - span / 2, y: center.y - across / 2, width: span, height: across)
+        let source = image.extent
+        return warp.apply(extent: extent.integral, roiCallback: { _, _ in source }, image: image,
+                          arguments: [CIVector(x: center.x, y: center.y), f,
+                                      CIVector(x: size.width / 2, y: size.height / 2), vertical ? 1.0 : 0.0]) ?? image
+    }
+
+    /// 1 in the middle of a `size` photo, 0 at its edges (see the kernel).
+    static func edgeWeight(size: CGSize) -> CIImage {
+        apply("edgeWeight", [CIVector(x: size.width, y: size.height)], extent: CGRect(origin: .zero, size: size))
     }
 
     static func fusionWeight(_ encoded: CIImage, laplacian: CIImage) -> CIImage {

@@ -812,6 +812,14 @@
 "请选择至少两张有原件的照片" = "Select at least two photos with originals";
 "这些照片的曝光相近，HDR 合并的效果有限；请选用一组不同曝光的照片" = "These photos have similar exposures, so an HDR merge will do little; choose a set taken at different exposures";
 "HDR 合并" = "HDR Merge";
+"全景…" = "Panorama…";
+"全景合并" = "Panorama Merge";
+"全景合并失败：有照片无法读取" = "Panorama merge failed: a photo couldn’t be read";
+"全景合并最多 30 张照片" = "Panorama merge takes up to 30 photos";
+"已合并为全景照片" = "Merged into a panorama";
+"把 %lld 张相互重叠的照片按拍摄顺序拼成一张全景，投影到柱面并裁去空白边缘。结果存为第一张照片旁的 16 位 TIFF，加入目录库后可继续修图。" = "Joins %lld overlapping photos, in the order they were taken, into a panorama projected onto a cylinder with the empty edges cropped away. The result is saved as a 16-bit TIFF beside the first photo and added to the catalog for further editing.";
+"正在合并全景…" = "Merging panorama…";
+"第 %lld 与第 %lld 张照片没有足够的重叠，无法拼接" = "Photos %lld and %lld don’t overlap enough to join";
 "预设删除后无法恢复，已用它修过的照片不受影响。" = "A deleted preset can’t be brought back. Photos already edited with it stay as they are.";
 "导入时修图" = "Develop on Import";
 "修图预设" = "Develop Preset";

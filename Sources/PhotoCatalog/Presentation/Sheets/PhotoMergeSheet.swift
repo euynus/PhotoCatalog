@@ -1,5 +1,5 @@
 // ============================================================
-//  Photo merge — Lightroom's HDR Merge Preview
+//  Photo merge — Lightroom's HDR and Panorama Merge Preview
 // ============================================================
 import SwiftUI
 
@@ -9,13 +9,15 @@ struct PhotoMergeSheet: View {
     let targets: [Asset]
     @State private var preview: CGImage?
     @State private var previewFailed = false
+    /// Why the preview couldn't be made, when the merge can say.
+    @State private var failure: String?
     @State private var generation = 0
 
     var body: some View {
         @Bindable var app = app
         VStack(spacing: 0) {
             HStack {
-                Text("HDR 合并").font(.system(size: 17, weight: .semibold))
+                Text(app.photoMergeKind == .hdr ? L("HDR 合并") : L("全景合并")).font(.system(size: 17, weight: .semibold))
                 Spacer()
                 sheetClose { app.sheet = nil }
             }
@@ -24,7 +26,9 @@ struct PhotoMergeSheet: View {
             .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("把 \(targets.count) 张不同曝光的照片合成一张，亮部和暗部的细节都保留。结果存为参考照片旁的 16 位 TIFF，加入目录库后可继续修图。")
+                Text(app.photoMergeKind == .hdr
+                     ? L("把 \(targets.count) 张不同曝光的照片合成一张，亮部和暗部的细节都保留。结果存为参考照片旁的 16 位 TIFF，加入目录库后可继续修图。")
+                     : L("把 \(targets.count) 张相互重叠的照片按拍摄顺序拼成一张全景，投影到柱面并裁去空白边缘。结果存为第一张照片旁的 16 位 TIFF，加入目录库后可继续修图。"))
                     .font(.system(size: 12)).foregroundStyle(Theme.text3)
                     .fixedSize(horizontal: false, vertical: true)
                 ZStack {
@@ -32,22 +36,25 @@ struct PhotoMergeSheet: View {
                     if let preview {
                         Image(decorative: preview, scale: 1).resizable().aspectRatio(contentMode: .fit).padding(6)
                     } else if previewFailed {
-                        Text("无法生成预览").font(.system(size: 12)).foregroundStyle(Theme.canvasText2)
+                        Text(failure ?? L("无法生成预览")).font(.system(size: 12)).foregroundStyle(Theme.canvasText2)
+                            .multilineTextAlignment(.center).padding()
                     } else {
                         ProgressView().controlSize(.small)
                     }
                 }
                 .frame(height: 280)
-                if exposuresAlike {
-                    Label("这些照片的曝光相近，HDR 合并的效果有限；请选用一组不同曝光的照片",
-                          systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 11)).foregroundStyle(Theme.text2)
-                        .fixedSize(horizontal: false, vertical: true)
+                if app.photoMergeKind == .hdr {
+                    if exposuresAlike {
+                        Label("这些照片的曝光相近，HDR 合并的效果有限；请选用一组不同曝光的照片",
+                              systemImage: "exclamationmark.triangle")
+                            .font(.system(size: 11)).foregroundStyle(Theme.text2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Toggle("自动对齐", isOn: $app.hdrOptions.align)
+                        .help("手持拍摄时，先把各张照片对齐")
+                    Toggle("消除重影", isOn: $app.hdrOptions.deghost)
+                        .help("照片之间有移动的物体时，那里只用中间曝光的照片")
                 }
-                Toggle("自动对齐", isOn: $app.hdrOptions.align)
-                    .help("手持拍摄时，先把各张照片对齐")
-                Toggle("消除重影", isOn: $app.hdrOptions.deghost)
-                    .help("照片之间有移动的物体时，那里只用中间曝光的照片")
             }
             .toggleStyle(.checkbox)
             .padding(18)
@@ -66,6 +73,8 @@ struct PhotoMergeSheet: View {
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
+                .disabled(failure != nil)
+                .opacity(failure != nil ? 0.5 : 1)
             }
             .padding(.horizontal, 18).padding(.vertical, 10)
             .background(Theme.bgSidebar)
@@ -90,17 +99,29 @@ struct PhotoMergeSheet: View {
     /// A small merge with the current options; a newer one replaces it.
     private func render() async {
         generation += 1
-        let mine = generation, frames = app.photoMergeFrames(targets), options = app.hdrOptions
+        let mine = generation, targets = targets, options = app.hdrOptions, kind = app.photoMergeKind
         preview = nil
         previewFailed = false
-        let image: CGImage? = await withCheckedContinuation { continuation in
+        failure = nil
+        let result: (image: CGImage?, gap: Int?) = await withCheckedContinuation { continuation in
             PhotoMerge.queue.async {
-                let merged = PhotoMerge.hdr(frames, options: options, maxPixel: 900)
-                continuation.resume(returning: merged.flatMap { DevelopRenderer.render($0.image) })
+                let frames = AppState.photoMergeFrames(targets)
+                switch kind {
+                case .hdr:
+                    let merged = PhotoMerge.hdr(frames, options: options, maxPixel: 900)
+                    continuation.resume(returning: (merged.flatMap { DevelopRenderer.render($0.image) }, nil))
+                case .panorama:
+                    switch PhotoMerge.panorama(frames, maxPixel: 600) {
+                    case .success(let image): continuation.resume(returning: (DevelopRenderer.render(image), nil))
+                    case .failure(.noOverlap(let index)): continuation.resume(returning: (nil, index))
+                    case .failure: continuation.resume(returning: (nil, nil))
+                    }
+                }
             }
         }
         guard mine == generation else { return }
-        preview = image
-        previewFailed = image == nil
+        preview = result.image
+        previewFailed = result.image == nil
+        if let gap = result.gap { failure = L("第 \(gap + 1) 与第 \(gap + 2) 张照片没有足够的重叠，无法拼接") }
     }
 }

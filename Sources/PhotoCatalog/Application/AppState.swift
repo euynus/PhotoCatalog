@@ -4079,7 +4079,7 @@ final class AppState {
     var canEditInExternalEditor: Bool { canOperateOnSelectedOriginals && onboarded && sheet == nil }
 
     // ---------- photo merge ----------
-    enum PhotoMergeKind: String, Sendable { case hdr }
+    enum PhotoMergeKind: String, Sendable { case hdr, panorama }
     var photoMergeKind: PhotoMergeKind = .hdr
     /// The photos the open merge dialog merges, taken as it opened.
     @ObservationIgnored private(set) var photoMergeTargets: [Asset] = []
@@ -4097,15 +4097,19 @@ final class AppState {
         return fileOwners(list.filter { ids.contains($0.id) }).filter(hasExistingOriginal)
     }
 
-    /// 照片 → 照片合并 → HDR…: the merge dialog, with a preview.
+    /// 照片 → 照片合并 → HDR… / 全景…: the merge dialog, with a preview.
     func showPhotoMerge(_ kind: PhotoMergeKind) {
         let targets = photoMergeCandidates()
         guard targets.count >= 2 else {
             push("请选择至少两张有原件的照片", "info")
             return
         }
-        guard targets.count <= 9 else {
+        guard kind != .hdr || targets.count <= 9 else {
             push("HDR 合并最多 9 张照片", "info")
+            return
+        }
+        guard kind != .panorama || targets.count <= 30 else {
+            push("全景合并最多 30 张照片", "info")
             return
         }
         photoMergeTargets = targets
@@ -4121,62 +4125,83 @@ final class AppState {
         return seconds * Double(asset.iso) / (asset.aperture * asset.aperture)
     }
 
-    func photoMergeFrames(_ assets: [Asset]) -> [PhotoMerge.Frame] {
+    /// The photos as the merge reads them; the focal length from each file's metadata, or the
+    /// catalog's (taken as on a 35 mm camera).
+    nonisolated static func photoMergeFrames(_ assets: [Asset]) -> [PhotoMerge.Frame] {
         assets.compactMap { asset in
-            asset.localPath.map { PhotoMerge.Frame(url: URL(fileURLWithPath: $0), isRaw: asset.isRaw,
-                                                   brightness: Self.exposureBrightness(asset)) }
+            asset.localPath.map { path in
+                let url = URL(fileURLWithPath: path)
+                return PhotoMerge.Frame(url: url, isRaw: asset.isRaw, brightness: exposureBrightness(asset),
+                                        focalLength35: PhotoMerge.focalLength35(url: url) ?? (asset.focal > 0 ? Double(asset.focal) : nil))
+            }
         }
     }
 
-    /// Merges the dialog's photos into an HDR photo beside the middle exposure
-    /// (`<name>-HDR.tif`), added to the catalog with its metadata and selected.
+    /// What a merge came to, on its way back from the merge queue.
+    private enum PhotoMergeOutcome: Sendable {
+        case merged(url: URL, reference: Int, asset: Asset?)
+        case unreadable
+        case readOnly
+        case noOverlap(Int)
+    }
+
+    /// Merges the dialog's photos — into an HDR photo beside the middle exposure
+    /// (`<name>-HDR.tif`), or a panorama beside the first (`<name>-Pano.tif`) — added to the
+    /// catalog with that photo's metadata and selected.
     func mergePhotos() {
-        let targets = photoMergeTargets
+        let targets = photoMergeTargets, kind = photoMergeKind
         guard targets.count >= 2, !isMergingPhotos, let coordinator, let store else { return }
-        let frames = photoMergeFrames(targets)
-        guard frames.count == targets.count else { return }
         let options = hdrOptions
         let catalogURL = store.packageURL
         let previewSize = previewMaxPixel
         let albumId = selection.type == .album ? selection.id : nil
         isMergingPhotos = true
-        push("正在合并 HDR…", "square.stack.3d.up")
-        Task { [weak self, frames, targets, coordinator] in
-            let made: (url: URL, reference: Int, asset: Asset?)?? = await withCheckedContinuation { continuation in
+        push(kind == .hdr ? "正在合并 HDR…" : "正在合并全景…", "square.stack.3d.up")
+        Task { [weak self, targets, coordinator] in
+            let outcome: PhotoMergeOutcome = await withCheckedContinuation { continuation in
                 PhotoMerge.queue.async {
-                    guard let merged = PhotoMerge.hdr(frames, options: options, maxPixel: nil) else {
-                        continuation.resume(returning: nil)
-                        return
+                    let frames = Self.photoMergeFrames(targets)
+                    guard frames.count == targets.count else { return continuation.resume(returning: .unreadable) }
+                    let merged: (image: CIImage, reference: Int)
+                    switch kind {
+                    case .hdr:
+                        guard let found = PhotoMerge.hdr(frames, options: options, maxPixel: nil) else {
+                            return continuation.resume(returning: .unreadable)
+                        }
+                        merged = found
+                    case .panorama:
+                        switch PhotoMerge.panorama(frames, maxPixel: nil) {
+                        case .success(let image): merged = (image, 0)
+                        case .failure(.noOverlap(let index)): return continuation.resume(returning: .noOverlap(index))
+                        case .failure: return continuation.resume(returning: .unreadable)
+                        }
                     }
                     let original = frames[merged.reference].url
                     let folder = original.deletingLastPathComponent()
                     guard FileManager.default.isWritableFile(atPath: folder.path) else {
-                        continuation.resume(returning: .some(nil))
-                        return
+                        return continuation.resume(returning: .readOnly)
                     }
-                    let url = Self.freeURL(in: folder, stem: original.deletingPathExtension().lastPathComponent + "-HDR",
-                                           extension: "tif")
-                    guard PhotoMerge.writeTIFF(merged.image, to: url) else {
-                        continuation.resume(returning: nil)
-                        return
-                    }
+                    let url = Self.freeURL(in: folder, stem: original.deletingPathExtension().lastPathComponent
+                                           + (kind == .hdr ? "-HDR" : "-Pano"), extension: "tif")
+                    guard PhotoMerge.writeTIFF(merged.image, to: url) else { return continuation.resume(returning: .unreadable) }
                     let imported = coordinator.importFiles([url], from: folder, readSidecar: false,
                                                            previewMaxPixel: previewSize).first
-                    continuation.resume(returning: (url, merged.reference, imported))
+                    continuation.resume(returning: .merged(url: url, reference: merged.reference, asset: imported))
                 }
             }
             guard let self else { return }
             self.isMergingPhotos = false
             guard self.store?.packageURL == catalogURL else { return }
-            switch made {
-            case .none:
-                self.push("HDR 合并失败：有照片无法读取", "warning")
-            case .some(.none):
+            switch outcome {
+            case .unreadable:
+                self.push(kind == .hdr ? "HDR 合并失败：有照片无法读取" : "全景合并失败：有照片无法读取", "warning")
+            case .readOnly:
                 self.push("参考照片所在的文件夹是只读的，无法保存合并结果", "warning")
-            case .some(.some(let result)):
-                self.finishExternalEdit([(result.url, targets[result.reference], result.asset)], editor: nil, expected: 1,
-                                        albumId: albumId)
-                self.push("已合并为 HDR 照片", "square.stack.3d.up")
+            case .noOverlap(let index):
+                self.push("第 \(index + 1) 与第 \(index + 2) 张照片没有足够的重叠，无法拼接", "warning")
+            case .merged(let url, let reference, let asset):
+                self.finishExternalEdit([(url, targets[reference], asset)], editor: nil, expected: 1, albumId: albumId)
+                self.push(kind == .hdr ? "已合并为 HDR 照片" : "已合并为全景照片", "square.stack.3d.up")
             }
         }
     }

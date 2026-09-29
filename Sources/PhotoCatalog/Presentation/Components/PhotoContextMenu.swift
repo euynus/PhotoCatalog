@@ -76,6 +76,7 @@ struct PhotoContextMenu: View {
         Button("在外部编辑器中编辑") { act { app.editInExternalEditor() } }
         Menu("照片合并") {
             Button("HDR…") { act { app.showPhotoMerge(.hdr) } }
+            Button("全景…") { act { app.showPhotoMerge(.panorama) } }
         }
         Button("从文件读取元数据") { act { app.readMetadataFromFiles() } }
 

@@ -80,6 +80,8 @@ struct PhotoCatalogCommands: Commands {
             Menu("照片合并") {
                 Button("HDR…") { perform("照片.HDR合并") { app.showPhotoMerge(.hdr) } }
                     .keyboardShortcut("h", modifiers: .control)
+                Button("全景…") { perform("照片.全景合并") { app.showPhotoMerge(.panorama) } }
+                    .keyboardShortcut("m", modifiers: .control)
             }
             .disabled(!app.canMergePhotos)
             Button("从文件读取元数据") { perform("照片.从文件读取元数据") { app.readMetadataFromFiles() } }

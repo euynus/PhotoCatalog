@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 enum MergeCheck {
     static func run() {
         checkHDR()
+        checkPanorama()
         print("--- photo merge assertions passed ---")
     }
 
@@ -87,6 +88,96 @@ enum MergeCheck {
         let mean = values.reduce(0, +) / Double(max(values.count, 1))
         let spread = (values.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(max(values.count, 1))).squareRoot()
         return (mean, spread)
+    }
+
+    /// A wide scene on a cylinder around the camera (angle in radians, height): texture and
+    /// discs of all sizes, like a photo.
+    private static func panoramaScene(_ angle: Double, _ height: Double) -> Double {
+        func hash(_ a: Int, _ b: Int) -> Double {
+            var z = UInt64(bitPattern: Int64(a)) &* 0x9E37_79B9_7F4A_7C15 ^ UInt64(bitPattern: Int64(b)) &* 0xC2B2_AE3D_27D4_EB4F
+            z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+            z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+            z ^= z >> 31
+            return Double(z % 10_000) / 10_000
+        }
+        let u = angle * 400, v = height * 400   // scene pixels
+        var value = 0.18 * (0.8 + 0.4 * hash(Int(floor(u / 2)), Int(floor(v / 2))))
+        for disc in 0..<60 {
+            let cx = -500 + hash(disc, 1) * 1000, cy = -150 + hash(disc, 2) * 300, r = 6 + hash(disc, 3) * 40
+            if hypot(u - cx, v - cy) < r { value *= 0.3 + 1.7 * hash(disc, 4) }
+        }
+        return value
+    }
+
+    /// A frame of the scene through a camera turned `turn` radians, focal length `f` pixels,
+    /// display-encoded, `gain` times as bright.
+    private static func panoramaFrame(turn: Double, f: Double, gain: Double = 1) -> URL {
+        let (width, height) = (400, 300)
+        var data = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let dx = Double(x) - Double(width) / 2, dy = Double(y) - Double(height) / 2
+                let v = min(1, panoramaScene(turn + atan(dx / f), dy / hypot(dx, f)) * gain)
+                let encoded = v <= 0.0031308 ? v * 12.92 : 1.055 * pow(v, 1 / 2.4) - 0.055
+                let byte = UInt8(max(0, min(255, encoded * 255)))
+                let i = (y * width + x) * 4
+                data[i] = byte; data[i + 1] = byte; data[i + 2] = byte
+            }
+        }
+        let context = CGContext(data: &data, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-pano-\(UUID().uuidString).png")
+        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+        CGImageDestinationFinalize(destination)
+        return url
+    }
+
+    private static func checkPanorama() {
+        // three frames 0.35 rad apart, a 400 px wide lens of 500 px focal length (~43° across)
+        let f = 500.0, step = 0.35
+        let urls = [panoramaFrame(turn: -step, f: f), panoramaFrame(turn: 0, f: f), panoramaFrame(turn: step, f: f)]
+        defer { for url in urls { try? FileManager.default.removeItem(at: url) } }
+        let focal35 = f * 43.27 / hypot(400, 300)
+        let frames = urls.map { PhotoMerge.Frame(url: $0, isRaw: false, brightness: nil, focalLength35: focal35) }
+        let small = frames.compactMap { PhotoMerge.decode($0, maxPixel: 1024) }
+        guard case .success(let layout) = PhotoMerge.panoramaLayout(small, f: f, vertical: false) else {
+            preconditionFailure("the frames join")
+        }
+        let steps = zip(layout.centers, layout.centers.dropFirst()).map { $1.x - $0.x }
+        assert(!layout.vertical && steps.allSatisfy { abs($0 - f * step) < 2 }
+               && layout.centers.allSatisfy { abs($0.y - layout.centers[0].y) < 2 },
+               "frames land where the camera turned (\(steps), expected \(f * step), \(layout.centers), vertical \(layout.vertical))")
+        assert(layout.gains.allSatisfy { abs($0 - 1) < 0.03 }, "frames shot alike keep their exposure (\(layout.gains))")
+        assert(layout.crop.width > layout.canvas.width * 0.8 && layout.crop.height > layout.canvas.height * 0.7
+               && layout.crop.minX >= 0 && layout.crop.maxX <= layout.canvas.width,
+               "the crop is the largest rectangle the frames fill (\(layout.crop) of \(layout.canvas))")
+        guard case .success(let panorama) = PhotoMerge.panorama(frames, maxPixel: nil),
+              let rendered = DevelopRenderer.render(panorama) else {
+            preconditionFailure("the panorama renders")
+        }
+        assert(abs(CGFloat(rendered.width) - layout.crop.width) < 4 && rendered.width > 2 * rendered.height,
+               "the panorama is as wide as the frames reach (\(rendered.width)×\(rendered.height))")
+        // a frame the camera exposed brighter is brought to its neighbors'
+        let uneven = [panoramaFrame(turn: -step, f: f), panoramaFrame(turn: 0, f: f, gain: 1.3), panoramaFrame(turn: step, f: f)]
+        defer { for url in uneven { try? FileManager.default.removeItem(at: url) } }
+        let unevenSmall = uneven.compactMap {
+            PhotoMerge.decode(PhotoMerge.Frame(url: $0, isRaw: false, brightness: nil), maxPixel: 1024)
+        }
+        if case .success(let matched) = PhotoMerge.panoramaLayout(unevenSmall, f: f, vertical: false) {
+            assert(abs(matched.gains[1] / matched.gains[0] - 1 / 1.3) < 0.06 && abs(matched.gains[2] / matched.gains[0] - 1) < 0.06,
+                   "a brighter frame is brought to its neighbors' exposure (\(matched.gains))")
+        } else {
+            assertionFailure("frames of different brightness still join")
+        }
+        // frames that don't overlap don't join
+        let apart = [panoramaFrame(turn: 0, f: f), panoramaFrame(turn: 2, f: f)]
+        defer { for url in apart { try? FileManager.default.removeItem(at: url) } }
+        let lonely = apart.map { PhotoMerge.Frame(url: $0, isRaw: false, brightness: nil, focalLength35: focal35) }
+        if case .success = PhotoMerge.panorama(lonely, maxPixel: nil) {
+            assertionFailure("frames with nothing in common are refused")
+        }
     }
 
     private static func checkHDR() {
