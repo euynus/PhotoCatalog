@@ -1137,14 +1137,12 @@ final class CatalogStore: @unchecked Sendable {
     // ---------- develop history and snapshots ----------
     /// A photo's develop steps, oldest first.
     func loadDevelopHistory(_ assetId: String) throws -> [DevelopHistoryStep] {
-        let decoder = JSONDecoder()
-        return try db.query("""
+        try db.query("""
         SELECT seq, name, created_at, settings FROM develop_history WHERE asset_id=? ORDER BY seq;
         """, [.text(assetId)]).compactMap { row in
-            guard let seq = row.int("seq"), let name = row.text("name"), let json = row.text("settings"),
-                  let settings = try? decoder.decode(DevelopSettings.self, from: Data(json.utf8)) else { return nil }
+            guard let seq = row.int("seq"), let name = row.text("name"), let json = row.text("settings") else { return nil }
             return DevelopHistoryStep(seq: seq, name: name, date: Self.date(row.text("created_at")) ?? .distantPast,
-                                      settings: settings)
+                                      json: json)
         }
     }
 
@@ -1153,19 +1151,24 @@ final class CatalogStore: @unchecked Sendable {
     @discardableResult
     func appendDevelopHistory(_ steps: [String: (name: String, settings: DevelopSettings)], date: Date = .now) throws
         -> [String: DevelopHistoryStep] {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .sortedKeys
         var stored: [String: DevelopHistoryStep] = [:]
+        let created = Self.iso(date)
         try db.transaction {
             for (id, step) in steps {
-                let seq = db.scalarInt("SELECT COALESCE(MAX(seq), 0) + 1 FROM develop_history WHERE asset_id=?;",
-                                       [.text(id)])
-                let json = String(decoding: try encoder.encode(step.settings), as: UTF8.self)
-                try db.run("INSERT INTO develop_history(asset_id, seq, name, created_at, settings) VALUES(?, ?, ?, ?, ?);",
-                           [.text(id), .int(seq), .text(step.name), .text(Self.iso(date)), .text(json)])
-                try db.run("DELETE FROM develop_history WHERE asset_id=? AND seq<=?;",
-                           [.text(id), .int(seq - DevelopHistoryStep.limit)])
-                stored[id] = DevelopHistoryStep(seq: seq, name: step.name, date: date, settings: step.settings)
+                let json = DevelopHistoryStep.json(step.settings)
+                // one statement numbers and inserts the step
+                guard let seq = try db.queryMap("""
+                INSERT INTO develop_history(asset_id, seq, name, created_at, settings)
+                SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ? FROM develop_history WHERE asset_id=?
+                RETURNING seq;
+                """, [.text(id), .text(step.name), .text(created), .text(json), .text(id)],
+                                        transform: { $0.int("seq") }).first ?? nil else { continue }
+                // trimming only once the history is long enough to need it
+                if seq > DevelopHistoryStep.limit {
+                    try db.run("DELETE FROM develop_history WHERE asset_id=? AND seq<=?;",
+                               [.text(id), .int(seq - DevelopHistoryStep.limit)])
+                }
+                stored[id] = DevelopHistoryStep(seq: seq, name: step.name, date: date, json: json)
             }
         }
         return stored

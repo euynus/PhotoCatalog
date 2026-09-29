@@ -138,6 +138,11 @@ enum ScaleCheck {
             edit.exposure = Double(run % 400) / 100 - 2
             app.commitDevelop(Dictionary(uniqueKeysWithValues: ids.map { ($0, edit) }), undoName: "测试")
         }
+        step("history 1000") {
+            var edit = DevelopSettings()
+            edit.contrast = Double(run % 100)
+            _ = try? store.appendDevelopHistory(Dictionary(uniqueKeysWithValues: ids.map { ($0, (name: "测试", settings: edit)) }))
+        }
         report("edits ms: " + line.joined(separator: " · "))
         report("footprint \(delta(footprint(), baseline)) MB since start, \(megabytes(footprint())) MB total")
         return 0

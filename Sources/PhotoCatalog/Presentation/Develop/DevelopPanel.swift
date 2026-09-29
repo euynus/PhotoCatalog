@@ -326,8 +326,9 @@ struct DevelopPanel: View {
     private func history(_ asset: Asset, _ settings: DevelopSettings) -> some View {
         let steps = app.developHistory(for: asset.id).reversed()
         let shown = showsFullHistory ? Array(steps) : Array(steps.prefix(12))
-        // the newest step that matches the photo now is where it stands
-        let currentSeq = steps.first { $0.settings == settings }?.seq
+        // the newest step that matches the photo now is where it stands (compared as stored text)
+        let current = DevelopHistoryStep.json(settings)
+        let currentSeq = steps.first { $0.json == current }?.seq
         ForEach(shown) { step in
             recordRow(step.name, detail: Self.recordTime(step.date), current: step.seq == currentSeq) {
                 app.applyDevelopHistoryStep(step, to: asset.id)
