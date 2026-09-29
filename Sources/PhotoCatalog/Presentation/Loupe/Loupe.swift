@@ -195,7 +195,10 @@ struct Filmstrip: View {
                     ForEach(0..<photos.count, id: \.self) { position in
                         let a = photos[position]
                         Hover { hover in
-                            Button { app.setPrimary(a.id) } label: {
+                            Button {
+                                TextEditing.end()
+                                app.setPrimary(a.id)
+                            } label: {
                                 VStack(spacing: 4) {
                                     Thumb(asset: a, radius: 2, contentMode: .fit, maxDecodePixel: 216)
                                         .frame(width: 108, height: 72)

@@ -53,7 +53,6 @@ struct MainView: View {
             if app.search != searchText { app.setSearch(searchText) }
         }
         .onChange(of: app.searchFocusToken) { ToolbarSearchField.focus() }
-        .onChange(of: app.searchBlurToken) { ToolbarSearchField.blur() }
     }
 
     /// Analysis and duplicate review own the full width; the user's inspector
@@ -183,6 +182,20 @@ struct ContentColumn: View {
     }
 }
 
+// ---------- Ending text editing ----------
+/// A click on a photo ends editing in the search field or an inspector field, as in Finder or
+/// Photos: rating keys then rate instead of typing into the field, and ⌘Z undoes the last photo
+/// edit. Called before the selection changes, so an inspector draft finishes on its own photo.
+@MainActor
+enum TextEditing {
+    static func end() {
+        // the main window too: a system panel can hold key status for a moment (see KeyCatcher)
+        for window in [NSApp.keyWindow, NSApp.mainWindow].compactMap({ $0 }) where window.firstResponder is NSTextView {
+            window.makeFirstResponder(nil)
+        }
+    }
+}
+
 // ---------- Toolbar search focus ----------
 /// SwiftUI's toolbar search field is an AppKit NSSearchToolbarItem; driving it
 /// directly keeps ⌘F / click-to-blur working on macOS 14 (no `searchFocused`).
@@ -196,14 +209,6 @@ enum ToolbarSearchField {
         } else if let field = items.lazy.compactMap({ $0.view.flatMap(searchField(in:)) }).first {
             window.makeFirstResponder(field)
         }
-    }
-
-    /// Resign only the search field so an inspector edit in progress keeps focus.
-    static func blur() {
-        guard let window = NSApp.keyWindow,
-              let editor = window.firstResponder as? NSTextView,
-              editor.delegate is NSSearchField else { return }
-        window.makeFirstResponder(nil)
     }
 
     private static func searchField(in view: NSView) -> NSSearchField? {

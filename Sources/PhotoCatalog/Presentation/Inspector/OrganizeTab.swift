@@ -128,7 +128,13 @@ struct OrganizeTab: View {
         .font(.system(size: 13))
         .foregroundStyle(Theme.text)
         .tint(Theme.accent)
-        .onChange(of: asset.id, initial: true) { commitDrafts(); seedDrafts() }
+        .onChange(of: asset.id, initial: true) {
+            commitDrafts()
+            seedDrafts()
+            // still focused (the photo changed without a click, e.g. a filter): what is typed next
+            // belongs to the photo now shown, not to nobody
+            if focusedField != nil { snapshotEditTargets() }
+        }
         .onChange(of: assetDrafts) {
             // adopt external changes, but never clobber an in-flight edit
             if focusedField == nil, drafts == seeded { seedDrafts() }
@@ -137,10 +143,14 @@ struct OrganizeTab: View {
             if focusedField == nil {
                 commitDrafts()
             } else if editTargets.isEmpty {
-                editTargets = app.withCompanions(app.selectedIds.isEmpty ? [asset.id] : app.selectedIds)
+                snapshotEditTargets()
             }
         }
         .onDisappear { commitDrafts() }
+    }
+
+    private func snapshotEditTargets() {
+        editTargets = app.withCompanions(app.selectedIds.isEmpty ? [asset.id] : app.selectedIds)
     }
 
     private func seedDrafts() {

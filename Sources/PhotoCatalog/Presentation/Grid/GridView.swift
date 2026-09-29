@@ -49,7 +49,7 @@ struct GridView: View {
                                         app.openLoupe(asset.id)
                                         return
                                     }
-                                    app.blurSearch()
+                                    TextEditing.end()
                                     let f = ClickEvent.modifierFlags
                                     app.selectCell(asset.id, shift: f.contains(.shift),
                                                    meta: f.contains(.command))
@@ -61,7 +61,7 @@ struct GridView: View {
                                 .accessibilityAddTraits(app.selectedIds.contains(asset.id)
                                     ? [.isButton, .isSelected] : .isButton)
                                 .accessibilityAction {
-                                    app.blurSearch()
+                                    TextEditing.end()
                                     app.selectCell(asset.id, shift: false, meta: false)
                                 }
                                 .accessibilityAction(named: "打开放大视图") { app.openLoupe(asset.id) }
