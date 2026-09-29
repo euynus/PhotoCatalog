@@ -38,7 +38,17 @@ struct DevelopPanel: View {
                         .buttonStyle(.borderless)
                         .help("以当前设置存储为预设")
                         .accessibilityLabel("存储为预设…")
-                }) { DevelopPresetList(asset: asset) }
+                }) {
+                    if let applied = app.developPresetAmount(for: asset.id) {
+                        let amount = app.developPresetAmountDraft ?? applied.amount
+                        DevelopSlider(title: L("强度 · \(applied.presetName)"), value: amount * 100, range: 0...200, step: 1,
+                                      format: { String(format: "%.0f%%", $0) }, isNeutral: amount == 1,
+                                      onChange: { app.setDevelopPresetAmount($0 / 100) },
+                                      onReset: { app.commitDevelopPresetAmount(1) },
+                                      onCommit: { app.commitDevelopPresetAmount() })
+                    }
+                    DevelopPresetList(asset: asset)
+                }
                 section(L("裁剪与旋转")) { geometry(asset, settings) }
                 section(L("蒙版")) { masks(asset, settings) }
                 section(L("污点去除")) { spots(asset, settings) }

@@ -1162,7 +1162,65 @@ final class AppState {
 
     func applyDevelopPreset(_ preset: DevelopPreset) {
         developPresetPreview = nil   // the preview becomes the real thing
-        applyDevelopTransfer(preset.transfer, to: developTargetIds, undoName: L("应用预设“\(preset.name)”"))
+        let targets = developTargetIds
+        // on the photo in Develop, the preset's Amount can then be turned up or down
+        if view == .develop, targets.count == 1, let index = assetIndex[targets[0]] {
+            let asset = assets[index]
+            let base = developSettings[asset.id] ?? .neutral
+            let full = preset.transfer.applied(to: base, targetIsRaw: asset.isRaw)
+            developPresetAmountState = DevelopPresetAmount(presetName: preset.name, assetId: asset.id, base: base,
+                                                           full: full, amount: 1, result: full)
+        }
+        applyDevelopTransfer(preset.transfer, to: targets, undoName: L("应用预设“\(preset.name)”"))
+    }
+
+    // ----- preset amount: how strongly the last preset applied in Develop takes effect -----
+    struct DevelopPresetAmount: Equatable {
+        let presetName: String
+        let assetId: String
+        /// The photo before the preset, and with it at full strength.
+        let base: DevelopSettings
+        let full: DevelopSettings
+        var amount: Double
+        /// The settings `amount` gave: the slider shows while the photo is still at them.
+        var result: DevelopSettings
+    }
+    private var developPresetAmountState: DevelopPresetAmount?
+    /// The amount being dragged, before it's saved.
+    private(set) var developPresetAmountDraft: Double?
+
+    /// The Amount slider's state for the photo `id`, while its settings are still what the
+    /// preset (at the last amount) left; any other edit ends it.
+    func developPresetAmount(for id: String) -> DevelopPresetAmount? {
+        guard let state = developPresetAmountState, state.assetId == id,
+              (developSettings[id] ?? .neutral) == state.result else { return nil }
+        return state
+    }
+
+    /// The preset at `amount` (1 = as saved, up to 2), previewed while the slider drags.
+    func setDevelopPresetAmount(_ amount: Double) {
+        guard let state = developPresetAmount(for: developPresetAmountState?.assetId ?? "") else { return }
+        developPresetAmountDraft = amount
+        updateDevelopDraft(presetAmountSettings(state, amount), for: state.assetId)
+    }
+
+    /// Saves the dragged amount (or `amount`) as one undoable step.
+    func commitDevelopPresetAmount(_ amount: Double? = nil) {
+        defer { developPresetAmountDraft = nil }
+        guard var state = developPresetAmount(for: developPresetAmountState?.assetId ?? ""),
+              let value = amount ?? developPresetAmountDraft else { return }
+        let settings = presetAmountSettings(state, value)
+        state.amount = value
+        state.result = settings
+        developPresetAmountState = state
+        commitDevelop([state.assetId: settings], undoName: L("预设强度"))
+    }
+
+    private func presetAmountSettings(_ state: DevelopPresetAmount, _ amount: Double) -> DevelopSettings {
+        let asset = assetIndex[state.assetId].map { assets[$0] }
+        let isRaw = asset?.isRaw ?? false
+        let origin = isRaw ? developAsShot[state.assetId].map { ($0.temperature, $0.tint) } : (0, 0)
+        return DevelopSettings.blend(state.base, state.full, amount: amount, isRaw: isRaw, whiteBalanceOrigin: origin)
     }
 
     // ----- preset preview: the photo shows a preset's look while the pointer rests on it -----

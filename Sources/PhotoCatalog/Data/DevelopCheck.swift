@@ -23,6 +23,7 @@ enum DevelopCheck {
         checkGeometryRendering()
         checkPersistence()
         checkTransferRules()
+        checkPresetBlend()
         MainActor.assumeIsolated {
             checkEditsAndUndo()
             checkCopyPasteAndPresets()
@@ -1071,6 +1072,25 @@ enum DevelopCheck {
         app.applyDevelopPreset(DevelopPreset.builtIns.first { $0.name == "黑白" }!)
         assert(app.developSettings[c.id]?.saturation == -100 && app.developSettings[c.id]?.exposure == 0.6,
                "a preset changes only its own settings")
+        assert(app.developPresetAmount(for: c.id) == nil, "the grid applies presets at full strength, without an amount")
+
+        // in Develop, the preset's amount turns it up or down, until another edit
+        app.view = .develop
+        app.applyDevelopPreset(vivid)
+        assert(app.developPresetAmount(for: c.id)?.amount == 1, "applying a preset in Develop offers its amount")
+        app.setDevelopPresetAmount(0.5)
+        assert(app.developSettings(for: c.id).vibrance == 18 && app.developSettings[c.id]?.vibrance == 35,
+               "dragging the amount previews it")
+        app.commitDevelopPresetAmount()
+        let halfVivid = app.developSettings[c.id]
+        assert(halfVivid.map { $0.vibrance == 18 && $0.saturation == -46 } == true
+               && app.developPresetAmount(for: c.id)?.amount == 0.5 && app.developPresetAmountDraft == nil,
+               "releasing saves it")
+        var other = app.developSettings(for: c.id)
+        other.clarity = 10
+        app.commitDevelop([c.id: other], undoName: "清晰度")
+        assert(app.developPresetAmount(for: c.id) == nil, "another edit ends the amount")
+        app.view = .grid
 
         app.setPrimary(a.id)
         app.saveDevelopPreset(name: "  测试预设 ", fields: app.developPresetDefaultFields)
@@ -1097,6 +1117,42 @@ enum DevelopCheck {
         app.importDevelopPresetId = "gone"
         app.applyImportDevelopSettings(to: [c])
         assert(app.developSettings[c.id] == nil && app.importDevelopPreset == nil, "a deleted import preset does nothing")
+    }
+
+    /// A preset's Amount: sliders, white balance, curves and masks scale; the rest is all or nothing.
+    private static func checkPresetBlend() {
+        var base = DevelopSettings()
+        base.exposure = 0.5
+        var mask = LocalAdjustment(kind: .radial)
+        mask.exposure = 1
+        var target = base
+        target.exposure = 1.5
+        target.contrast = 60
+        target.mixer.saturation[ColorMixer.Band.blue.rawValue] = -40
+        target.grading.shadows = ColorGrading.Grade(hue: 200, saturation: 40, luminance: 0)
+        target.temperature = 20
+        target.curve.setPoints(ToneCurve.strongContrast, for: .rgb)
+        target.masks = [mask]
+        target.crop = DevelopCrop(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
+        func blend(_ amount: Double) -> DevelopSettings {
+            DevelopSettings.blend(base, target, amount: amount, isRaw: false, whiteBalanceOrigin: (0, 0))
+        }
+        assert(blend(0) == base && blend(1) == target, "no amount is the photo before, full amount the preset")
+        let half = blend(0.5)
+        assert(abs(half.exposure - 1) < 1e-9 && half.contrast == 30 && half.mixer.saturation[ColorMixer.Band.blue.rawValue] == -20
+               && half.grading.shadows.saturation == 20 && half.grading.shadows.hue == 200 && half.temperature == 10,
+               "half the amount goes halfway, hues aside")
+        let halfCurve = ToneCurve.evaluate(half.curve.editablePoints(for: .rgb), at: 0.25)
+        assert(abs(halfCurve - 0.205) < 0.01, "the curve moves halfway too")
+        assert(half.masks.first?.exposure == 0.5 && half.masks.first?.id == mask.id && half.crop == target.crop,
+               "masks keep their shape and scale their adjustments; the crop comes whole")
+        let double = blend(2)
+        assert(double.contrast == 100 && abs(double.exposure - 2.5) < 1e-9, "twice the amount goes further and stays in range")
+        var rawBase = DevelopSettings(), rawTarget = DevelopSettings()
+        rawTarget.temperature = 6500
+        rawBase.temperature = nil
+        let rawHalf = DevelopSettings.blend(rawBase, rawTarget, amount: 0.5, isRaw: true, whiteBalanceOrigin: (5500, 0))
+        assert(rawHalf.temperature == 6000, "a RAW's white balance moves from as shot")
     }
 
     @MainActor
