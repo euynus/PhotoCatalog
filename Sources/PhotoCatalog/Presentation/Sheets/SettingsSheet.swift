@@ -13,12 +13,13 @@ struct SettingsSheet: View {
     @State private var category: Category = .general
 
     private enum Category: CaseIterable {
-        case general, importing, exporting, metadata, cache, catalog, files
+        case general, importing, develop, exporting, metadata, cache, catalog, files
 
         var title: String {
             switch self {
             case .general: return L("常规")
             case .importing: return L("导入")
+            case .develop: return L("修图")
             case .exporting: return L("导出")
             case .metadata: return L("元数据")
             case .cache: return L("缓存与性能")
@@ -31,6 +32,7 @@ struct SettingsSheet: View {
             switch self {
             case .general: return "gearshape"
             case .importing: return "square.and.arrow.down"
+            case .develop: return "slider.horizontal.3"
             case .exporting: return "square.and.arrow.up"
             case .metadata: return "tag"
             case .cache: return "internaldrive"
@@ -198,6 +200,25 @@ struct SettingsSheet: View {
                         Text("完全在本机进行，照片不会离开设备。").font(.system(size: 11)).foregroundStyle(Theme.text3)
                     }
                 }.toggleStyle(.switch).tint(Theme.accent)
+            }
+
+            section(L("RAW 默认设置"), category: .develop) {
+                Text("RAW 照片导入时先套用所属相机的默认预设，复位时也回到它；导入预设再叠加在上面。未单独设置的相机使用“所有相机”。")
+                    .font(.system(size: 12)).foregroundStyle(Theme.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+                row(L("所有相机")) {
+                    DevelopPresetPicker(selection: rawDefaultBinding(""), leading: [("", L("原照设置"))])
+                        .labelsHidden()
+                        .frame(width: 200)
+                }
+                ForEach(app.rawCameras, id: \.self) { camera in
+                    row(camera) {
+                        DevelopPresetPicker(selection: rawDefaultBinding(camera),
+                                            leading: [("", L("同“所有相机”")), ("none", L("原照设置"))])
+                            .labelsHidden()
+                            .frame(width: 200)
+                    }
+                }
             }
 
             section(L("导出"), category: .exporting) {
@@ -423,6 +444,11 @@ struct SettingsSheet: View {
                 content()
             }
         }
+    }
+
+    private func rawDefaultBinding(_ camera: String) -> Binding<String> {
+        Binding(get: { app.rawDefaultPresetIds[camera] ?? "" },
+                set: { app.setRawDefaultPreset($0, forCamera: camera) })
     }
 
     private func row<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {

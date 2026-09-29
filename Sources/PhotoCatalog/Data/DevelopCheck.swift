@@ -1018,10 +1018,12 @@ enum DevelopCheck {
         let savedPresets = app.developPresets
         let savedFields = app.developTransferFields
         let savedImportPreset = app.importDevelopPresetId
+        let savedRawDefaults = app.rawDefaultPresetIds
         defer {
             app.developPresets = savedPresets
             app.developTransferFields = savedFields
             app.importDevelopPresetId = savedImportPreset
+            app.rawDefaultPresetIds = savedRawDefaults
         }
 
         var edit = DevelopSettings()
@@ -1136,6 +1138,36 @@ enum DevelopCheck {
         app.importDevelopPresetId = "gone"
         app.applyImportDevelopSettings(to: [c])
         assert(app.developSettings[c.id] == nil && app.importDevelopPreset == nil, "a deleted import preset does nothing")
+
+        // RAW defaults: a camera's own, or every camera's; applied before the import preset,
+        // and where 复位 goes
+        // another camera than A's (the demo set has several)
+        guard let other = base.first(where: { $0.camera != a.camera && ![a.id, b.id, c.id].contains($0.id) }) else {
+            preconditionFailure("the demo set has RAW photos from more than one camera")
+        }
+        let d = local(other, "D.CR3")
+        app.rawDefaultPresetIds = [:]
+        app.setRawDefaultPreset("builtin.punch", forCamera: "")
+        app.setRawDefaultPreset("builtin.soft", forCamera: d.camera)
+        app.importDevelopPresetId = "builtin.bw"
+        app.developSettings[a.id] = nil
+        app.applyImportDevelopSettings(to: [a, d])
+        assert(app.developSettings[d.id]?.contrast == -15 && app.developSettings[d.id]?.saturation == -100
+               && app.developSettings[a.id]?.contrast == 35 && app.developSettings[a.id]?.saturation == -100,
+               "RAW photos start from their camera's default, or every camera's, then the import preset")
+        app.setRawDefaultPreset("none", forCamera: d.camera)
+        assert(app.defaultDevelopSettings(for: d) == .neutral && app.defaultDevelopSettings(for: a).contrast == 35,
+               "a camera can be kept as shot")
+        app.setRawDefaultPreset("", forCamera: d.camera)
+        assert(app.rawDefaultPresetIds[d.camera] == nil, "clearing a camera's default follows every camera's")
+        app.view = .develop
+        app.setPrimary(a.id)
+        app.resetDevelop(a)
+        assert(app.developSettings[a.id] == app.defaultDevelopSettings(for: a) && app.developSettings[a.id]?.contrast == 35,
+               "复位 returns a RAW photo to its defaults")
+        app.view = .grid
+        app.importDevelopPresetId = ""
+        app.rawDefaultPresetIds = [:]
     }
 
     /// A preset's Amount: sliders, white balance, curves and masks scale; the rest is all or nothing.

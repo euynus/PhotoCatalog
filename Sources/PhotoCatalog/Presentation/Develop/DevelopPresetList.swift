@@ -98,6 +98,10 @@ struct DevelopPresetList: View {
         .help("悬停预览，点按应用")
         .contextMenu {
             if !preset.isBuiltIn { menu(preset) } else { Button("导出…") { app.exportDevelopPresets([preset.id]) } }
+            if asset.isRaw, !asset.camera.isEmpty {
+                Divider()
+                Button("设为 \(asset.camera) 的 RAW 默认设置") { app.setRawDefaultPreset(preset.id, forCamera: asset.camera) }
+            }
         }
         .onHover { inside in
             if inside {

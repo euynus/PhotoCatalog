@@ -157,11 +157,9 @@ struct DevelopPanel: View {
                 .toggleStyle(.button)
                 .help("修改前 / 修改后 (\\)")
                 Spacer(minLength: 0)
-                Button("复位") {
-                    app.commitDevelop([asset.id: .neutral], undoName: L("复位调整"))
-                }
-                .disabled(settings.isNeutral)
-                .help("恢复为原照设置")
+                Button("复位") { app.resetDevelop(asset) }
+                .disabled(settings == app.defaultDevelopSettings(for: asset))
+                .help("恢复为默认设置：相机的 RAW 默认设置，或原照设置")
             }
             .controlSize(.small)
             HStack(spacing: 8) {

@@ -640,7 +640,7 @@
 "复位调整" = "Reset Adjustments";
 "存储为预设…" = "Save as Preset…";
 "应用或存储修图预设" = "Apply or save develop presets";
-"恢复为原照设置" = "Restore the as-shot settings";
+"恢复为默认设置：相机的 RAW 默认设置，或原照设置" = "Return to the defaults: the camera's RAW defaults, or as shot";
 "我的预设" = "My Presets";
 "拷贝…" = "Copy…";
 "拷贝修图设置 (⇧⌘C)" = "Copy develop settings (⇧⌘C)";
@@ -743,6 +743,13 @@
 "所选文件不是可用的修图预设" = "The chosen files aren’t develop presets";
 "选择修图预设：本应用、Lightroom 或 Camera Raw 导出的 .xmp 文件" = "Choose develop presets: .xmp files from this app, Lightroom or Camera Raw";
 "预设导出失败" = "The preset couldn’t be exported";
+"RAW 照片导入时先套用所属相机的默认预设，复位时也回到它；导入预设再叠加在上面。未单独设置的相机使用“所有相机”。" = "RAW photos start from their camera's default preset when imported, and Reset returns them to it; the import preset goes on top. Cameras without their own use All Cameras.";
+"RAW 默认设置" = "RAW Defaults";
+"RAW 默认设置“%@”" = "RAW Defaults “%@”";
+"修图" = "Develop";
+"同“所有相机”" = "Same as All Cameras";
+"所有相机" = "All Cameras";
+"设为 %@ 的 RAW 默认设置" = "Use as RAW Defaults for %@";
 "预设删除后无法恢复，已用它修过的照片不受影响。" = "A deleted preset can’t be brought back. Photos already edited with it stay as they are.";
 "导入时修图" = "Develop on Import";
 "修图预设" = "Develop Preset";

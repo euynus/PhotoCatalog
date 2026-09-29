@@ -427,6 +427,12 @@ final class AppState {
     var importDevelopPreset: DevelopPreset? {
         importDevelopPresetId.isEmpty ? nil : allDevelopPresets.first { $0.id == importDevelopPresetId }
     }
+    /// RAW defaults, as in Lightroom: the preset a camera's RAW files start from, by camera
+    /// model; "" is every camera without its own, and "none" keeps a camera as shot.
+    var rawDefaultPresetIds: [String: String] =
+        (UserDefaults.standard.dictionary(forKey: "pc_rawDefaults") as? [String: String]) ?? [:] {
+        didSet { UserDefaults.standard.set(rawDefaultPresetIds, forKey: "pc_rawDefaults") }
+    }
     /// After a rating / flag / color key on one photo, move to the next (Shift does it once).
     var autoAdvance: Bool = UserDefaults.standard.bool(forKey: "pc_autoAdvance") {
         didSet { UserDefaults.standard.set(autoAdvance, forKey: "pc_autoAdvance") }
@@ -1429,8 +1435,10 @@ final class AppState {
     func resetDevelopSelection() {
         let ids = developTargetIds.filter { developSettings[$0] != nil }
         guard !ids.isEmpty else { return }
-        commitDevelop(Dictionary(uniqueKeysWithValues: ids.map { ($0, DevelopSettings.neutral) }),
-                      undoName: L("复位修图调整"))
+        // each photo back to its RAW defaults, or as shot
+        commitDevelop(Dictionary(uniqueKeysWithValues: ids.map { id in
+            (id, assetIndex[id].map { defaultDevelopSettings(for: assets[$0]) } ?? .neutral)
+        }), undoName: L("复位修图调整"))
     }
 
     var canResetDevelopSelection: Bool {
@@ -2881,25 +2889,66 @@ final class AppState {
         push(verbatim: message, icon)
     }
 
-    /// Newly imported photos start from the import preset: saved with a first history step, not
-    /// something to undo (the import itself isn't).
+    /// Newly imported photos start from their camera's RAW defaults, then the import preset:
+    /// saved with a history step for each, not something to undo (the import itself isn't).
     func applyImportDevelopSettings(to fresh: [Asset]) {
-        guard let preset = importDevelopPreset else { return }
-        var changes: [String: DevelopSettings] = [:]
+        let preset = importDevelopPreset
+        var defaults: [String: (name: String, settings: DevelopSettings)] = [:]
+        var imported: [String: DevelopSettings] = [:]
         for asset in fresh where !asset.isDemo && canDevelop(asset) {
-            let before = developSettings[asset.id] ?? .neutral
-            let after = preset.transfer.applied(to: before, targetIsRaw: asset.isRaw)
-            if after != before { changes[asset.id] = after }
+            var settings = developSettings[asset.id] ?? .neutral
+            if let camera = rawDefaultPreset(for: asset) {
+                let applied = camera.transfer.applied(to: settings, targetIsRaw: asset.isRaw)
+                if applied != settings { defaults[asset.id] = (camera.name, applied) }
+                settings = applied
+            }
+            if let preset {
+                let applied = preset.transfer.applied(to: settings, targetIsRaw: asset.isRaw)
+                if applied != settings { imported[asset.id] = applied }
+            }
         }
-        guard !changes.isEmpty else { return }
+        var final = defaults.mapValues(\.settings)
+        final.merge(imported) { $1 }
+        guard !final.isEmpty else { return }
         do {
-            try store?.saveDevelopSettings(changes)
+            try store?.saveDevelopSettings(final)
         } catch {
             push("导入预设未能保存到目录库", "warning")
             return
         }
-        for (id, value) in changes { developSettings[id] = value.isNeutral ? nil : value }
-        recordDevelopHistory(changes, name: L("导入预设“\(preset.name)”"), change: .append)
+        for (id, value) in final { developSettings[id] = value.isNeutral ? nil : value }
+        for name in Set(defaults.values.map(\.name)) {
+            recordDevelopHistory(defaults.filter { $0.value.name == name }.mapValues(\.settings),
+                                 name: L("RAW 默认设置“\(name)”"), change: .append)
+        }
+        if let preset { recordDevelopHistory(imported, name: L("导入预设“\(preset.name)”"), change: .append) }
+    }
+
+    /// The preset a RAW photo starts from: its camera's, or every camera's (nil: as shot).
+    func rawDefaultPreset(for asset: Asset) -> DevelopPreset? {
+        guard asset.isRaw, let id = rawDefaultPresetIds[asset.camera] ?? rawDefaultPresetIds[""], id != "none"
+        else { return nil }
+        return allDevelopPresets.first { $0.id == id }
+    }
+
+    /// Where 复位 returns a photo: its RAW defaults, or as shot.
+    func defaultDevelopSettings(for asset: Asset) -> DevelopSettings {
+        rawDefaultPreset(for: asset).map { $0.transfer.applied(to: .neutral, targetIsRaw: asset.isRaw) } ?? .neutral
+    }
+
+    /// Sets (or with "", clears) the RAW default of `camera` ("" for every camera).
+    func setRawDefaultPreset(_ presetId: String, forCamera camera: String) {
+        if presetId.isEmpty { rawDefaultPresetIds[camera] = nil } else { rawDefaultPresetIds[camera] = presetId }
+    }
+
+    /// The cameras the catalog's RAW photos came from, for the RAW defaults list.
+    var rawCameras: [String] {
+        Set(assets.lazy.filter { $0.isRaw && !$0.deleted && !$0.isDemo && !$0.camera.isEmpty }.map(\.camera)).sorted()
+    }
+
+    /// 复位: the photo back to its defaults.
+    func resetDevelop(_ asset: Asset) {
+        commitDevelop([asset.id: defaultDevelopSettings(for: asset)], undoName: L("复位调整"))
     }
 
     private func applyPostImportMetadata(to fresh: [Asset]) -> [Asset] {
