@@ -49,15 +49,38 @@ enum BrushRaster {
     }
 
     /// The strokes painted in order over black, positioned on `extent`.
+    /// The raster of every stroke but the last, for the mask painted most recently: painting
+    /// grows the last stroke frame by frame, so only that stroke needs drawing again.
+    private static let prefixLock = NSLock()
+    nonisolated(unsafe) private static var prefix: (key: String, image: CGImage)?
+
+    private static func cacheKey(_ strokes: [BrushStroke], width: Int, height: Int) -> String {
+        "\(BrushStroke.hash(strokes))|\(strokes.count)|\(width)x\(height)"
+    }
+
     private static func layer(_ strokes: [BrushStroke], extent: CGRect) -> CIImage? {
         let width = Int(extent.width.rounded()), height = Int(extent.height.rounded())
-        guard width > 0, height > 0 else { return nil }
-        let key = "\(BrushStroke.hash(strokes))|\(strokes.count)|\(width)x\(height)" as NSString
+        guard width > 0, height > 0, let last = strokes.last else { return nil }
+        let key = cacheKey(strokes, width: width, height: height) as NSString
         let bitmap: CGImage
         if let cached = cache.object(forKey: key) {
             bitmap = cached.image
         } else {
-            guard let painted = paint(strokes, width: width, height: height) else { return nil }
+            var painted: CGImage?
+            if strokes.count > 1 {
+                let head = Array(strokes.dropLast())
+                let headKey = cacheKey(head, width: width, height: height)
+                var base = prefixLock.withLock { prefix?.key == headKey ? prefix?.image : nil }
+                    ?? cache.object(forKey: headKey as NSString)?.image
+                if base == nil {
+                    base = paint(head, onto: nil, width: width, height: height)
+                    if let base { prefixLock.withLock { prefix = (headKey, base) } }
+                }
+                if let base { painted = paint([last], onto: base, width: width, height: height) }
+            } else {
+                painted = paint(strokes, onto: nil, width: width, height: height)
+            }
+            guard let painted else { return nil }
             cache.setObject(Box(painted), forKey: key)
             bitmap = painted
         }
@@ -66,43 +89,39 @@ enum BrushRaster {
             .transformed(by: CGAffineTransform(translationX: extent.minX, y: extent.minY))
     }
 
-    private static func paint(_ strokes: [BrushStroke], width: Int, height: Int) -> CGImage? {
+    /// Draws `strokes` over `base` (or black). Each stroke's dab is rendered once and stamped
+    /// along its path: blitting an image is several times cheaper than shading a gradient per dab.
+    private static func paint(_ strokes: [BrushStroke], onto base: CGImage?, width: Int, height: Int) -> CGImage? {
         let gray = CGColorSpaceCreateDeviceGray()
         guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                                       space: gray, bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
-        context.setFillColor(gray: 0, alpha: 1)
-        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-        // top-left origin, like the stroke points
-        context.translateBy(x: 0, y: CGFloat(height))
-        context.scaleBy(x: 1, y: -1)
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        if let base {
+            context.draw(base, in: bounds)
+        } else {
+            context.setFillColor(gray: 0, alpha: 1)
+            context.fill(bounds)
+        }
+        // stroke points have a top-left origin; flip y by hand rather than through the CTM, which
+        // would send every stamp through a slower transformed-image path
         let longEdge = Double(max(width, height))
         for stroke in strokes where stroke.pointCount > 0 {
             let radius = max(0.5, stroke.radius * longEdge)
-            let level = min(1, max(0, stroke.density / 100))
-            let hard = min(0.98, max(0, 1 - stroke.feather / 100))
-            // a smoothstep-like fall-off from the hard core to the rim
-            let profile: [(location: Double, value: Double)] = [
-                (0, 1), (hard, 1), (hard + (1 - hard) * 0.25, 0.84), (hard + (1 - hard) * 0.5, 0.5),
-                (hard + (1 - hard) * 0.75, 0.16), (1, 0),
-            ]
-            // painting draws the dab's strength over black; erasing draws its inverse over white
-            let components = profile.flatMap { stop -> [CGFloat] in
-                let strength = stop.value * level
-                return [CGFloat(stroke.erase ? 1 - strength : strength), 1]
-            }
-            guard let gradient = CGGradient(colorSpace: gray, colorComponents: components,
-                                            locations: profile.map { CGFloat($0.location) }, count: profile.count)
-            else { continue }
+            guard let dab = dabImage(stroke, radius: radius) else { continue }
             context.setBlendMode(stroke.erase ? .darken : .lighten)
+            let side = CGFloat(dab.width)
             let spacing = max(0.75, radius * 0.2)
-            func dab(_ x: Double, _ y: Double) {
-                let center = CGPoint(x: x, y: y)
-                context.drawRadialGradient(gradient, startCenter: center, startRadius: 0,
-                                           endCenter: center, endRadius: CGFloat(radius), options: [])
+            // whole-pixel positions: a fractional one resamples the dab on every stamp, and half a
+            // pixel is invisible in a soft brush
+            context.interpolationQuality = .none
+            func stamp(_ x: Double, _ y: Double) {
+                context.draw(dab, in: CGRect(x: (CGFloat(x) - side / 2).rounded(),
+                                             y: (CGFloat(Double(height) - y) - side / 2).rounded(),
+                                             width: side, height: side))
             }
             let first = stroke.point(0)
             var px = Double(first.x) * Double(width), py = Double(first.y) * Double(height)
-            dab(px, py)
+            stamp(px, py)
             var carried = 0.0   // distance since the last dab, so spacing holds across points
             for index in 1..<stroke.pointCount {
                 let next = stroke.point(index)
@@ -111,13 +130,41 @@ enum BrushRaster {
                 var travelled = spacing - carried
                 while travelled <= length {
                     let t = travelled / max(length, 1e-9)
-                    dab(px + (nx - px) * t, py + (ny - py) * t)
+                    stamp(px + (nx - px) * t, py + (ny - py) * t)
                     travelled += spacing
                 }
                 carried = length - (travelled - spacing)
                 px = nx; py = ny
             }
         }
+        return context.makeImage()
+    }
+
+    /// One round dab: the stroke's strength over black when painting, its inverse over white
+    /// when erasing, falling off smoothly from the hard core to the rim.
+    private static func dabImage(_ stroke: BrushStroke, radius: Double) -> CGImage? {
+        let side = Int((radius * 2).rounded(.up)) + 2
+        let gray = CGColorSpaceCreateDeviceGray()
+        guard let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: gray, bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
+        context.setFillColor(gray: stroke.erase ? 1 : 0, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: side, height: side))
+        let level = min(1, max(0, stroke.density / 100))
+        let hard = min(0.98, max(0, 1 - stroke.feather / 100))
+        let profile: [(location: Double, value: Double)] = [
+            (0, 1), (hard, 1), (hard + (1 - hard) * 0.25, 0.84), (hard + (1 - hard) * 0.5, 0.5),
+            (hard + (1 - hard) * 0.75, 0.16), (1, 0),
+        ]
+        let components = profile.flatMap { stop -> [CGFloat] in
+            let strength = stop.value * level
+            return [CGFloat(stroke.erase ? 1 - strength : strength), 1]
+        }
+        guard let gradient = CGGradient(colorSpace: gray, colorComponents: components,
+                                        locations: profile.map { CGFloat($0.location) }, count: profile.count)
+        else { return nil }
+        let center = CGPoint(x: Double(side) / 2, y: Double(side) / 2)
+        context.drawRadialGradient(gradient, startCenter: center, startRadius: 0, endCenter: center,
+                                   endRadius: CGFloat(radius), options: [])
         return context.makeImage()
     }
 }
