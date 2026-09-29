@@ -118,6 +118,8 @@ struct PhotoCatalogCommands: Commands {
             Button("导出选中预览图…") { perform("照片.导出选中预览图") { app.exportSelectionPreviews() } }
                 .disabled(app.sheet != nil || !app.canExportPreviewSelection)
             Divider()
+            Button("加入或移出快捷收藏") { perform("照片.快捷收藏") { app.toggleQuickCollection() } }
+                .disabled(app.sheet != nil || !app.hasSelection)
             Button("加入相册…") { perform("照片.加入相册") { app.addSelectionToAlbum() } }
                 .disabled(app.sheet != nil || !app.canApplySelectionToAlbum)
             Button("从当前相册移除") { perform("照片.从当前相册移除") { app.removeSelectionFromCurrentAlbum() } }

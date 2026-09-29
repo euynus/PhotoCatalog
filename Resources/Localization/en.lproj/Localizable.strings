@@ -1,6 +1,12 @@
 /* English UI text. Keys are the Chinese source strings (see Domain/Localization.swift). */
 
 /* Application/AppState.swift */
+"快捷收藏" = "Quick Collection";
+"加入快捷收藏" = "Add to Quick Collection";
+"移出快捷收藏" = "Remove from Quick Collection";
+"已加入快捷收藏 %lld 张" = "Added %lld photos to the Quick Collection";
+"已从快捷收藏移除 %lld 张" = "Removed %lld photos from the Quick Collection";
+"快捷收藏保存失败" = "Couldn't save the Quick Collection";
 "白平衡吸管" = "White Balance Eyedropper";
 "这里太暗或太亮，无法判断中性色，请点选灰色或白色的区域" = "Too dark or too bright to judge the color here. Click an area that should be gray or white.";
 "自动色调" = "Auto Tone";
@@ -582,6 +588,8 @@
 "演示照片或缺失的原件无法修图。" = "Demo photos and missing originals can't be developed.";
 
 /* Presentation/Grid/GridView.swift */
+"在快捷收藏中 (B)" = "In the Quick Collection (B)";
+"在快捷收藏中" = "In the Quick Collection";
 "%@色标签" = "%@ label";
 "RAW + %@ 显示为一张照片" = "RAW + %@ shown as one photo";
 "“%@”中没有符合当前筛选条件的照片。" = "No photos in “%@” match the current filters.";
@@ -730,6 +738,7 @@
 "松开以导入文件夹" = "Drop to import the folder";
 
 /* Presentation/MainWindow/PhotoCatalogCommands.swift */
+"加入或移出快捷收藏" = "Add to or Remove from Quick Collection";
 "从目录库移除…" = "Remove from Catalog…";
 "全选当前列表" = "Select All in View";
 "关闭目录库" = "Close Catalog";

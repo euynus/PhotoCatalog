@@ -10,6 +10,7 @@ enum IconName {
     static let map: [String: String] = [
         "photos": "photo",
         "clock": "clock",
+        "quick": "circle.inset.filled",
         "star": "star",
         "flag": "flag",
         "reject": "xmark.circle",

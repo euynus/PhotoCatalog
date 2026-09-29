@@ -485,6 +485,21 @@ enum PipelineCheck {
         let albumAfterEdit = (try? store.loadAlbums())?.first { $0.id == album.id }
         check(albumAfterEdit?.assetIds == album.assetIds,
               "manual album membership survives a metadata edit (no FK cascade on upsert)")
+        // the quick collection is kept as an album under a reserved id, and loads apart from albums
+        let quickIds = [reloaded[1].id, reloaded[2].id]
+        let reopenedQuick: Set<String>? = MainActor.assumeIsolated {
+            let app = AppState.selfCheckFixture(store: store)
+            app.runsBackgroundMaintenance = false
+            app.applyLoadedCatalogForScaleCheck(reloaded, from: store)
+            app.selectedIds = Set(quickIds)
+            app.toggleQuickCollection()
+            let reopened = AppState.selfCheckFixture(store: store)
+            reopened.runsBackgroundMaintenance = false
+            reopened.applyLoadedCatalogForScaleCheck(reloaded, from: store)
+            let listedAsAlbum = reopened.albums.contains { $0.id == AppState.quickCollectionID }
+            return listedAsAlbum ? nil : reopened.quickCollection
+        }
+        check(reopenedQuick == Set(quickIds), "the quick collection survives reopening, apart from albums")
         let smartRule = SmartRule(match: "all", conditions: [
             SmartCondition(field: "type", op: "=", value: assets[0].type),
         ])

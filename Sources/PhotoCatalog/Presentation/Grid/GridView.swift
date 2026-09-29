@@ -41,6 +41,7 @@ struct GridView: View {
                                      stackCollapsed: stack?.collapsed == true,
                                      pairLabel: Self.pairLabel(pair),
                                      isEdited: app.developFingerprint(for: asset.id) != nil,
+                                     inQuickCollection: app.quickCollection.contains(asset.id),
                                      onToggleStack: { app.toggleStack(containing: asset.id) })
                                 .equatable()
                                 // the first click selects at once; the second of a double-click opens
@@ -130,6 +131,7 @@ struct GridCell: View {
     let stackCollapsed: Bool
     let pairLabel: String?
     let isEdited: Bool
+    let inQuickCollection: Bool
     let onToggleStack: () -> Void
     @State private var hover = false
 
@@ -177,6 +179,14 @@ struct GridCell: View {
             }
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: 5) {
+                    if inQuickCollection {
+                        Image(systemName: "circle.inset.filled")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.canvasText)
+                            .shadow(color: .black.opacity(0.6), radius: 1)
+                            .help("在快捷收藏中 (B)")
+                            .accessibilityLabel("在快捷收藏中")
+                    }
                     if asset.colorLabel != nil { ColorDot(label: asset.colorLabel, size: 10) }
                     if let stackCount {
                         StackBadge(count: stackCount, collapsed: stackCollapsed, action: onToggleStack)
@@ -309,6 +319,7 @@ extension GridCell: Equatable {
         l.size == r.size &&
         l.selected == r.selected &&
         l.isPrimary == r.isPrimary &&
+        l.inQuickCollection == r.inQuickCollection &&
         l.showInfo == r.showInfo &&
         l.stackCount == r.stackCount &&
         l.stackCollapsed == r.stackCollapsed &&

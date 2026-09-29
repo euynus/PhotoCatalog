@@ -1323,6 +1323,7 @@ final class AppState {
         guard !real.isEmpty else {
             assets = []
             albums = []
+            quickCollection = []
             smartAlbums = []
             folders = []
             duplicateGroupsCache = []
@@ -1335,6 +1336,7 @@ final class AppState {
 
         assets = []
         albums = []
+        quickCollection = []
         smartAlbums = []
         folders = []
         restoreSourceRoots(from: store)
@@ -1521,7 +1523,10 @@ final class AppState {
     private func restoreAlbums(from store: CatalogStore, assets: [Asset]) {
         developSettings = (try? store.loadDevelopSettings()) ?? [:]
         loadFaces(from: store)
-        albums = (try? store.loadAlbums()) ?? []
+        // the quick collection is stored as an album under a reserved id, and listed apart
+        let loadedAlbums = (try? store.loadAlbums()) ?? []
+        quickCollection = Set(loadedAlbums.first { $0.id == Self.quickCollectionID }?.assetIds ?? [])
+        albums = loadedAlbums.filter { $0.id != Self.quickCollectionID }
         let loadedSmartAlbums = (try? store.loadSmartAlbums()) ?? []
         smartAlbums = loadedSmartAlbums.map { album in
             SmartAlbum(id: album.id, name: album.name, rule: album.rule,
@@ -4088,6 +4093,7 @@ final class AppState {
         let a = DemoData.assets
         assets = a
         albums = DemoData.initialAlbums(a)
+        quickCollection = []
         smartAlbums = DemoData.initialSmartAlbums(a)
         folders = DemoData.folders
         developSettings = [:]
@@ -4111,6 +4117,7 @@ final class AppState {
         clearFaces()
         assets = []
         albums = []
+        quickCollection = []
         smartAlbums = []
         folders = []
         sourceRootPathsById = [:]
@@ -4792,6 +4799,9 @@ final class AppState {
             case "recent":
                 let cutoff = recentCutoff
                 belongs = { $0.importedAt > cutoff }
+            case "quick":
+                let members = quickCollection
+                belongs = { members.contains($0.id) }
             case "unrated":
                 belongs = { $0.rating == 0 && $0.flag != .reject }
             case "picks":
@@ -5453,6 +5463,55 @@ final class AppState {
         guard !changedIds.isEmpty else { return }
         guard persist(changedIds, in: updated) else { return }
         replaceAssetsForMutation(updated)
+    }
+
+    // ----- quick collection (B) -----
+    static let quickCollectionID = "quick-collection"
+
+    /// Lightroom's Quick Collection: a scratch set of photos gathered with B while culling,
+    /// kept in the catalog (as an album under a reserved id) but listed apart from albums.
+    var quickCollection: Set<String> = [] {
+        didSet { if quickCollection != oldValue { listInputsVersion &+= 1 } }
+    }
+
+    var quickCollectionCount: Int {
+        let index = assetIndex, assets = self.assets
+        return quickCollection.reduce(0) { count, id in count + (index[id].map { assets[$0].deleted ? 0 : 1 } ?? 0) }
+    }
+
+    /// B: adds the selection to the quick collection, or takes it out when all of it is in.
+    @discardableResult
+    func toggleQuickCollection() -> Bool {
+        let ids = selectionTargetIds
+        guard onboarded, !ids.isEmpty else { return false }
+        let removing = ids.isSubset(of: quickCollection)
+        setQuickCollection(removing ? quickCollection.subtracting(ids) : quickCollection.union(ids),
+                           undoName: removing ? L("移出快捷收藏") : L("加入快捷收藏"))
+        if removing {
+            push("已从快捷收藏移除 \(ids.count) 张", "quick")
+        } else {
+            push("已加入快捷收藏 \(ids.count) 张", "quick")
+        }
+        return true
+    }
+
+    private func setQuickCollection(_ members: Set<String>, undoName: String) {
+        let before = quickCollection
+        guard members != before else { return }
+        quickCollection = members
+        if let store {
+            do {
+                try store.saveAlbum(Album(id: Self.quickCollectionID, name: L("快捷收藏"), assetIds: members.sorted()),
+                                    sortOrder: -1)
+            } catch {
+                push("快捷收藏保存失败", "warning")
+            }
+        }
+        guard let undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { app in
+            MainActor.assumeIsolated { app.setQuickCollection(before, undoName: undoName) }
+        }
+        undoManager.setActionName(undoName)
     }
 
     func createAlbumFromSelection() {
@@ -6538,7 +6597,7 @@ final class AppState {
         }
         guard onboarded else { return false }
 
-        if view == .analysis && ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "p", "x", "u", "s", "delete", "backspace"].contains(key) {
+        if view == .analysis && ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "p", "x", "u", "s", "b", "delete", "backspace"].contains(key) {
             return false
         }
 
@@ -6573,6 +6632,8 @@ final class AppState {
             developShowsOriginal.toggle()
         case "r":
             toggleCropTool()
+        case "b":
+            guard toggleQuickCollection() else { return false }
         case "w":
             guard view == .develop, let primary, canDevelop(primary) else { return false }
             developCropping = false

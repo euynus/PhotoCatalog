@@ -173,6 +173,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已从「%@」移除 %lld 张照片</string>
 	</dict>
+	<key>已从快捷收藏移除 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已从快捷收藏移除 %lld 张</string>
+	</dict>
 	<key>已从目录库移除 %lld 张重复照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -197,6 +202,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已加入导出队列 · 前面还有 %lld 个任务</string>
+	</dict>
+	<key>已加入快捷收藏 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已加入快捷收藏 %lld 张</string>
 	</dict>
 	<key>已同步到 %lld 张照片</key>
 	<dict>

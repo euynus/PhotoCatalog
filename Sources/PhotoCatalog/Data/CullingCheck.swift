@@ -63,6 +63,29 @@ enum CullingCheck {
         _ = app.handleKey("8", hasCommand: false)
         assert(app.asset(id: ids[5])?.colorLabel == .green, "another color replaces the label")
 
+        // B gathers a quick collection; B on photos all in it takes them out; undoable
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        app.undoManager = undo
+        app.selectedIds = [ids[0], ids[1]]
+        app.primaryId = ids[0]
+        undo.beginUndoGrouping()
+        _ = app.handleKey("b", hasCommand: false)
+        undo.endUndoGrouping()
+        assert(app.quickCollection == [ids[0], ids[1]] && app.quickCollectionCount == 2, "B adds the selection to the quick collection")
+        app.select(Selection(type: .lib, id: "quick", name: "快捷收藏"))
+        assert(Set(app.list.map(\.id)) == [ids[0], ids[1]], "the quick collection lists its photos")
+        app.selectedIds = [ids[0]]
+        app.primaryId = ids[0]
+        undo.beginUndoGrouping()
+        _ = app.handleKey("b", hasCommand: false)
+        undo.endUndoGrouping()
+        assert(app.quickCollection == [ids[1]] && app.list.map(\.id) == [ids[1]], "B again takes a photo out")
+        undo.undo()
+        assert(app.quickCollection == [ids[0], ids[1]], "taking it out undoes")
+        app.undoManager = nil
+        app.select(Selection(type: .lib, id: "all", name: "全部照片"))
+
         app.setPrimary(ids[0])
         app.prepareContextSelection(ids[2])
         assert(app.selectedIds == [ids[2]], "right-clicking outside the selection targets that photo")

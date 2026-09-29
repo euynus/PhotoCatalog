@@ -591,6 +591,22 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
+	<key>已从快捷收藏移除 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Removed %#@n1@ from the Quick Collection</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>已从目录库移除 %lld 张重复照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -669,6 +685,22 @@
 			<string>%lld job</string>
 			<key>other</key>
 			<string>%lld jobs</string>
+		</dict>
+	</dict>
+	<key>已加入快捷收藏 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Added %#@n1@ to the Quick Collection</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
 		</dict>
 	</dict>
 	<key>已同步到 %lld 张照片</key>

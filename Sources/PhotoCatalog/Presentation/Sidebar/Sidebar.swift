@@ -84,6 +84,7 @@ struct Sidebar: View {
         let c = app.libraryCounts
         row("photos", L("全部照片"), .lib, "all", badge: Text(c.all.formatted()))
         row("clock", L("最近导入"), .lib, "recent", badge: pendingBadge ?? Text(c.recent.formatted()))
+        row("quick", L("快捷收藏"), .lib, "quick", badge: pendingBadge ?? Text(app.quickCollectionCount.formatted()))
         row("map", L("地点"), .lib, "places", badge: pendingBadge ?? Text(c.places.formatted()))
         if app.hasCatalogPreview || c.people > 0 || app.hasOpenCatalog {
             // after face analysis the badge counts named people, before it photos with faces
