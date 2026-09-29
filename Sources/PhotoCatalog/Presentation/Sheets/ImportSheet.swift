@@ -104,6 +104,14 @@ struct ImportSheet: View {
                     .textFieldStyle(.roundedBorder).frame(width: 210)
             }
             .help("导入时写入每张照片；{year} 替换为拍摄年份")
+            HStack {
+                Text("修图预设").foregroundStyle(Theme.text2)
+                Spacer()
+                DevelopPresetPicker(selection: $app.importDevelopPresetId)
+                    .labelsHidden()
+                    .frame(width: 200)
+            }
+            .help("导入的照片都套用这个预设，之后仍可随时修改")
             HStack(spacing: 24) {
                 Toggle("读取 XMP sidecar", isOn: $app.readXMPSidecar)
                 Toggle("Vision 分析", isOn: $app.visionEnabled)

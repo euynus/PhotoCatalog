@@ -419,6 +419,14 @@ final class AppState {
     var importPostAlbumName = UserDefaults.standard.string(forKey: "pc_importPostAlbumName") ?? "" {
         didSet { UserDefaults.standard.set(importPostAlbumName, forKey: "pc_importPostAlbumName") }
     }
+    /// The develop preset every import applies ("" for none), as Lightroom's import panel does.
+    var importDevelopPresetId = UserDefaults.standard.string(forKey: "pc_importDevelopPreset") ?? "" {
+        didSet { UserDefaults.standard.set(importDevelopPresetId, forKey: "pc_importDevelopPreset") }
+    }
+    /// The import preset, while it still exists.
+    var importDevelopPreset: DevelopPreset? {
+        importDevelopPresetId.isEmpty ? nil : allDevelopPresets.first { $0.id == importDevelopPresetId }
+    }
     /// After a rating / flag / color key on one photo, move to the next (Shift does it once).
     var autoAdvance: Bool = UserDefaults.standard.bool(forKey: "pc_autoAdvance") {
         didSet { UserDefaults.standard.set(autoAdvance, forKey: "pc_autoAdvance") }
@@ -2595,6 +2603,7 @@ final class AppState {
         if !fresh.isEmpty {
             replaceAssetsForMutation(assets + fresh)
             recordSidecarBaselines(fresh)
+            applyImportDevelopSettings(to: fresh)
         }
         if let rootId, !fresh.isEmpty || skipped > 0 {
             sourceManagementModesById[rootId] = mode.rawValue
@@ -2627,6 +2636,27 @@ final class AppState {
             icon = failedCount > 0 ? "warning" : "check"
         }
         push(verbatim: message, icon)
+    }
+
+    /// Newly imported photos start from the import preset: saved with a first history step, not
+    /// something to undo (the import itself isn't).
+    func applyImportDevelopSettings(to fresh: [Asset]) {
+        guard let preset = importDevelopPreset else { return }
+        var changes: [String: DevelopSettings] = [:]
+        for asset in fresh where !asset.isDemo && canDevelop(asset) {
+            let before = developSettings[asset.id] ?? .neutral
+            let after = preset.transfer.applied(to: before, targetIsRaw: asset.isRaw)
+            if after != before { changes[asset.id] = after }
+        }
+        guard !changes.isEmpty else { return }
+        do {
+            try store?.saveDevelopSettings(changes)
+        } catch {
+            push("导入预设未能保存到目录库", "warning")
+            return
+        }
+        for (id, value) in changes { developSettings[id] = value.isNeutral ? nil : value }
+        recordDevelopHistory(changes, name: L("导入预设“\(preset.name)”"), change: .append)
     }
 
     private func applyPostImportMetadata(to fresh: [Asset]) -> [Asset] {

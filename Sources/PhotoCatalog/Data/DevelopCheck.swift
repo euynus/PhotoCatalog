@@ -1015,9 +1015,11 @@ enum DevelopCheck {
         app.select(Selection(type: .lib, id: "all", name: "Transfer check"))
         let savedPresets = app.developPresets
         let savedFields = app.developTransferFields
+        let savedImportPreset = app.importDevelopPresetId
         defer {
             app.developPresets = savedPresets
             app.developTransferFields = savedFields
+            app.importDevelopPresetId = savedImportPreset
         }
 
         var edit = DevelopSettings()
@@ -1066,6 +1068,18 @@ enum DevelopCheck {
         app.selectedIds = [a.id, b.id, c.id]
         app.resetDevelopSelection()
         assert(app.developSettings.isEmpty, "reset returns the selection to as shot")
+
+        // import: new photos start from the import preset, recorded in their history
+        app.importDevelopPresetId = "builtin.bw"
+        _ = app.developHistory(for: b.id)   // shown, so its history is kept in memory without a catalog
+        app.applyImportDevelopSettings(to: [a, b])
+        assert(app.developSettings[a.id]?.saturation == -100 && app.developSettings[b.id]?.saturation == -100
+               && app.developSettings[c.id] == nil, "imported photos get the import preset")
+        assert(app.developHistory(for: b.id).last?.name == L("导入预设“\(L("黑白"))”"),
+               "the import preset is recorded as a history step")
+        app.importDevelopPresetId = "gone"
+        app.applyImportDevelopSettings(to: [c])
+        assert(app.developSettings[c.id] == nil && app.importDevelopPreset == nil, "a deleted import preset does nothing")
     }
 
     @MainActor

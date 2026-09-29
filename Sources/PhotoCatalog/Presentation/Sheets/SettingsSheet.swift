@@ -181,6 +181,11 @@ struct SettingsSheet: View {
                 row(L("导入后相册")) {
                     settingsTextField(L("相册名"), text: $app.importPostAlbumName)
                 }
+                row(L("导入时修图")) {
+                    DevelopPresetPicker(selection: $app.importDevelopPresetId)
+                        .labelsHidden()
+                        .frame(width: 160)
+                }
                 row(L("作者")) {
                     settingsTextField(L("导入时写入，留空则不改"), text: $app.importAuthor)
                 }

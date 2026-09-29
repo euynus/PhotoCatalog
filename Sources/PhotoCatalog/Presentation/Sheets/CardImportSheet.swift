@@ -297,6 +297,7 @@ struct CardImportSheet: View {
                 TextField("关键词", text: $app.importPostKeywords, prompt: Text("逗号分隔"))
                 TextField("作者", text: $app.importAuthor)
                 TextField("版权", text: $app.importCopyright, prompt: Text("© {year} 名字"))
+                DevelopPresetPicker(selection: $app.importDevelopPresetId)
             }
             Section("完成后") {
                 Toggle("推出存储卡", isOn: $options.ejectAfter)
