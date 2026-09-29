@@ -47,6 +47,7 @@ DATA_LITERALS = [
     re.compile(r'hasPrefix\("文件"\)'),
     re.compile(r'character\s*=='),                     # keyword separators
     re.compile(r'"简体中文"'),                          # a language is named in its own language
+    re.compile(r'editedName'),                         # edited copies are recognized by file name
 ]
 INT_HINT = re.compile(r'(count|Count|total|index|idx|\bn\b|rolledBack|saved|skipped|failed|failures?\b|completed|'
                       r'current|supported|percent|edge|maxWidth|maxHeight|rating|faces|copied|moved|scanned|'
@@ -63,7 +64,7 @@ SPEC_OVERRIDES = {
     'DateFmt.shortCapture(last)': '%@', 'DateFmt.shortCapture(first)': '%@',
     'shiftMinutes': '%lld', 'shiftHours': '%lld', 'pair': '%@', 'app.recentImportDays': '%lld',
     'singles': '%lld', 'unconfirmed': '%lld', 'person.unconfirmed': '%lld', 'k': '%@', 'active': '%lld',
-    'app.cacheLimitMB': '%lld', 'person': '%@', 'plan.clashes': '%lld',
+    'app.cacheLimitMB': '%lld', 'person': '%@', 'plan.clashes': '%lld', 'editor': '%@',
 }
 # English plurals: "%lld <noun>" gets a singular form in the .stringsdict
 NOUNS = {'photos': 'photo', 'files': 'file', 'originals': 'original', 'faces': 'face', 'groups': 'group',

@@ -70,6 +70,13 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals)
             Button("重命名照片…") { perform("照片.重命名照片") { app.showRenameSheet() } }
                 .disabled(!app.canRenameOriginals)
+            Button(app.externalEditorName.map { editor in L("在 \(editor) 中编辑") } ?? L("在外部编辑器中编辑…")) {
+                perform("照片.外部编辑") { app.editInExternalEditor() }
+            }
+            .keyboardShortcut("e", modifiers: [.command, .option])
+            .disabled(!app.canEditInExternalEditor)
+            Button("选择外部编辑器…") { perform("照片.选择外部编辑器") { app.chooseExternalEditor() } }
+                .disabled(app.sheet != nil)
             Divider()
             Button("向左旋转") { perform("照片.向左旋转") { app.rotateSelection(clockwise: false) } }
                 .keyboardShortcut("[", modifiers: .command)

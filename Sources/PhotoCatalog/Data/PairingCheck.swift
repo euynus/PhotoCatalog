@@ -7,6 +7,7 @@ enum PairingCheck {
         MainActor.assumeIsolated {
             checkPresentationAndEdits()
             checkSelectionSummary()
+            checkEditedVersions()
         }
         checkRenameKeepsPairs()
         print("--- RAW+JPEG pairing assertions passed ---")
@@ -110,6 +111,43 @@ enum PairingCheck {
         assert(!app.assets.contains { !$0.deleted && ($0.id == raw.id || $0.id == jpeg.id) }
                && app.assets.contains { !$0.deleted && $0.id == solo.id },
                "removing the photo removes both of its files")
+    }
+
+    /// A TIFF made for an external editor stacks with its original by name, in either language.
+    @MainActor
+    private static func checkEditedVersions() {
+        for (stem, original) in [("IMG_1-编辑", "IMG_1"), ("IMG_1-Edit", "IMG_1"), ("IMG_1-编辑-2", "IMG_1"),
+                                 ("IMG_1-Edit (2)", "IMG_1"), ("my-edit-trip-Edit", "my-edit-trip")] {
+            assert(EditedVersions.originalStem(of: stem) == original, "\(stem) is an edited copy of \(original)")
+        }
+        assert(["IMG_1", "IMG_1-edited", "Edit", "IMG-Editor"].allSatisfy { EditedVersions.originalStem(of: $0) == nil },
+               "other names aren't edited copies")
+        let raws = DemoData.assets.filter(\.isRaw)
+        let jpegs = DemoData.assets.filter { !$0.isRaw }
+        func real(_ base: Asset, _ path: String) -> Asset {
+            Asset(id: base.id, pid: base.pid, ori: base.ori, thumb: base.thumb, preview: base.preview,
+                  filename: PathString.lastComponent(path), type: base.type, isRaw: base.isRaw,
+                  folderId: base.folderId, folderName: base.folderName, date: base.date,
+                  width: base.width, height: base.height, orientation: base.orientation,
+                  camera: base.camera, lens: base.lens, focal: base.focal, aperture: base.aperture,
+                  shutter: base.shutter, iso: base.iso, colorSpace: base.colorSpace, fileMB: base.fileMB,
+                  rating: 0, flag: .none, keywords: [], title: "", caption: "", location: "", gps: base.gps,
+                  status: .ready, importedAt: base.importedAt, localPath: path, isDemo: false)
+        }
+        let raw = real(raws[0], "/tmp/pc-edit/IMG_1.CR3")
+        let jpeg = real(jpegs[0], "/tmp/pc-edit/IMG_1.jpg")
+        let edit = real(jpegs[1], "/tmp/pc-edit/IMG_1-编辑.tif")
+        let second = real(jpegs[2], "/tmp/pc-edit/IMG_1-Edit-2.tif")
+        let alone = real(raws[1], "/tmp/pc-edit/IMG_2.CR3")
+        let elsewhere = real(jpegs[3], "/tmp/pc-other/IMG_2-编辑.tif")
+        let assets = [raw, jpeg, edit, second, alone, elsewhere]
+        let groups = EditedVersions.groups(assets)
+        assert(groups.count == 1 && groups[0].items.map(\.id) == [raw.id, edit.id, second.id],
+               "edited copies stack with the RAW they were made from, and only in its folder")
+        let app = AppState.selfCheckFixture()
+        app.assets = assets
+        assert(app.stackInfo(for: edit)?.count == 3 && app.stackInfo(for: alone) == nil,
+               "the library shows an original and its edited copies as one stack")
     }
 
     /// Menu states come from one cached, early-exiting pass over the selection; they must agree

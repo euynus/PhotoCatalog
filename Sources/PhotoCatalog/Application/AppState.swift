@@ -55,6 +55,10 @@ final class AppState {
             if scope == .any {
                 structureVersion &+= 1
                 assetIndexCache = nil
+                // edited copies stack with their originals by name, so file changes can move stacks
+                photoStacksCache = nil
+                stackByAssetCache = nil
+                stackInputsVersion &+= 1
                 keywordCountsCache = nil
                 captureDateGroupsCache = nil
                 folderTreeCache = nil
@@ -3207,6 +3211,151 @@ final class AppState {
         }
     }
 
+    // ---------- editing in another app ----------
+    /// The app photos open in for pixel editing (Photoshop, Pixelmator Pro…); asked the first time.
+    var externalEditorPath: String? = UserDefaults.standard.string(forKey: "pc_externalEditor") {
+        didSet { UserDefaults.standard.set(externalEditorPath, forKey: "pc_externalEditor") }
+    }
+
+    var externalEditorName: String? {
+        externalEditorPath.map { FileManager.default.displayName(atPath: $0).replacingOccurrences(of: ".app", with: "") }
+    }
+
+    @discardableResult
+    func chooseExternalEditor() -> URL? {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.prompt = L("选择")
+        panel.message = L("选择用来编辑照片的应用，例如 Photoshop、Affinity Photo 或 Pixelmator Pro")
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        externalEditorPath = url.path
+        return url
+    }
+
+    /// ⌥⌘E: edits each selected photo in the external editor — as a 16-bit TIFF copy with its
+    /// develop settings and metadata, `<name>-编辑.tif` beside the original, added to the
+    /// catalog with the original's rating, labels and keywords and stacked with it. The
+    /// original is never touched; the editor's saves come back through folder watching.
+    func editInExternalEditor() {
+        let ids = selectionTargetIds
+        let targets = list.filter { ids.contains($0.id) && hasExistingOriginal($0) }
+        guard !targets.isEmpty else {
+            push("所选照片没有可访问的原件", "warning")
+            return
+        }
+        let saved = externalEditorPath.map { URL(fileURLWithPath: $0) }
+        guard let editor = saved.flatMap({ FileManager.default.fileExists(atPath: $0.path) ? $0 : nil })
+                ?? chooseExternalEditor(),
+              let coordinator, let store else { return }
+        let jobs = externalEditJobs(targets)
+        push("正在为 \(editor.deletingPathExtension().lastPathComponent) 准备 \(jobs.count) 张 TIFF…", "export")
+        let catalogURL = store.packageURL
+        let previewSize = previewMaxPixel
+        Task { [weak self, jobs, coordinator] in
+            let made = await Task.detached(priority: .userInitiated) {
+                Self.renderEditedCopies(jobs, coordinator: coordinator, previewMaxPixel: previewSize)
+            }.value
+            guard let self, self.store?.packageURL == catalogURL else { return }
+            self.finishExternalEdit(made, editor: editor, expected: jobs.count)
+        }
+    }
+
+    typealias ExternalEditJob = (item: RenderedExportItem, folder: URL, source: Asset)
+
+    /// One TIFF to render per photo, beside its original.
+    func externalEditJobs(_ targets: [Asset]) -> [ExternalEditJob] {
+        targets.compactMap { asset -> ExternalEditJob? in
+            guard let path = asset.localPath else { return nil }
+            let original = URL(fileURLWithPath: path)
+            let item = RenderedExportItem(assetId: asset.id, sourcePath: path, isRaw: asset.isRaw,
+                                          develop: developSettings[asset.id] ?? .neutral,
+                                          originalSize: CGSize(width: asset.width, height: asset.height),
+                                          baseName: original.deletingPathExtension().lastPathComponent
+                                              + EditedVersions.suffix,
+                                          date: asset.date, camera: asset.camera, title: asset.title,
+                                          caption: asset.caption, keywords: asset.keywords, rating: asset.rating,
+                                          author: asset.author, copyright: asset.copyright)
+            return (item, original.deletingLastPathComponent(), asset)
+        }
+    }
+
+    /// Renders each job as a 16-bit Adobe RGB TIFF with full metadata and reads it in as a new
+    /// photo. Off the main thread.
+    nonisolated static func renderEditedCopies(_ jobs: [ExternalEditJob], coordinator: ImportCoordinator,
+                                               previewMaxPixel: Int) -> [(url: URL, source: Asset, asset: Asset?)] {
+        var settings = ExportSettings()
+        settings.format = .tiff
+        settings.sixteenBit = true
+        settings.colorSpace = .adobeRGB
+        settings.metadata = .all
+        settings.collision = .uniqueName
+        return jobs.compactMap { job in
+            var reserved = Set<String>()
+            guard case .written(let url) = RenderedExportService.export(job.item, sequence: 1, settings: settings,
+                                                                        to: job.folder, reserved: &reserved)
+            else { return nil }
+            let imported = coordinator.importFiles([url], from: job.folder, readSidecar: false,
+                                                   previewMaxPixel: previewMaxPixel).first
+            return (url, job.source, imported)
+        }
+    }
+
+    /// Adds the rendered copies to the catalog beside their originals and opens them in
+    /// `editor` (nil: only adds them).
+    func finishExternalEdit(_ made: [(url: URL, source: Asset, asset: Asset?)], editor: URL?, expected: Int) {
+        var fresh: [Asset] = []
+        for result in made {
+            guard var copy = result.asset, assetIndex[copy.id] == nil else { continue }
+            let source = result.source
+            // the copy files with its original and carries what the catalog knows about it
+            copy.folderId = source.folderId
+            copy.folderName = source.folderName
+            copy.date = source.date
+            copy.rating = source.rating
+            copy.flag = source.flag
+            copy.colorLabel = source.colorLabel
+            copy.keywords = source.keywords
+            copy.title = source.title
+            copy.caption = source.caption
+            copy.location = source.location
+            copy.gps = source.gps
+            copy.gpsAltitude = source.gpsAltitude
+            copy.project = source.project
+            copy.client = source.client
+            fresh.append(copy)
+        }
+        if !fresh.isEmpty {
+            do {
+                try store?.upsert(fresh)
+            } catch {
+                push("外部编辑的副本未能加入目录库", "warning")
+                return
+            }
+            replaceAssetsForMutation(assets + fresh)
+            if selection.type == .album, let index = albums.firstIndex(where: { $0.id == selection.id }) {
+                var album = albums[index]
+                album.assetIds.append(contentsOf: fresh.map(\.id))
+                if saveManualAlbum(album, sortOrder: index) { albums[index] = album }
+            }
+            selectedIds = Set(fresh.map(\.id))
+            setPrimary(fresh[0].id)
+            recomputeDuplicates()
+        }
+        let urls = made.map(\.url)
+        guard !urls.isEmpty else {
+            push("无法生成用于外部编辑的 TIFF", "warning")
+            return
+        }
+        guard let editor else { return }
+        NSWorkspace.shared.open(urls, withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration())
+        if urls.count < expected {
+            push(verbatim: L("已在外部编辑器中打开 \(urls.count) 张") + L(" · \(expected - urls.count) 失败"), "warning")
+        }
+    }
+
+    var canEditInExternalEditor: Bool { canOperateOnSelectedOriginals && onboarded && sheet == nil }
+
     // ---------- virtual copies ----------
     /// ⌘': a virtual copy of each selected photo — another catalog entry for the same original,
     /// starting from its metadata and develop settings, to take in another direction. A copy of
@@ -4964,7 +5113,8 @@ final class AppState {
     private var photoStacks: [PhotoStack] {
         _ = stackInputsVersion   // register the dependency even on a cache hit
         if let cache = photoStacksCache { return cache }
-        let stacks = PhotoStackService.stacks(from: duplicateGroupsCache)
+        // edited copies first: a TIFF made for an editor stacks with its original before anything else
+        let stacks = PhotoStackService.stacks(from: EditedVersions.groups(assets) + duplicateGroupsCache)
         photoStacksCache = stacks
         return stacks
     }

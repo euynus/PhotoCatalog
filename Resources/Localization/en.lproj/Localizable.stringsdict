@@ -751,6 +751,22 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
+	<key>已在外部编辑器中打开 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Opened %#@n1@ in the external editor</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>已复制 %lld 个原件</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

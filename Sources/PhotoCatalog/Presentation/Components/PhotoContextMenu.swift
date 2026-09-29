@@ -73,6 +73,7 @@ struct PhotoContextMenu: View {
         }
         Button("创建虚拟副本") { act { app.createVirtualCopies() } }
         Button("重命名照片…") { act { app.showRenameSheet() } }
+        Button("在外部编辑器中编辑") { act { app.editInExternalEditor() } }
 
         Button("设置位置…") { act { app.showLocationEditor() } }
 

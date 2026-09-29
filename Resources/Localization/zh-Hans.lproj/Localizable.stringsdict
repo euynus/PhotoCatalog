@@ -223,6 +223,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已同步到 %lld 张照片</string>
 	</dict>
+	<key>已在外部编辑器中打开 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已在外部编辑器中打开 %lld 张</string>
+	</dict>
 	<key>已复制 %lld 个原件</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

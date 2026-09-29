@@ -324,6 +324,17 @@ struct SettingsSheet: View {
                 }
             }
 
+            section(L("外部编辑器"), category: .files) {
+                Text("「在外部编辑器中编辑」(⌥⌘E) 会把照片连同修图调整存为 16 位 TIFF 副本（原件旁的「…-编辑.tif」），加入目录库并与原片叠放，再用这个应用打开；原件不会被修改。")
+                    .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
+                HStack(spacing: 9) {
+                    Text(app.externalEditorName ?? L("未选择"))
+                        .font(.system(size: 13)).foregroundStyle(app.externalEditorName == nil ? Theme.text3 : Theme.text)
+                    ghostButton(nil, L("选择…"), small: true) { app.chooseExternalEditor() }
+                    Spacer()
+                }
+            }
+
             section(L("原件文件"), category: .files) {
                 Text("复制不会改变目录库路径；移动成功后会更新目录库中的原件位置。")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)

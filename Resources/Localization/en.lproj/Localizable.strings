@@ -347,6 +347,11 @@
 "相册集删除失败" = "Couldn't delete the album set";
 "已删除相册集「%@」" = "Deleted album set “%@”";
 "移动失败，目录库未保存" = "Couldn't move it; the catalog wasn't saved";
+"选择用来编辑照片的应用，例如 Photoshop、Affinity Photo 或 Pixelmator Pro" = "Choose the app to edit photos in, such as Photoshop, Affinity Photo or Pixelmator Pro";
+"正在为 %@ 准备 %lld 张 TIFF…" = "Preparing %2$lld TIFF files for %1$@…";
+"外部编辑的副本未能加入目录库" = "The copies for editing couldn't be added to the catalog";
+"无法生成用于外部编辑的 TIFF" = "Couldn't make the TIFF files for editing";
+"已在外部编辑器中打开 %lld 张" = "Opened %lld photos in the external editor";
 
 /* Application/ImportCoordinator.swift */
 "复制原件失败：%@" = "Couldn't copy the original: %@";
@@ -450,6 +455,9 @@
 "黑白" = "Black & White";
 "黑白 · 高对比" = "Black & White · High Contrast";
 "蒙版" = "Masks";
+
+/* Domain/EditedVersions.swift */
+"编辑" = "Edit";
 
 /* Domain/ExportSettings.swift */
 "HEIC · 高效存档" = "HEIC · Efficient Archive";
@@ -594,6 +602,7 @@
 "打开配对的 JPEG" = "Open Paired JPEG";
 "无旗标" = "No Flag";
 "无评分" = "No Rating";
+"在外部编辑器中编辑" = "Edit in External Editor";
 
 /* Presentation/Components/ZoomablePhoto.swift */
 "原件不可用 · 显示预览" = "Original unavailable · showing preview";
@@ -929,6 +938,9 @@
 "重新扫描当前源" = "Rescan Current Source";
 "重置缩略图大小" = "Reset Thumbnail Size";
 "重命名照片…" = "Rename Photos…";
+"在 %@ 中编辑" = "Edit in %@";
+"在外部编辑器中编辑…" = "Edit in External Editor…";
+"选择外部编辑器…" = "Choose External Editor…";
 
 /* Presentation/MainWindow/RootView.swift */
 "正在打开 %@…" = "Opening %@…";
@@ -1233,6 +1245,8 @@
 "预设名" = "Preset name";
 "按命名模板重命名选中已导入照片的原件，重命名前可预览新文件名（也可在「照片」菜单或右键菜单中打开）。" = "Rename the selected photos' originals from a name template, previewing the new names first (also in the Photo menu and the right-click menu).";
 "重命名选中照片…" = "Rename Selected Photos…";
+"外部编辑器" = "External Editor";
+"「在外部编辑器中编辑」(⌥⌘E) 会把照片连同修图调整存为 16 位 TIFF 副本（原件旁的「…-编辑.tif」），加入目录库并与原片叠放，再用这个应用打开；原件不会被修改。" = "Edit in External Editor (⌥⌘E) saves the photo with its adjustments as a 16-bit TIFF copy (“…-Edit.tif” beside the original), adds it to the catalog stacked with the original, and opens it in this app; the original is never changed.";
 
 /* Presentation/Sheets/SmartAlbumBuilder.swift */
 "%lld 张照片符合规则" = "%lld photos match the rules";

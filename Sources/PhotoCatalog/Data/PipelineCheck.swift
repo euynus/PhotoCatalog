@@ -576,6 +576,56 @@ enum PipelineCheck {
         for (name, passed) in virtualCopies.sorted(by: { $0.key < $1.key }) {
             check(passed, "virtual copies: \(name)")
         }
+        // editing in another app: a 16-bit TIFF copy beside the untouched original, cataloged with
+        // the original's metadata and stacked with it
+        let externalEdit: [String: Bool] = MainActor.assumeIsolated {
+            let scratch = fm.temporaryDirectory.appendingPathComponent("pc-edit-\(UUID().uuidString)")
+            defer { try? fm.removeItem(at: scratch) }
+            try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+            guard let sourcePath = reloaded[2].localPath,
+                  let editStore = try? CatalogStore(packageURL: scratch.appendingPathComponent("Edit.photolibrary"))
+            else { return ["scratch catalog": false] }
+            let originalURL = scratch.appendingPathComponent("IMG_edit.jpg")
+            try? fm.copyItem(atPath: sourcePath, toPath: originalURL.path)
+            let originalBytes = try? Data(contentsOf: originalURL)
+            var master = reloaded[2]
+            master.localPath = originalURL.path
+            master.filename = originalURL.lastPathComponent
+            master.rating = 3
+            master.keywords = ["harbor"]
+            master.title = "Harbor"
+            try? editStore.upsert([master])
+            let app = AppState.selfCheckFixture(store: editStore)
+            app.runsBackgroundMaintenance = false
+            app.applyLoadedCatalogForScaleCheck([master], from: editStore)
+            var look = DevelopSettings()
+            look.exposure = 0.5
+            app.commitDevelop([master.id: look], undoName: "look")
+            for _ in 0..<2 {
+                let made = AppState.renderEditedCopies(app.externalEditJobs([master]),
+                                                       coordinator: ImportCoordinator(store: editStore),
+                                                       previewMaxPixel: 512)
+                app.finishExternalEdit(made, editor: nil, expected: 1)
+            }
+            let copies = app.assets.filter { $0.id != master.id && !$0.deleted }
+            let first = copies.first
+            let depth = first?.localPath.flatMap { CGImageSourceCreateWithURL(URL(fileURLWithPath: $0) as CFURL, nil) }
+                .flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }?[kCGImagePropertyDepth] as? Int
+            return [
+                "tiff beside the original": copies.count == 2
+                    && copies.allSatisfy { ($0.localPath ?? "").hasPrefix(scratch.path) && $0.filename.hasSuffix(".tif")
+                        && EditedVersions.originalStem(of: ($0.filename as NSString).deletingPathExtension) == "IMG_edit" }
+                    && Set(copies.map(\.filename)).count == 2,
+                "16-bit": depth == 16,
+                "metadata carried": copies.allSatisfy { $0.rating == 3 && $0.keywords == ["harbor"] && $0.title == "Harbor"
+                    && $0.folderId == master.folderId },
+                "stacked with the original": first.flatMap { app.stackInfo(for: $0)?.count } == 3,
+                "original untouched": (try? Data(contentsOf: originalURL)) == originalBytes,
+            ]
+        }
+        for (name, passed) in externalEdit.sorted(by: { $0.key < $1.key }) {
+            check(passed, "external editor: \(name)")
+        }
         // album sets: nest albums, smart albums and sets; deleting one moves its contents up
         let albumSets: [String: Bool] = MainActor.assumeIsolated {
             let scratch = fm.temporaryDirectory.appendingPathComponent("pc-sets-\(UUID().uuidString)")
