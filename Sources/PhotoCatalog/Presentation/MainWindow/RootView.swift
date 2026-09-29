@@ -104,7 +104,13 @@ struct KeyCatcher: NSViewRepresentable {
     @MainActor
     static func isEditingText() -> Bool {
         if let responder = NSApp.keyWindow?.firstResponder, responder is NSTextView { return true }
-        return false
+        // A system panel can hold key status for a moment once typing starts (SPRoundedWindow, the
+        // indicator beside the caret); the field being typed into is still the main window's, and
+        // reading only the key window turned the next letters into shortcuts (x rejected the photo).
+        // A sheet answers for itself so Escape still closes it.
+        let key = NSApp.keyWindow
+        guard key?.sheetParent == nil, let main = NSApp.mainWindow, key !== main else { return false }
+        return main.firstResponder is NSTextView
     }
 
     nonisolated static func keyString(keyCode: UInt16, charactersIgnoringModifiers: String?) -> String {
