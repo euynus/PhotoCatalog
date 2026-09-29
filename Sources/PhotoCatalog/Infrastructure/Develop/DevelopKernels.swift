@@ -3,13 +3,39 @@
 // ============================================================
 import CoreImage
 
-/// Lens distortion, radial gain, film grain, local contrast, haze removal and the color mixer, compiled from Metal source the first time a render needs
-/// them (~0.5 s, once): the package has no Metal build step, and Core Image compiles stitchable
-/// kernels at run time. A kernel that fails to compile leaves its adjustment out of the render.
+/// Lens distortion, radial gain, film grain, local contrast, haze removal and the color mixer,
+/// each compiled from Metal source the first time a render needs it: the package has no Metal
+/// build step, and Core Image compiles stitchable kernels at run time. A kernel that fails to
+/// compile leaves its adjustment out of the render.
 enum DevelopKernels {
-    private static let source = """
-    #include <CoreImage/CoreImage.h>
-    extern "C" { namespace coreimage {
+    /// Converts between RGB and HSL (hue in degrees), for the mixer.
+    private static let hsl = """
+    float3 toHSL(float3 c) {
+        float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
+        float l = (mx + mn) * 0.5, d = mx - mn, h = 0.0, s = 0.0;
+        if (d > 1e-5) {
+            s = d / max(1.0 - abs(2.0 * l - 1.0), 1e-5);
+            if (mx == c.r) { h = fmod((c.g - c.b) / d + 6.0, 6.0); }
+            else if (mx == c.g) { h = (c.b - c.r) / d + 2.0; }
+            else { h = (c.r - c.g) / d + 4.0; }
+            h *= 60.0;
+        }
+        return float3(h, s, l);
+    }
+    float3 fromHSL(float3 hsl) {
+        float h = fmod(hsl.x + 360.0, 360.0) / 60.0, s = hsl.y, l = hsl.z;
+        float c = (1.0 - abs(2.0 * l - 1.0)) * s;
+        float x = c * (1.0 - abs(fmod(h, 2.0) - 1.0));
+        float3 rgb = h < 1.0 ? float3(c, x, 0) : h < 2.0 ? float3(x, c, 0) : h < 3.0 ? float3(0, c, x)
+                   : h < 4.0 ? float3(0, x, c) : h < 5.0 ? float3(x, 0, c) : float3(c, 0, x);
+        return rgb + (l - c * 0.5);
+    }
+    """
+
+    /// One source per kernel: kernels compiled from a single source share Core Image's
+    /// compiled-program cache, and a later graph could run the code of a kernel rendered before it.
+    private static let bodies: [String: String] = [
+        "lensDistortion": """
         // Radial distortion about `center`, in units where the corner is at radius 1:
         // k > 0 samples closer to the center toward the edges, which straightens barrel distortion.
         [[stitchable]] float2 lensDistortion(float2 center, float k, float invRadius2, float zoom,
@@ -18,7 +44,8 @@ enum DevelopKernels {
             float r2 = dot(p, p) * invRadius2;
             return center + p * (1.0 - k * r2);
         }
-
+        """,
+        "radialGain": """
         // Multiplies color by 1 + amount·w, where w rises smoothly from 0 at radius `start`
         // to 1 at `start + width` (radius 1 is the corner).
         [[stitchable]] float4 radialGain(sample_t s, float2 center, float invRadius2, float amount,
@@ -28,7 +55,8 @@ enum DevelopKernels {
             float w = smoothstep(start, start + max(width, 0.001), r);
             return float4(s.rgb * max(0.0, 1.0 + amount * w), s.a);
         }
-
+        """,
+        "localContrast": """
         // Adds the luminance difference between `s` and its blur `b` back `amount` times, weighted
         // toward the midtones by `bias` (1 = midtones only, 0 = evenly) so edges don't halo in
         // the highlights and shadows. Negative amounts soften.
@@ -38,7 +66,8 @@ enum DevelopKernels {
             float w = mix(1.0, 4.0 * l * (1.0 - l), bias);
             return float4(s.rgb + (l - dot(b.rgb, luma)) * amount * w, s.a);
         }
-
+        """,
+        "dehaze": """
         // Haze on display-encoded color, from `d`, the blurred dark channel (how thick the veil
         // is): positive amounts invert the veil toward `air`, negative ones add it.
         [[stitchable]] float4 dehaze(sample_t s, sample_t d, float amount, float air) {
@@ -51,30 +80,12 @@ enum DevelopKernels {
             }
             return float4(c, s.a);
         }
-
+        """,
+        "colorMixer": """
+        \(hsl)
         // HSL mixer on display-encoded color. b0…b7 hold each band's (hue, saturation, luminance)
         // shift, -1…1; band centers match ColorMixer.Band.hue. Neighboring bands cross-fade, so
         // the weights always sum to one, and everything scales with how colorful the pixel is.
-        float3 toHSL(float3 c) {
-            float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
-            float l = (mx + mn) * 0.5, d = mx - mn, h = 0.0, s = 0.0;
-            if (d > 1e-5) {
-                s = d / max(1.0 - abs(2.0 * l - 1.0), 1e-5);
-                if (mx == c.r) { h = fmod((c.g - c.b) / d + 6.0, 6.0); }
-                else if (mx == c.g) { h = (c.b - c.r) / d + 2.0; }
-                else { h = (c.r - c.g) / d + 4.0; }
-                h *= 60.0;
-            }
-            return float3(h, s, l);
-        }
-        float3 fromHSL(float3 hsl) {
-            float h = fmod(hsl.x + 360.0, 360.0) / 60.0, s = hsl.y, l = hsl.z;
-            float c = (1.0 - abs(2.0 * l - 1.0)) * s;
-            float x = c * (1.0 - abs(fmod(h, 2.0) - 1.0));
-            float3 rgb = h < 1.0 ? float3(c, x, 0) : h < 2.0 ? float3(x, c, 0) : h < 3.0 ? float3(0, c, x)
-                       : h < 4.0 ? float3(0, x, c) : h < 5.0 ? float3(x, 0, c) : float3(c, 0, x);
-            return rgb + (l - c * 0.5);
-        }
         [[stitchable]] float4 colorMixer(sample_t s, float4 b0, float4 b1, float4 b2, float4 b3,
                                          float4 b4, float4 b5, float4 b6, float4 b7) {
             float4 bands[8] = { b0, b1, b2, b3, b4, b5, b6, b7 };
@@ -101,25 +112,36 @@ enum DevelopKernels {
             hsl.z = clamp(hsl.z * exp2(shift.z * colorful), 0.0, 1.0);
             return float4(fromHSL(hsl), s.a);
         }
-
+        """,
+        "filmGrain": """
         // Adds grain `n` (0.5 = none) to display-encoded color, strongest in the midtones as on film.
         [[stitchable]] float4 filmGrain(sample_t s, sample_t n, float amount) {
             float l = clamp(dot(s.rgb, float3(0.299, 0.587, 0.114)), 0.0, 1.0);
             float weight = 4.0 * l * (1.0 - l) + 0.1;
             return float4(s.rgb + (n.r - 0.5) * amount * weight, s.a);
         }
-    }}
-    """
+        """,
+    ]
 
-    private static let kernels: [String: CIKernel] = {
-        guard let compiled = try? CIKernel.kernels(withMetalString: source) else { return [:] }
-        return Dictionary(compiled.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
-    }()
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var compiled: [String: CIKernel] = [:]
+
+    /// The named kernel, compiled on first use (a fraction of a second, once per kernel).
+    private static func kernel(_ name: String) -> CIKernel? {
+        lock.withLock {
+            if let kernel = compiled[name] { return kernel }
+            guard let body = bodies[name] else { return nil }
+            let source = "#include <CoreImage/CoreImage.h>\nextern \"C\" { namespace coreimage {\n\(body)\n}}\n"
+            let kernel = (try? CIKernel.kernels(withMetalString: source))?.first { $0.name == name }
+            compiled[name] = kernel
+            return kernel
+        }
+    }
 
     /// `image` warped by distortion `k` (see the kernel), zoomed in just enough that pulling
     /// the edges outward (k < 0) leaves no empty corners.
     static func distort(_ image: CIImage, k: Double) -> CIImage {
-        guard k != 0, let warp = kernels["lensDistortion"] as? CIWarpKernel else { return image }
+        guard k != 0, let warp = kernel("lensDistortion") as? CIWarpKernel else { return image }
         let extent = image.extent
         let halfDiagonal2 = Double(extent.width * extent.width + extent.height * extent.height) / 4
         let zoom = k < 0 ? 1 - k : 1
@@ -134,7 +156,7 @@ enum DevelopKernels {
     /// render's size relative to the full photo, so grain keeps its size in the full-resolution photo.
     /// Core Image's random field is fixed, so the same photo always gets the same grain.
     static func grain(_ image: CIImage, amount: Double, size: Double, roughness: Double, scale: Double) -> CIImage {
-        guard amount > 0, let kernel = kernels["filmGrain"] as? CIColorKernel,
+        guard amount > 0, let kernel = kernel("filmGrain") as? CIColorKernel,
               let random = CIFilter(name: "CIRandomGenerator")?.outputImage else { return image }
         let extent = image.extent
         let pixel = max(1, (1 + size / 100 * 3) * scale)
@@ -160,7 +182,7 @@ enum DevelopKernels {
 
     /// Local contrast of display-encoded `image` at `sigma` pixels (see the kernel).
     static func localContrast(_ image: CIImage, sigma: Double, amount: Double, bias: Double) -> CIImage {
-        guard amount != 0, let kernel = kernels["localContrast"] as? CIColorKernel else { return image }
+        guard amount != 0, let kernel = kernel("localContrast") as? CIColorKernel else { return image }
         let extent = image.extent
         let blurred = image.clampedToExtent().applyingGaussianBlur(sigma: sigma).cropped(to: extent)
         return kernel.apply(extent: extent, arguments: [image, blurred, amount, bias]) ?? image
@@ -170,7 +192,7 @@ enum DevelopKernels {
     /// dark-channel prior: haze lifts the darkest channel of every patch, so its blurred minimum
     /// maps the veil.
     static func dehaze(_ image: CIImage, amount: Double) -> CIImage {
-        guard amount != 0, let kernel = kernels["dehaze"] as? CIColorKernel else { return image }
+        guard amount != 0, let kernel = kernel("dehaze") as? CIColorKernel else { return image }
         let extent = image.extent
         let longEdge = Double(max(extent.width, extent.height))
         let veil = image.applyingFilter("CIMinimumComponent")
@@ -183,7 +205,7 @@ enum DevelopKernels {
 
     /// The HSL mixer on display-encoded `image` (see the kernel).
     static func colorMixer(_ image: CIImage, _ mixer: ColorMixer) -> CIImage {
-        guard !mixer.isNeutral, let kernel = kernels["colorMixer"] as? CIColorKernel else { return image }
+        guard !mixer.isNeutral, let kernel = kernel("colorMixer") as? CIColorKernel else { return image }
         let bands = (0..<8).map { i in
             CIVector(x: mixer.hue[i] / 100, y: mixer.saturation[i] / 100, z: mixer.luminance[i] / 100, w: 0)
         }
@@ -192,7 +214,7 @@ enum DevelopKernels {
 
     /// `image` with its brightness scaled toward the corners (see the kernel).
     static func radialGain(_ image: CIImage, amount: Double, start: Double, width: Double) -> CIImage {
-        guard amount != 0, let kernel = kernels["radialGain"] as? CIColorKernel else { return image }
+        guard amount != 0, let kernel = kernel("radialGain") as? CIColorKernel else { return image }
         let extent = image.extent
         let halfDiagonal2 = Double(extent.width * extent.width + extent.height * extent.height) / 4
         return kernel.apply(extent: extent, arguments: [
