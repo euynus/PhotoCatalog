@@ -23,15 +23,9 @@ struct MainView: View {
             ContentColumn(assetRevision: assetRevision)
                 .frame(minWidth: Theme.contentMinW)
                 .inspector(isPresented: inspectorPresented) {
-                    Group {
-                        if app.view == .develop {
-                            DevelopPanel(asset: app.primary)
-                        } else {
-                            InspectorView(asset: app.primary, assetRevision: assetRevision)
-                        }
-                    }
-                    .inspectorColumnWidth(min: Theme.inspectorMinW, ideal: Theme.inspectorW,
-                                          max: Theme.inspectorMaxW)
+                    InspectorColumn(assetRevision: assetRevision)
+                        .inspectorColumnWidth(min: Theme.inspectorMinW, ideal: Theme.inspectorW,
+                                              max: Theme.inspectorMaxW)
                 }
                 .modifier(DetailTitles())
                 .toolbar { MainToolbar() }
@@ -104,6 +98,21 @@ struct MainView: View {
 
 extension AppState {
     var inspectorAvailable: Bool { !isDuplicates && view != .analysis }
+}
+
+/// Reads the photo it shows in its own body: read inside MainView's inspector closure, the
+/// selection made MainView (split view, sidebar, toolbar) re-evaluate on every photo change.
+private struct InspectorColumn: View {
+    @Environment(AppState.self) private var app
+    let assetRevision: Int
+
+    var body: some View {
+        if app.view == .develop {
+            DevelopPanel(asset: app.primary)
+        } else {
+            InspectorView(asset: app.primary, assetRevision: assetRevision)
+        }
+    }
 }
 
 /// Title and subtitle read the list count; as a modifier they update without
