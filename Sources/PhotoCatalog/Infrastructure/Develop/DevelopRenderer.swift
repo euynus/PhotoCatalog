@@ -351,8 +351,15 @@ enum DevelopRenderer {
                            photo: (url: URL, isRaw: Bool)?) -> CIImage? {
         let base: CIImage?
         if mask.kind.isAutomatic {
-            base = photo.flatMap { SemanticMasks.mask(mask.kind, url: $0.url, isRaw: $0.isRaw) }
-                .map { SemanticMasks.weight($0, extent: extent, inverted: mask.inverted, distortion: s.distortion) }
+            switch photo.map({ SemanticMasks.lookup(mask.kind, url: $0.url, isRaw: $0.isRaw) }) {
+            case .found(let result):
+                base = SemanticMasks.weight(result, extent: extent, inverted: mask.inverted, distortion: s.distortion)
+            case .notFound:
+                // no subject (or sky) in the photo: everything else is the whole photo
+                base = mask.inverted ? CIImage(color: .white).cropped(to: extent) : nil
+            case .unreadable, nil:
+                base = nil
+            }
         } else {
             base = DevelopKernels.maskWeight(mask, extent: extent)
         }

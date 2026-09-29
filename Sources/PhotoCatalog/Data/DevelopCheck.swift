@@ -466,6 +466,25 @@ enum DevelopCheck {
         CGImageDestinationAddImage(wallFile, wall, nil)
         CGImageDestinationFinalize(wallFile)
         assert(SemanticMasks.mask(.sky, url: wallURL, isRaw: false) == nil, "a pale wall is not sky")
+        var noSky = LocalAdjustment(kind: .sky)
+        let wallExtent = CGRect(x: 0, y: 0, width: 64, height: 64)
+        assert(DevelopRenderer.maskWeight(noSky, skyEdit, extent: wallExtent, photo: (wallURL, false)) == nil,
+               "a sky mask on a photo without sky covers nothing")
+        noSky.inverted = true
+        let everything = DevelopRenderer.maskWeight(noSky, skyEdit, extent: wallExtent, photo: (wallURL, false))
+            .flatMap { DevelopRenderer.render($0) }
+        assert(everything.map { luma($0, 32, 32) > 250 } == true, "and inverted, it covers the whole photo")
+        let missingURL = FileManager.default.temporaryDirectory.appendingPathComponent("pc-missing-\(UUID().uuidString).png")
+        guard case .unreadable = SemanticMasks.lookup(.sky, url: missingURL, isRaw: false) else {
+            preconditionFailure("a missing photo can't be read")
+        }
+        assert(DevelopRenderer.maskWeight(noSky, skyEdit, extent: wallExtent, photo: (missingURL, false)) == nil,
+               "an unreadable photo's inverted mask covers nothing")
+        try? FileManager.default.copyItem(at: wallURL, to: missingURL)
+        defer { try? FileManager.default.removeItem(at: missingURL) }
+        guard case .notFound = SemanticMasks.lookup(.sky, url: missingURL, isRaw: false) else {
+            preconditionFailure("a photo that couldn't be read is looked at again once it's there")
+        }
         if let subject = SemanticMasks.mask(.subject, url: landscapeURL, isRaw: false) {
             assert(subject.coverage > 0 && subject.coverage <= 1, "a subject mask covers part of the photo")
         }

@@ -750,13 +750,20 @@ final class AppState {
         developDetectingMask = kind
         let id = asset.id
         Task { [weak self] in
-            let found = await ThumbnailRepairQueue.run(.visible) {
-                SemanticMasks.mask(kind, url: source.url, isRaw: source.isRaw)
-            } ?? nil
+            let lookup = await ThumbnailRepairQueue.run(.visible) {
+                SemanticMasks.lookup(kind, url: source.url, isRaw: source.isRaw)
+            } ?? .unreadable
             guard let self else { return }
             self.developDetectingMask = nil
-            guard let found else {
+            let found: SemanticMasks.Result
+            switch lookup {
+            case .found(let result):
+                found = result
+            case .notFound:
                 if kind == .subject { self.push("没有找到明显的主体", "info") } else { self.push("没有找到天空", "info") }
+                return
+            case .unreadable:
+                self.push("原件不可用", "warning")
                 return
             }
             var mask = LocalAdjustment(kind: kind)

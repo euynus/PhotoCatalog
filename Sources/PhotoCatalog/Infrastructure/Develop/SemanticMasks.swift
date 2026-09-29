@@ -22,6 +22,14 @@ enum SemanticMasks {
         let centroid: CGPoint
     }
 
+    /// What looking for a mask came to: the mask, none in this photo, or a photo that couldn't
+    /// be read (not remembered, so it's tried again once the file is back).
+    enum Lookup: Sendable {
+        case found(Result)
+        case notFound
+        case unreadable
+    }
+
     private final class Box { let result: Result?; init(_ result: Result?) { self.result = result } }
     private static let cache: NSCache<NSString, Box> = {
         let cache = NSCache<NSString, Box>()
@@ -35,25 +43,42 @@ enum SemanticMasks {
         cache.countLimit = 3
         return cache
     }()
-    private static let lock = NSLock()
+    /// One lock per mask being computed, so two renders of a photo share one computation while
+    /// other photos go ahead.
+    private static let locksLock = NSLock()
+    nonisolated(unsafe) private static var locks: [String: (lock: NSLock, users: Int)] = [:]
 
-    /// The mask for `kind` (subject or sky), or nil when the photo has none.
+    /// The mask for `kind` (subject or sky), or nil when the photo has none or can't be read.
     static func mask(_ kind: LocalAdjustment.Kind, url: URL, isRaw: Bool) -> Result? {
+        if case .found(let result) = lookup(kind, url: url, isRaw: isRaw) { result } else { nil }
+    }
+
+    static func lookup(_ kind: LocalAdjustment.Kind, url: URL, isRaw: Bool) -> Lookup {
         let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-        let key = "\(kind.rawValue)|\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)" as NSString
-        if let cached = cache.object(forKey: key) { return cached.result }
-        // one computation per file at a time; Vision and the RAW decode are the slow part
-        return lock.withLock {
-            if let cached = cache.object(forKey: key) { return cached.result }
-            let result = canonical(url: url, isRaw: isRaw).flatMap { image in
-                switch kind {
-                case .subject: subject(in: image)
-                case .sky: sky(in: image)
-                default: nil
-                }
+        let key = "\(kind.rawValue)|\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)"
+        func cached() -> Lookup? { cache.object(forKey: key as NSString).map { $0.result.map(Lookup.found) ?? .notFound } }
+        if let hit = cached() { return hit }
+        // Vision and the RAW decode are the slow part: done once per mask, not once per render
+        let lock = locksLock.withLock {
+            let entry = locks[key] ?? (NSLock(), 0)
+            locks[key] = (entry.lock, entry.users + 1)
+            return entry.lock
+        }
+        defer {
+            locksLock.withLock {
+                if let entry = locks[key] { locks[key] = entry.users > 1 ? (entry.lock, entry.users - 1) : nil }
             }
-            cache.setObject(Box(result), forKey: key)
-            return result
+        }
+        return lock.withLock {
+            if let hit = cached() { return hit }
+            guard let image = canonical(url: url, isRaw: isRaw) else { return .unreadable }
+            let result: Result? = switch kind {
+            case .subject: subject(in: image)
+            case .sky: sky(in: image)
+            default: nil
+            }
+            cache.setObject(Box(result), forKey: key as NSString)
+            return result.map(Lookup.found) ?? .notFound
         }
     }
 
@@ -158,16 +183,17 @@ enum SemanticMasks {
             max(abs(Int(pixels[i * 4]) - Int(pixels[j * 4])), abs(Int(pixels[i * 4 + 1]) - Int(pixels[j * 4 + 1])),
                 abs(Int(pixels[i * 4 + 2]) - Int(pixels[j * 4 + 2])))
         }
+        // above the horizon: a tilted one crosses rows, so a sideways step can cross it too
+        func below(_ x: Int, _ y: Int) -> Bool { barrier.map { $0.row(x, y) > $0.index } ?? false }
         var sky = [Bool](repeating: false, count: count)
         var stack: [Int] = []
-        for x in 0..<width where candidate[x] { sky[x] = true; stack.append(x) }
+        for x in 0..<width where candidate[x] && !below(x, 0) { sky[x] = true; stack.append(x) }
         while let i = stack.popLast() {
             let x = i % width, y = i / width
             for (nx, ny) in [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)]
             where nx >= 0 && nx < width && ny >= 0 && ny < height {
                 let j = ny * width + nx
-                guard !sky[j], candidate[j], step(i, j) <= 5 else { continue }
-                if let barrier, ny > y, barrier.row(x, y) <= barrier.index, barrier.row(nx, ny) > barrier.index { continue }
+                guard !sky[j], candidate[j], step(i, j) <= 5, !below(nx, ny) else { continue }
                 sky[j] = true
                 stack.append(j)
             }
