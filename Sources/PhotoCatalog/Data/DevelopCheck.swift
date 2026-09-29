@@ -25,6 +25,7 @@ enum DevelopCheck {
         checkTransferRules()
         checkPresetBlend()
         checkPerspective()
+        checkRangeMasks()
         MainActor.assumeIsolated {
             checkEditsAndUndo()
             checkCopyPasteAndPresets()
@@ -524,7 +525,7 @@ enum DevelopCheck {
         assert(rounded.points == [0.1235, 0.5], "stroke points are stored rounded")
 
         let newer = try! JSONDecoder().decode(DevelopSettings.self, from: Data(
-            #"{"exposure":0.5,"masks":[{"kind":"colorRange"},{"kind":"linear"}],"spots":[{"mode":"patch","radius":0.02}]}"#.utf8))
+            #"{"exposure":0.5,"masks":[{"kind":"depthRange"},{"kind":"linear"}],"spots":[{"mode":"patch","radius":0.02}]}"#.utf8))
         assert(newer.exposure == 0.5 && newer.masks.map(\.kind) == [.linear]
                && newer.spots.first?.mode == .heal && newer.spots.first?.radius == 0.02,
                "a mask or spot from a newer version is left out or read as it can be, not the whole edit")
@@ -1171,6 +1172,66 @@ enum DevelopCheck {
         app.rawDefaultPresetIds = [:]
     }
 
+    /// Color and luminance range masks, alone or narrowing another mask.
+    private static func checkRangeMasks() {
+        func luma(_ image: CGImage, _ x: Int, _ y: Int) -> Double {
+            let p = pixel(image, x, y)
+            return 0.2126 * Double(p.r) + 0.7152 * Double(p.g) + 0.0722 * Double(p.b)
+        }
+        // a gray ramp, dark at the left: a luminance range brightens only the light end
+        let ramp = image { x, _ in let v = 0.05 + 0.9 * Double(x) / 63; return (v, v, v) }
+        var bright = LocalAdjustment(kind: .luminanceRange)
+        bright.range?.low = 70
+        bright.range?.high = 100
+        bright.range?.smoothness = 10
+        bright.exposure = -2
+        var s = DevelopSettings(); s.masks = [bright]
+        let plain = develop(ramp, .neutral), ranged = develop(ramp, s)
+        assert(luma(ranged, 60, 32) < luma(plain, 60, 32) - 40 && abs(luma(ranged, 4, 32) - luma(plain, 4, 32)) < 2,
+               "a luminance range reaches only its tones")
+        s.masks[0].inverted = true
+        let outside = develop(ramp, s)
+        assert(luma(outside, 4, 32) < luma(plain, 4, 32) - 3 && abs(luma(outside, 60, 32) - luma(plain, 60, 32)) < 3,
+               "inverted, it reaches everything else")
+
+        // red on the left, blue on the right: a color range sampled on red desaturates only red
+        let halves = image { x, _ in x < 32 ? (0.8, 0.15, 0.15) : (0.15, 0.25, 0.85) }
+        var red = LocalAdjustment(kind: .colorRange)
+        red.range?.samples = [CGPoint(x: 0.2, y: 0.5)]
+        red.saturation = -100
+        var c = DevelopSettings(); c.masks = [red]
+        let colored = develop(halves, c)
+        let left = pixel(colored, 10, 32), right = pixel(colored, 54, 32)
+        assert(abs(Int(left.r) - Int(left.g)) < 30 && Int(right.b) - Int(right.r) > 100,
+               "a color range reaches the sampled color and not the others")
+        var nothing = red
+        nothing.range?.samples = []
+        c.masks = [nothing]
+        let unsampled = develop(halves, c), before = develop(halves, .neutral)
+        assert(abs(Int(pixel(unsampled, 10, 32).r) - Int(pixel(before, 10, 32).r)) < 3,
+               "a color range with nothing sampled covers nothing")
+
+        // a radial mask narrowed to the light tones: only where both hold
+        var radial = LocalAdjustment(kind: .radial)
+        radial.center = CGPoint(x: 0.5, y: 0.5)
+        radial.radiusX = 0.6; radial.radiusY = 0.6; radial.feather = 0
+        radial.exposure = -2
+        radial.range = MaskRange(kind: .luminance)
+        radial.range?.low = 70; radial.range?.smoothness = 10
+        var r = DevelopSettings(); r.masks = [radial]
+        let narrowed = develop(ramp, r)
+        assert(luma(narrowed, 60, 32) < luma(plain, 60, 32) - 40 && abs(luma(narrowed, 20, 32) - luma(plain, 20, 32)) < 2,
+               "a range narrows another mask to its tones")
+
+        let saved = try! JSONDecoder().decode(DevelopSettings.self, from: JSONEncoder().encode(r))
+        assert(saved == r, "ranges round-trip through storage")
+        var other = r
+        other.masks[0].range?.low = 40
+        assert(other.fingerprint != r.fingerprint, "a range changes the fingerprint")
+        let old = try! JSONDecoder().decode(LocalAdjustment.self, from: Data(#"{"kind":"radial"}"#.utf8))
+        assert(old.range == nil, "masks saved before ranges load without one")
+    }
+
     /// Transform: the perspective correction, the crop kept off its empty corners, points mapped
     /// through it both ways, and Upright setting converging verticals upright.
     private static func checkPerspective() {
@@ -1483,6 +1544,7 @@ enum DevelopCheck {
         _ = app.handleKey("delete", hasCommand: false)
         undo.endUndoGrouping()
         assert(app.developSettings["x"]?.masks.isEmpty == true && app.view == .develop, "Delete removes the selected mask")
+
         undo.undo()
         assert(app.developSettings["x"]?.masks.count == 1, "undo brings the mask back")
         _ = app.handleKey("escape", hasCommand: false)
@@ -1501,6 +1563,29 @@ enum DevelopCheck {
         app.view = .grid
         assert(!app.developMasking, "leaving Develop closes the masking tool")
         assert(!app.handleKey("[", hasCommand: false), "[ does nothing outside the masking tool")
+
+        // range masks: a color range starts by sampling; clicks add colors, the oldest making way
+        let beforeRanges = app.developSettings["x"]
+        app.view = .develop
+        app.developMasking = true
+        undo.beginUndoGrouping()
+        var ranged = LocalAdjustment(kind: .radial)
+        ranged.exposure = 1
+        app.commitDevelop(["x": { var e = DevelopSettings(); e.masks = [ranged]; return e }()], undoName: "radial")
+        app.developSelectedMaskId = ranged.id
+        app.setMaskRange(.color, maskId: ranged.id, assetId: "x")
+        assert(app.developSettings["x"]?.masks.first?.range?.kind == .color && app.developPickingRangeColor,
+               "narrowing to a color range starts sampling")
+        for i in 0..<6 { app.addRangeSample(CGPoint(x: 0.1 * Double(i), y: 0.5), maskId: ranged.id, assetId: "x") }
+        let samples = app.developSettings["x"]?.masks.first?.range?.samples ?? []
+        assert(samples.count == MaskRange.maxSamples && samples.first?.x == 0.1, "samples stop at five, the oldest going")
+        _ = app.handleKey("escape", hasCommand: false)
+        assert(!app.developPickingRangeColor && app.developMasking, "Esc ends sampling first")
+        app.setMaskRange(nil, maskId: ranged.id, assetId: "x")
+        assert(app.developSettings["x"]?.masks.first?.range == nil, "a range can be taken off again")
+        undo.endUndoGrouping()
+        app.developSettings["x"] = beforeRanges
+        app.view = .grid
 
         // spot tool: exclusive with the other tools; Delete removes the selected spot, not the photo
         app.view = .develop

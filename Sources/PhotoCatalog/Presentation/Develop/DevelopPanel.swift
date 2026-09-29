@@ -514,6 +514,14 @@ struct DevelopPanel: View {
             Spacer(minLength: 0)
         }
         .controlSize(.small)
+        HStack(spacing: 6) {
+            ForEach(LocalAdjustment.Kind.ranges, id: \.self) { kind in
+                Button { app.addRangeMask(kind) } label: { Label(kind.title, systemImage: kind.symbol) }
+                    .help(Self.maskHelp(kind))
+            }
+            Spacer(minLength: 0)
+        }
+        .controlSize(.small)
         if settings.masks.isEmpty {
             Text("用渐变、画笔或自动选择只调整照片的一部分，例如压暗天空或提亮主体")
                 .font(.system(size: 11)).foregroundStyle(Theme.text3)
@@ -540,9 +548,10 @@ struct DevelopPanel: View {
             .controlSize(.small)
             .help("让调整作用于渐变之外")
             if mask.kind == .radial { slider(DevelopControl.localFeather(index), asset, settings) }
+            rangeControls(mask, asset)
             if mask.kind == .brush {
                 brushControls
-            } else {
+            } else if !mask.kind.isRange {
                 HStack(spacing: 8) {
                     Toggle("用画笔增减", isOn: Binding(get: { app.developRefiningMask },
                                                    set: { app.developRefiningMask = $0 }))
@@ -585,7 +594,65 @@ struct DevelopPanel: View {
         case .brush: L("新建画笔蒙版，在照片上涂抹 (K)")
         case .subject: L("自动找出照片的主体（人物、动物或物体）并建立蒙版")
         case .sky: L("自动找出照片中的天空并建立蒙版")
+        case .colorRange: L("选中照片中某些颜色的部分，在照片上点按取样")
+        case .luminanceRange: L("选中照片中某个明暗范围的部分")
         }
+    }
+
+    /// A mask's tone or color range: for a range mask, what it is; for the others, what
+    /// narrows them.
+    @ViewBuilder
+    private func rangeControls(_ mask: LocalAdjustment, _ asset: Asset) -> some View {
+        if !mask.kind.isRange {
+            Picker("范围", selection: Binding(get: { mask.range?.kind }, set: { kind in
+                app.setMaskRange(kind, maskId: mask.id, assetId: asset.id)
+            })) {
+                Text("整个蒙版").tag(MaskRange.Kind?.none)
+                Text("明亮度范围").tag(MaskRange.Kind?.some(.luminance))
+                Text("颜色范围").tag(MaskRange.Kind?.some(.color))
+            }
+            .pickerStyle(.menu)
+            .controlSize(.small)
+            .help("只在一定明暗或颜色范围内应用这个蒙版")
+        }
+        if let range = mask.range {
+            switch range.kind {
+            case .luminance:
+                rangeSlider(L("范围下限"), range.low, mask, asset) { $0.low = min($1, $0.high) }
+                rangeSlider(L("范围上限"), range.high, mask, asset) { $0.high = max($1, $0.low) }
+                rangeSlider(L("平滑度"), range.smoothness, mask, asset) { $0.smoothness = $1 }
+            case .color:
+                HStack(spacing: 8) {
+                    Toggle(isOn: Binding(get: { app.developPickingRangeColor }, set: { app.developPickingRangeColor = $0 })) {
+                        Label("取样", systemImage: "eyedropper")
+                    }
+                    .toggleStyle(.button)
+                    .help("在照片上点按，选取要包含的颜色（最多 5 处）")
+                    Text(range.samples.isEmpty ? L("尚未取样") : L("已取样 \(range.samples.count) 处"))
+                        .font(.system(size: 11)).foregroundStyle(Theme.text3)
+                    Spacer(minLength: 0)
+                    if !range.samples.isEmpty {
+                        Button("清除取样") {
+                            app.changeMaskRange(maskId: mask.id, assetId: asset.id, commit: true,
+                                                undoName: L("清除颜色取样")) { $0.samples = [] }
+                        }
+                    }
+                }
+                .controlSize(.small)
+                rangeSlider(L("数量"), range.amount, mask, asset) { $0.amount = $1 }
+            }
+        }
+    }
+
+    private func rangeSlider(_ title: String, _ value: Double, _ mask: LocalAdjustment, _ asset: Asset,
+                             _ set: @escaping (inout MaskRange, Double) -> Void) -> some View {
+        DevelopSlider(title: title, value: value, range: 0...100, step: 1, format: { String(format: "%.0f", $0) },
+                      isNeutral: false,
+                      onChange: { new in
+                          app.changeMaskRange(maskId: mask.id, assetId: asset.id, commit: false, undoName: title) { set(&$0, new) }
+                      },
+                      onReset: {},
+                      onCommit: { commitDraft(asset, title) })
     }
 
     /// The brush's settings for new strokes: tool settings, not part of the photo's edit.

@@ -165,6 +165,35 @@ enum DevelopKernels {
             return float4(w, w, w, 1.0);
         }
         """,
+        "rangeMask": """
+        // Weight of a tone or color range on display-encoded color `s`. Luminance (mode 0): 1
+        // between low and high, fading to 0 over `soft` beyond. Color (mode 1): 1 near any of
+        // the first `count` sample colors c0…c4 — in chroma, lightness counting less — fading
+        // out by `amount`.
+        [[stitchable]] float4 rangeMask(sample_t s, sample_t c0, sample_t c1, sample_t c2, sample_t c3, sample_t c4,
+                                        float mode, float low, float high, float soft, float count, float amount) {
+            float3 luma = float3(0.2126, 0.7152, 0.0722);
+            float3 c = clamp(s.rgb, 0.0, 1.0);
+            float w = 0.0;
+            if (mode < 0.5) {
+                float l = dot(c, luma);
+                float below = soft > 0.0 ? smoothstep(low - soft, low, l) : step(low, l);
+                float above = soft > 0.0 ? 1.0 - smoothstep(high, high + soft, l) : step(l, high);
+                w = below * above;
+            } else {
+                float3 samples[5] = { c0.rgb, c1.rgb, c2.rgb, c3.rgb, c4.rgb };
+                for (int i = 0; i < 5; i++) {
+                    if (float(i) >= count) { break; }
+                    float3 d = c - clamp(samples[i], 0.0, 1.0);
+                    float dl = dot(d, luma);
+                    float3 chroma = d - dl;
+                    float distance = sqrt(dot(chroma, chroma) * 4.0 + dl * dl * 0.5);
+                    w = max(w, 1.0 - smoothstep(amount * 0.5, amount, distance));
+                }
+            }
+            return float4(w, w, w, 1.0);
+        }
+        """,
         "heal": """
         // Healing: the source patch `s` moved onto the target, offset by the difference between
         // the target's surroundings `lt` and the source's `ls`. Both were blurred with the spot
@@ -319,9 +348,36 @@ enum DevelopKernels {
             return kernel.apply(extent: extent, arguments: [pixel(mask.center), u, v, mask.feather / 100, invert])
         case .brush:
             return BrushRaster.weight(mask, extent: extent)
-        case .subject, .sky:
-            return nil   // found in the photo: see SemanticMasks
+        case .subject, .sky, .colorRange, .luminanceRange:
+            return nil   // found in the photo: see SemanticMasks and `rangeWeight`
         }
+    }
+
+    /// The weight of `range` over `image` (display-encoded), in its extent: color samples are
+    /// averaged over a small area of `image` itself, so they follow the photo's global edits.
+    static func rangeWeight(_ range: MaskRange, image: CIImage) -> CIImage? {
+        guard let kernel = kernel("rangeMask") as? CIColorKernel else { return nil }
+        let extent = image.extent
+        let clear = CIImage(color: .clear)
+        var samples: [CIImage] = []
+        if range.kind == .color {
+            let longEdge = max(extent.width, extent.height), radius = max(2, longEdge * 0.004)
+            for point in range.samples.prefix(MaskRange.maxSamples) {
+                let center = CGPoint(x: extent.minX + point.x * extent.width, y: extent.maxY - point.y * extent.height)
+                let area = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+                    .intersection(extent)
+                guard !area.isNull else { continue }
+                samples.append(image.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: area)])
+                    .clampedToExtent())
+            }
+            guard !samples.isEmpty else { return CIImage(color: .black).cropped(to: extent) }   // nothing sampled yet
+        }
+        let count = Double(samples.count)
+        while samples.count < 5 { samples.append(clear) }
+        let mode: Double = range.kind == .luminance ? 0 : 1
+        return kernel.apply(extent: extent, arguments: [image] + samples + [
+            mode, range.low / 100, range.high / 100, range.smoothness / 100 * 0.3, count, 0.04 + range.amount / 100 * 0.36,
+        ])
     }
 
     /// A soft disc: weight 1 inside `radius` pixels of `center`, falling to 0 over the outer

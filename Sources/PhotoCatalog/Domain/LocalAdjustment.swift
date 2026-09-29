@@ -9,13 +9,16 @@ import CoreGraphics
 /// and crop), so a mask stays on the same part of the picture when the framing changes.
 struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
     enum Kind: String, Codable, CaseIterable, Sendable {
-        case linear, radial, brush, subject, sky
+        case linear, radial, brush, subject, sky, colorRange, luminanceRange
 
-        /// Masks drawn on the photo, and masks found in it.
+        /// Masks drawn on the photo, masks found in it, and masks of a range of its colors or tones.
         static let drawn: [Kind] = [.linear, .radial, .brush]
         static let automatic: [Kind] = [.subject, .sky]
+        static let ranges: [Kind] = [.colorRange, .luminanceRange]
 
         var isAutomatic: Bool { Self.automatic.contains(self) }
+        /// The whole photo, narrowed to its range.
+        var isRange: Bool { Self.ranges.contains(self) }
 
         var title: String {
             switch self {
@@ -24,6 +27,8 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
             case .brush: L("画笔")
             case .subject: L("主体")
             case .sky: L("天空")
+            case .colorRange: L("颜色范围")
+            case .luminanceRange: L("明亮度范围")
             }
         }
 
@@ -34,6 +39,8 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
             case .brush: "paintbrush.pointed"
             case .subject: "person.and.background.dotted"
             case .sky: "cloud.sun"
+            case .colorRange: "eyedropper.halffull"
+            case .luminanceRange: "circle.lefthalf.striped.horizontal"
             }
         }
     }
@@ -57,6 +64,8 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
     var strokes: [BrushStroke] = []
     /// Applies outside the mask instead of inside it.
     var inverted = false
+    /// Narrows the mask to a range of the photo's tones or colors; a range mask is only this.
+    var range: MaskRange?
 
     // adjustments, -100…100 unless noted
     var exposure = 0.0      // EV, -4…4
@@ -72,7 +81,14 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
     var dehaze = 0.0
     var saturation = 0.0
 
-    init(kind: Kind) { self.kind = kind }
+    init(kind: Kind) {
+        self.kind = kind
+        switch kind {
+        case .colorRange: range = MaskRange(kind: .color)
+        case .luminanceRange: range = MaskRange(kind: .luminance)
+        default: break
+        }
+    }
 
     /// Whether any adjustment is set; a mask without one changes nothing.
     var hasEffect: Bool {
@@ -86,7 +102,7 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         copy.id = id
         copy.start = start; copy.end = end
         copy.center = center; copy.radiusX = radiusX; copy.radiusY = radiusY; copy.angle = angle
-        copy.feather = feather; copy.strokes = strokes; copy.inverted = inverted
+        copy.feather = feather; copy.strokes = strokes; copy.inverted = inverted; copy.range = range
         return copy
     }
 
@@ -105,7 +121,7 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         case .linear: [start.x, start.y, end.x, end.y]
         case .radial: [center.x, center.y, radiusX, radiusY, angle, feather]
         case .brush: [Double(strokes.count), Double(BrushStroke.hash(strokes))]
-        case .subject, .sky: []   // found in the photo itself
+        case .subject, .sky, .colorRange, .luminanceRange: []   // found in the photo itself
         }
         let values = [exposure, contrast, highlights, shadows, whites, blacks, temperature, tint,
                       texture, clarity, dehaze, saturation]
@@ -113,6 +129,48 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         return kind.rawValue + (inverted ? "!" : "") + ":"
             + geometry.map { String(format: "%.4f", $0) }.joined(separator: ",") + ":"
             + values.map { String(format: "%.2f", $0) }.joined(separator: ",") + refinement
+            + (range.map { ":" + $0.fingerprintText } ?? "")
+    }
+}
+
+/// A range of the photo's tones or colors a mask is narrowed to (Lightroom's Luminance Range and
+/// Color Range), judged on the photo as adjusted before its masks.
+struct MaskRange: Codable, Hashable, Sendable {
+    enum Kind: String, Codable, CaseIterable, Sendable {
+        case luminance, color
+    }
+
+    var kind: Kind
+    /// Luminance, 0…100: the tones fully in the range, and how far (0…100) it fades beyond them.
+    var low = 50.0
+    var high = 100.0
+    var smoothness = 50.0
+    /// Color: places sampled on the photo (source fractions, up to `maxSamples`) whose colors
+    /// are in the range, and how widely around them it reaches, 0…100.
+    var samples: [CGPoint] = []
+    var amount = 50.0
+
+    static let maxSamples = 5
+
+    init(kind: Kind) { self.kind = kind }
+
+    var fingerprintText: String {
+        switch kind {
+        case .luminance: String(format: "l%.1f,%.1f,%.1f", low, high, smoothness)
+        case .color: String(format: "c%.1f;", amount) + samples.map { String(format: "%.4f,%.4f", $0.x, $0.y) }.joined(separator: ";")
+        }
+    }
+}
+
+extension MaskRange {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try c.decodeIfPresent(Kind.self, forKey: .kind) ?? .luminance
+        low = try c.decodeIfPresent(Double.self, forKey: .low) ?? 50
+        high = try c.decodeIfPresent(Double.self, forKey: .high) ?? 100
+        smoothness = try c.decodeIfPresent(Double.self, forKey: .smoothness) ?? 50
+        samples = try c.decodeIfPresent([CGPoint].self, forKey: .samples) ?? []
+        amount = try c.decodeIfPresent(Double.self, forKey: .amount) ?? 50
     }
 }
 
@@ -131,6 +189,7 @@ extension LocalAdjustment {
         feather = try c.decodeIfPresent(Double.self, forKey: .feather) ?? 50
         strokes = try c.decodeIfPresent([BrushStroke].self, forKey: .strokes) ?? []
         inverted = try c.decodeIfPresent(Bool.self, forKey: .inverted) ?? false
+        range = try c.decodeIfPresent(MaskRange.self, forKey: .range)
         func value(_ key: CodingKeys) throws -> Double { try c.decodeIfPresent(Double.self, forKey: key) ?? 0 }
         exposure = try value(.exposure)
         contrast = try value(.contrast)

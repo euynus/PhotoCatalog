@@ -698,7 +698,7 @@ final class AppState {
                 loupeZoom = nil; developCropping = false; developPickingWhiteBalance = false; developSpotting = false
                 developComparing = false
             }
-            if !developMasking { developMaskCreation = nil; developRefiningMask = false }
+            if !developMasking { developMaskCreation = nil; developRefiningMask = false; developPickingRangeColor = false }
         }
     }
     /// Spot removal tool (Q): the photo is shown whole; a click heals the speck under it.
@@ -757,7 +757,11 @@ final class AppState {
     }
 
     /// The mask whose handles and sliders are shown.
-    var developSelectedMaskId: String?
+    var developSelectedMaskId: String? {
+        didSet { if developSelectedMaskId != oldValue { developPickingRangeColor = false } }
+    }
+    /// Sampling colors for the selected mask's color range: clicks on the photo add samples.
+    var developPickingRangeColor = false
     /// A gradient the next drag on the photo draws (a click places one of default size), or the
     /// brush, whose first stroke starts a new brush mask.
     var developMaskCreation: LocalAdjustment.Kind?
@@ -831,6 +835,47 @@ final class AppState {
         developMaskCreation = nil
         developSelectedMaskId = mask.id
         commitDevelop([assetId: next], undoName: L("添加\(mask.kind.title)"))
+    }
+
+    /// A color or luminance range mask over the whole photo; a color range starts by sampling.
+    func addRangeMask(_ kind: LocalAdjustment.Kind) {
+        guard kind.isRange, view == .develop, let asset = primary, canDevelop(asset) else { return }
+        developMasking = true
+        var mask = LocalAdjustment(kind: kind)
+        mask.exposure = 0.3   // a visible start, as with the gradients
+        addMask(mask, to: asset.id)
+        developPickingRangeColor = kind == .colorRange
+    }
+
+    /// Narrows a mask to a tone or color range (nil: the whole mask again); a color range starts
+    /// by sampling.
+    func setMaskRange(_ kind: MaskRange.Kind?, maskId: String, assetId: String) {
+        var next = developSettings[assetId] ?? .neutral
+        guard let index = next.masks.firstIndex(where: { $0.id == maskId }), !next.masks[index].kind.isRange,
+              next.masks[index].range?.kind != kind else { return }
+        next.masks[index].range = kind.map { MaskRange(kind: $0) }
+        commitDevelop([assetId: next], undoName: kind == nil ? L("移除范围") : L("限定范围"))
+        developPickingRangeColor = kind == .color
+    }
+
+    /// The range of mask `maskId` changed by `change`, previewed (`commit: false`) or saved.
+    func changeMaskRange(maskId: String, assetId: String, commit: Bool, undoName: String,
+                         _ change: (inout MaskRange) -> Void) {
+        var next = developSettings[assetId] ?? .neutral
+        guard let index = next.masks.firstIndex(where: { $0.id == maskId }), var range = next.masks[index].range
+        else { return }
+        change(&range)
+        next.masks[index].range = range
+        if commit { commitDevelop([assetId: next], undoName: undoName) } else { updateDevelopDraft(next, for: assetId) }
+    }
+
+    /// A click while sampling: the color at `point` (source fractions) joins the range. The
+    /// oldest sample makes way past the limit.
+    func addRangeSample(_ point: CGPoint, maskId: String, assetId: String) {
+        changeMaskRange(maskId: maskId, assetId: assetId, commit: true, undoName: L("颜色取样")) { range in
+            range.samples.append(point)
+            if range.samples.count > MaskRange.maxSamples { range.samples.removeFirst() }
+        }
     }
 
     func deleteMask(_ id: String, from assetId: String) {
@@ -1781,6 +1826,10 @@ final class AppState {
         }
         if view == .develop, developSpotting {
             developSpotting = false
+            return true
+        }
+        if view == .develop, developPickingRangeColor {
+            developPickingRangeColor = false
             return true
         }
         if view == .develop, developMaskCreation != nil {

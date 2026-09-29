@@ -233,6 +233,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已加入快捷收藏 %lld 张</string>
 	</dict>
+	<key>已取样 %lld 处</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已取样 %lld 处</string>
+	</dict>
 	<key>已同步到 %lld 张照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

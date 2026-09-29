@@ -67,7 +67,9 @@ struct MaskEditor: View {
         case .linear: L("拖动绘制线性渐变：起点处效果最强，终点处消失 · 点按放置 · Esc 取消")
         case .radial: L("从中心向外拖动绘制径向渐变 · 点按放置 · Esc 取消")
         case .brush: L("在照片上涂抹 · 按住 ⌥ 擦除 · [ ] 调整大小 · Esc 取消")
-        case nil, .subject, .sky: selectedIndex.map { settings.masks[$0].kind == .brush } == true
+        case nil, .subject, .sky, .colorRange, .luminanceRange: app.developPickingRangeColor
+            ? L("点按照片选取颜色，最多 5 处 · Esc 完成取样")
+            : selectedIndex.map { settings.masks[$0].kind == .brush } == true
             ? L("涂抹添加 · 按住 ⌥ 擦除 · [ ] 调整大小 · 点按圆点选择其他蒙版 · Esc 完成")
             : isPainting
             ? L("涂抹扩大蒙版 · 按住 ⌥ 从蒙版中擦除 · [ ] 调整大小 · Esc 完成")
@@ -90,8 +92,9 @@ struct MaskEditor: View {
     private var isPainting: Bool {
         switch app.developMaskCreation {
         case .brush: true
-        case .linear, .radial, .subject, .sky: false
-        case nil: selectedIndex.map { settings.masks[$0].kind == .brush || app.developRefiningMask } == true
+        case .linear, .radial, .subject, .sky, .colorRange, .luminanceRange: false
+        case nil: !app.developPickingRangeColor
+            && selectedIndex.map { settings.masks[$0].kind == .brush || app.developRefiningMask } == true
         }
     }
 
@@ -117,6 +120,7 @@ struct MaskEditor: View {
     // ---- hit testing ----
     private func target(at point: CGPoint, _ mapper: MaskMapper) -> MaskDrag.Target? {
         if let kind = app.developMaskCreation { return .create(kind) }
+        if app.developPickingRangeColor, let index = selectedIndex { return .sample(settings.masks[index].id) }
         if let index = selectedIndex, settings.masks[index].kind == .brush || app.developRefiningMask {
             // another mask's pin still selects it; anywhere else paints
             for mask in settings.masks.reversed() where mask.id != settings.masks[index].id
@@ -143,7 +147,7 @@ struct MaskEditor: View {
     private func cursor(at point: CGPoint, _ mapper: MaskMapper) -> NSCursor {
         switch target(at: point, mapper) {
         case .create(.brush), .paint: .crosshair
-        case .create: .crosshair
+        case .create, .sample: .crosshair
         case .handle(_, .move), .select: .openHand
         case .handle: .pointingHand
         case nil: .arrow
@@ -178,7 +182,7 @@ struct MaskEditor: View {
                     guard let start = drag.startMask, start.id == id else { return }
                     preview(reshaped(start, handle: handle, translation: value.translation, to: value.location, mapper),
                             adding: false)
-                case .select, .paint:
+                case .select, .paint, .sample:
                     break
                 }
             }
@@ -214,6 +218,9 @@ struct MaskEditor: View {
                     app.commitDevelop([asset.id: draft.settings], undoName: L("编辑蒙版"))
                 case .select(let id):
                     app.developSelectedMaskId = id
+                case .sample(let id):
+                    guard mapper.display.contains(value.location) else { return }
+                    app.addRangeSample(mapper.source(value.location), maskId: id, assetId: asset.id)
                 case .paint:
                     break
                 }
@@ -295,7 +302,7 @@ struct MaskEditor: View {
             mask.radiusX = max(0.01, radius)
             mask.radiusY = max(0.01, radius)
             mask.angle = mapper.sourceAngle(ofScreenDirection: CGVector(dx: 1, dy: 0), at: start)
-        case .brush, .subject, .sky:
+        case .brush, .subject, .sky, .colorRange, .luminanceRange:
             break   // painted stroke by stroke, or found in the photo
         }
         return mask
@@ -316,7 +323,7 @@ struct MaskEditor: View {
                              to: CGPoint(x: point.x + max(display.width, display.height) / 6, y: point.y), mapper)
             mask.radiusY = mask.radiusX * 0.75
             return mask
-        case .brush, .subject, .sky:
+        case .brush, .subject, .sky, .colorRange, .luminanceRange:
             return drawn(kind, id: id, from: point, to: point, mapper)
         }
     }
@@ -367,6 +374,8 @@ struct MaskDrag {
         case handle(String, MaskHandle)
         case select(String)
         case paint(String)
+        /// A click adding a color to the mask's range.
+        case sample(String)
     }
 
     let target: Target
@@ -443,8 +452,10 @@ struct MaskMapper {
             return screen(mask.center)
         case .brush:
             return screen(mask.strokes.first { $0.pointCount > 0 }?.point(0) ?? mask.center)
-        case .subject, .sky:
+        case .subject, .sky, .luminanceRange:
             return screen(mask.center)
+        case .colorRange:
+            return screen(mask.range?.samples.first ?? mask.center)
         }
     }
 
@@ -460,7 +471,7 @@ struct MaskMapper {
                 (.axisY(1), screen(sourcePoint(from: mask.center, angle: mask.angle + 90, length: mask.radiusY))),
                 (.axisY(-1), screen(sourcePoint(from: mask.center, angle: mask.angle - 90, length: mask.radiusY))),
             ]
-        case .brush, .subject, .sky:
+        case .brush, .subject, .sky, .colorRange, .luminanceRange:
             return []   // painted or found, not reshaped
         }
     }
@@ -527,12 +538,19 @@ private struct MaskOverlay: View {
                                                      width: rx * inner * 2, height: ry * inner * 2)).applying(turn)
                 context.stroke(feather, with: .color(.white.opacity(0.55)), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
             }
-        case .brush, .subject, .sky:
+        case .brush, .subject, .sky, .colorRange, .luminanceRange:
             // no outline to drag: its pin, filled to show it's the selected one
             let pin = mapper.pin(of: mask)
             let dot = Path(ellipseIn: CGRect(x: pin.x - 6, y: pin.y - 6, width: 12, height: 12))
             context.fill(dot, with: .color(Theme.accentFill))
             context.stroke(dot, with: .color(.white), lineWidth: 1.5)
+        }
+        // where its colors were sampled
+        for sample in mask.range?.samples ?? [] {
+            let p = mapper.screen(sample)
+            let ring = Path(ellipseIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8))
+            context.stroke(ring, with: .color(.black.opacity(0.6)), lineWidth: 3)
+            context.stroke(ring, with: .color(.white), lineWidth: 1.5)
         }
     }
 }

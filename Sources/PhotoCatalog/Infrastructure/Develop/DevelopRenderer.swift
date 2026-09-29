@@ -94,7 +94,7 @@ enum DevelopRenderer {
             let present = DevelopRenderer.applyPresence(colored, settings)
             let photo = (url: url, isRaw: isRaw)
             let local = DevelopRenderer.applyOverlay(DevelopRenderer.applyMasks(present, settings, photo: photo), settings,
-                                                     maskId: overlayMask, photo: photo)
+                                                     maskId: overlayMask, photo: photo, rangeSource: present)
             let detailed = DevelopRenderer.applyDetail(local, settings, scale: min(1, scale))
             let framed = DevelopRenderer.applyGeometry(detailed, settings, wholeFrame: wholeFrame)
             // effects follow the crop, which the crop tool's whole-frame view doesn't apply yet
@@ -379,9 +379,12 @@ enum DevelopRenderer {
     /// sky from the photo itself (`photo`, the file being rendered), then any brush strokes
     /// that add to or erase from a mask that isn't itself a brush.
     static func maskWeight(_ mask: LocalAdjustment, _ s: DevelopSettings, extent: CGRect,
-                           photo: (url: URL, isRaw: Bool)?) -> CIImage? {
+                           photo: (url: URL, isRaw: Bool)?, rangeSource: CIImage? = nil) -> CIImage? {
         let base: CIImage?
-        if mask.kind.isAutomatic {
+        if mask.kind.isRange {
+            // the whole photo, narrowed to its range below
+            base = CIImage(color: .white).cropped(to: extent)
+        } else if mask.kind.isAutomatic {
             switch photo.map({ SemanticMasks.lookup(mask.kind, url: $0.url, isRaw: $0.isRaw) }) {
             case .found(let result):
                 base = SemanticMasks.weight(result, extent: extent, inverted: mask.inverted, distortion: s.distortion)
@@ -394,8 +397,19 @@ enum DevelopRenderer {
         } else {
             base = DevelopKernels.maskWeight(mask, extent: extent)
         }
-        guard let base, mask.kind != .brush, !mask.strokes.isEmpty else { return base }
-        return BrushRaster.refine(base, strokes: mask.strokes, extent: extent)
+        guard var weight = base else { return nil }
+        if mask.kind != .brush, !mask.kind.isRange, !mask.strokes.isEmpty {
+            weight = BrushRaster.refine(weight, strokes: mask.strokes, extent: extent)
+        }
+        // a range narrows what the mask covers, judged on the photo before its masks
+        if let range = mask.range, let source = rangeSource,
+           let narrowed = DevelopKernels.rangeWeight(range, image: source.applyingFilter("CILinearToSRGBToneCurve")) {
+            weight = weight.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: narrowed])
+                .cropped(to: extent)
+            // a range mask inverted is everything outside the range
+            if mask.kind.isRange, mask.inverted { weight = weight.applyingFilter("CIColorInvert") }
+        }
+        return weight
     }
 
     /// Each mask's adjustments, blended in through its weight, in order: exposure and white
@@ -405,7 +419,7 @@ enum DevelopRenderer {
         let extent = input.extent
         var image = input
         for mask in s.masks where mask.hasEffect {
-            guard let weight = maskWeight(mask, s, extent: extent, photo: photo) else { continue }
+            guard let weight = maskWeight(mask, s, extent: extent, photo: photo, rangeSource: input) else { continue }
             var adjusted = image
             if mask.exposure != 0 {
                 adjusted = adjusted.applyingFilter("CIExposureAdjust", parameters: ["inputEV": mask.exposure])
@@ -492,9 +506,10 @@ enum DevelopRenderer {
 
     /// The photo with a mask's coverage tinted red, as Lightroom's overlay shows it.
     static func applyOverlay(_ input: CIImage, _ s: DevelopSettings, maskId: String?,
-                             photo: (url: URL, isRaw: Bool)? = nil) -> CIImage {
+                             photo: (url: URL, isRaw: Bool)? = nil, rangeSource: CIImage? = nil) -> CIImage {
         guard let maskId, let mask = s.masks.first(where: { $0.id == maskId }),
-              let weight = maskWeight(mask, s, extent: input.extent, photo: photo) else { return input }
+              let weight = maskWeight(mask, s, extent: input.extent, photo: photo, rangeSource: rangeSource ?? input)
+        else { return input }
         let half = weight.applyingFilter("CIColorMatrix", parameters: [
             "inputRVector": CIVector(x: 0.55, y: 0, z: 0, w: 0),
             "inputGVector": CIVector(x: 0, y: 0.55, z: 0, w: 0),
