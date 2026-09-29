@@ -130,6 +130,8 @@ final class AppState {
     }
     private var collapsedStackIds: Set<String> = []
     @ObservationIgnored private var photoStacksCache: [PhotoStack]?
+    /// Originals with their edited copies, derived from file names once per structure change.
+    @ObservationIgnored private var editGroupsCache: (version: Int, groups: [DuplicateGroup])?
     @ObservationIgnored private var stackByAssetCache: [String: PhotoStack]?
     @ObservationIgnored private var keywordListCache: [KeywordCount]?
     /// Every keyword's photo count, in first-seen order; metadata edits patch it in place.
@@ -5230,7 +5232,14 @@ final class AppState {
         _ = stackInputsVersion   // register the dependency even on a cache hit
         if let cache = photoStacksCache { return cache }
         // edited copies first: a TIFF made for an editor stacks with its original before anything else
-        let stacks = PhotoStackService.stacks(from: EditedVersions.groups(assets) + duplicateGroupsCache)
+        let edits: [DuplicateGroup]
+        if let cached = editGroupsCache, cached.version == structureVersion {
+            edits = cached.groups
+        } else {
+            edits = EditedVersions.groups(assets)
+            editGroupsCache = (structureVersion, edits)
+        }
+        let stacks = PhotoStackService.stacks(from: edits + duplicateGroupsCache)
         photoStacksCache = stacks
         return stacks
     }
