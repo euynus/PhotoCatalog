@@ -9,6 +9,7 @@ enum DevelopCheck {
         checkRendering()
         checkDetail()
         checkLensCorrections()
+        checkEffects()
         checkHistogram()
         checkGeometryMath()
         checkGeometryRendering()
@@ -239,6 +240,52 @@ enum DevelopCheck {
         assert(carried.distortion == 30 && carried.lensVignette == 45 && carried.lensVignetteMidpoint == 20,
                "lens corrections travel together")
         assert(DevelopSettings().fingerprint != carried.fingerprint, "lens corrections change the fingerprint")
+    }
+
+    /// Mean luma over every pixel (0…255): a 1-pixel downsample only samples a noisy image.
+    private static func averageLuma(_ image: CGImage) -> Double {
+        var data = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        let context = CGContext(data: &data, width: image.width, height: image.height, bitsPerComponent: 8,
+                                bytesPerRow: image.width * 4, space: DevelopRenderer.outputColorSpace,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let total = stride(from: 0, to: data.count, by: 4).reduce(0.0) {
+            $0 + 0.3 * Double(data[$1]) + 0.59 * Double(data[$1 + 1]) + 0.11 * Double(data[$1 + 2])
+        }
+        return total / Double(image.width * image.height)
+    }
+
+    private static func checkEffects() {
+        let gray = image { _, _ in (0.5, 0.5, 0.5) }
+        let plain = develop(gray, .neutral)
+        var s = DevelopSettings(); s.vignette = -100
+        let dark = develop(gray, s)
+        assert(pixel(dark, 1, 1).g + 40 < pixel(plain, 1, 1).g, "a negative vignette darkens the corners")
+        assert(abs(Int(pixel(dark, 32, 32).g) - Int(pixel(plain, 32, 32).g)) <= 2, "and leaves the center alone")
+        s.vignette = 100
+        assert(pixel(develop(gray, s), 1, 1).g > pixel(plain, 1, 1).g + 20, "a positive vignette lightens them")
+        s.vignette = -100; s.vignetteMidpoint = 100
+        assert(pixel(develop(gray, s), 10, 10).g > pixel(dark, 10, 10).g, "a higher midpoint keeps it nearer the corners")
+
+        // post-crop: the vignette follows the crop, darkening the corners of what is kept
+        s = DevelopSettings(); s.vignette = -100
+        s.crop = DevelopCrop(x: 0, y: 0, width: 0.5, height: 0.5)
+        let cropped = develop(gray, s)
+        assert(cropped.width == 32 && pixel(cropped, 31, 31).g + 40 < pixel(plain, 31, 31).g,
+               "the vignette darkens the cropped frame's corners")
+
+        s = DevelopSettings(); s.grain = 60
+        let grainy = develop(gray, s)
+        assert(spread(grainy).luma > spread(plain).luma + 2, "grain adds texture")
+        assert(pixel(develop(gray, s), 20, 20) == pixel(grainy, 20, 20), "the same photo always gets the same grain")
+        assert(abs(averageLuma(grainy) - averageLuma(plain)) < 2, "grain doesn't shift brightness")
+
+        var source = DevelopSettings()
+        source.vignette = -30; source.vignetteFeather = 80; source.grain = 20; source.grainSize = 60
+        let carried = DevelopSettings().applying(source, fields: [.vignette])
+        assert(carried.vignette == -30 && carried.vignetteFeather == 80 && carried.grain == 0,
+               "the vignette and grain travel separately")
+        assert(!DevelopSettings().hasEffects && source.hasEffects, "effects are detected")
     }
 
     private static func checkHistogram() {

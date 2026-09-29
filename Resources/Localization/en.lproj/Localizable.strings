@@ -344,6 +344,12 @@
 "文件创建时间" = "File creation date";
 
 /* Domain/DevelopSettings.swift */
+"裁剪后暗角" = "Post-Crop Vignette";
+"暗角中点" = "Vignette Midpoint";
+"暗角羽化" = "Vignette Feather";
+"颗粒" = "Grain";
+"颗粒大小" = "Grain Size";
+"颗粒粗糙度" = "Grain Roughness";
 "扭曲度" = "Distortion";
 "镜头暗角" = "Lens Vignetting";
 "镜头暗角中点" = "Vignetting Midpoint";
@@ -364,6 +370,7 @@
 "黑色色阶" = "Blacks";
 
 /* Domain/DevelopTransfer.swift */
+"效果" = "Effects";
 "镜头校正" = "Lens Corrections";
 "减少杂色" = "Noise Reduction";
 "细节" = "Detail";

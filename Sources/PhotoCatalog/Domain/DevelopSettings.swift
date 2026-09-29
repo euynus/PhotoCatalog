@@ -33,6 +33,14 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var distortion: Double = 0
     var lensVignette: Double = 0
     var lensVignetteMidpoint: Double = 50
+    /// Effects on the finished (cropped) photo: post-crop vignette -100…100 (negative darkens
+    /// the corners) with midpoint and feather 0…100, and film grain amount, size and roughness.
+    var vignette: Double = 0
+    var vignetteMidpoint: Double = 50
+    var vignetteFeather: Double = 50
+    var grain: Double = 0
+    var grainSize: Double = 25
+    var grainRoughness: Double = 50
     /// Geometry, applied in this order after tone: quarter turns clockwise (0…3), a left–right
     /// mirror, a straighten angle in degrees (-45…45, positive turns the photo clockwise), then
     /// the crop. A nil crop keeps the whole photo — or, once straightened, the largest
@@ -51,6 +59,8 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var hasDetail: Bool { sharpening != 0 || luminanceNoise != 0 || colorNoise != 0 }
 
     var hasLensCorrection: Bool { distortion != 0 || lensVignette != 0 }
+
+    var hasEffects: Bool { vignette != 0 || grain != 0 }
 
     /// Tone and color only.
     var withoutGeometry: DevelopSettings {
@@ -84,6 +94,11 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
         if distortion != 0 || lensVignette != 0 || lensVignetteMidpoint != 50 {
             text += String(format: "|l%.1f,%.1f,%.1f", distortion, lensVignette, lensVignetteMidpoint)
         }
+        if vignette != 0 || vignetteMidpoint != 50 || vignetteFeather != 50 || grain != 0
+            || grainSize != 25 || grainRoughness != 50 {
+            text += String(format: "|e%.1f,%.1f,%.1f,%.1f,%.1f,%.1f", vignette, vignetteMidpoint, vignetteFeather,
+                           grain, grainSize, grainRoughness)
+        }
         if hasGeometry {   // appended only when set, so earlier edits keep their cache names
             let crop = self.crop.map { String(format: "%.4f,%.4f,%.4f,%.4f", $0.x, $0.y, $0.width, $0.height) } ?? "-"
             text += String(format: "|%d,%d,%.2f,", rotation, flipped ? 1 : 0, straighten) + crop
@@ -116,6 +131,12 @@ extension DevelopSettings {
         distortion = try container.decodeIfPresent(Double.self, forKey: .distortion) ?? 0
         lensVignette = try container.decodeIfPresent(Double.self, forKey: .lensVignette) ?? 0
         lensVignetteMidpoint = try container.decodeIfPresent(Double.self, forKey: .lensVignetteMidpoint) ?? 50
+        vignette = try container.decodeIfPresent(Double.self, forKey: .vignette) ?? 0
+        vignetteMidpoint = try container.decodeIfPresent(Double.self, forKey: .vignetteMidpoint) ?? 50
+        vignetteFeather = try container.decodeIfPresent(Double.self, forKey: .vignetteFeather) ?? 50
+        grain = try container.decodeIfPresent(Double.self, forKey: .grain) ?? 0
+        grainSize = try container.decodeIfPresent(Double.self, forKey: .grainSize) ?? 25
+        grainRoughness = try container.decodeIfPresent(Double.self, forKey: .grainRoughness) ?? 50
         rotation = try container.decodeIfPresent(Int.self, forKey: .rotation) ?? 0
         flipped = try container.decodeIfPresent(Bool.self, forKey: .flipped) ?? false
         straighten = try container.decodeIfPresent(Double.self, forKey: .straighten) ?? 0
@@ -385,14 +406,21 @@ struct DevelopControl: Identifiable {
     static let lens: [DevelopControl] = [
         signed(\.distortion, L("扭曲度")),
         signed(\.lensVignette, L("镜头暗角")),
-        DevelopControl(id: \.lensVignetteMidpoint, title: L("镜头暗角中点"), range: 0...100, step: 1, neutral: 50) {
-            String(format: "%.0f", $0)
-        },
+        amount(\.lensVignetteMidpoint, L("镜头暗角中点"), max: 100, neutral: 50),
+    ]
+
+    static let effects: [DevelopControl] = [
+        signed(\.vignette, L("裁剪后暗角")),
+        amount(\.vignetteMidpoint, L("暗角中点"), max: 100, neutral: 50),
+        amount(\.vignetteFeather, L("暗角羽化"), max: 100, neutral: 50),
+        amount(\.grain, L("颗粒"), max: 100),
+        amount(\.grainSize, L("颗粒大小"), max: 100, neutral: 25),
+        amount(\.grainRoughness, L("颗粒粗糙度"), max: 100, neutral: 50),
     ]
 
     private static func amount(_ keyPath: WritableKeyPath<DevelopSettings, Double>, _ title: String,
-                               max: Double) -> DevelopControl {
-        DevelopControl(id: keyPath, title: title, range: 0...max, step: 1) { String(format: "%.0f", $0) }
+                               max: Double, neutral: Double = 0) -> DevelopControl {
+        DevelopControl(id: keyPath, title: title, range: 0...max, step: 1, neutral: neutral) { String(format: "%.0f", $0) }
     }
 
     private static func signed(_ keyPath: WritableKeyPath<DevelopSettings, Double>, _ title: String) -> DevelopControl {

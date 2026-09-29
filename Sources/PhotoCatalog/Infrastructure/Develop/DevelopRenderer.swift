@@ -78,7 +78,9 @@ enum DevelopRenderer {
             let scale = max(base.extent.width, base.extent.height) / max(fullLongEdge, 1)
             let toned = DevelopRenderer.applyTone(DevelopRenderer.applyLens(base, settings), settings)
             let detailed = DevelopRenderer.applyDetail(toned, settings, scale: min(1, scale))
-            return DevelopRenderer.applyGeometry(detailed, settings, wholeFrame: wholeFrame)
+            let framed = DevelopRenderer.applyGeometry(detailed, settings, wholeFrame: wholeFrame)
+            // effects follow the crop, which the crop tool's whole-frame view doesn't apply yet
+            return wholeFrame ? framed : DevelopRenderer.applyEffects(framed, settings, scale: min(1, scale))
         }
 
         /// The decoded photo with white balance and exposure: linear light, before any other edit.
@@ -237,6 +239,26 @@ enum DevelopRenderer {
         let amount = s.lensVignette >= 0 ? s.lensVignette / 100 * 1.5 : s.lensVignette / 100 * 0.6
         let corrected = DevelopKernels.radialGain(input, amount: amount, start: start, width: 1 - start)
         return DevelopKernels.distort(corrected, k: s.distortion / 100 * 0.15)
+    }
+
+    /// Post-crop vignette (on linear light, so darkening behaves like exposure), then grain.
+    static func applyEffects(_ input: CIImage, _ s: DevelopSettings, scale: CGFloat) -> CIImage {
+        guard s.hasEffects else { return input }
+        var image = input
+        if s.vignette != 0 {
+            // the transition is centered on the midpoint and as wide as the feather asks
+            let middle = 0.3 + s.vignetteMidpoint / 100 * 0.7
+            let width = 0.1 + s.vignetteFeather / 100 * 0.8
+            let amount = s.vignette >= 0 ? s.vignette / 100 * 1.5 : s.vignette / 100 * 0.85
+            image = DevelopKernels.radialGain(image, amount: amount, start: max(0, middle - width / 2), width: width)
+        }
+        if s.grain > 0 {
+            let encoded = image.applyingFilter("CILinearToSRGBToneCurve")
+            image = DevelopKernels.grain(encoded, amount: s.grain, size: s.grainSize, roughness: s.grainRoughness,
+                                         scale: Double(scale))
+                .applyingFilter("CISRGBToneCurveToLinear")
+        }
+        return image
     }
 
     /// Noise reduction, then sharpening, in display-encoded values where noise and halos are

@@ -42,6 +42,9 @@ struct DevelopPanel: View {
                 section(L("镜头校正")) {
                     ForEach(DevelopControl.lens) { control in slider(control, asset, settings) }
                 }
+                section(L("效果")) {
+                    ForEach(DevelopControl.effects) { control in slider(control, asset, settings) }
+                }
             }
             .padding(14)
         }

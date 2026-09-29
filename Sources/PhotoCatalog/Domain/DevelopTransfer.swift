@@ -7,7 +7,7 @@ import Foundation
 /// Orientation comes before crop so a copied crop lands in the copied frame.
 enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
     case whiteBalance, exposure, contrast, highlights, shadows, whites, blacks, vibrance, saturation
-    case sharpening, noiseReduction, lensCorrections
+    case sharpening, noiseReduction, lensCorrections, vignette, grain
     case orientation, crop
 
     var id: Self { self }
@@ -26,6 +26,8 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         case .sharpening: L("锐化")
         case .noiseReduction: L("减少杂色")
         case .lensCorrections: L("镜头校正")
+        case .vignette: L("裁剪后暗角")
+        case .grain: L("颗粒")
         case .orientation: L("旋转与翻转")
         case .crop: L("裁剪与拉直")
         }
@@ -38,6 +40,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         (L("偏好"), [.vibrance, .saturation]),
         (L("细节"), [.sharpening, .noiseReduction]),
         (L("镜头校正"), [.lensCorrections]),
+        (L("效果"), [.vignette, .grain]),
         (L("裁剪与旋转"), [.orientation, .crop]),
     ]
 
@@ -79,6 +82,14 @@ extension DevelopSettings {
                 next.distortion = source.distortion
                 next.lensVignette = source.lensVignette
                 next.lensVignetteMidpoint = source.lensVignetteMidpoint
+            case .vignette:
+                next.vignette = source.vignette
+                next.vignetteMidpoint = source.vignetteMidpoint
+                next.vignetteFeather = source.vignetteFeather
+            case .grain:
+                next.grain = source.grain
+                next.grainSize = source.grainSize
+                next.grainRoughness = source.grainRoughness
             case .orientation:
                 if next.flipped != source.flipped { next = DevelopGeometry.mirrored(next) }
                 for _ in 0..<4 where next.rotation != source.rotation {
