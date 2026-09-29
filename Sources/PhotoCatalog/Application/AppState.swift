@@ -4078,6 +4078,119 @@ final class AppState {
 
     var canEditInExternalEditor: Bool { canOperateOnSelectedOriginals && onboarded && sheet == nil }
 
+    // ---------- photo merge ----------
+    enum PhotoMergeKind: String, Sendable { case hdr }
+    var photoMergeKind: PhotoMergeKind = .hdr
+    /// The photos the open merge dialog merges, taken as it opened.
+    @ObservationIgnored private(set) var photoMergeTargets: [Asset] = []
+    var hdrOptions = PhotoMerge.HDROptions()
+    /// A merge is running: another waits.
+    private(set) var isMergingPhotos = false
+
+    var canMergePhotos: Bool {
+        onboarded && sheet == nil && !isMergingPhotos && selectionTargetIds.count >= 2 && canOperateOnSelectedOriginals
+    }
+
+    /// The selection's photos with originals on disk, one per file, in list order.
+    func photoMergeCandidates() -> [Asset] {
+        let ids = selectionTargetIds
+        return fileOwners(list.filter { ids.contains($0.id) }).filter(hasExistingOriginal)
+    }
+
+    /// 照片 → 照片合并 → HDR…: the merge dialog, with a preview.
+    func showPhotoMerge(_ kind: PhotoMergeKind) {
+        let targets = photoMergeCandidates()
+        guard targets.count >= 2 else {
+            push("请选择至少两张有原件的照片", "info")
+            return
+        }
+        guard targets.count <= 9 else {
+            push("HDR 合并最多 9 张照片", "info")
+            return
+        }
+        photoMergeTargets = targets
+        photoMergeKind = kind
+        sheet = "photoMerge"
+    }
+
+    /// The light each photo's exposure let in, from its metadata: t·ISO/N².
+    nonisolated static func exposureBrightness(_ asset: Asset) -> Double? {
+        guard let seconds = CaptureParameter.shutterSeconds(asset.shutter), asset.aperture > 0, asset.iso > 0 else {
+            return nil
+        }
+        return seconds * Double(asset.iso) / (asset.aperture * asset.aperture)
+    }
+
+    func photoMergeFrames(_ assets: [Asset]) -> [PhotoMerge.Frame] {
+        assets.compactMap { asset in
+            asset.localPath.map { PhotoMerge.Frame(url: URL(fileURLWithPath: $0), isRaw: asset.isRaw,
+                                                   brightness: Self.exposureBrightness(asset)) }
+        }
+    }
+
+    /// Merges the dialog's photos into an HDR photo beside the middle exposure
+    /// (`<name>-HDR.tif`), added to the catalog with its metadata and selected.
+    func mergePhotos() {
+        let targets = photoMergeTargets
+        guard targets.count >= 2, !isMergingPhotos, let coordinator, let store else { return }
+        let frames = photoMergeFrames(targets)
+        guard frames.count == targets.count else { return }
+        let options = hdrOptions
+        let catalogURL = store.packageURL
+        let previewSize = previewMaxPixel
+        let albumId = selection.type == .album ? selection.id : nil
+        isMergingPhotos = true
+        push("正在合并 HDR…", "square.stack.3d.up")
+        Task { [weak self, frames, targets, coordinator] in
+            let made: (url: URL, reference: Int, asset: Asset?)?? = await withCheckedContinuation { continuation in
+                PhotoMerge.queue.async {
+                    guard let merged = PhotoMerge.hdr(frames, options: options, maxPixel: nil) else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    let original = frames[merged.reference].url
+                    let folder = original.deletingLastPathComponent()
+                    guard FileManager.default.isWritableFile(atPath: folder.path) else {
+                        continuation.resume(returning: .some(nil))
+                        return
+                    }
+                    let url = Self.freeURL(in: folder, stem: original.deletingPathExtension().lastPathComponent + "-HDR",
+                                           extension: "tif")
+                    guard PhotoMerge.writeTIFF(merged.image, to: url) else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    let imported = coordinator.importFiles([url], from: folder, readSidecar: false,
+                                                           previewMaxPixel: previewSize).first
+                    continuation.resume(returning: (url, merged.reference, imported))
+                }
+            }
+            guard let self else { return }
+            self.isMergingPhotos = false
+            guard self.store?.packageURL == catalogURL else { return }
+            switch made {
+            case .none:
+                self.push("HDR 合并失败：有照片无法读取", "warning")
+            case .some(.none):
+                self.push("参考照片所在的文件夹是只读的，无法保存合并结果", "warning")
+            case .some(.some(let result)):
+                self.finishExternalEdit([(result.url, targets[result.reference], result.asset)], editor: nil, expected: 1,
+                                        albumId: albumId)
+                self.push("已合并为 HDR 照片", "square.stack.3d.up")
+            }
+        }
+    }
+
+    /// `<stem>.<ext>` in `folder`, or `<stem>-2.<ext>`… when that's taken.
+    nonisolated static func freeURL(in folder: URL, stem: String, extension ext: String) -> URL {
+        var url = folder.appendingPathComponent("\(stem).\(ext)"), number = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = folder.appendingPathComponent("\(stem)-\(number).\(ext)")
+            number += 1
+        }
+        return url
+    }
+
     // ---------- virtual copies ----------
     /// ⌘': a virtual copy of each selected photo — another catalog entry for the same original,
     /// starting from its metadata and develop settings, to take in another direction. A copy of

@@ -124,6 +124,7 @@ enum SelfCheck {
         UndoCheck.run()
         CullingCheck.run()
         DevelopCheck.run()
+        MergeCheck.run()
         ExportCheck.run()
         KeywordCheck.run()
         LocationCheck.run()

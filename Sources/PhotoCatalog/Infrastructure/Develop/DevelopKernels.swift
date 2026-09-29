@@ -194,6 +194,47 @@ enum DevelopKernels {
             return float4(w, w, w, 1.0);
         }
         """,
+        "fusionWeight": """
+        // Exposure fusion's weight for display-encoded `s` (Mertens et al.): how much detail it
+        // shows (`lap`, its Laplacian), how colorful and how well exposed it is.
+        [[stitchable]] float4 fusionWeight(sample_t s, sample_t lap) {
+            float3 c = clamp(s.rgb, 0.0, 1.0);
+            float contrast = abs(dot(lap.rgb, float3(0.299, 0.587, 0.114)));
+            float mean = (c.r + c.g + c.b) / 3.0;
+            float3 d = c - mean;
+            float saturation = sqrt(dot(d, d) / 3.0);
+            float3 e = exp(-(c - 0.5) * (c - 0.5) / (2.0 * 0.2 * 0.2));
+            float w = (contrast + 0.004) * (saturation + 0.02) * e.r * e.g * e.b + 1e-7;
+            return float4(w, w, w, 1.0);
+        }
+        """,
+        "ghostWeight": """
+        // Deghosting: 1 where linear `s`, brought to the reference's exposure by `ratio`, agrees
+        // with the reference `r`; falling toward 0 where something moved. Only where both are
+        // measured — neither clipped nor lost in noise.
+        [[stitchable]] float4 ghostWeight(sample_t s, sample_t r, float ratio) {
+            float3 luma = float3(0.2126, 0.7152, 0.0722);
+            float ls = dot(s.rgb, luma), lr = dot(r.rgb, luma);
+            float valid = step(0.004, min(ls * ratio, lr)) * step(max(ls, lr), 0.9);
+            float d = log((ls * ratio + 0.005) / (lr + 0.005));
+            float w = mix(1.0, exp(-(d * d) / (2.0 * 0.25 * 0.25)), valid);
+            return float4(w, w, w, 1.0);
+        }
+        """,
+        "mergeAdd": """
+        [[stitchable]] float4 mergeAdd(sample_t a, sample_t b) { return float4(a.rgb + b.rgb, 1.0); }
+        """,
+        "mergeSubtract": """
+        [[stitchable]] float4 mergeSubtract(sample_t a, sample_t b) { return float4(a.rgb - b.rgb, 1.0); }
+        """,
+        "mergeScale": """
+        // `a` times the weight held in `w`'s red channel.
+        [[stitchable]] float4 mergeScale(sample_t a, sample_t w) { return float4(a.rgb * w.r, 1.0); }
+        """,
+        "mergeDivide": """
+        // `a` over the weight in `w`'s red channel.
+        [[stitchable]] float4 mergeDivide(sample_t a, sample_t w) { return float4(a.rgb / max(w.r, 1e-9), 1.0); }
+        """,
         "heal": """
         // Healing: the source patch `s` moved onto the target, offset by the difference between
         // the target's surroundings `lt` and the source's `ls`. Both were blurred with the spot
@@ -391,6 +432,30 @@ enum DevelopKernels {
             feather, invert ? 1.0 : 0.0,
         ])
     }
+
+    // ---- photo merge: exposure fusion and blending (see PhotoMerge) ----
+    private static func apply(_ name: String, _ arguments: [Any], extent: CGRect) -> CIImage {
+        guard let kernel = kernel(name) as? CIColorKernel,
+              let image = kernel.apply(extent: extent, arguments: arguments) else {
+            return CIImage(color: .black).cropped(to: extent)
+        }
+        return image
+    }
+
+    static func fusionWeight(_ encoded: CIImage, laplacian: CIImage) -> CIImage {
+        apply("fusionWeight", [encoded, laplacian], extent: encoded.extent)
+    }
+
+    static func ghostWeight(_ image: CIImage, reference: CIImage, ratio: Double) -> CIImage {
+        apply("ghostWeight", [image, reference, ratio], extent: image.extent)
+    }
+
+    /// Sums, differences, weighted and normalized images: plain arithmetic on color, negative
+    /// values kept (the blend modes clip them).
+    static func add(_ a: CIImage, _ b: CIImage) -> CIImage { apply("mergeAdd", [a, b], extent: a.extent) }
+    static func subtract(_ a: CIImage, _ b: CIImage) -> CIImage { apply("mergeSubtract", [a, b], extent: a.extent) }
+    static func scale(_ a: CIImage, by weight: CIImage) -> CIImage { apply("mergeScale", [a, weight], extent: a.extent) }
+    static func divide(_ a: CIImage, by weight: CIImage) -> CIImage { apply("mergeDivide", [a, weight], extent: a.extent) }
 
     /// The healed patch (see the kernel), over `extent`.
     static func heal(_ shifted: CIImage, sourceRing: CIImage, targetRing: CIImage, extent: CGRect) -> CIImage? {

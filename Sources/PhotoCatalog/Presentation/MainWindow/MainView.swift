@@ -88,6 +88,8 @@ struct MainView: View {
                                 sample: items.first, count: items.count)
         case "rename":
             RenameSheet(targets: app.renameSheetTargets, template: app.renameTemplate)
+        case "photoMerge":
+            PhotoMergeSheet(targets: app.photoMergeTargets)
         case "developTransfer":
             DevelopTransferSheet(mode: app.developTransferMode,
                                  fields: app.developTransferMode == .preset
