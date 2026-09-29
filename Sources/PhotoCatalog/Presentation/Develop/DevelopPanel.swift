@@ -34,10 +34,21 @@ struct DevelopPanel: View {
             VStack(alignment: .leading, spacing: 18) {
                 header(asset, settings: settings)
                 section(L("预设"), accessory: {
-                    Button { app.showDevelopTransfer(.preset) } label: { Image(systemName: "plus") }
-                        .buttonStyle(.borderless)
-                        .help("以当前设置存储为预设")
-                        .accessibilityLabel("存储为预设…")
+                    HStack(spacing: 8) {
+                        Menu {
+                            Button("导入预设…") { app.chooseAndImportDevelopPresets() }
+                            Button("导出我的预设…") { app.exportDevelopPresets(app.developPresets.map(\.id)) }
+                                .disabled(app.developPresets.isEmpty)
+                        } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help("导入或导出预设（.xmp，可与 Lightroom 互通）")
+                        Button { app.showDevelopTransfer(.preset) } label: { Image(systemName: "plus") }
+                            .buttonStyle(.borderless)
+                            .help("以当前设置存储为预设")
+                            .accessibilityLabel("存储为预设…")
+                    }
                 }) {
                     if let applied = app.developPresetAmount(for: asset.id) {
                         let amount = app.developPresetAmountDraft ?? applied.amount
@@ -233,6 +244,7 @@ struct DevelopPanel: View {
             }
             Divider()
             Button("存储为预设…") { app.showDevelopTransfer(.preset) }
+            Button("导入预设…") { app.chooseAndImportDevelopPresets() }
             if !app.developPresets.isEmpty {
                 Menu("删除预设") {
                     ForEach(app.developPresets) { preset in

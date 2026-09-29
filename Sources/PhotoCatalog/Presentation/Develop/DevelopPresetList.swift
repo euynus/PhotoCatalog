@@ -96,7 +96,9 @@ struct DevelopPresetList: View {
         }
         .buttonStyle(.plain)
         .help("悬停预览，点按应用")
-        .contextMenu { if !preset.isBuiltIn { menu(preset) } }
+        .contextMenu {
+            if !preset.isBuiltIn { menu(preset) } else { Button("导出…") { app.exportDevelopPresets([preset.id]) } }
+        }
         .onHover { inside in
             if inside {
                 hovered = preset.id
@@ -122,6 +124,7 @@ struct DevelopPresetList: View {
             Divider()
             Button("新建组…") { begin(.newGroup(preset.id), text: "") }
         }
+        Button("导出…") { app.exportDevelopPresets([preset.id]) }
         Divider()
         Button("删除…", role: .destructive) { app.confirmDeleteDevelopPreset(preset.id) }
     }

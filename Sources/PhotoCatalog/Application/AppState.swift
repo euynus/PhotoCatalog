@@ -1310,6 +1310,116 @@ final class AppState {
         return developPresets.compactMap(\.group).filter { seen.insert($0).inserted }
     }
 
+    // ----- preset files -----
+    /// Adds the presets in `urls` — XMP files from this app, Lightroom or Camera Raw; a name
+    /// already taken gets a number. How many were added, how many couldn't be read, and what
+    /// in them had nothing to map to.
+    @discardableResult
+    func importDevelopPresets(from urls: [URL]) -> (added: Int, failed: Int, skipped: Set<DevelopPresetFile.Skipped>) {
+        var added = 0, failed = 0
+        var skipped = Set<DevelopPresetFile.Skipped>()
+        for url in urls {
+            guard let data = try? Data(contentsOf: url),
+                  var reading = DevelopPresetFile.read(data, fileName: url.lastPathComponent) else {
+                failed += 1
+                continue
+            }
+            reading.preset.name = uniquePresetName(reading.preset.name)
+            reading.preset.group = Self.presetGroup(reading.preset.group)
+            developPresets.append(reading.preset)
+            skipped.formUnion(reading.skipped)
+            added += 1
+        }
+        return (added, failed, skipped)
+    }
+
+    /// 导入预设…: picks preset files, starting in Camera Raw's presets folder when there is one.
+    func chooseAndImportDevelopPresets() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [UTType(filenameExtension: "xmp") ?? .xml]
+        panel.prompt = L("导入")
+        panel.message = L("选择修图预设：本应用、Lightroom 或 Camera Raw 导出的 .xmp 文件")
+        let adobe = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Adobe/CameraRaw/Settings")
+        if FileManager.default.fileExists(atPath: adobe.path) { panel.directoryURL = adobe }
+        guard panel.runModal() == .OK else { return }
+        let result = importDevelopPresets(from: panel.urls)
+        guard result.added > 0 else {
+            push("所选文件不是可用的修图预设", "warning")
+            return
+        }
+        var message = L("已导入 \(result.added) 个预设")
+        if result.failed > 0 { message += L(" · \(result.failed) 个无法读取") }
+        if !result.skipped.isEmpty {
+            message += L(" · 未导入：") + result.skipped.sorted().map(\.title).joined(separator: L("、"))
+        }
+        push(verbatim: message, result.failed > 0 || !result.skipped.isEmpty ? "warning" : "square.and.arrow.down")
+    }
+
+    /// Writes each preset to `folder` as `<name>.xmp`, never over an existing file. How many were written.
+    nonisolated static func writeDevelopPresets(_ presets: [DevelopPreset], to folder: URL) -> Int {
+        var taken = Set(((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).map { $0.lowercased() })
+        var written = 0
+        for preset in presets {
+            let base = presetFileName(preset.name)
+            var name = base + ".xmp", number = 2
+            while taken.contains(name.lowercased()) { name = "\(base) \(number).xmp"; number += 1 }
+            taken.insert(name.lowercased())
+            let url = folder.appendingPathComponent(name)
+            if (try? DevelopPresetFile.xmp(for: preset).write(to: url, atomically: true, encoding: .utf8)) != nil {
+                written += 1
+            }
+        }
+        return written
+    }
+
+    /// 导出…: one preset to a file, or several to a folder.
+    func exportDevelopPresets(_ ids: [String]) {
+        let presets = ids.compactMap { id in allDevelopPresets.first { $0.id == id } }
+        guard !presets.isEmpty else { return }
+        if presets.count == 1 {
+            let panel = NSSavePanel()
+            panel.nameFieldStringValue = Self.presetFileName(presets[0].name) + ".xmp"
+            panel.allowedContentTypes = [UTType(filenameExtension: "xmp") ?? .xml]
+            panel.message = L("导出的预设可再导入本应用，也可导入 Lightroom 或 Camera Raw（两者共有的设置）")
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            guard (try? DevelopPresetFile.xmp(for: presets[0]).write(to: url, atomically: true, encoding: .utf8)) != nil
+            else {
+                push("预设导出失败", "warning")
+                return
+            }
+            push("已导出预设“\(presets[0].name)”", "square.and.arrow.up")
+        } else {
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.canCreateDirectories = true
+            panel.prompt = L("导出到此处")
+            guard panel.runModal() == .OK, let folder = panel.url else { return }
+            let written = Self.writeDevelopPresets(presets, to: folder)
+            push(verbatim: L("已导出 \(written) 个预设") + (written < presets.count ? L(" · \(presets.count - written) 失败") : ""),
+                 written < presets.count ? "warning" : "square.and.arrow.up")
+        }
+    }
+
+    /// A file name for a preset: the characters a file name can't hold replaced.
+    nonisolated static func presetFileName(_ name: String) -> String {
+        let cleaned = name.components(separatedBy: CharacterSet(charactersIn: "/\\:?%*|\"<>").union(.newlines))
+            .joined(separator: "-").trimmingCharacters(in: .whitespaces)
+        return cleaned.isEmpty ? L("预设") : cleaned
+    }
+
+    /// `name`, or `name 2`, `name 3`… when a preset has it.
+    private func uniquePresetName(_ name: String) -> String {
+        let names = Set(allDevelopPresets.map(\.name))
+        guard names.contains(name) else { return name }
+        var number = 2
+        while names.contains("\(name) \(number)") { number += 1 }
+        return "\(name) \(number)"
+    }
+
     private static func presetGroup(_ name: String?) -> String? {
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty || trimmed == L("我的预设") ? nil : trimmed

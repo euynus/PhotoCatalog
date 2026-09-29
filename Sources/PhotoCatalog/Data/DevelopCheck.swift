@@ -27,6 +27,7 @@ enum DevelopCheck {
         MainActor.assumeIsolated {
             checkEditsAndUndo()
             checkCopyPasteAndPresets()
+            checkPresetFiles()
         }
         print("--- develop assertions passed ---")
     }
@@ -1171,6 +1172,85 @@ enum DevelopCheck {
         rawBase.temperature = nil
         let rawHalf = DevelopSettings.blend(rawBase, rawTarget, amount: 0.5, isRaw: true, whiteBalanceOrigin: (5500, 0))
         assert(rawHalf.temperature == 6000, "a RAW's white balance moves from as shot")
+    }
+
+    /// Presets as .xmp files: this app's come back whole; Lightroom's map what both apps have.
+    @MainActor
+    private static func checkPresetFiles() {
+        var settings = DevelopSettings()
+        settings.temperature = 6200
+        settings.tint = 8
+        settings.exposure = 0.35
+        settings.curve.setPoints(ToneCurve.mediumContrast, for: .rgb)
+        settings.mixer.hue[ColorMixer.Band.blue.rawValue] = -12
+        settings.grading.shadows = ColorGrading.Grade(hue: 210, saturation: 15, luminance: -5)
+        settings.sharpening = 20
+        settings.masks = [LocalAdjustment(kind: .sky)]
+        let fields: Set<DevelopField> = [.whiteBalance, .exposure, .toneCurve, .colorMixer, .colorGrading, .sharpening, .masks]
+        let preset = DevelopPreset(id: "p", name: "Moody <film>", transfer: DevelopTransfer(settings: settings, fields: fields,
+                                                                                          sourceIsRaw: true), group: "Film")
+        let text = DevelopPresetFile.xmp(for: preset)
+        let back = DevelopPresetFile.read(Data(text.utf8), fileName: "x.xmp")
+        assert(back?.preset.name == preset.name && back?.preset.group == "Film" && back?.preset.transfer == preset.transfer
+               && back?.skipped.isEmpty == true, "this app's preset file comes back whole, masks included")
+        // what Lightroom reads: the same file without the app's own property
+        let crsOnly = text.replacingOccurrences(of: #"\s*pc:Preset="[^"]*""#, with: "", options: .regularExpression)
+        let asLightroom = DevelopPresetFile.read(Data(crsOnly.utf8), fileName: "x.xmp")?.preset.transfer
+        assert(text.contains("crs:Exposure2012=\"+0.35\"") && text.contains("crs:Sharpness=\"60\"")
+               && asLightroom?.settings.exposure == 0.35 && asLightroom?.settings.temperature == 6200
+               && asLightroom?.settings.sharpening == 20 && asLightroom?.settings.mixer.hue[ColorMixer.Band.blue.rawValue] == -12
+               && asLightroom?.settings.grading.shadows == settings.grading.shadows
+               && asLightroom.map { abs(ToneCurve.evaluate($0.settings.curve.editablePoints(for: .rgb), at: 0.25) - 0.21) < 0.01 } == true
+               && asLightroom?.fields.contains(.masks) == false,
+               "the Camera Raw properties carry what Lightroom has")
+
+        let lightroom = """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 7.0-c000">
+         <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+          <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+           crs:PresetType="Normal" crs:Version="15.0" crs:ProcessVersion="11.0" crs:WhiteBalance="As Shot"
+           crs:Contrast2012="+15" crs:SaturationAdjustmentOrange="-8" crs:Sharpness="40" crs:ColorNoiseReduction="25"
+           crs:SplitToningShadowHue="220" crs:SplitToningShadowSaturation="18" crs:ConvertToGrayscale="False"
+           crs:CameraProfile="Adobe Standard" crs:HasSettings="True">
+           <crs:Name><rdf:Alt><rdf:li xml:lang="x-default">Matte</rdf:li></rdf:Alt></crs:Name>
+           <crs:Group><rdf:Alt><rdf:li xml:lang="x-default">Film Looks</rdf:li></rdf:Alt></crs:Group>
+           <crs:ToneCurvePV2012><rdf:Seq><rdf:li>0, 30</rdf:li><rdf:li>255, 240</rdf:li></rdf:Seq></crs:ToneCurvePV2012>
+          </rdf:Description>
+         </rdf:RDF>
+        </x:xmpmeta>
+        """
+        let matte = DevelopPresetFile.read(Data(lightroom.utf8), fileName: "matte.xmp")
+        let m = matte?.preset.transfer
+        assert(matte?.preset.name == "Matte" && matte?.preset.group == "Film Looks"
+               && m?.fields == [.whiteBalance, .contrast, .colorMixer, .sharpening, .noiseReduction, .colorGrading, .toneCurve]
+               && m?.settings.temperature == nil && m?.settings.contrast == 15
+               && m?.settings.mixer.saturation[ColorMixer.Band.orange.rawValue] == -8
+               && m?.settings.sharpening == 0 && m?.settings.colorNoise == 0
+               && m?.settings.grading.shadows.hue == 220 && m?.settings.grading.shadows.saturation == 18
+               && m.map { abs(ToneCurve.evaluate($0.settings.curve.editablePoints(for: .rgb), at: 0) - 30.0 / 255) < 0.001 } == true
+               && matte?.skipped == [.profile],
+               "a Lightroom preset maps what both apps have, and says what it left out")
+        assert(DevelopPresetFile.read(Data("not xml".utf8), fileName: "a.xmp") == nil
+               && DevelopPresetFile.read(Data(#"<x:xmpmeta xmlns:x="adobe:ns:meta/"/>"#.utf8), fileName: "b.xmp") == nil,
+               "files that aren't presets are refused")
+
+        // importing and exporting through the app: taken names get a number
+        let app = AppState.selfCheckFixture()
+        let savedPresets = app.developPresets
+        defer { app.developPresets = savedPresets }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("pc-presets-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let written = AppState.writeDevelopPresets([preset, preset], to: folder)
+        let files = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
+        assert(written == 2 && files == ["Moody -film-.xmp", "Moody -film- 2.xmp"].sorted(),
+               "exported presets never overwrite a file")
+        try? Data("garbage".utf8).write(to: folder.appendingPathComponent("garbage.xmp"))
+        let before = app.developPresets.count
+        let result = app.importDevelopPresets(from: (files + ["garbage.xmp"]).map { folder.appendingPathComponent($0) })
+        let names = app.developPresets.dropFirst(before).map(\.name)
+        assert(result.added == 2 && result.failed == 1 && names == ["Moody <film>", "Moody <film> 2"],
+               "importing adds each preset once under a free name and counts what it couldn't read")
     }
 
     @MainActor

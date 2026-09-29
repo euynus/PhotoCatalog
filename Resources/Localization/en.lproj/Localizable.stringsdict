@@ -831,6 +831,22 @@
 			<string>%lld originals</string>
 		</dict>
 	</dict>
+	<key>已导入 %lld 个预设</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Imported %#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld preset</string>
+			<key>other</key>
+			<string>%lld presets</string>
+		</dict>
+	</dict>
 	<key>已导入 %lld 张照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -845,6 +861,22 @@
 			<string>%lld photo</string>
 			<key>other</key>
 			<string>%lld photos</string>
+		</dict>
+	</dict>
+	<key>已导出 %lld 个预设</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Exported %#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld preset</string>
+			<key>other</key>
+			<string>%lld presets</string>
 		</dict>
 	</dict>
 	<key>已导出 %lld 张原件</key>

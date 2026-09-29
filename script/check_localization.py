@@ -64,13 +64,13 @@ SPEC_OVERRIDES = {
     'DateFmt.shortCapture(last)': '%@', 'DateFmt.shortCapture(first)': '%@',
     'shiftMinutes': '%lld', 'shiftHours': '%lld', 'pair': '%@', 'app.recentImportDays': '%lld',
     'singles': '%lld', 'unconfirmed': '%lld', 'person.unconfirmed': '%lld', 'k': '%@', 'active': '%lld',
-    'app.cacheLimitMB': '%lld', 'person': '%@', 'plan.clashes': '%lld', 'plan.taken': '%lld', 'editor': '%@',
+    'app.cacheLimitMB': '%lld', 'person': '%@', 'plan.clashes': '%lld', 'plan.taken': '%lld', 'result.added': '%lld', 'editor': '%@',
 }
 # English plurals: "%lld <noun>" gets a singular form in the .stringsdict
 NOUNS = {'photos': 'photo', 'files': 'file', 'originals': 'original', 'faces': 'face', 'groups': 'group',
          'people': 'person', 'days': 'day', 'stars': 'star', 'jobs': 'job', 'sidecars': 'sidecar',
          'conditions': 'condition', 'values': 'value', 'locations': 'location', 'previews': 'preview',
-         'assets': 'asset', 'records': 'record', 'spots': 'spot', 'steps': 'step', 'copies': 'copy'}
+         'assets': 'asset', 'records': 'record', 'spots': 'spot', 'steps': 'step', 'copies': 'copy', 'presets': 'preset'}
 ADJECTIVES = r'(?:(?:duplicate|new|changed|failed|automatically|recognized|unnamed|XMP|disk|photo|virtual) )*'
 
 
