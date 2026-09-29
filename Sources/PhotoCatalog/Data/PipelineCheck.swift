@@ -678,12 +678,35 @@ enum PipelineCheck {
             app.writeXMPForSelection()
             app.checkExternalXMPChangesNow()
             results["our own write isn't a change"] = app.externallyChangedXMPIds.isEmpty
+            // a sidecar put back with an older date is another version too
+            otherAppEdits(rating: 3, keyword: "restored", secondsLater: -3600)
+            app.checkExternalXMPChangesNow()
+            results["an older sidecar is a change"] = app.externallyChangedXMPIds == [photo.id]
+            // an automatic write leaves another app's change to be read first
+            let before = try? Data(contentsOf: sidecarURL)
+            var edited = app.assets.first { $0.id == photo.id } ?? photo
+            edited.rating = 1
+            let outcome = AutomaticXMPWriter.writeUnlessChanged(edited, baseline: app.xmpSyncTime(for: photo.id))
+            results["automatic writes skip a sidecar changed elsewhere"] = outcome == .changedElsewhere
+                && (try? Data(contentsOf: sidecarURL)) == before
+            app.readMetadataFromFiles([photo.id])
+            results["and write again once it's read"] =
+                AutomaticXMPWriter.writeUnlessChanged(edited, baseline: app.xmpSyncTime(for: photo.id)) != .changedElsewhere
+            app.readMetadataFromFiles([photo.id])
+            let undo = UndoManager()
+            undo.groupsByEvent = false
+            app.undoManager = undo
             app.autoReadChangedXMP = true
             otherAppEdits(rating: 2, keyword: "bridge", secondsLater: 30)
+            undo.beginUndoGrouping()
             app.checkExternalXMPChangesNow()
+            undo.endUndoGrouping()
             let auto = app.assets.first { $0.id == photo.id }
             results["read automatically when asked to"] = auto?.rating == 2 && auto?.keywords == ["bridge"]
                 && app.externallyChangedXMPIds.isEmpty
+            if undo.canUndo { undo.undo() }
+            results["undo doesn't take back a background read"] = app.assets.first { $0.id == photo.id }?.rating == 2
+            app.undoManager = nil
             return results
         }
         for (name, passed) in externalXMP.sorted(by: { $0.key < $1.key }) {
@@ -1217,6 +1240,51 @@ enum PipelineCheck {
         check(rewritten.components(separatedBy: "xmp:Rating=").count == 2
               && rewritten.components(separatedBy: "<dc:subject>").count == 2,
               "writing again doesn't duplicate this app's properties")
+
+        // a sidecar that isn't XMP we can edit is left alone rather than replaced
+        let brokenURL = tmp.appendingPathComponent("broken.xmp")
+        let broken = Data("<x:xmpmeta><rdf:RDF>another app's half-written file".utf8)
+        try? broken.write(to: brokenURL)
+        check(!XMPSidecar.write(mine, to: brokenURL) && (try? Data(contentsOf: brokenURL)) == broken,
+              "a sidecar that can't be merged isn't written over")
+        // text with control characters still makes a sidecar every app can read
+        var controlled = sample
+        controlled.title = "Tab\tand\u{1}bell\u{7}"
+        let controlledURL = tmp.appendingPathComponent("controlled.xmp")
+        XMPSidecar.write(controlled, to: controlledURL)
+        check(XMPSidecar.read(controlledURL)?.title == "Tab\tandbell", "control characters are left out of a sidecar")
+        XMPSidecar.write(mine, to: controlledURL)
+        check(XMPSidecar.read(controlledURL)?.rating == 5, "and it can be merged into afterwards")
+        // another app's sidecar that says nothing of rating or label leaves them alone; one
+        // written as elements, or with the old xap: prefix, is read
+        let keywordsOnlyURL = tmp.appendingPathComponent("keywords.xmp")
+        try? """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+         <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">
+          <dc:subject><rdf:Bag><rdf:li>tagged</rdf:li></rdf:Bag></dc:subject>
+         </rdf:Description></rdf:RDF></x:xmpmeta>
+        """.write(to: keywordsOnlyURL, atomically: true, encoding: .utf8)
+        var rated = sample
+        if let keywordsOnly = XMPSidecar.read(keywordsOnlyURL) { XMPSidecar.apply(keywordsOnly, to: &rated) }
+        check(rated.rating == sample.rating && rated.colorLabel == sample.colorLabel && rated.keywords.first == "tagged",
+              "a sidecar without a rating or label leaves the photo's")
+        let elementsURL = tmp.appendingPathComponent("elements.xmp")
+        try? """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+         <rdf:Description rdf:about="" xmlns:xap="http://ns.adobe.com/xap/1.0/" xmlns:exif="http://ns.adobe.com/exif/1.0/">
+          <xap:Rating>3</xap:Rating>
+          <xap:Label>Green</xap:Label>
+          <exif:DateTimeOriginal>2020-05-06T07:08:09.00+02:00</exif:DateTimeOriginal>
+         </rdf:Description></rdf:RDF></x:xmpmeta>
+        """.write(to: elementsURL, atomically: true, encoding: .utf8)
+        let elements = XMPSidecar.read(elementsURL)
+        check(elements?.rating == 3 && elements?.colorLabel == .green
+              && elements?.captureDate == XMPSidecar.exifDateFormatter.date(from: "2020-05-06T07:08:09"),
+              "properties written as elements, with the xap: prefix, are read")
+        XMPSidecar.write(mine, to: elementsURL)
+        let elementsMerged = (try? String(contentsOf: elementsURL, encoding: .utf8)) ?? ""
+        check(!elementsMerged.contains("xap:Rating") && XMPSidecar.read(elementsURL)?.rating == 5,
+              "writing replaces an xap: rating rather than adding a second one")
 
         // 13. import applies an existing XMP sidecar (§6.5 META-006)
         let xsrc = tmp.appendingPathComponent("xmpsource")

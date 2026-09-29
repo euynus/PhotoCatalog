@@ -5,8 +5,11 @@
 import Foundation
 
 struct SidecarMetadata: Equatable {
-    var rating: Int = 0
-    var colorLabel: ColorLabel?
+    /// The rating and label as the sidecar has them, nil when it doesn't say: an app that
+    /// writes only keywords leaves the photo's rating and label alone. An empty label is one
+    /// taken off.
+    var rating: Int?
+    var label: String?
     var keywords: [String] = []
     var title: String = ""
     var caption: String = ""
@@ -16,8 +19,11 @@ struct SidecarMetadata: Equatable {
     /// Latitude, longitude in degrees.
     var gps: (Double, Double)?
 
+    /// The label, when it's one of the app's colors (Lightroom's default label set).
+    var colorLabel: ColorLabel? { label.flatMap { ColorLabel(rawValue: $0.lowercased()) } }
+
     static func == (l: SidecarMetadata, r: SidecarMetadata) -> Bool {
-        l.rating == r.rating && l.colorLabel == r.colorLabel && l.keywords == r.keywords && l.title == r.title
+        l.rating == r.rating && l.label == r.label && l.keywords == r.keywords && l.title == r.title
             && l.caption == r.caption && l.author == r.author && l.copyright == r.copyright
             && l.captureDate == r.captureDate && l.gps?.0 == r.gps?.0 && l.gps?.1 == r.gps?.1
     }
@@ -90,16 +96,27 @@ enum XMPSidecar {
 
     /// Writes the photo's sidecar. An existing one — perhaps another app's, with its own develop
     /// settings or history — keeps everything but the properties this app writes; the file is
-    /// replaced atomically.
+    /// replaced atomically. One that can't be read or edited as XMP is left alone (false):
+    /// replacing it would lose whatever another app keeps there.
     @discardableResult
     static func write(_ a: Asset, to url: URL) -> Bool {
-        let text = (try? Data(contentsOf: url)).flatMap { merged(a, into: $0) } ?? xmp(for: a)
+        let text: String
+        if let existing = try? Data(contentsOf: url), !existing.isEmpty {
+            guard let merged = merged(a, into: existing) else { return false }
+            text = merged
+        } else if FileManager.default.fileExists(atPath: url.path), (try? Data(contentsOf: url)) == nil {
+            return false
+        } else {
+            text = xmp(for: a)
+        }
         return (try? text.data(using: .utf8)?.write(to: url, options: .atomic)) != nil
     }
 
     /// The properties this app writes, as attributes or elements of an rdf:Description.
     private static let managedProperties: Set<String> = [
-        "xmp:Rating", "xmp:Label", "exif:DateTimeOriginal", "exif:GPSLatitude", "exif:GPSLongitude",
+        // xap: is the XMP namespace's older prefix: the same properties, written by older apps
+        "xmp:Rating", "xmp:Label", "xap:Rating", "xap:Label",
+        "exif:DateTimeOriginal", "exif:GPSLatitude", "exif:GPSLongitude",
         "dc:subject", "dc:title", "dc:description", "dc:creator", "dc:rights",
     ]
 
@@ -133,11 +150,14 @@ enum XMPSidecar {
     }
 
     /// Applies a sidecar's metadata to `asset`: the sidecar's rating, label, text, credits,
-    /// capture time and location win; its keywords are merged ahead of the photo's own, or
-    /// replace them when `replacingKeywords` (reading changes another app made).
+    /// capture time and location win where it has them; its keywords are merged ahead of the
+    /// photo's own, or replace them when `replacingKeywords` (reading changes another app made).
     static func apply(_ sc: SidecarMetadata, to asset: inout Asset, replacingKeywords: Bool = false) {
-        asset.rating = sc.rating
-        asset.colorLabel = sc.colorLabel
+        if let rating = sc.rating { asset.rating = rating }
+        if let label = sc.label {
+            // a label outside the app's colors (a custom Lightroom set) leaves the photo's alone
+            if label.isEmpty { asset.colorLabel = nil } else if let color = sc.colorLabel { asset.colorLabel = color }
+        }
         if !sc.keywords.isEmpty {
             asset.keywords = replacingKeywords ? KeywordService.normalize(sc.keywords)
                                                : KeywordService.normalize(sc.keywords + asset.keywords)
@@ -171,39 +191,58 @@ enum XMPSidecar {
         return delegate.result
     }
 
+    /// Text made safe for XML: markup escaped, and control characters XML can't hold at all
+    /// left out (one would make the sidecar unreadable, to us and to every other app).
     private static func escape(_ s: String) -> String {
-        s.replacingOccurrences(of: "&", with: "&amp;")
+        let allowed = s.unicodeScalars.filter { scalar in
+            let v = scalar.value
+            return v == 0x9 || v == 0xA || v == 0xD || (v >= 0x20 && v != 0xFFFE && v != 0xFFFF)
+        }
+        return String(String.UnicodeScalarView(allowed))
+            .replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
     }
 }
 
+/// Reads the properties the app keeps, written as attributes of an rdf:Description (as
+/// Lightroom does) or as elements inside it (as other apps do), under xmp: or the older xap:.
 private final class SidecarParser: NSObject, XMLParserDelegate {
     var result = SidecarMetadata()
     private var path: [String] = []
     private var text = ""
+    private var latitude: Double?
+    private var longitude: Double?
+
+    private func property(_ name: String, _ value: String) {
+        switch name {
+        case "xmp:Rating", "xap:Rating", "Rating":
+            // Lightroom/Bridge may write "5.0" (Int("5.0") is nil) or "-1" (rejected);
+            // parse leniently and clamp into the app's 0…5 range.
+            guard !value.isEmpty else { return }
+            result.rating = min(5, max(0, Int(value) ?? Int(Double(value) ?? 0)))
+        case "xmp:Label", "xap:Label", "Label":
+            result.label = value
+        case "exif:DateTimeOriginal", "DateTimeOriginal":
+            // a wall-clock time; any fraction or zone after the seconds doesn't move it
+            if let date = XMPSidecar.exifDateFormatter.date(from: String(value.prefix(19))) { result.captureDate = date }
+        case "exif:GPSLatitude", "GPSLatitude":
+            latitude = XMPSidecar.parseGPSCoordinate(value)
+        case "exif:GPSLongitude", "GPSLongitude":
+            longitude = XMPSidecar.parseGPSCoordinate(value)
+        default:
+            return
+        }
+        if let latitude, let longitude { result.gps = (latitude, longitude) }
+    }
 
     func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?,
                 qualifiedName qName: String?, attributes attrs: [String: String]) {
         path.append(name)
         text = ""
         if name == "rdf:Description" || name == "Description" {
-            if let r = attrs["xmp:Rating"] ?? attrs["Rating"] {
-                // Lightroom/Bridge may write "5.0" (Int("5.0") is nil) or "-1" (rejected);
-                // parse leniently and clamp into the app's 0…5 range.
-                result.rating = min(5, max(0, Int(r) ?? Int(Double(r) ?? 0)))
-            }
-            if let l = attrs["xmp:Label"] ?? attrs["Label"], !l.isEmpty {
-                result.colorLabel = ColorLabel(rawValue: l.lowercased())
-            }
-            if let d = attrs["exif:DateTimeOriginal"] ?? attrs["DateTimeOriginal"], !d.isEmpty {
-                result.captureDate = XMPSidecar.exifDateFormatter.date(from: d)
-            }
-            if let lat = (attrs["exif:GPSLatitude"] ?? attrs["GPSLatitude"]).flatMap(XMPSidecar.parseGPSCoordinate),
-               let lon = (attrs["exif:GPSLongitude"] ?? attrs["GPSLongitude"]).flatMap(XMPSidecar.parseGPSCoordinate) {
-                result.gps = (lat, lon)
-            }
+            for (key, value) in attrs { property(key, value) }
         }
     }
 
@@ -213,6 +252,8 @@ private final class SidecarParser: NSObject, XMLParserDelegate {
                 qualifiedName qName: String?) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let inside = { (tag: String) in self.path.contains { $0.hasSuffix(tag) } }
+        // a property written as an element of the description
+        if path.count >= 2, path[path.count - 2].hasSuffix("Description") { property(name, trimmed) }
         if name.hasSuffix("li") && !trimmed.isEmpty {
             if inside("subject") { result.keywords.append(trimmed) }
             else if inside("title") { result.title = trimmed }
