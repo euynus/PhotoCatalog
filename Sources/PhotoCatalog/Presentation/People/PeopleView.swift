@@ -324,10 +324,13 @@ private struct PeopleDetailView: View {
                         .help("自动识别，尚未确认")
                 }
             }
-            .onTapGesture(count: 2) { if let face { app.openLoupe(face.assetId) } }
             .onTapGesture {
-                guard isCluster else { return }
-                if ticked { excluded.insert(id) } else { excluded.remove(id) }
+                let isDoubleClick = ClickEvent.clickCount >= 2
+                // the second click of a double-click flips the tick back before opening
+                if isCluster {
+                    if ticked { excluded.insert(id) } else { excluded.remove(id) }
+                }
+                if isDoubleClick, let face { app.openLoupe(face.assetId) }
             }
             .contextMenu {
                 if let face {

@@ -43,10 +43,14 @@ struct GridView: View {
                                      isEdited: app.developFingerprint(for: asset.id) != nil,
                                      onToggleStack: { app.toggleStack(containing: asset.id) })
                                 .equatable()
-                                .onTapGesture(count: 2) { app.openLoupe(asset.id) }
+                                // the first click selects at once; the second of a double-click opens
                                 .onTapGesture {
+                                    if ClickEvent.clickCount >= 2 {
+                                        app.openLoupe(asset.id)
+                                        return
+                                    }
                                     app.blurSearch()
-                                    let f = NSEvent.modifierFlags
+                                    let f = ClickEvent.modifierFlags
                                     app.selectCell(asset.id, shift: f.contains(.shift),
                                                    meta: f.contains(.command))
                                 }
