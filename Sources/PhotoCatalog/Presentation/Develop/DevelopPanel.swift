@@ -37,13 +37,11 @@ struct DevelopPanel: View {
                     .help("点选照片中的中性灰色区域 (W)")
                     whiteBalance(asset, settings)
                 }
-                section(L("色调")) {
-                    HStack {
-                        Spacer(minLength: 0)
-                        Button("自动") { app.autoTone() }
-                            .controlSize(.small)
-                            .help("自动设置曝光、高光、阴影、白色和黑色色阶 (⌘U)")
-                    }
+                section(L("色调"), accessory: {
+                    Button("自动") { app.autoTone() }
+                        .controlSize(.small)
+                        .help("自动设置曝光、高光、阴影、白色和黑色色阶 (⌘U)")
+                }) {
                     ForEach(DevelopControl.tone) { control in slider(control, asset, settings) }
                 }
                 section(L("偏好")) {
@@ -283,9 +281,19 @@ struct DevelopPanel: View {
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        section(title, accessory: { EmptyView() }, content: content)
+    }
+
+    /// A panel section; `accessory` sits at the end of the title row, as Lightroom's Auto does.
+    private func section<Accessory: View, Content: View>(_ title: String, @ViewBuilder accessory: () -> Accessory,
+                                                         @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.text2)
-                .accessibilityAddTraits(.isHeader)
+            HStack {
+                Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.text2)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+                accessory()
+            }
             content()
         }
         .padding(.bottom, 12)
