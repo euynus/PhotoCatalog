@@ -73,21 +73,21 @@ enum DevelopRenderer {
         /// The photo with `settings` applied. `wholeFrame` skips the crop and leaves the corners a
         /// straightened photo no longer covers empty, for the crop tool to draw over.
         func image(_ settings: DevelopSettings, draft: Bool = false, wholeFrame: Bool = false) -> CIImage? {
-            guard let toned = tonedImage(settings, draft: draft) else { return nil }
-            sourceSize = toned.extent.integral.size
-            let scale = max(toned.extent.width, toned.extent.height) / max(fullLongEdge, 1)
+            guard let base = baseImage(settings, draft: draft) else { return nil }
+            sourceSize = base.extent.integral.size
+            let scale = max(base.extent.width, base.extent.height) / max(fullLongEdge, 1)
+            let toned = DevelopRenderer.applyTone(DevelopRenderer.applyLens(base, settings), settings)
             let detailed = DevelopRenderer.applyDetail(toned, settings, scale: min(1, scale))
             return DevelopRenderer.applyGeometry(detailed, settings, wholeFrame: wholeFrame)
         }
 
-        private func tonedImage(_ settings: DevelopSettings, draft: Bool) -> CIImage? {
+        /// The decoded photo with white balance and exposure: linear light, before any other edit.
+        private func baseImage(_ settings: DevelopSettings, draft: Bool) -> CIImage? {
             if let raw {
                 let key = RawStageKey(temperature: settings.temperature ?? asShotTemperature ?? 6500,
                                       tint: settings.tint ?? asShotTint ?? 0,
                                       exposure: settings.exposure)
-                guard cachesRawStage else {
-                    return rawOutput(raw, key, draft: draft).map { DevelopRenderer.applyTone($0, settings) }
-                }
+                guard cachesRawStage else { return rawOutput(raw, key, draft: draft) }
                 // Rebuild the stage accurately when missing, or once a white-balance/exposure drag ends.
                 if rawStage == nil || (!draft && rawStage?.key != key),
                    let output = rawOutput(raw, key, draft: false),
@@ -107,7 +107,7 @@ enum DevelopRenderer {
                         "inputTargetNeutral": CIVector(x: stage.key.temperature, y: stage.key.tint),
                     ])
                 }
-                return DevelopRenderer.applyTone(image, settings)
+                return image
             }
             guard var image = base else { return nil }
             if settings.exposure != 0 {
@@ -122,7 +122,7 @@ enum DevelopRenderer {
                     "inputTargetNeutral": CIVector(x: 6500, y: 0),
                 ])
             }
-            return DevelopRenderer.applyTone(image, settings)
+            return image
         }
 
         private func rawOutput(_ raw: CIRAWFilter, _ key: RawStageKey, draft: Bool) -> CIImage? {
@@ -226,6 +226,17 @@ enum DevelopRenderer {
     private static func atOrigin(_ image: CIImage) -> CIImage {
         let origin = image.extent.origin
         return origin == .zero ? image : image.transformed(by: CGAffineTransform(translationX: -origin.x, y: -origin.y))
+    }
+
+    /// Manual lens corrections on linear light: vignetting first (it belongs to the lens's own
+    /// frame), then distortion.
+    static func applyLens(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
+        guard s.hasLensCorrection else { return input }
+        let start = s.lensVignetteMidpoint / 100 * 0.8
+        // +100 lifts the corners 1.3 EV, -100 darkens them as much
+        let amount = s.lensVignette >= 0 ? s.lensVignette / 100 * 1.5 : s.lensVignette / 100 * 0.6
+        let corrected = DevelopKernels.radialGain(input, amount: amount, start: start, width: 1 - start)
+        return DevelopKernels.distort(corrected, k: s.distortion / 100 * 0.15)
     }
 
     /// Noise reduction, then sharpening, in display-encoded values where noise and halos are

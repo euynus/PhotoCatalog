@@ -344,6 +344,9 @@
 "文件创建时间" = "File creation date";
 
 /* Domain/DevelopSettings.swift */
+"扭曲度" = "Distortion";
+"镜头暗角" = "Lens Vignetting";
+"镜头暗角中点" = "Vignetting Midpoint";
 "锐化" = "Sharpening";
 "锐化半径" = "Sharpen Radius";
 "锐化蒙版" = "Sharpen Masking";
@@ -361,6 +364,7 @@
 "黑色色阶" = "Blacks";
 
 /* Domain/DevelopTransfer.swift */
+"镜头校正" = "Lens Corrections";
 "减少杂色" = "Noise Reduction";
 "细节" = "Detail";
 "偏好" = "Presence";

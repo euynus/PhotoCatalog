@@ -39,6 +39,9 @@ struct DevelopPanel: View {
                     Text("锐化与降噪在 1:1 视图中看得最准")
                         .font(.system(size: 11)).foregroundStyle(Theme.text3)
                 }
+                section(L("镜头校正")) {
+                    ForEach(DevelopControl.lens) { control in slider(control, asset, settings) }
+                }
             }
             .padding(14)
         }

@@ -27,6 +27,12 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var sharpenMasking: Double = 0
     var luminanceNoise: Double = 0
     var colorNoise: Double = 0
+    /// Manual lens corrections, applied to the photo before tone and cropping: distortion
+    /// -100…100 (positive straightens barrel distortion), lens vignetting -100…100 (positive
+    /// brightens the corners) with its midpoint 0…100 (higher confines it to the corners).
+    var distortion: Double = 0
+    var lensVignette: Double = 0
+    var lensVignetteMidpoint: Double = 50
     /// Geometry, applied in this order after tone: quarter turns clockwise (0…3), a left–right
     /// mirror, a straighten angle in degrees (-45…45, positive turns the photo clockwise), then
     /// the crop. A nil crop keeps the whole photo — or, once straightened, the largest
@@ -43,6 +49,8 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var hasGeometry: Bool { rotation != 0 || flipped || straighten != 0 || crop != nil }
 
     var hasDetail: Bool { sharpening != 0 || luminanceNoise != 0 || colorNoise != 0 }
+
+    var hasLensCorrection: Bool { distortion != 0 || lensVignette != 0 }
 
     /// Tone and color only.
     var withoutGeometry: DevelopSettings {
@@ -73,6 +81,9 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
             text += String(format: "|d%.1f,%.2f,%.1f,%.1f,%.1f", sharpening, sharpenRadius, sharpenMasking,
                            luminanceNoise, colorNoise)
         }
+        if distortion != 0 || lensVignette != 0 || lensVignetteMidpoint != 50 {
+            text += String(format: "|l%.1f,%.1f,%.1f", distortion, lensVignette, lensVignetteMidpoint)
+        }
         if hasGeometry {   // appended only when set, so earlier edits keep their cache names
             let crop = self.crop.map { String(format: "%.4f,%.4f,%.4f,%.4f", $0.x, $0.y, $0.width, $0.height) } ?? "-"
             text += String(format: "|%d,%d,%.2f,", rotation, flipped ? 1 : 0, straighten) + crop
@@ -102,6 +113,9 @@ extension DevelopSettings {
         sharpenMasking = try container.decodeIfPresent(Double.self, forKey: .sharpenMasking) ?? 0
         luminanceNoise = try container.decodeIfPresent(Double.self, forKey: .luminanceNoise) ?? 0
         colorNoise = try container.decodeIfPresent(Double.self, forKey: .colorNoise) ?? 0
+        distortion = try container.decodeIfPresent(Double.self, forKey: .distortion) ?? 0
+        lensVignette = try container.decodeIfPresent(Double.self, forKey: .lensVignette) ?? 0
+        lensVignetteMidpoint = try container.decodeIfPresent(Double.self, forKey: .lensVignetteMidpoint) ?? 50
         rotation = try container.decodeIfPresent(Int.self, forKey: .rotation) ?? 0
         flipped = try container.decodeIfPresent(Bool.self, forKey: .flipped) ?? false
         straighten = try container.decodeIfPresent(Double.self, forKey: .straighten) ?? 0
@@ -366,6 +380,14 @@ struct DevelopControl: Identifiable {
         amount(\.sharpenMasking, L("锐化蒙版"), max: 100),
         amount(\.luminanceNoise, L("明亮度降噪"), max: 100),
         amount(\.colorNoise, L("颜色降噪"), max: 100),
+    ]
+
+    static let lens: [DevelopControl] = [
+        signed(\.distortion, L("扭曲度")),
+        signed(\.lensVignette, L("镜头暗角")),
+        DevelopControl(id: \.lensVignetteMidpoint, title: L("镜头暗角中点"), range: 0...100, step: 1, neutral: 50) {
+            String(format: "%.0f", $0)
+        },
     ]
 
     private static func amount(_ keyPath: WritableKeyPath<DevelopSettings, Double>, _ title: String,

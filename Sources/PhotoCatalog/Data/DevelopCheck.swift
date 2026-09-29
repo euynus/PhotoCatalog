@@ -8,6 +8,7 @@ enum DevelopCheck {
     static func run() {
         checkRendering()
         checkDetail()
+        checkLensCorrections()
         checkHistogram()
         checkGeometryMath()
         checkGeometryRendering()
@@ -201,6 +202,43 @@ enum DevelopCheck {
                && carried.colorNoise == 0, "sharpening travels as one setting, noise reduction as another")
         assert(DevelopField.noiseReduction.isAdjusted(in: source) && !DevelopField.noiseReduction.isAdjusted(in: carried),
                "adjusted detail fields are detected")
+    }
+
+    private static func checkLensCorrections() {
+        // a white vertical line right of center on black: straightening barrel distortion
+        // stretches the edges outward, so the line lands further right
+        // white lines 8 and 24 px right of center on black. Straightening barrel distortion
+        // stretches the edges more than the middle, so the outer line moves out proportionally further.
+        let lines = image { x, _ in x == 40 || x == 56 ? (1, 1, 1) : (0, 0, 0) }
+        func centroid(_ image: CGImage, _ columns: Range<Int>) -> Double {
+            let weights = columns.map { Double(pixel(image, $0, 32).g) }
+            return zip(columns, weights).map { Double($0) * $1 }.reduce(0, +) / max(weights.reduce(0, +), 1)
+        }
+        func spreadRatio(_ settings: DevelopSettings) -> Double {
+            let rendered = develop(lines, settings)
+            return (centroid(rendered, 48..<64) - 31.5) / (centroid(rendered, 34..<48) - 31.5)
+        }
+        var s = DevelopSettings()
+        let neutralRatio = spreadRatio(s)
+        s.distortion = 100
+        assert(spreadRatio(s) > neutralRatio + 0.05, "positive distortion stretches the edges more than the middle")
+        s.distortion = -100
+        assert(spreadRatio(s) < neutralRatio - 0.05, "negative distortion compresses them")
+
+        let gray = image { _, _ in (0.4, 0.4, 0.4) }
+        s = DevelopSettings(); s.lensVignette = 100
+        let lifted = develop(gray, s), plain = develop(gray, .neutral)
+        assert(pixel(lifted, 1, 1).g > pixel(plain, 1, 1).g + 20, "lens vignetting correction brightens the corners")
+        assert(abs(Int(pixel(lifted, 32, 32).g) - Int(pixel(plain, 32, 32).g)) <= 2, "and leaves the center alone")
+        s.lensVignetteMidpoint = 100
+        assert(pixel(develop(gray, s), 12, 12).g < pixel(lifted, 12, 12).g, "a higher midpoint confines it to the corners")
+
+        var source = DevelopSettings()
+        source.distortion = 30; source.lensVignette = 45; source.lensVignetteMidpoint = 20
+        let carried = DevelopSettings().applying(source, fields: [.lensCorrections])
+        assert(carried.distortion == 30 && carried.lensVignette == 45 && carried.lensVignetteMidpoint == 20,
+               "lens corrections travel together")
+        assert(DevelopSettings().fingerprint != carried.fingerprint, "lens corrections change the fingerprint")
     }
 
     private static func checkHistogram() {
