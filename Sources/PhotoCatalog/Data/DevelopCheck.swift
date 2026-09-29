@@ -1099,6 +1099,24 @@ enum DevelopCheck {
                "a new preset holds what the photo adjusted, framing aside")
         app.saveDevelopPreset(name: "测试预设", fields: [.exposure])
         assert(app.developPresets.filter { $0.name == "测试预设" }.count == 1, "saving a name again replaces it")
+
+        // managing: rename (not onto another's name), update from the photo, groups
+        app.saveDevelopPreset(name: "另一个", fields: [.contrast], group: "  人像 ")
+        let second = app.developPresets.last!
+        assert(second.group == "人像" && app.developPresetGroups == ["人像"], "a preset can be saved into a group")
+        assert(!app.renameDevelopPreset(second.id, to: "测试预设") && app.renameDevelopPreset(second.id, to: "对比"),
+               "renaming refuses another preset's name")
+        var brighter = app.developSettings[a.id] ?? .neutral
+        brighter.exposure = 1.1
+        app.commitDevelop([a.id: brighter], undoName: "曝光")
+        app.updateDevelopPreset(preset!.id)
+        let updated = app.developPresets.first { $0.id == preset!.id }
+        assert(updated?.transfer.settings.exposure == 1.1 && updated?.transfer.fields == [.exposure],
+               "updating takes the photo's values for the settings the preset holds")
+        app.moveDevelopPreset(second.id, toGroup: "我的预设")
+        assert(app.developPresets.first { $0.id == second.id }?.group == nil && app.developPresetGroups.isEmpty,
+               "moving to 我的预设 takes it out of its group")
+        app.deleteDevelopPreset(second.id)
         app.deleteDevelopPreset(preset!.id)
         assert(!app.developPresets.contains { $0.name == "测试预设" }, "presets can be deleted")
 

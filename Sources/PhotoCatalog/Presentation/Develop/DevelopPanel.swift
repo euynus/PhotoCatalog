@@ -236,7 +236,7 @@ struct DevelopPanel: View {
             if !app.developPresets.isEmpty {
                 Menu("删除预设") {
                     ForEach(app.developPresets) { preset in
-                        Button(preset.name, role: .destructive) { app.deleteDevelopPreset(preset.id) }
+                        Button(preset.name, role: .destructive) { app.confirmDeleteDevelopPreset(preset.id) }
                     }
                 }
             }

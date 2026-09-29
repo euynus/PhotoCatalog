@@ -1246,22 +1246,73 @@ final class AppState {
         if developDraft == DevelopDraft(assetId: preview.assetId, settings: preview.settings) { developDraft = nil }
     }
 
-    /// Saves the selected photo's `fields` as a preset; a preset of the same name is replaced.
-    func saveDevelopPreset(name: String, fields: Set<DevelopField>) {
+    /// Saves the selected photo's `fields` as a preset in `group` (nil: 我的预设); a preset of
+    /// the same name is replaced.
+    func saveDevelopPreset(name: String, fields: Set<DevelopField>, group: String? = nil) {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let asset = primary, canDevelop(asset), !name.isEmpty, !fields.isEmpty else { return }
         let transfer = DevelopTransfer(settings: developSettings[asset.id] ?? .neutral, fields: fields,
                                        sourceIsRaw: asset.isRaw)
+        let group = Self.presetGroup(group)
         if let index = developPresets.firstIndex(where: { $0.name == name }) {
             developPresets[index].transfer = transfer
+            developPresets[index].group = group
         } else {
-            developPresets.append(DevelopPreset(id: UUID().uuidString, name: name, transfer: transfer))
+            developPresets.append(DevelopPreset(id: UUID().uuidString, name: name, transfer: transfer, group: group))
         }
         push("已存储预设“\(name)”", "square.and.arrow.down")
     }
 
     func deleteDevelopPreset(_ id: String) {
         developPresets.removeAll { $0.id == id }
+    }
+
+    /// Asks first: presets aren't part of undo.
+    func confirmDeleteDevelopPreset(_ id: String) {
+        guard let preset = developPresets.first(where: { $0.id == id }),
+              confirmDestructiveAction(L("删除预设“\(preset.name)”？"), L("预设删除后无法恢复，已用它修过的照片不受影响。"),
+                                       L("删除")) else { return }
+        deleteDevelopPreset(id)
+    }
+
+    /// Renames a preset of the user's; a name another preset has is refused.
+    @discardableResult
+    func renameDevelopPreset(_ id: String, to name: String) -> Bool {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let index = developPresets.firstIndex(where: { $0.id == id }) else { return false }
+        guard !developPresets.contains(where: { $0.name == name && $0.id != id }) else {
+            push("已有名为“\(name)”的预设", "warning")
+            return false
+        }
+        developPresets[index].name = name
+        return true
+    }
+
+    /// The preset's settings replaced by the selected photo's, the same ones it held.
+    func updateDevelopPreset(_ id: String) {
+        guard let index = developPresets.firstIndex(where: { $0.id == id }), let asset = primary, canDevelop(asset)
+        else { return }
+        let fields = developPresets[index].transfer.fields
+        developPresets[index].transfer = DevelopTransfer(settings: developSettings[asset.id] ?? .neutral, fields: fields,
+                                                         sourceIsRaw: asset.isRaw)
+        push("已用当前设置更新预设“\(developPresets[index].name)”", "arrow.triangle.2.circlepath")
+    }
+
+    /// Lists a preset under `group` (nil or empty: 我的预设).
+    func moveDevelopPreset(_ id: String, toGroup group: String?) {
+        guard let index = developPresets.firstIndex(where: { $0.id == id }) else { return }
+        developPresets[index].group = Self.presetGroup(group)
+    }
+
+    /// The user's preset groups, in the order they first appear.
+    var developPresetGroups: [String] {
+        var seen = Set<String>()
+        return developPresets.compactMap(\.group).filter { seen.insert($0).inserted }
+    }
+
+    private static func presetGroup(_ name: String?) -> String? {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty || trimmed == L("我的预设") ? nil : trimmed
     }
 
     /// Returns every selected photo (or the one in Develop) to as shot.

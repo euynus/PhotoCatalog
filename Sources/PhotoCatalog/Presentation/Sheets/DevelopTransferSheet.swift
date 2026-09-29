@@ -9,6 +9,7 @@ struct DevelopTransferSheet: View {
 
     @State private var fields: Set<DevelopField>
     @State private var name = ""
+    @State private var group = ""
 
     init(mode: AppState.DevelopTransferMode, fields: Set<DevelopField>) {
         self.mode = mode
@@ -50,6 +51,21 @@ struct DevelopTransferSheet: View {
                 if mode == .preset {
                     TextField("预设名称", text: $name)
                         .textFieldStyle(.roundedBorder)
+                    HStack(spacing: 6) {
+                        TextField("组", text: $group, prompt: Text("我的预设"))
+                            .textFieldStyle(.roundedBorder)
+                        if !app.developPresetGroups.isEmpty {
+                            Menu {
+                                Button("我的预设") { group = "" }
+                                ForEach(app.developPresetGroups, id: \.self) { name in
+                                    Button(name) { group = name }
+                                }
+                            } label: { Image(systemName: "chevron.down") }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
+                            .help("选择已有的组")
+                        }
+                    }
                 }
                 if mode == .sync {
                     Text("把当前照片的所选设置应用到其他选中的照片。")
@@ -127,7 +143,7 @@ struct DevelopTransferSheet: View {
             app.developTransferFields = fields
             app.syncDevelopSettings(fields: fields)
         case .preset:
-            app.saveDevelopPreset(name: name, fields: fields)
+            app.saveDevelopPreset(name: name, fields: fields, group: group)
         }
         app.sheet = nil
     }

@@ -147,6 +147,8 @@ struct DevelopPreset: Codable, Equatable, Identifiable, Sendable {
     let id: String
     var name: String
     var transfer: DevelopTransfer
+    /// The group it's listed under; nil is 我的预设.
+    var group: String?
 
     var isBuiltIn: Bool { id.hasPrefix("builtin.") }
 
