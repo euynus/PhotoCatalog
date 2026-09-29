@@ -3247,10 +3247,7 @@ final class AppState {
     /// starting point, so nothing old is taken for a change.
     func checkExternalXMPChanges() {
         guard runsBackgroundMaintenance, store != nil, !isCheckingXMP else { return }
-        let candidates = assets.compactMap { asset -> (id: String, path: String)? in
-            guard !asset.deleted, !asset.isDemo, !asset.isVirtualCopy, let path = asset.localPath else { return nil }
-            return (asset.id, path)
-        }
+        let candidates = xmpCheckCandidates()
         guard !candidates.isEmpty else { return }
         isCheckingXMP = true
         let known = xmpSyncTimes
@@ -3263,6 +3260,14 @@ final class AppState {
             self.isCheckingXMP = false
             guard self.store?.packageURL == catalogURL else { return }
             self.applyExternalXMPCheck(seeded: found.seeded, changed: found.changed)
+        }
+    }
+
+    /// The photos whose sidecars the check looks at: every original the catalog owns.
+    func xmpCheckCandidates() -> [(id: String, path: String)] {
+        assets.compactMap { asset -> (id: String, path: String)? in
+            guard !asset.deleted, !asset.isDemo, !asset.isVirtualCopy, let path = asset.localPath else { return nil }
+            return (asset.id, path)
         }
     }
 
@@ -3294,10 +3299,7 @@ final class AppState {
 
     /// For checks: the sidecar check, run now and to completion.
     func checkExternalXMPChangesNow() {
-        let candidates = assets.compactMap { asset -> (id: String, path: String)? in
-            guard !asset.deleted, !asset.isDemo, !asset.isVirtualCopy, let path = asset.localPath else { return nil }
-            return (asset.id, path)
-        }
+        let candidates = xmpCheckCandidates()
         let found = Self.findChangedSidecars(candidates, known: xmpSyncTimes)
         applyExternalXMPCheck(seeded: found.seeded, changed: found.changed)
     }

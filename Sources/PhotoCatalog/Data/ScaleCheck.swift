@@ -120,6 +120,12 @@ enum ScaleCheck {
         step("keywords") { _ = app.keywordList.count }
         step("dates") { _ = app.captureDateGroups.count }
         step("folders") { _ = app.folderTree.count }
+        // a structural change re-derives stacks, edited copies' included
+        step("stacks") {
+            app.assets = app.assets
+            if let first = app.list.first { _ = app.stackInfo(for: first) }
+        }
+        step("xmp candidates") { _ = app.xmpCheckCandidates().count }
         report("counts ms: " + line.joined(separator: " · "))
 
         line = []
