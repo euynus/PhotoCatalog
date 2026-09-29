@@ -344,6 +344,11 @@
 "文件创建时间" = "File creation date";
 
 /* Domain/DevelopSettings.swift */
+"锐化" = "Sharpening";
+"锐化半径" = "Sharpen Radius";
+"锐化蒙版" = "Sharpen Masking";
+"明亮度降噪" = "Luminance Noise";
+"颜色降噪" = "Color Noise";
 "原始比例" = "Original";
 "对比度" = "Contrast";
 "曝光度" = "Exposure";
@@ -356,6 +361,8 @@
 "黑色色阶" = "Blacks";
 
 /* Domain/DevelopTransfer.swift */
+"减少杂色" = "Noise Reduction";
+"细节" = "Detail";
 "偏好" = "Presence";
 "提亮阴影" = "Open Shadows";
 "旋转与翻转" = "Rotate & Flip";
@@ -514,6 +521,7 @@
 "裁剪" = "Crop";
 
 /* Presentation/Develop/DevelopPanel.swift */
+"锐化与降噪在 1:1 视图中看得最准" = "Sharpening and noise reduction are judged best at 1:1";
 "修改前" = "Before";
 "修改前 / 修改后 (\\)" = "Before / After (\\)";
 "内置" = "Built-In";

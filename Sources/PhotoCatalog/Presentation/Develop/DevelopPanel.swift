@@ -34,6 +34,11 @@ struct DevelopPanel: View {
                 section(L("偏好")) {
                     ForEach(DevelopControl.presence) { control in slider(control, asset, settings) }
                 }
+                section(L("细节")) {
+                    ForEach(DevelopControl.detail) { control in slider(control, asset, settings) }
+                    Text("锐化与降噪在 1:1 视图中看得最准")
+                        .font(.system(size: 11)).foregroundStyle(Theme.text3)
+                }
             }
             .padding(14)
         }
@@ -250,9 +255,9 @@ struct DevelopPanel: View {
     private func slider(_ control: DevelopControl, _ asset: Asset, _ settings: DevelopSettings) -> some View {
         DevelopSlider(title: control.title, value: settings[keyPath: control.id], range: control.range,
                       step: control.step, format: control.format,
-                      isNeutral: settings[keyPath: control.id] == 0,
+                      isNeutral: settings[keyPath: control.id] == control.neutral,
                       onChange: { draft(asset, settings) { $0[keyPath: control.id] = $1 }($0) },
-                      onReset: { commit(asset, settings, control.title) { $0[keyPath: control.id] = 0 } },
+                      onReset: { commit(asset, settings, control.title) { $0[keyPath: control.id] = control.neutral } },
                       onCommit: { commitDraft(asset, control.title) })
     }
 

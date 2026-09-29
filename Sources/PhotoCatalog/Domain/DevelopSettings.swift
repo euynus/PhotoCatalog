@@ -19,6 +19,14 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var blacks: Double = 0
     var vibrance: Double = 0
     var saturation: Double = 0
+    /// Detail, applied after tone on top of the camera's own RAW sharpening and noise reduction.
+    /// Sharpening amount 0…150 (luminance only), radius 0.5…3 px at full resolution, masking
+    /// 0…100 limits it to edges; noise reduction 0…100 for luminance and for color.
+    var sharpening: Double = 0
+    var sharpenRadius: Double = 1
+    var sharpenMasking: Double = 0
+    var luminanceNoise: Double = 0
+    var colorNoise: Double = 0
     /// Geometry, applied in this order after tone: quarter turns clockwise (0…3), a left–right
     /// mirror, a straighten angle in degrees (-45…45, positive turns the photo clockwise), then
     /// the crop. A nil crop keeps the whole photo — or, once straightened, the largest
@@ -33,6 +41,8 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var isNeutral: Bool { self == .neutral }
 
     var hasGeometry: Bool { rotation != 0 || flipped || straighten != 0 || crop != nil }
+
+    var hasDetail: Bool { sharpening != 0 || luminanceNoise != 0 || colorNoise != 0 }
 
     /// Tone and color only.
     var withoutGeometry: DevelopSettings {
@@ -58,6 +68,11 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
         let fields: [Double?] = [temperature, tint, exposure, contrast, highlights, shadows,
                                  whites, blacks, vibrance, saturation]
         var text = fields.map { $0.map { String(format: "%.3f", $0) } ?? "-" }.joined(separator: ",")
+        if sharpening != 0 || sharpenRadius != 1 || sharpenMasking != 0 || luminanceNoise != 0 || colorNoise != 0 {
+            // like geometry: only when set, so earlier edits keep their cache names
+            text += String(format: "|d%.1f,%.2f,%.1f,%.1f,%.1f", sharpening, sharpenRadius, sharpenMasking,
+                           luminanceNoise, colorNoise)
+        }
         if hasGeometry {   // appended only when set, so earlier edits keep their cache names
             let crop = self.crop.map { String(format: "%.4f,%.4f,%.4f,%.4f", $0.x, $0.y, $0.width, $0.height) } ?? "-"
             text += String(format: "|%d,%d,%.2f,", rotation, flipped ? 1 : 0, straighten) + crop
@@ -82,6 +97,11 @@ extension DevelopSettings {
         blacks = try container.decodeIfPresent(Double.self, forKey: .blacks) ?? 0
         vibrance = try container.decodeIfPresent(Double.self, forKey: .vibrance) ?? 0
         saturation = try container.decodeIfPresent(Double.self, forKey: .saturation) ?? 0
+        sharpening = try container.decodeIfPresent(Double.self, forKey: .sharpening) ?? 0
+        sharpenRadius = try container.decodeIfPresent(Double.self, forKey: .sharpenRadius) ?? 1
+        sharpenMasking = try container.decodeIfPresent(Double.self, forKey: .sharpenMasking) ?? 0
+        luminanceNoise = try container.decodeIfPresent(Double.self, forKey: .luminanceNoise) ?? 0
+        colorNoise = try container.decodeIfPresent(Double.self, forKey: .colorNoise) ?? 0
         rotation = try container.decodeIfPresent(Int.self, forKey: .rotation) ?? 0
         flipped = try container.decodeIfPresent(Bool.self, forKey: .flipped) ?? false
         straighten = try container.decodeIfPresent(Double.self, forKey: .straighten) ?? 0
@@ -318,6 +338,8 @@ struct DevelopControl: Identifiable {
     let title: String
     let range: ClosedRange<Double>
     let step: Double
+    /// The value that means "as shot" (a double-click on the label returns to it).
+    var neutral: Double = 0
     let format: @Sendable (Double) -> String
 
     static let exposure = DevelopControl(id: \.exposure, title: L("曝光度"), range: -5...5, step: 0.01) {
@@ -335,6 +357,21 @@ struct DevelopControl: Identifiable {
         signed(\.vibrance, L("鲜艳度")),
         signed(\.saturation, L("饱和度")),
     ]
+
+    static let detail: [DevelopControl] = [
+        amount(\.sharpening, L("锐化"), max: 150),
+        DevelopControl(id: \.sharpenRadius, title: L("锐化半径"), range: 0.5...3, step: 0.1, neutral: 1) {
+            String(format: "%.1f", $0)
+        },
+        amount(\.sharpenMasking, L("锐化蒙版"), max: 100),
+        amount(\.luminanceNoise, L("明亮度降噪"), max: 100),
+        amount(\.colorNoise, L("颜色降噪"), max: 100),
+    ]
+
+    private static func amount(_ keyPath: WritableKeyPath<DevelopSettings, Double>, _ title: String,
+                               max: Double) -> DevelopControl {
+        DevelopControl(id: keyPath, title: title, range: 0...max, step: 1) { String(format: "%.0f", $0) }
+    }
 
     private static func signed(_ keyPath: WritableKeyPath<DevelopSettings, Double>, _ title: String) -> DevelopControl {
         DevelopControl(id: keyPath, title: title, range: -100...100, step: 1) { value in

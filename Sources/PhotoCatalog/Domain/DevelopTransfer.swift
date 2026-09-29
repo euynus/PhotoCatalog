@@ -7,6 +7,7 @@ import Foundation
 /// Orientation comes before crop so a copied crop lands in the copied frame.
 enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
     case whiteBalance, exposure, contrast, highlights, shadows, whites, blacks, vibrance, saturation
+    case sharpening, noiseReduction
     case orientation, crop
 
     var id: Self { self }
@@ -22,6 +23,8 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         case .blacks: L("黑色色阶")
         case .vibrance: L("鲜艳度")
         case .saturation: L("饱和度")
+        case .sharpening: L("锐化")
+        case .noiseReduction: L("减少杂色")
         case .orientation: L("旋转与翻转")
         case .crop: L("裁剪与拉直")
         }
@@ -32,6 +35,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         (L("白平衡"), [.whiteBalance]),
         (L("色调"), [.exposure, .contrast, .highlights, .shadows, .whites, .blacks]),
         (L("偏好"), [.vibrance, .saturation]),
+        (L("细节"), [.sharpening, .noiseReduction]),
         (L("裁剪与旋转"), [.orientation, .crop]),
     ]
 
@@ -62,6 +66,13 @@ extension DevelopSettings {
             case .blacks: next.blacks = source.blacks
             case .vibrance: next.vibrance = source.vibrance
             case .saturation: next.saturation = source.saturation
+            case .sharpening:
+                next.sharpening = source.sharpening
+                next.sharpenRadius = source.sharpenRadius
+                next.sharpenMasking = source.sharpenMasking
+            case .noiseReduction:
+                next.luminanceNoise = source.luminanceNoise
+                next.colorNoise = source.colorNoise
             case .orientation:
                 if next.flipped != source.flipped { next = DevelopGeometry.mirrored(next) }
                 for _ in 0..<4 where next.rotation != source.rotation {

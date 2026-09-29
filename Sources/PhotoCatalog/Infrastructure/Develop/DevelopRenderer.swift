@@ -32,6 +32,9 @@ enum DevelopRenderer {
         private var rawStage: (key: RawStageKey, image: CIImage)?
         /// Size of the decoded photo before rotation and crop, known after the first render.
         private(set) var sourceSize: CGSize?
+        /// Long edge of the original at full resolution: detail radii are given at that size and
+        /// scale down with the render so a preview shows the same look as the full photo.
+        private let fullLongEdge: CGFloat
 
         private struct RawStageKey: Equatable {
             let temperature: Double
@@ -49,6 +52,7 @@ enum DevelopRenderer {
             if isRaw, let raw = CIRAWFilter(imageURL: url) {
                 let native = raw.nativeSize
                 let longEdge = max(native.width, native.height)
+                fullLongEdge = longEdge
                 if let maxPixel, longEdge > CGFloat(maxPixel) {
                     raw.scaleFactor = Float(CGFloat(maxPixel) / longEdge)
                 }
@@ -57,9 +61,10 @@ enum DevelopRenderer {
                 asShotTemperature = Double(raw.neutralTemperature)
                 asShotTint = Double(raw.neutralTint)
             } else {
-                guard let image = Self.decode(url, maxPixel: maxPixel) else { return nil }
+                guard let decoded = Self.decode(url, maxPixel: maxPixel) else { return nil }
+                fullLongEdge = CGFloat(decoded.fullLongEdge)
                 raw = nil
-                base = CIImage(cgImage: image)
+                base = CIImage(cgImage: decoded.image)
                 asShotTemperature = nil
                 asShotTint = nil
             }
@@ -70,7 +75,9 @@ enum DevelopRenderer {
         func image(_ settings: DevelopSettings, draft: Bool = false, wholeFrame: Bool = false) -> CIImage? {
             guard let toned = tonedImage(settings, draft: draft) else { return nil }
             sourceSize = toned.extent.integral.size
-            return DevelopRenderer.applyGeometry(toned, settings, wholeFrame: wholeFrame)
+            let scale = max(toned.extent.width, toned.extent.height) / max(fullLongEdge, 1)
+            let detailed = DevelopRenderer.applyDetail(toned, settings, scale: min(1, scale))
+            return DevelopRenderer.applyGeometry(detailed, settings, wholeFrame: wholeFrame)
         }
 
         private func tonedImage(_ settings: DevelopSettings, draft: Bool) -> CIImage? {
@@ -126,18 +133,20 @@ enum DevelopRenderer {
             return raw.outputImage
         }
 
-        private static func decode(_ url: URL, maxPixel: Int?) -> CGImage? {
+        /// The decoded image and the original's long edge in pixels.
+        private static func decode(_ url: URL, maxPixel: Int?) -> (image: CGImage, fullLongEdge: Int)? {
             guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
             else { return nil }
             let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
             let full = max(properties?[kCGImagePropertyPixelWidth] as? Int ?? 0,
                            properties?[kCGImagePropertyPixelHeight] as? Int ?? 0, 1)
-            return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceShouldCacheImmediately: true,
                 kCGImageSourceThumbnailMaxPixelSize: min(full, maxPixel ?? full),
-            ] as CFDictionary)
+            ] as CFDictionary) else { return nil }
+            return (image, full)
         }
     }
 
@@ -217,6 +226,66 @@ enum DevelopRenderer {
     private static func atOrigin(_ image: CIImage) -> CIImage {
         let origin = image.extent.origin
         return origin == .zero ? image : image.transformed(by: CGAffineTransform(translationX: -origin.x, y: -origin.y))
+    }
+
+    /// Noise reduction, then sharpening, in display-encoded values where noise and halos are
+    /// judged. `scale` is the render's size relative to the full-resolution photo (≤ 1).
+    static func applyDetail(_ input: CIImage, _ s: DevelopSettings, scale: CGFloat) -> CIImage {
+        guard s.hasDetail else { return input }
+        let extent = input.extent
+        var image = input.applyingFilter("CILinearToSRGBToneCurve")
+        if s.luminanceNoise > 0 {
+            // a 3×3 median first: CINoiseReduction alone leaves isolated specks at high ISO
+            let smoothed = image.applyingFilter("CIMedianFilter")
+                .applyingFilter("CINoiseReduction", parameters: [
+                    "inputNoiseLevel": s.luminanceNoise / 100 * 0.06, "inputSharpness": 0,
+                ])
+            // luminance only (color noise has its own slider); the fixed-size median eases in
+            // over the first third, and less in a reduced preview where noise is averaged away
+            let luminance = smoothed.applyingFilter("CILuminosityBlendMode", parameters: [kCIInputBackgroundImageKey: image])
+            let strength = min(1, s.luminanceNoise / 30) * min(1, Double(scale) * 1.5)
+            image = image.applyingFilter("CIDissolveTransition", parameters: [
+                kCIInputTargetImageKey: luminance, "inputTime": strength,
+            ])
+        }
+        if s.colorNoise > 0 {
+            // blur the color and keep the original's luminance
+            let sigma = s.colorNoise / 100 * 8 * Double(scale)
+            let blurred = image.clampedToExtent().applyingGaussianBlur(sigma: sigma).cropped(to: extent)
+            image = blurred.applyingFilter("CIColorBlendMode", parameters: [kCIInputBackgroundImageKey: image])
+        }
+        if s.sharpening > 0 {
+            let sharpened = image.applyingFilter("CISharpenLuminance", parameters: [
+                "inputSharpness": s.sharpening / 100,
+                "inputRadius": max(0.5, s.sharpenRadius * Double(scale)),
+            ])
+            image = s.sharpenMasking > 0
+                ? sharpened.applyingFilter("CIBlendWithMask", parameters: [
+                    kCIInputBackgroundImageKey: image,
+                    kCIInputMaskImageKey: edgeMask(image, masking: s.sharpenMasking, scale: scale),
+                ])
+                : sharpened
+        }
+        return image.applyingFilter("CISRGBToneCurveToLinear").cropped(to: extent)
+    }
+
+    /// White on edges, black on smooth areas; higher masking keeps only stronger edges.
+    static func edgeMask(_ gamma: CIImage, masking: Double, scale: CGFloat) -> CIImage {
+        let extent = gamma.extent
+        let edges = gamma.applyingFilter("CIColorControls", parameters: ["inputSaturation": 0])
+            .clampedToExtent().applyingGaussianBlur(sigma: max(0.6, 1.2 * Double(scale)))
+            .applyingFilter("CIEdges", parameters: ["inputIntensity": 6]).cropped(to: extent)
+            // edge strength is heavy-tailed; a square root spreads it so the slider moves evenly
+            .applyingFilter("CIGammaAdjust", parameters: ["inputPower": 0.5])
+        let threshold = pow(masking / 100, 2) * 0.3, width = 0.02 + threshold * 0.5
+        let gain = 1 / width, bias = -threshold / width
+        return edges.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: gain, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: gain, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: gain, w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+            "inputBiasVector": CIVector(x: bias, y: bias, z: bias, w: 0),
+        ]).applyingFilter("CIColorClamp")
     }
 
     /// Tone and color shared by RAW and other formats, in Lightroom's order. The curve and

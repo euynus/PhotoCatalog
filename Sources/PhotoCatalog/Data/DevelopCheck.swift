@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 enum DevelopCheck {
     static func run() {
         checkRendering()
+        checkDetail()
         checkHistogram()
         checkGeometryMath()
         checkGeometryRendering()
@@ -110,6 +111,96 @@ enum DevelopCheck {
         s = DevelopSettings(); s.contrast = 100
         assert(luma(mean((0.8, 0.8, 0.8), s)) > luma(mean((0.8, 0.8, 0.8), .neutral)),
                "contrast pushes light tones lighter")
+    }
+
+    /// 64 × 64 image from a per-pixel color function (x, y) → display-P3 RGB.
+    private static func image(_ color: (Int, Int) -> (Double, Double, Double)) -> CGImage {
+        var data = [UInt8](repeating: 255, count: 64 * 64 * 4)
+        for y in 0..<64 {
+            for x in 0..<64 {
+                let c = color(x, y), i = (y * 64 + x) * 4
+                data[i] = UInt8(max(0, min(255, c.0 * 255)))
+                data[i + 1] = UInt8(max(0, min(255, c.1 * 255)))
+                data[i + 2] = UInt8(max(0, min(255, c.2 * 255)))
+            }
+        }
+        let context = CGContext(data: &data, width: 64, height: 64, bitsPerComponent: 8, bytesPerRow: 64 * 4,
+                                space: DevelopRenderer.outputColorSpace,
+                                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        return context.makeImage()!
+    }
+
+    /// Standard deviation of luma and of red − blue over the image's interior (0…255 scale).
+    private static func spread(_ image: CGImage) -> (luma: Double, chroma: Double) {
+        var lumas: [Double] = [], chromas: [Double] = []
+        for y in stride(from: 8, to: 56, by: 2) {
+            for x in stride(from: 8, to: 56, by: 2) {
+                let p = pixel(image, x, y)
+                lumas.append(0.3 * Double(p.r) + 0.59 * Double(p.g) + 0.11 * Double(p.b))
+                chromas.append(Double(p.r) - Double(p.b))
+            }
+        }
+        func deviation(_ values: [Double]) -> Double {
+            let mean = values.reduce(0, +) / Double(values.count)
+            return (values.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(values.count)).squareRoot()
+        }
+        return (deviation(lumas), deviation(chromas))
+    }
+
+    private static func checkDetail() {
+        // stored before detail existed: loads with the defaults, and keeps its cache name
+        let old = try! JSONDecoder().decode(DevelopSettings.self, from: Data(#"{"exposure":0.5}"#.utf8))
+        assert(old.sharpenRadius == 1 && !old.hasDetail && old.exposure == 0.5, "old edits load with neutral detail")
+        assert(try! JSONDecoder().decode(DevelopSettings.self, from: Data("{}".utf8)).isNeutral, "an empty edit is as shot")
+        let legacyText = [Double?](arrayLiteral: nil, nil, 0.5, 0, 0, 0, 0, 0, 0, 0)
+            .map { $0.map { String(format: "%.3f", $0) } ?? "-" }.joined(separator: ",")
+        var legacyHash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in legacyText.utf8 { legacyHash = (legacyHash ^ UInt64(byte)) &* 0x100_0000_01b3 }
+        assert(old.fingerprint == String(legacyHash, radix: 36), "tone-only edits keep their render cache names")
+        var sharp = old
+        sharp.sharpening = 40
+        assert(sharp.fingerprint != old.fingerprint, "detail changes the render fingerprint")
+
+        // a step from dark to light gray: sharpening overshoots on both sides of the edge
+        let step = image { x, _ in x < 32 ? (0.3, 0.3, 0.3) : (0.7, 0.7, 0.7) }
+        var s = DevelopSettings()
+        let plain = develop(step, s)
+        s.sharpening = 150
+        s.sharpenRadius = 2
+        let sharpened = develop(step, s)
+        assert(pixel(sharpened, 30, 32).g + 4 < pixel(plain, 30, 32).g
+               && pixel(sharpened, 33, 32).g > pixel(plain, 33, 32).g + 4,
+               "sharpening darkens the dark side of an edge and lightens the light side")
+
+        // gray with pixel noise
+        var seed: UInt64 = 42
+        func noise() -> Double {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return Double(seed >> 33) / Double(1 << 31) - 0.5
+        }
+        let grainy = image { _, _ in let n = noise() * 0.16; return (0.5 + n, 0.5 + n, 0.5 + n) }
+        let blotchy = image { _, _ in let n = noise() * 0.2; return (0.5 + n, 0.5, 0.5 - n) }
+        let grainBase = spread(develop(grainy, .neutral))
+        s = DevelopSettings(); s.luminanceNoise = 100
+        assert(spread(develop(grainy, s)).luma < grainBase.luma * 0.7, "luminance noise reduction smooths grain")
+        s = DevelopSettings(); s.sharpening = 120
+        let sharpenedGrain = spread(develop(grainy, s)).luma
+        s.sharpenMasking = 90
+        assert(sharpenedGrain > grainBase.luma && spread(develop(grainy, s)).luma < sharpenedGrain,
+               "masking keeps sharpening off fine noise")
+        let colorBase = spread(develop(blotchy, .neutral))
+        s = DevelopSettings(); s.colorNoise = 100
+        let calmed = develop(blotchy, s)
+        assert(spread(calmed).chroma < colorBase.chroma * 0.6, "color noise reduction removes color speckle")
+        assert(abs(luma(mean((0.5, 0.5, 0.5), s)) - 0.5) < 0.02, "color noise reduction leaves brightness alone")
+
+        var source = DevelopSettings()
+        source.sharpening = 60; source.sharpenRadius = 1.4; source.sharpenMasking = 30; source.colorNoise = 25
+        let carried = DevelopSettings().applying(source, fields: [.sharpening])
+        assert(carried.sharpening == 60 && carried.sharpenRadius == 1.4 && carried.sharpenMasking == 30
+               && carried.colorNoise == 0, "sharpening travels as one setting, noise reduction as another")
+        assert(DevelopField.noiseReduction.isAdjusted(in: source) && !DevelopField.noiseReduction.isAdjusted(in: carried),
+               "adjusted detail fields are detected")
     }
 
     private static func checkHistogram() {
