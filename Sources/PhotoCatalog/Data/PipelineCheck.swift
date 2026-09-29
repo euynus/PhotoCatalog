@@ -1182,6 +1182,41 @@ enum PipelineCheck {
                   && sc.captureDate == sample.date,
                   "XMP sidecar write/read roundtrip")
         } else { check(false, "XMP sidecar read") }
+        // writing over another app's sidecar keeps what it stored there (Lightroom's develop
+        // settings, history) and replaces only this app's properties
+        let lightroomURL = tmp.appendingPathComponent("lightroom.xmp")
+        let lightroom = """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 7.0">
+         <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+          <rdf:Description rdf:about=""
+            xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+            xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+            xmlns:dc="http://purl.org/dc/elements/1.1/"
+            xmp:Rating="2"
+            crs:Exposure2012="+0.50"
+            crs:Contrast2012="+12">
+           <crs:ToneCurvePV2012><rdf:Seq><rdf:li>0, 0</rdf:li><rdf:li>255, 255</rdf:li></rdf:Seq></crs:ToneCurvePV2012>
+           <dc:subject><rdf:Bag><rdf:li>old</rdf:li></rdf:Bag></dc:subject>
+          </rdf:Description>
+         </rdf:RDF>
+        </x:xmpmeta>
+        """
+        try? lightroom.write(to: lightroomURL, atomically: true, encoding: .utf8)
+        var mine = sample
+        mine.rating = 5
+        mine.keywords = ["new"]
+        XMPSidecar.write(mine, to: lightroomURL)
+        let mergedText = (try? String(contentsOf: lightroomURL, encoding: .utf8)) ?? ""
+        let mergedRead = XMPSidecar.read(lightroomURL)
+        check(mergedText.contains("crs:Exposure2012=\"+0.50\"") && mergedText.contains("crs:Contrast2012")
+              && mergedText.contains("<crs:ToneCurvePV2012>") && !mergedText.contains(">old<")
+              && mergedRead?.rating == 5 && mergedRead?.keywords == ["new"] && mergedRead?.title == sample.title,
+              "writing a sidecar keeps another app's data and replaces only ours")
+        XMPSidecar.write(mine, to: lightroomURL)
+        let rewritten = (try? String(contentsOf: lightroomURL, encoding: .utf8)) ?? ""
+        check(rewritten.components(separatedBy: "xmp:Rating=").count == 2
+              && rewritten.components(separatedBy: "<dc:subject>").count == 2,
+              "writing again doesn't duplicate this app's properties")
 
         // 13. import applies an existing XMP sidecar (§6.5 META-006)
         let xsrc = tmp.appendingPathComponent("xmpsource")

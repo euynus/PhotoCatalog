@@ -88,9 +88,48 @@ enum XMPSidecar {
         """
     }
 
+    /// Writes the photo's sidecar. An existing one — perhaps another app's, with its own develop
+    /// settings or history — keeps everything but the properties this app writes; the file is
+    /// replaced atomically.
     @discardableResult
     static func write(_ a: Asset, to url: URL) -> Bool {
-        (try? xmp(for: a).data(using: .utf8)?.write(to: url)) != nil
+        let text = (try? Data(contentsOf: url)).flatMap { merged(a, into: $0) } ?? xmp(for: a)
+        return (try? text.data(using: .utf8)?.write(to: url, options: .atomic)) != nil
+    }
+
+    /// The properties this app writes, as attributes or elements of an rdf:Description.
+    private static let managedProperties: Set<String> = [
+        "xmp:Rating", "xmp:Label", "exif:DateTimeOriginal", "exif:GPSLatitude", "exif:GPSLongitude",
+        "dc:subject", "dc:title", "dc:description", "dc:creator", "dc:rights",
+    ]
+
+    /// `existing` with this app's properties replaced by the photo's, everything else kept;
+    /// nil when it isn't XMP that can be edited (it's then written afresh).
+    static func merged(_ a: Asset, into existing: Data) -> String? {
+        guard let document = try? XMLDocument(data: existing, options: [.nodePreserveAll]),
+              let ours = try? XMLDocument(xmlString: xmp(for: a), options: []),
+              let ourDescription = (try? ours.nodes(forXPath: "//*[local-name()='Description']"))?.first as? XMLElement,
+              let descriptions = (try? document.nodes(forXPath: "//*[local-name()='Description']")) as? [XMLElement],
+              let target = descriptions.first else { return nil }
+        // take our properties out wherever another description carries them, attribute or element
+        for description in descriptions {
+            for name in managedProperties { description.removeAttribute(forName: name) }
+            for child in description.children ?? [] where managedProperties.contains(child.name ?? "") {
+                child.detach()
+            }
+        }
+        for namespace in ourDescription.namespaces ?? [] {
+            guard let prefix = namespace.name, let uri = namespace.stringValue,
+                  target.resolveNamespace(forName: prefix + ":x")?.stringValue != uri else { continue }
+            target.addNamespace(XMLNode.namespace(withName: prefix, stringValue: uri) as! XMLNode)
+        }
+        for attribute in ourDescription.attributes ?? [] where attribute.name != "rdf:about" {
+            target.addAttribute(attribute.copy() as! XMLNode)
+        }
+        for child in ourDescription.children ?? [] where child.kind == .element {
+            target.addChild(child.copy() as! XMLNode)
+        }
+        return document.xmlString(options: [.nodePreserveAll])
     }
 
     /// Applies a sidecar's metadata to `asset`: the sidecar's rating, label, text, credits,
