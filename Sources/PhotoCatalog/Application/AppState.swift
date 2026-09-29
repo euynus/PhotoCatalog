@@ -4987,8 +4987,8 @@ final class AppState {
             duplicateGroupsCache = DemoData.duplicateGroups.filter { group in
                 group.items.contains { demoLiveIds.contains($0.id) }
             }
-            let validStackIds = Set(PhotoStackService.stacks(from: duplicateGroupsCache).map(\.id))
-            collapsedStackIds.formIntersection(validStackIds)
+            // edited copies' stacks count too: collapsing one survives a duplicate recompute
+            collapsedStackIds.formIntersection(Set(photoStacks.map(\.id)))
             return
         }
         Task { [weak self, live] in
@@ -5003,8 +5003,7 @@ final class AppState {
             guard let self else { return }
             guard self.duplicateRecomputeGeneration == generation else { return }
             self.duplicateGroupsCache = groups
-            let validStackIds = Set(PhotoStackService.stacks(from: groups).map(\.id))
-            self.collapsedStackIds.formIntersection(validStackIds)
+            self.collapsedStackIds.formIntersection(Set(self.photoStacks.map(\.id)))
         }
     }
 
@@ -6684,11 +6683,11 @@ final class AppState {
         let ids = includingCompanions ? targetIds : selectionTargetIds
         let companions = includingCompanions ? assetPairing.companionsByPrimary : [:]
         let fm = FileManager.default
+        var seen = Set<String>()   // copies share a file
         return list.filter { ids.contains($0.id) }
             .flatMap { [$0] + (companions[$0.id] ?? []).compactMap { id in assetIndex[id].map { assets[$0] } } }
             .compactMap { $0.localPath }
-            .filter { fm.fileExists(atPath: $0) }
-            .reduce(into: [String]()) { paths, path in if !paths.contains(path) { paths.append(path) } }   // copies share a file
+            .filter { seen.insert($0).inserted && fm.fileExists(atPath: $0) }
             .map { URL(fileURLWithPath: $0) }
     }
 
@@ -7327,13 +7326,16 @@ final class AppState {
             push("无目录库", "warning")
             return
         }
-        Task { [weak self, real, trashCatalogURL] in
+        // copies in the selection as confirmed go too, not those selected by the time it's done
+        let selectedCopies = targetIds.filter { id in assetIndex[id].map { assets[$0].isVirtualCopy } ?? false }
+        Task { [weak self, real, trashCatalogURL, selectedCopies] in
             let result = await Task.detached(priority: .userInitiated) {
                 OriginalFileOperationService.trashOriginals(real)
             }.value
 
             guard let self,
-                  self.applyTrashedOriginals(result, expectedCatalogURL: trashCatalogURL) else {
+                  self.applyTrashedOriginals(result, expectedCatalogURL: trashCatalogURL,
+                                             selectedCopies: selectedCopies) else {
                 if !result.trashedIds.isEmpty {
                     let rolledBack = await Task.detached(priority: .userInitiated) {
                         OriginalFileOperationService.rollBackTrash(result.locations)
@@ -7349,7 +7351,8 @@ final class AppState {
     }
 
     @discardableResult
-    func applyTrashedOriginals(_ result: OriginalTrashReport, expectedCatalogURL: URL? = nil) -> Bool {
+    func applyTrashedOriginals(_ result: OriginalTrashReport, expectedCatalogURL: URL? = nil,
+                               selectedCopies: Set<String> = []) -> Bool {
         guard !result.trashedIds.isEmpty else {
             push(verbatim: L("已移到废纸篓 0 张")
                  + (result.failed > 0 ? L(" · \(result.failed) 失败") : ""),
@@ -7357,8 +7360,7 @@ final class AppState {
             return true
         }
         if let expectedCatalogURL, store?.packageURL != expectedCatalogURL { return false }
-        // the trashed files' virtual copies, and any copies in the selection, leave the catalog too
-        let selectedCopies = targetIds.filter { id in assetIndex[id].map { assets[$0].isVirtualCopy } ?? false }
+        // the trashed files' virtual copies, and any copies selected with them, leave the catalog too
         let removed = result.trashedIds.union(virtualCopyIds(of: result.trashedIds)).union(selectedCopies)
         guard mutate(removed, { $0.deleted = true }) else { return false }
         purgeCacheFiles(forAssetIds: removed)
