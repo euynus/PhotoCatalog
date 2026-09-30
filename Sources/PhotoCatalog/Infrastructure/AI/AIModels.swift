@@ -12,14 +12,15 @@ enum AIModels {
     enum Name: String, CaseIterable, Sendable {
         case superResolution = "SuperResolution"
         case denoise = "Denoise"
+        case inpaint = "Inpaint"
 
         /// Where the model runs fastest (measured on Apple silicon): the convolutional super
-        /// resolution on the Neural Engine, the attention in the denoiser on the GPU (twice as
-        /// fast as leaving it to Core ML; the Neural Engine takes over a minute just to load it).
+        /// resolution on the Neural Engine, the attention in the denoiser and LaMa's Fourier
+        /// convolutions on the GPU (the Neural Engine is slower and, for LaMa, less precise).
         var computeUnits: MLComputeUnits {
             switch self {
             case .superResolution: .all
-            case .denoise: .cpuAndGPU
+            case .denoise, .inpaint: .cpuAndGPU
             }
         }
     }

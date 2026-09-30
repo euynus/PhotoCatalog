@@ -91,7 +91,7 @@ enum DevelopRenderer {
             // lateral chromatic aberration is measured on the photo itself, once per file
             let lateral = settings.removeChromaticAberration ? ChromaticAberration.correction(url: url, isRaw: isRaw) : nil
             let lensed = DevelopRenderer.applyLens(base, settings, scale: min(1, scale), lateral: lateral)
-            let healed = DevelopRenderer.applySpots(lensed, settings)
+            let healed = DevelopRenderer.applySpots(lensed, settings, photo: (url: url, isRaw: isRaw))
             let toned = DevelopRenderer.applyTone(healed, settings)
             let colored = DevelopRenderer.applyLUT(
                 DevelopRenderer.applyMixer(DevelopRenderer.applyCurve(toned, settings), settings), settings)
@@ -104,6 +104,18 @@ enum DevelopRenderer {
             // effects follow the crop, which the crop tool's whole-frame view doesn't apply yet
             let finished = wholeFrame ? framed : DevelopRenderer.applyEffects(framed, settings, scale: min(1, scale))
             return visualizeSpots ? DevelopRenderer.visualizeSpots(finished) : finished
+        }
+
+        /// The photo as the spot at `index` finds it: decoded, lens-corrected, and with the spots
+        /// before it applied — what a remove spot's fill is made from.
+        func spotStage(_ settings: DevelopSettings, before index: Int) -> CIImage? {
+            guard let base = baseImage(settings, draft: false) else { return nil }
+            let scale = max(base.extent.width, base.extent.height) / max(fullLongEdge, 1)
+            let lateral = settings.removeChromaticAberration ? ChromaticAberration.correction(url: url, isRaw: isRaw) : nil
+            var earlier = settings
+            earlier.spots = Array(settings.spots.prefix(index))
+            let lensed = DevelopRenderer.applyLens(base, earlier, scale: min(1, scale), lateral: lateral)
+            return DevelopRenderer.applySpots(lensed, earlier, photo: (url: url, isRaw: isRaw))
         }
 
         /// The decoded photo with white balance and exposure: linear light, before any other edit.
@@ -476,7 +488,7 @@ enum DevelopRenderer {
 
     /// Each spot healed or cloned over, in order, on the lens-corrected photo. Every spot's work
     /// is cropped to its own disc, so Core Image only computes the neighborhood around it.
-    static func applySpots(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
+    static func applySpots(_ input: CIImage, _ s: DevelopSettings, photo: (url: URL, isRaw: Bool)? = nil) -> CIImage {
         guard !s.spots.isEmpty else { return input }
         let extent = input.extent
         let longEdge = max(extent.width, extent.height)
@@ -485,7 +497,14 @@ enum DevelopRenderer {
         func pixel(_ p: CGPoint) -> CGPoint {
             CGPoint(x: extent.minX + p.x * extent.width, y: extent.maxY - p.y * extent.height)
         }
-        for spot in s.spots where spot.opacity > 0 {
+        for (index, spot) in s.spots.enumerated() where spot.opacity > 0 {
+            if spot.mode == .remove {
+                // the fill made for this photo (made now if it's gone from the caches)
+                guard let photo, let fill = GenerativeFill.fill(for: index, settings: s, url: photo.url, isRaw: photo.isRaw),
+                      let mask = BrushRaster.dabs(spot.strokes, extent: extent) else { continue }
+                image = GenerativeFill.composite(fill, into: image, mask: mask, opacity: spot.opacity, extent: extent)
+                continue
+            }
             let radius = max(1, CGFloat(spot.radius) * longEdge)
             let target = pixel(spot.target), source = pixel(spot.source)
             let region = CGRect(x: target.x - radius, y: target.y - radius, width: radius * 2, height: radius * 2)

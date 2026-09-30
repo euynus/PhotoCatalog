@@ -28,6 +28,11 @@ enum BrushRaster {
         return image
     }
 
+    /// Strokes painted over black on `extent`, for a smart-remove spot's area.
+    static func dabs(_ strokes: [BrushStroke], extent: CGRect) -> CIImage? {
+        layer(strokes, extent: extent)
+    }
+
     /// Another mask's weight with brush strokes added to it and erased from it. Erasing wins
     /// where the two overlap, whatever order they were painted in.
     static func refine(_ base: CIImage, strokes: [BrushStroke], extent: CGRect) -> CIImage {

@@ -748,6 +748,45 @@ final class AppState {
         }
     }
 
+    /// A remove spot's fill being made, while the model works.
+    var developRemoving = false
+
+    /// Smart remove: fills the area painted over (`stroke`, in source-photo fractions) with what
+    /// the photo's surroundings suggest, made by the bundled inpainting model before the spot is
+    /// added, so every render finds it ready.
+    func addRemoval(_ stroke: BrushStroke, to assetId: String) {
+        guard !developRemoving, stroke.pointCount > 0, let asset = assetIndex[assetId].map({ assets[$0] }),
+              let source = developSource(for: asset) else { return }
+        let points = (0..<stroke.pointCount).map(stroke.point)
+        let center = CGPoint(x: points.map(\.x).reduce(0, +) / CGFloat(points.count),
+                             y: points.map(\.y).reduce(0, +) / CGFloat(points.count))
+        // the circle that holds every dab, for picking the spot out on the photo
+        let frame = developSourceSize(for: asset)
+        let longEdge = max(frame.width, frame.height)
+        let reach = points.map { hypot(($0.x - center.x) * frame.width, ($0.y - center.y) * frame.height) / longEdge }.max() ?? 0
+        var spot = SpotRemoval(target: center, source: center, radius: Double(reach) + stroke.radius)
+        spot.mode = .remove
+        spot.strokes = [stroke]
+        spot.opacity = developSpotBrush.opacity
+        var next = developSettings[assetId] ?? .neutral
+        next.spots.append(spot)
+        let index = next.spots.count - 1
+        developRemoving = true
+        Task { [weak self, next, spot] in
+            let fill = await ThumbnailRepairQueue.run(.visible) {
+                GenerativeFill.fill(for: index, settings: next, url: source.url, isRaw: source.isRaw)
+            } ?? nil
+            guard let self else { return }
+            self.developRemoving = false
+            guard fill != nil else {
+                self.push("原件不可用，无法移除", "warning")
+                return
+            }
+            self.developSelectedSpotId = spot.id
+            self.commitDevelopChange([assetId], undoName: L("移除")) { _, settings in settings.spots.append(spot) }
+        }
+    }
+
     func deleteSpot(_ id: String, from assetId: String) {
         var next = developSettings[assetId] ?? .neutral
         guard let index = next.spots.firstIndex(where: { $0.id == id }) else { return }

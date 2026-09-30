@@ -714,7 +714,7 @@
 "全部清除" = "Clear All";
 "清除污点去除" = "Clear Spot Removal";
 "污点模式" = "Spot Mode";
-"修复：取用纹理并匹配周围的颜色与亮度；仿制：原样复制" = "Heal takes the texture and matches the surrounding color and brightness; Clone copies as is";
+"修复：取用纹理并匹配周围的颜色与亮度；仿制：原样复制；移除：涂抹物体，由本机的 AI 模型按周围的内容补全" = "Heal takes the texture and matches the surrounding color and brightness; Clone copies as is; Remove fills what you paint over from its surroundings, with an AI model on this Mac";
 "污点大小" = "Spot Size";
 "不透明度" = "Opacity";
 "显示污点" = "Visualize Spots";
@@ -873,6 +873,9 @@
 
 /* Presentation/Develop/SpotEditor.swift */
 "点按污点修复 · 向外拖动设定大小 · 拖动圆圈移动，拖动边缘调整大小 · [ ] 画笔大小 · Delete 删除 · Esc 完成" = "Click a spot to heal it · Drag outward to size it · Drag a circle to move it, its edge to resize · [ ] brush size · Delete to remove · Esc when done";
+"涂抹要移除的物体，松开后自动补全 · [ ] 画笔大小 · Delete 删除 · Esc 完成" = "Paint over what should go; letting go fills it · [ ] brush size · Delete removes · Esc to finish";
+"正在移除…" = "Removing…";
+"原件不可用，无法移除" = "The original isn't available, so nothing was removed";
 "编辑污点" = "Edit Spot";
 
 /* Presentation/Develop/ToneCurveEditor.swift */

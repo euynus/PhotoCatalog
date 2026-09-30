@@ -1,21 +1,24 @@
 // ============================================================
-//  Spot removal — Lightroom's heal and clone spots
+//  Spot removal — Lightroom's heal, clone and remove spots
 // ============================================================
 import Foundation
 import CoreGraphics
 
 /// A circle painted over with another part of the photo. Heal brings the source's texture and
-/// matches the target's surrounding color and brightness; clone copies the source as it is.
+/// matches the target's surrounding color and brightness; clone copies the source as it is;
+/// remove fills an area painted over with what a generative model makes of its surroundings
+/// (see `GenerativeFill`).
 /// Positions are fractions of the source photo (top-left origin, before quarter turns,
 /// mirroring, straighten and crop), like masks.
 struct SpotRemoval: Codable, Hashable, Sendable, Identifiable {
     enum Mode: String, Codable, CaseIterable, Identifiable, Sendable {
-        case heal, clone
+        case heal, clone, remove
         var id: Self { self }
         var title: String {
             switch self {
             case .heal: L("修复")
             case .clone: L("仿制")
+            case .remove: L("移除")
             }
         }
     }
@@ -30,6 +33,9 @@ struct SpotRemoval: Codable, Hashable, Sendable, Identifiable {
     /// How much of the radius the edge fades over, 0…100, and the spot's strength, 0…100.
     var feather = 50.0
     var opacity = 100.0
+    /// Remove: the area painted over, as brush strokes (`target` and `radius` then just circle
+    /// it, for picking the spot out).
+    var strokes: [BrushStroke] = []
 
     init(target: CGPoint, source: CGPoint, radius: Double) {
         self.target = target
@@ -38,8 +44,13 @@ struct SpotRemoval: Codable, Hashable, Sendable, Identifiable {
     }
 
     var fingerprintText: String {
-        [target.x, target.y, source.x, source.y, radius, feather, opacity].map { String(format: "%.4f", $0) }
-            .joined(separator: ",") + (mode == .clone ? "c" : "h")
+        let geometry = [target.x, target.y, source.x, source.y, radius, feather, opacity].map { String(format: "%.4f", $0) }
+            .joined(separator: ",")
+        switch mode {
+        case .heal: return geometry + "h"
+        case .clone: return geometry + "c"
+        case .remove: return geometry + "r\(strokes.count),\(BrushStroke.hash(strokes))"
+        }
     }
 }
 
@@ -53,6 +64,7 @@ extension SpotRemoval {
         radius = try c.decodeIfPresent(Double.self, forKey: .radius) ?? 0.01
         feather = try c.decodeIfPresent(Double.self, forKey: .feather) ?? 50
         opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? 100
+        strokes = try c.decodeIfPresent([BrushStroke].self, forKey: .strokes) ?? []
     }
 }
 

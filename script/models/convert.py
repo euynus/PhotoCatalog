@@ -202,24 +202,61 @@ def denoise(weights, _):
     return load_scunet(path), 256, "Denoise"
 
 
-MODELS = {"superresolution": super_resolution, "denoise": denoise}
+# ---- smart remove: LaMa, big-lama (Apache-2.0, advimman/lama), as IOPaint exports it ----
+def inpaint(weights, _):
+    """The generator as a TorchScript module (image and mask in, the filled image out); it
+    blanks the hole itself, so nothing under the mask reaches the result."""
+    path = fetch("https://github.com/Sanster/models/releases/download/add_big_lama/big-lama.pt",
+                 "344c77bbcb158f17dd143070d1e789f38a66c04202311ae3a258ef66667a9ea9", weights)
+    return torch.jit.load(path, map_location="cpu").eval(), 512, "Inpaint"
+
+
+def quantize_inpaint(mlmodel):
+    """8-bit weights for the plain convolutions between LaMa's local and global branches (three
+    quarters of it); the Fourier units and the first and last layers stay 16-bit, since
+    quantizing those tints the fill."""
+    import re
+    import coremltools.optimize.coreml as cto
+    block = list(mlmodel.get_spec().mlProgram.functions["main"].block_specializations.values())[0]
+    names = [op.outputs[0].name for op in block.operations if op.type == "const"
+             and re.search(r"_(convl2g|convg2l|convl2l)_weight_to_fp16$", op.outputs[0].name)]
+    config = cto.OptimizationConfig(op_name_configs={n: cto.OpLinearQuantizerConfig(mode="linear_symmetric") for n in names})
+    return cto.linear_quantize_weights(mlmodel, config)
+
+
+MODELS = {"superresolution": super_resolution, "denoise": denoise, "inpaint": inpaint}
 
 
 def convert(name, weights, denoise, out):
     import coremltools as ct
     model, tile, output_name = MODELS[name](weights, denoise)
-    example = torch.rand(1, 3, tile, tile)
-    traced = torch.jit.trace(model, example)
-    mlmodel = ct.convert(traced, inputs=[ct.TensorType(name="input", shape=example.shape)],
-                         outputs=[ct.TensorType(name="output")], convert_to="mlprogram",
-                         compute_precision=ct.precision.FLOAT16, minimum_deployment_target=ct.target.macOS14)
+    if name == "inpaint":
+        # a smooth image with a rectangular hole: random noise has no structure to fill from
+        ramp = torch.linspace(0, 1, tile)
+        example = torch.stack([ramp[None, :].expand(tile, tile), ramp[:, None].expand(tile, tile),
+                               torch.full((tile, tile), 0.5)])[None]
+        mask = torch.zeros(1, 1, tile, tile)
+        mask[:, :, tile // 3:tile // 2, tile // 3:tile // 2] = 1
+        mlmodel = ct.convert(model, inputs=[ct.TensorType(name="image", shape=example.shape),
+                                            ct.TensorType(name="mask", shape=mask.shape)],
+                             outputs=[ct.TensorType(name="output")], convert_to="mlprogram",
+                             compute_precision=ct.precision.FLOAT16, minimum_deployment_target=ct.target.macOS14)
+        mlmodel = quantize_inpaint(mlmodel)
+        feed, inputs = {"image": example.numpy(), "mask": mask.numpy()}, (example, mask)
+    else:
+        example = torch.rand(1, 3, tile, tile)
+        traced = torch.jit.trace(model, example)
+        mlmodel = ct.convert(traced, inputs=[ct.TensorType(name="input", shape=example.shape)],
+                             outputs=[ct.TensorType(name="output")], convert_to="mlprogram",
+                             compute_precision=ct.precision.FLOAT16, minimum_deployment_target=ct.target.macOS14)
+        feed, inputs = {"input": example.numpy()}, (example,)
     # the conversion should change nothing but rounding
     with torch.no_grad():
-        expected = model(example).numpy()
-    got = mlmodel.predict({"input": example.numpy()})["output"]
-    error = float(np.abs(got - expected).max())
-    print(f"{output_name}: largest difference from PyTorch {error:.4f}")
-    if error > 0.05:
+        expected = model(*inputs).numpy()
+    got = mlmodel.predict(feed)["output"]
+    error, mean = float(np.abs(got - expected).max()), float(np.abs(got - expected).mean())
+    print(f"{output_name}: difference from PyTorch largest {error:.4f}, mean {mean:.5f}")
+    if error > 0.05 and mean > 0.002:
         sys.exit("the converted model doesn't match")
     os.makedirs(out, exist_ok=True)
     mlmodel.short_description = f"{output_name} ({tile}x{tile} tiles)"

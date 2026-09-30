@@ -15,6 +15,7 @@ enum EnhanceCheck {
         checkSuperResolution()
         checkDenoise()
         checkTIFF()
+        checkRemove()
         print("--- enhance assertions passed ---")
     }
 
@@ -113,5 +114,54 @@ enum EnhanceCheck {
                && (exif?[kCGImagePropertyExifISOSpeedRatings] as? [Int]) == [6400]
                && (properties?[kCGImagePropertyOrientation] as? Int ?? 1) == 1 && tiff?[kCGImagePropertyTIFFCompression] as? Int == 5,
                "a 16-bit compressed TIFF with the original's camera details, upright")
+    }
+
+    /// Smart remove: a dark disc on a gradient is filled with the gradient, and the fill follows
+    /// an exposure change made afterwards.
+    private static func checkRemove() {
+        guard AIModels.isAvailable(.inpaint) else { return assertionFailure("the inpainting model is bundled") }
+        let width = 480, height = 360
+        let scene = planes(width, height) { x, y in
+            let background = 0.3 + 0.4 * Float(x) / Float(width)
+            return hypot(Float(x) - 240, Float(y) - 180) < 30 ? 0.05 : background
+        }
+        guard let image = Enhance.image(scene) else { return assertionFailure("a scene was drawn") }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-remove-\(UUID().uuidString).tif")
+        defer { try? FileManager.default.removeItem(at: url) }
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.tiff" as CFString, 1, nil) else { return }
+        CGImageDestinationAddImage(destination, image, nil)
+        CGImageDestinationFinalize(destination)
+
+        var stroke = BrushStroke()
+        stroke.radius = 40.0 / 480   // a little wider than the disc
+        stroke.feather = 30
+        stroke.append(CGPoint(x: 0.5, y: 0.5))
+        var spot = SpotRemoval(target: CGPoint(x: 0.5, y: 0.5), source: CGPoint(x: 0.5, y: 0.5), radius: stroke.radius)
+        spot.mode = .remove
+        spot.strokes = [stroke]
+        var settings = DevelopSettings()
+        settings.spots = [spot]
+        defer { GenerativeFill.forget(index: 0, settings: settings, url: url) }
+        guard GenerativeFill.fill(for: 0, settings: settings, url: url, isRaw: false) != nil,
+              let source = DevelopRenderer.Source(url: url, isRaw: false, maxPixel: nil) else {
+            return assertionFailure("a fill was made")
+        }
+        func luma(_ settings: DevelopSettings, _ x: Int, _ y: Int) -> Float {
+            guard let rendered = source.image(settings), let planes = Enhance.planes(of: rendered) else { return -1 }
+            return Float(planes.value(1, x, y))
+        }
+        let filled = luma(settings, 240, 180), around = luma(settings, 180, 180), beside = luma(settings, 300, 180)
+        assert(filled > 0.2 && abs(filled - (around + beside) / 2) < 0.08,
+               "removing fills the disc with the gradient around it (\(filled) between \(around) and \(beside))")
+        assert(abs(luma(settings, 40, 40) - luma(.neutral, 40, 40)) < 0.01, "and leaves the rest alone")
+        // the same fill, after the photo is made brighter: it matches its new surroundings
+        var brighter = settings
+        brighter.exposure = 1
+        let brightFilled = luma(brighter, 240, 180), brightAround = (luma(brighter, 180, 180) + luma(brighter, 300, 180)) / 2
+        assert(abs(brightFilled - brightAround) < 0.08, "the fill follows a later exposure change (\(brightFilled) vs \(brightAround))")
+        let stored = (try? JSONEncoder().encode(spot)).flatMap { try? JSONDecoder().decode(SpotRemoval.self, from: $0) }
+        var moved = spot
+        moved.strokes[0].points[0] += 0.01
+        assert(stored == spot && moved.fingerprintText != spot.fingerprintText, "a remove spot keeps what was painted")
     }
 }

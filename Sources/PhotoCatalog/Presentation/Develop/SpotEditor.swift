@@ -6,7 +6,8 @@ import AppKit
 
 /// The finished photo with its spots drawn over it. A click heals the speck under it (a drag
 /// outward sets the size first); a spot's circle moves it, its rim resizes it, and the
-/// selected spot's source circle moves where it copies from.
+/// selected spot's source circle moves where it copies from. In remove mode a drag paints over
+/// what should go, and letting go fills it.
 struct SpotEditor: View {
     @Environment(AppState.self) private var app
     let asset: Asset
@@ -21,6 +22,10 @@ struct SpotEditor: View {
     @State private var hover: CGPoint?
     /// A spot being sized by a drag, before it's added: center and rim on screen.
     @State private var sizing: (center: CGPoint, rim: CGPoint)?
+    /// Remove mode: the stroke being painted, on screen.
+    @State private var painting: [CGPoint] = []
+
+    private var removing: Bool { app.developSpotBrush.mode == .remove }
 
     private static let rimTolerance: CGFloat = 5
 
@@ -36,6 +41,24 @@ struct SpotEditor: View {
                         .frame(width: display.width, height: display.height)
                         .offset(x: display.minX, y: display.minY)
                     SpotOverlay(spots: settings.spots, selectedId: app.developSelectedSpotId, mapper: mapper)
+                    if !painting.isEmpty {
+                        let radius = mapper.screenLength(ofSourceLength: app.developSpotBrush.radius)
+                        Path { path in
+                            path.addLines(painting.count > 1 ? painting : [painting[0], painting[0]])
+                        }
+                        .stroke(Color.red.opacity(0.45), style: StrokeStyle(lineWidth: radius * 2, lineCap: .round, lineJoin: .round))
+                        .allowsHitTesting(false)
+                    }
+                    if app.developRemoving {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("正在移除…").font(.system(size: 12)).foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .position(x: display.midX, y: display.minY + 24)
+                        .allowsHitTesting(false)
+                    }
                     if let sizing {
                         let radius = hypot(sizing.rim.x - sizing.center.x, sizing.rim.y - sizing.center.y)
                         Circle().strokeBorder(.white, lineWidth: 1.5)
@@ -74,20 +97,26 @@ struct SpotEditor: View {
         }
         .padding(12)
         .overlay(alignment: .bottom) {
-            Text("点按污点修复 · 向外拖动设定大小 · 拖动圆圈移动，拖动边缘调整大小 · [ ] 画笔大小 · Delete 删除 · Esc 完成")
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.canvasText2)
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(.black.opacity(0.45), in: Capsule())
-                .padding(.bottom, 10)
-                .allowsHitTesting(false)
+            Group {
+                if removing {
+                    Text("涂抹要移除的物体，松开后自动补全 · [ ] 画笔大小 · Delete 删除 · Esc 完成")
+                } else {
+                    Text("点按污点修复 · 向外拖动设定大小 · 拖动圆圈移动，拖动边缘调整大小 · [ ] 画笔大小 · Delete 删除 · Esc 完成")
+                }
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(Theme.canvasText2)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(.black.opacity(0.45), in: Capsule())
+            .padding(.bottom, 10)
+            .allowsHitTesting(false)
         }
     }
 
     // ---- hit testing ----
     private func target(at point: CGPoint, _ mapper: MaskMapper) -> SpotDrag.Target? {
         func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
-        if let spot = settings.spots.first(where: { $0.id == app.developSelectedSpotId }) {
+        if let spot = settings.spots.first(where: { $0.id == app.developSelectedSpotId }), spot.mode != .remove {
             let center = mapper.screen(spot.target), radius = mapper.screenLength(ofSourceLength: spot.radius)
             let d = distance(point, center)
             // the inside moves the spot; only a thin band at the rim resizes it, so a small spot
@@ -128,11 +157,21 @@ struct SpotEditor: View {
                     }
                     drag = SpotDrag(target: hit, start: saved.spots.first { $0.id == id })
                 }
+                if removing, drag?.target == nil {
+                    // painting what's to go
+                    if painting.isEmpty { painting = [value.startLocation] }
+                    if let last = painting.last, hypot(value.location.x - last.x, value.location.y - last.y) >= 2 {
+                        painting.append(value.location)
+                    }
+                    return
+                }
                 guard let drag, hypot(value.translation.width, value.translation.height) >= 2 else { return }
                 guard let start = drag.start else {
                     if drag.target == nil { sizing = (value.startLocation, value.location) }
                     return
                 }
+                // a remove spot's fill belongs where it was made: it's picked out, not moved
+                if start.mode == .remove { return }
                 var spot = start
                 func shifted(_ source: CGPoint) -> CGPoint {
                     let screen = mapper.screen(source)
@@ -155,9 +194,18 @@ struct SpotEditor: View {
                 app.updateDevelopDraft(next, for: asset.id)
             }
             .onEnded { value in
-                defer { drag = nil; sizing = nil }
+                defer { drag = nil; sizing = nil; painting = [] }
                 guard let drag else { return }
                 let moved = hypot(value.translation.width, value.translation.height) >= 2
+                if removing, drag.target == nil {
+                    guard mapper.display.contains(value.startLocation), !app.developRemoving else { return }
+                    var stroke = BrushStroke()
+                    stroke.radius = app.developSpotBrush.radius
+                    stroke.feather = 30
+                    for point in painting.isEmpty ? [value.startLocation] : painting { stroke.append(mapper.source(point)) }
+                    app.addRemoval(stroke, to: asset.id)
+                    return
+                }
                 switch drag.target {
                 case nil:
                     // a new spot, on the photo only: the brush's size, or as big as the drag
@@ -198,11 +246,27 @@ private struct SpotOverlay: View {
     var body: some View {
         Canvas { context, _ in
             for spot in spots {
+                let selected = spot.id == selectedId
+                if spot.mode == .remove {
+                    // the area painted over, outlined
+                    for stroke in spot.strokes {
+                        let points = (0..<stroke.pointCount).map { mapper.screen(stroke.point($0)) }
+                        guard let first = points.first else { continue }
+                        var path = Path()
+                        path.addLines(points.count > 1 ? points : [first, first])
+                        let width = max(mapper.screenLength(ofSourceLength: stroke.radius) * 2, 4)
+                        // the painted band's outer edge only: overlapping segments merged
+                        let outline = Path(path.cgPath.copy(strokingWithWidth: width, lineCap: .round, lineJoin: .round,
+                                                            miterLimit: 10).normalized())
+                        context.stroke(outline, with: .color(.black.opacity(0.45)), lineWidth: selected ? 3 : 2.5)
+                        context.stroke(outline, with: .color(.white.opacity(selected ? 1 : 0.7)), lineWidth: selected ? 1.5 : 1)
+                    }
+                    continue
+                }
                 let center = mapper.screen(spot.target)
                 let radius = max(mapper.screenLength(ofSourceLength: spot.radius), 3)
                 let circle = Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius,
                                                     width: radius * 2, height: radius * 2))
-                let selected = spot.id == selectedId
                 context.stroke(circle, with: .color(.black.opacity(0.45)), lineWidth: selected ? 3 : 2.5)
                 context.stroke(circle, with: .color(.white.opacity(selected ? 1 : 0.7)), lineWidth: selected ? 1.5 : 1)
                 guard selected else { continue }

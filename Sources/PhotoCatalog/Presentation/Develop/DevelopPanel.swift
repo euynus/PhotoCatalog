@@ -459,7 +459,13 @@ struct DevelopPanel: View {
                 get: { index.map { settings.spots[$0].mode } ?? app.developSpotBrush.mode },
                 set: { mode in
                     app.developSpotBrush.mode = mode
-                    guard let index else { return }
+                    // heal and clone trade places; a remove spot is made by painting, not by switching
+                    guard let index, mode != .remove, settings.spots[index].mode != .remove else {
+                        if mode == .remove || index.map({ settings.spots[$0].mode == .remove }) == true {
+                            app.developSelectedSpotId = nil
+                        }
+                        return
+                    }
                     var next = app.developSettings[asset.id] ?? .neutral
                     guard next.spots.indices.contains(index) else { return }
                     next.spots[index].mode = mode
@@ -470,9 +476,18 @@ struct DevelopPanel: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .controlSize(.small)
-            .help("修复：取用纹理并匹配周围的颜色与亮度；仿制：原样复制")
+            .help("修复：取用纹理并匹配周围的颜色与亮度；仿制：原样复制；移除：涂抹物体，由本机的 AI 模型按周围的内容补全")
+            if app.developRemoving {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("正在移除…").font(.system(size: 11)).foregroundStyle(Theme.text3)
+                }
+            }
             // with a spot selected the sliders edit it; otherwise they set up the next spot
-            if let index {
+            if let index, settings.spots[index].mode == .remove {
+                slider(DevelopControl(id: \DevelopSettings.spots[index].opacity, title: L("不透明度"), range: 0...100,
+                                      step: 1, neutral: 100) { String(format: "%.0f", $0) }, asset, settings)
+            } else if let index {
                 let spot = settings.spots[index]
                 DevelopSlider(title: L("大小"), value: SpotBrush.size(forRadius: spot.radius), range: 1...100, step: 1,
                               format: { String(format: "%.0f", $0) }, isNeutral: true,
