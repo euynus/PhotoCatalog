@@ -238,6 +238,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已取样 %lld 处</string>
 	</dict>
+	<key>已取消增强，已完成 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已取消增强，已完成 %lld 张</string>
+	</dict>
 	<key>已同步到 %lld 张照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -247,6 +252,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已在外部编辑器中打开 %lld 张</string>
+	</dict>
+	<key>已增强 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已增强 %lld 张照片</string>
 	</dict>
 	<key>已复制 %lld 个原件</key>
 	<dict>
@@ -388,6 +398,16 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>显示全部 %lld 步</string>
 	</dict>
+	<key>有 %lld 张照片所在的文件夹是只读的，无法保存增强结果</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>有 %lld 张照片所在的文件夹是只读的，无法保存增强结果</string>
+	</dict>
+	<key>有 %lld 张照片无法读取，未能增强</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>有 %lld 张照片无法读取，未能增强</string>
+	</dict>
 	<key>未命名 · %lld 组</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -412,6 +432,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>用于 %lld 张照片，下级关键词一并更新。输入已有的关键词即合并。</string>
+	</dict>
+	<key>用这台 Mac 上的 AI 模型处理 %lld 张照片。结果存为原片旁的 16 位 TIFF（…-Enhanced.tif），带原片的元数据加入目录库，修图设置也一并带过去（白平衡除外）。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>用这台 Mac 上的 AI 模型处理 %lld 张照片。结果存为原片旁的 16 位 TIFF（…-Enhanced.tif），带原片的元数据加入目录库，修图设置也一并带过去（白平衡除外）。</string>
 	</dict>
 	<key>筛选 %lld 张</key>
 	<dict>

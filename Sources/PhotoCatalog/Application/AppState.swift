@@ -4326,6 +4326,134 @@ final class AppState {
         }
     }
 
+    // ---------- enhance: AI denoise and super resolution ----------
+    /// The photos the Enhance dialog works on.
+    var enhanceTargets: [Asset] = []
+    var enhanceOptions: Enhance.Options = {
+        let defaults = UserDefaults.standard
+        var options = Enhance.Options()
+        if let denoise = defaults.object(forKey: "pc_enhanceDenoise") as? Bool { options.denoise = denoise }
+        if let amount = defaults.object(forKey: "pc_enhanceAmount") as? Double { options.denoiseAmount = amount }
+        options.superResolution = defaults.bool(forKey: "pc_enhanceSuperResolution")
+        return options
+    }() {
+        didSet {
+            let defaults = UserDefaults.standard
+            defaults.set(enhanceOptions.denoise, forKey: "pc_enhanceDenoise")
+            defaults.set(enhanceOptions.denoiseAmount, forKey: "pc_enhanceAmount")
+            defaults.set(enhanceOptions.superResolution, forKey: "pc_enhanceSuperResolution")
+        }
+    }
+    /// The run in progress: photos finished, how many in all, and how far the current one is.
+    var enhanceProgress: (done: Int, total: Int, fraction: Double)?
+    @ObservationIgnored private var enhanceCancellation: CancellationFlag?
+
+    var canEnhance: Bool {
+        onboarded && sheet == nil && enhanceProgress == nil && !selectionTargetIds.isEmpty && canOperateOnSelectedOriginals
+            && AIModels.isAvailable(.denoise) && AIModels.isAvailable(.superResolution)
+    }
+
+    /// 照片 → 增强…: AI denoise and super resolution for the selected photos, with a preview.
+    func showEnhance() {
+        let targets = photoMergeCandidates().filter { developSource(for: $0) != nil }
+        guard !targets.isEmpty else {
+            push("请选择有原件的照片", "info")
+            return
+        }
+        enhanceTargets = targets
+        sheet = "enhance"
+    }
+
+    /// Where a photo's pixels come from for Enhance: its original (a RAW over its JPEG).
+    func enhanceSource(for asset: Asset) -> (url: URL, isRaw: Bool)? { developSource(for: asset) }
+
+    /// Runs Enhance on each target in turn: its pixels as shot, denoised and/or enlarged, saved
+    /// as `<name>-Enhanced.tif` beside the original with its metadata, added to the catalog
+    /// with the photo's catalog details and develop settings (less the white balance, which the
+    /// new file already carries).
+    func enhancePhotos() {
+        let targets = enhanceTargets, options = enhanceOptions
+        guard !targets.isEmpty, !options.isEmpty, enhanceProgress == nil, let coordinator, let store else { return }
+        let sources = targets.map { developSource(for: $0) }
+        let catalogURL = store.packageURL
+        let previewSize = previewMaxPixel
+        let albumId = selection.type == .album ? selection.id : nil
+        let cancellation = CancellationFlag()
+        enhanceCancellation = cancellation
+        enhanceProgress = (0, targets.count, 0)
+        Task { [weak self, targets, coordinator] in
+            var made: [(url: URL, source: Asset, asset: Asset?)] = []
+            var unreadable = 0, readOnly = 0
+            for (index, target) in targets.enumerated() {
+                guard !cancellation.isSet else { break }
+                let source = sources[index]
+                let outcome: EnhanceOutcome = await withCheckedContinuation { continuation in
+                    Enhance.queue.async {
+                        guard let source,
+                              let image = DevelopRenderer.Source(url: source.url, isRaw: source.isRaw, maxPixel: nil)?.image(.neutral)
+                        else { return continuation.resume(returning: .unreadable) }
+                        let folder = source.url.deletingLastPathComponent()
+                        guard FileManager.default.isWritableFile(atPath: folder.path) else {
+                            return continuation.resume(returning: .readOnly)
+                        }
+                        let planes = Enhance.enhance(image, options: options, progress: { fraction in
+                            Task { @MainActor in self?.enhanceProgress = (index, targets.count, fraction) }
+                        }, cancelled: { cancellation.isSet })
+                        guard let planes, let result = Enhance.image(planes) else {
+                            return continuation.resume(returning: cancellation.isSet ? .cancelled : .unreadable)
+                        }
+                        let url = Self.freeURL(in: folder, stem: source.url.deletingPathExtension().lastPathComponent + "-Enhanced",
+                                               extension: "tif")
+                        guard Enhance.writeTIFF(result, to: url, metadataFrom: source.url) else {
+                            return continuation.resume(returning: .unreadable)
+                        }
+                        let imported = coordinator.importFiles([url], from: folder, readSidecar: false,
+                                                               previewMaxPixel: previewSize).first
+                        continuation.resume(returning: .made(url: url, asset: imported))
+                    }
+                }
+                switch outcome {
+                case .made(let url, let asset): made.append((url, target, asset))
+                case .unreadable: unreadable += 1
+                case .readOnly: readOnly += 1
+                case .cancelled: break
+                }
+            }
+            guard let self else { return }
+            self.enhanceProgress = nil
+            self.enhanceCancellation = nil
+            guard self.store?.packageURL == catalogURL else { return }
+            if !made.isEmpty {
+                self.finishExternalEdit(made, editor: nil, expected: made.count, albumId: albumId)
+                // the new photos keep the look their originals were given
+                var carried: [String: DevelopSettings] = [:]
+                for result in made {
+                    guard let asset = result.asset, let settings = self.developSettings[result.source.id] else { continue }
+                    carried[asset.id] = settings.withoutWhiteBalance
+                }
+                if !carried.isEmpty { self.commitDevelop(carried, undoName: L("增强")) }
+            }
+            if cancellation.isSet {
+                self.push(made.isEmpty ? "已取消增强" : "已取消增强，已完成 \(made.count) 张", "info")
+            } else if unreadable + readOnly == 0 {
+                self.push(made.count == 1 ? "已增强照片" : "已增强 \(made.count) 张照片", "wand.and.stars")
+            } else if readOnly > 0 {
+                self.push("有 \(readOnly) 张照片所在的文件夹是只读的，无法保存增强结果", "warning")
+            } else {
+                self.push("有 \(unreadable) 张照片无法读取，未能增强", "warning")
+            }
+        }
+    }
+
+    func cancelEnhance() {
+        enhanceCancellation?.set()
+    }
+
+    private enum EnhanceOutcome: Sendable {
+        case made(url: URL, asset: Asset?)
+        case unreadable, readOnly, cancelled
+    }
+
     /// `<stem>.<ext>` in `folder`, or `<stem>-2.<ext>`… when that's taken.
     nonisolated static func freeURL(in folder: URL, stem: String, extension ext: String) -> URL {
         var url = folder.appendingPathComponent("\(stem).\(ext)"), number = 2

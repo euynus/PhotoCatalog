@@ -17,6 +17,7 @@ struct StatusBar: View {
             Spacer(minLength: 8)
             ImportProgressLabel()
             ExportProgressLabel()
+            EnhanceProgressLabel()
             OriginalsCheckLabel()
             MaintenanceLabels()
             if app.view == .grid && !app.isDuplicates && !app.isPlaces {
@@ -132,6 +133,31 @@ private struct ExportProgressLabel: View {
                 .foregroundStyle(Theme.text3)
                 .help("取消导出")
                 .accessibilityLabel("取消导出")
+            }
+            .foregroundStyle(Theme.accent)
+            .fixedSize()
+        }
+    }
+}
+
+private struct EnhanceProgressLabel: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        if let progress = app.enhanceProgress {
+            HStack(spacing: 5) {
+                ProgressView(value: (Double(progress.done) + progress.fraction) / Double(max(progress.total, 1)))
+                    .tint(Theme.accent)
+                    .frame(width: 54)
+                Text(progress.total > 1 ? L("增强 \(progress.done + 1)/\(progress.total)") : L("正在增强…"))
+                    .monospacedDigit()
+                Button { app.cancelEnhance() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.text3)
+                .help("取消增强")
+                .accessibilityLabel("取消增强")
             }
             .foregroundStyle(Theme.accent)
             .fixedSize()

@@ -799,6 +799,22 @@
 			<string>%lld colors</string>
 		</dict>
 	</dict>
+	<key>已取消增强，已完成 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Enhance canceled; %#@n1@ finished</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>已同步到 %lld 张照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -819,6 +835,22 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>Opened %#@n1@ in the external editor</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
+	<key>已增强 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n1@ enhanced</string>
 		<key>n1</key>
 		<dict>
 			<key>NSStringFormatSpecTypeKey</key>
@@ -1301,6 +1333,38 @@
 			<string>%lld steps</string>
 		</dict>
 	</dict>
+	<key>有 %lld 张照片所在的文件夹是只读的，无法保存增强结果</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n1@ are in read-only folders, so their results couldn't be saved</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
+	<key>有 %lld 张照片无法读取，未能增强</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n1@ couldn't be read, so they weren't enhanced</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>未命名 · %lld 组</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -1369,6 +1433,22 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>Used by %#@n1@. Keywords under it are updated too. Enter an existing keyword to merge.</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
+	<key>用这台 Mac 上的 AI 模型处理 %lld 张照片。结果存为原片旁的 16 位 TIFF（…-Enhanced.tif），带原片的元数据加入目录库，修图设置也一并带过去（白平衡除外）。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Processes %#@n1@ with AI models on this Mac. Each result is saved as a 16-bit TIFF beside its original (…-Enhanced.tif) and added to the catalog with the original's metadata and develop settings (except white balance).</string>
 		<key>n1</key>
 		<dict>
 			<key>NSStringFormatSpecTypeKey</key>

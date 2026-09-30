@@ -78,6 +78,7 @@ struct PhotoContextMenu: View {
             Button("HDR…") { act { app.showPhotoMerge(.hdr) } }
             Button("全景…") { act { app.showPhotoMerge(.panorama) } }
         }
+        Button("增强…") { act { app.showEnhance() } }
         Button("从文件读取元数据") { act { app.readMetadataFromFiles() } }
 
         Button("设置位置…") { act { app.showLocationEditor() } }

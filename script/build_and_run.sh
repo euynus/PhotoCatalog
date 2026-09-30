@@ -93,6 +93,10 @@ cp "$BUILD_BINARY" "$APP_BINARY"
 cp "$ROOT_DIR/Resources/AppIcon.icns" "$APP_RESOURCES/AppIcon.icns"
 # UI translations (keys are the Chinese source strings; see Domain/Localization.swift)
 cp -R "$ROOT_DIR/Resources/Localization/"*.lproj "$APP_RESOURCES/"
+# AI models (Core ML packages the app compiles on first use) and their licenses
+if [[ -d "$ROOT_DIR/Resources/Models" ]]; then
+  cp -R "$ROOT_DIR/Resources/Models" "$APP_RESOURCES/Models"
+fi
 chmod +x "$APP_BINARY"
 
 cat >"$INFO_PLIST" <<PLIST
