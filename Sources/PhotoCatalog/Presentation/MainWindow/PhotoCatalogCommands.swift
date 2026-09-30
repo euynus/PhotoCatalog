@@ -195,6 +195,9 @@ struct PhotoCatalogCommands: Commands {
             Button("搜索") { perform("视图.搜索") { app.focusSearch() } }
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(app.sheet != nil || !app.onboarded)
+            Button("用自然语言查找…") { perform("视图.自然语言查找") { app.showNaturalSearch() } }
+                .keyboardShortcut("f", modifiers: [.command, .option])
+                .disabled(app.sheet != nil || !app.onboarded)
             Button("显示/隐藏筛选栏") { perform("视图.显示隐藏筛选栏") { app.toggleFilterBar() } }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
                 .disabled(app.sheet != nil || !app.onboarded)

@@ -4563,6 +4563,58 @@ final class AppState {
         return changed
     }
 
+    // ---------- AI: natural-language search ----------
+    var naturalSearchRunning = false
+    /// The last sentence searched for, to start the dialog with.
+    var naturalSearchQuery = ""
+
+    /// 编辑 → 用自然语言查找…
+    func showNaturalSearch() {
+        guard onboarded, sheet == nil else { return }
+        sheet = "naturalSearch"
+    }
+
+    /// What the catalog holds, for the model to pick from: cameras, lenses and keywords by how
+    /// often they're used, and the file types present.
+    func searchVocabulary() -> PhotoSearch.Vocabulary {
+        let live = assets.filter { !$0.deleted }
+        return PhotoSearch.Vocabulary(
+            cameras: countMetadataValues(\.camera).sorted { $0.count > $1.count }.map(\.name),
+            lenses: countMetadataValues(\.lens).sorted { $0.count > $1.count }.map(\.name),
+            keywords: keywordList.sorted { $0.count > $1.count }.map(\.name),
+            types: Array(Set(live.map { $0.type.uppercased() })).sorted())
+    }
+
+    /// Reads `query` with the language model and shows what it asks for: the filter bar and the
+    /// search box set, within the current source. True when the sentence was understood.
+    func searchNaturally(_ query: String) async -> Bool {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty, !naturalSearchRunning else { return false }
+        guard isLLMReady else {
+            push(verbatim: (llmConfiguration.isComplete ? LLMError.missingKey : LLMError.notConfigured).message, "warning")
+            return false
+        }
+        naturalSearchRunning = true
+        defer { naturalSearchRunning = false }
+        naturalSearchQuery = query
+        let vocabulary = searchVocabulary()
+        do {
+            let reply = try await askLLM(PhotoSearch.request(query, today: .now, vocabulary: vocabulary,
+                                                             chinese: PhotoDescriber.answersInChinese))
+            guard let interpretation = PhotoSearch.parse(reply, vocabulary: vocabulary, query: query) else {
+                push("没能理解这句话，请换个说法", "warning")
+                return false
+            }
+            filters = interpretation.filters
+            search = interpretation.text
+            push("按“\(query)”找到 \(list.count) 张照片", "sparkles")
+            return true
+        } catch {
+            push(verbatim: (error as? LLMError)?.message ?? error.localizedDescription, "warning")
+            return false
+        }
+    }
+
     // ---------- enhance: AI denoise and super resolution ----------
     /// The photos the Enhance dialog works on.
     var enhanceTargets: [Asset] = []

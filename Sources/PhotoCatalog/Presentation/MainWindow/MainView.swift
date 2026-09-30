@@ -94,6 +94,8 @@ struct MainView: View {
             EnhanceSheet(targets: app.enhanceTargets)
         case "describe":
             DescribeSheet(targets: app.describeTargets)
+        case "naturalSearch":
+            NaturalSearchSheet()
         case "developTransfer":
             DevelopTransferSheet(mode: app.developTransferMode,
                                  fields: app.developTransferMode == .preset

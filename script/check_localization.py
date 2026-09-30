@@ -48,6 +48,7 @@ DATA_LITERALS = [
     re.compile(r'character\s*=='),                     # keyword separators
     re.compile(r'"简体中文"'),                          # a language is named in its own language
     re.compile(r'editedName'),                         # edited copies are recognized by file name
+    re.compile(r'static let \w+(Cues|Examples) = '),  # words a search request is matched against, or shown
 ]
 INT_HINT = re.compile(r'(count|Count|total|index|idx|\bn\b|rolledBack|saved|skipped|failed|failures?\b|completed|'
                       r'current|supported|percent|edge|maxWidth|maxHeight|rating|faces|copied|moved|scanned|'

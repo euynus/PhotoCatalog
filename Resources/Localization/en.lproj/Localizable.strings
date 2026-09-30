@@ -1546,6 +1546,13 @@
 "还没有设置 AI 服务" = "No AI service is set up yet";
 "打开设置" = "Open Settings";
 "开始" = "Start";
+"用自然语言查找" = "Find with Natural Language";
+"用自然语言查找…" = "Find with Natural Language…";
+"用一句话描述要找的照片，AI 会把它换成筛选条件和搜索词，在当前来源中查找。只发送这句话和目录库中的相机、镜头与关键词名称，不发送照片。" = "Describe the photos you want in a sentence; AI turns it into filters and search words and looks in the current source. Only the sentence and the catalog's camera, lens and keyword names are sent, no photos.";
+"例如：去年夏天在海边拍的、四星以上的照片" = "For example: beach photos from last summer, four stars or more";
+"查找" = "Find";
+"没能理解这句话，请换个说法" = "That sentence wasn't understood; try putting it another way";
+"按“%@”找到 %lld 张照片" = "Found %2$lld photos for “%1$@”";
 "增强…" = "Enhance…";
 "增强" = "Enhance";
 "增强后" = "Enhanced";

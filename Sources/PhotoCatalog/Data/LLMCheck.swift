@@ -13,6 +13,7 @@ enum LLMCheck {
         checkParsing()
         MainActor.assumeIsolated {
             checkDescribe(server)
+            checkSearch(server)
         }
         print("--- llm assertions passed ---")
     }
@@ -174,6 +175,83 @@ extension LLMCheck {
         app.applyDescriptions([second: PhotoDescriber.Description(title: "替换", caption: "", keywords: ["不加"])], options: options)
         assert(asset(second).title == "替换" && asset(second).caption == "新说明" && !asset(second).keywords.contains("不加"),
                "replacing swaps titles, leaves what the model didn't give, and adds no keywords when they're off")
+    }
+}
+
+extension LLMCheck {
+    /// Runs `body` on the main actor, turning the run loop until it's done.
+    @MainActor
+    static func run<T>(_ body: @escaping @MainActor () async -> T) -> T {
+        var result: T?
+        Task { @MainActor in result = await body() }
+        while result == nil { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01)) }
+        return result!
+    }
+
+    @MainActor
+    static func checkSearch(_ server: StandInServer) {
+        let vocabulary = PhotoSearch.Vocabulary(cameras: ["Canon EOS R6m2"], lenses: ["RF24-105mm F4-7.1 IS STM"],
+                                                keywords: ["海边", "日落"], types: ["CR3", "JPG"])
+        let today = ISO8601DateFormatter().date(from: "2026-09-30T12:00:00Z")!
+        let request = PhotoSearch.request("去年夏天在海边拍的四星照片", today: today, vocabulary: vocabulary, chinese: true)
+        assert(request.images.isEmpty && request.prompt.contains("去年夏天在海边拍的四星照片") && request.system.contains("2026-09-30")
+               && request.prompt.contains("Canon EOS R6m2") && request.prompt.contains("海边") && request.system.contains("Simplified Chinese"),
+               "a search request carries the sentence, today's date and the catalog's own names, and no photo")
+
+        let full = PhotoSearch.parse(#"""
+        {"text": "海边", "minRating": 4, "flag": "pick", "color": "blue", "type": "cr3", "camera": "Canon EOS R6m2",
+         "dateStart": "2025-06-01", "dateEnd": "2025-08-31", "gps": "yes"}
+        """#, vocabulary: vocabulary, query: "去年夏天用佳能拍的、带位置的蓝色标签精选 CR3，四星以上的海边")
+        let f = full?.filters
+        let calendar = Calendar.captureWallClock
+        assert(full?.text == "海边" && f?.minRating == 4 && f?.flag == "pick" && f?.color == "blue" && f?.type == "CR3"
+               && f?.camera == "Canon EOS R6m2" && f?.date == "custom" && f?.gps == "yes"
+               && f?.dateStart.map { calendar.dateComponents([.year, .month, .day], from: $0) } == DateComponents(year: 2025, month: 6, day: 1)
+               && f?.dateEnd.map { calendar.dateComponents([.year, .month, .day], from: $0) } == DateComponents(year: 2025, month: 8, day: 31),
+               "every filter the model names is set (\(String(describing: full)))")
+        let odd = PhotoSearch.parse(#"{"minRating": 9, "flag": "maybe", "color": "pink", "type": "WEIRD", "gps": "sometimes"}"#,
+                                    vocabulary: vocabulary, query: "9星以上 flag pink label WEIRD 格式 位置")
+        assert(odd?.filters.minRating == 5 && odd?.filters.flag == "any" && odd?.filters.color == "any" && odd?.filters.type == "any"
+               && odd?.filters.gps == "any" && odd?.filters.date == "any",
+               "values the filter bar doesn't know are left out, and ratings kept within five")
+        // what smaller models do: every field filled in from the catalog's lists
+        let eager = PhotoSearch.parse(#"""
+        {"text": "人像", "minRating": 1, "flag": "pick", "color": "red", "type": "CR3", "camera": "Canon EOS R6m2",
+         "lens": "RF24-70mm F2.8 L IS USM", "dateStart": "2025-03-01", "dateEnd": "2025-09-30", "gps": "yes"}
+        """#, vocabulary: vocabulary, query: "人像照片")
+        assert(eager == PhotoSearch.Interpretation(filters: Filters(), text: "人像"),
+               "filters the sentence says nothing about are dropped (\(String(describing: eager)))")
+        let lookalikes = PhotoSearch.parse(#"{"text": "红叶", "color": "red", "minRating": 3, "dateStart": "2025-09-01"}"#,
+                                           vocabulary: vocabulary, query: "星空下的红叶和waterfall")
+        assert(lookalikes == PhotoSearch.Interpretation(filters: Filters(), text: "红叶"),
+               "red leaves aren't a red label, a starry sky isn't a rating, and a waterfall isn't autumn")
+        let restated = PhotoSearch.parse(#"{"text": "精选", "flag": "pick", "gps": "yes"}"#, vocabulary: vocabulary, query: "带位置的精选")
+        let summer = PhotoSearch.parse(#"{"text": "去年夏天", "dateStart": "2025-06-01", "dateEnd": "2025-08-31"}"#,
+                                       vocabulary: vocabulary, query: "去年夏天拍的")
+        assert(restated?.text == "" && restated?.filters.flag == "pick" && summer?.text == "" && summer?.filters.date == "custom"
+               && PhotoSearch.parse(#"{"text": "海边的日落", "flag": "pick"}"#, vocabulary: vocabulary, query: "精选的海边日落")?.text == "海边的日落"
+               && PhotoSearch.parse(#"{"text": "夏天"}"#, vocabulary: vocabulary, query: "夏天")?.text == "夏天",
+               "search words that only restate the filters are dropped; words about the photos, or the only words there are, stay")
+        let misplaced = PhotoSearch.parse(#"{"text": "红色标签"}"#, vocabulary: vocabulary, query: "红色标签的照片")
+        assert(misplaced == PhotoSearch.Interpretation(filters: Filters(color: "red"), text: "")
+               && PhotoSearch.parse(#"{"text": "精选"}"#, vocabulary: vocabulary, query: "精选")?.filters.flag == "pick"
+               && PhotoSearch.parse(#"{"text": "red"}"#, vocabulary: vocabulary, query: "red flowers")?.text == "red",
+               "a flag or label put in the search words becomes that filter; a color alone stays a search word")
+        assert(PhotoSearch.parse(#"{"lens": "RF24-70mm F2.8 L IS USM"}"#, vocabulary: vocabulary, query: "用 24-70 拍的")?.filters.lens
+               == "RF24-70mm F2.8 L IS USM", "a lens named by its focal lengths counts")
+
+        // the whole of it, against the stand-in: the filter bar and the search box end up set
+        let saved = UserDefaults.standard.data(forKey: "pc_llm")
+        defer { UserDefaults.standard.set(saved, forKey: "pc_llm") }
+        let app = AppState.selfCheckFixture()
+        app.assets = Array(DemoData.assets.prefix(40))
+        app.llmConfiguration = LLMConfiguration(kind: .openAICompatible, baseURL: "http://127.0.0.1:\(server.port)/v1", model: "stand-in")
+        server.reply = (200, #"{"choices":[{"message":{"content":"{\"minRating\": 3, \"text\": \"海\"}"}}]}"#)
+        let understood = run { await app.searchNaturally("三星以上的海") }
+        assert(understood && app.filters.minRating == 3 && app.search == "海" && app.naturalSearchQuery == "三星以上的海",
+               "a sentence becomes the filter bar and the search box")
+        server.reply = (200, #"{"choices":[{"message":{"content":"Sorry, I can't help with that."}}]}"#)
+        assert(!run { await app.searchNaturally("随便") } && app.filters.minRating == 3, "an answer without filters changes nothing")
     }
 }
 
