@@ -12,7 +12,7 @@ struct SettingsSheet: View {
     @State private var exportPresetName = ""
     @State private var category: Category = .general
 
-    private enum Category: CaseIterable {
+    private enum Category: String, CaseIterable {
         case general, importing, develop, exporting, metadata, ai, cache, catalog, files
 
         var title: String {
@@ -56,6 +56,10 @@ struct SettingsSheet: View {
             foot
         }
         .frame(width: 780, height: 560)
+        .onAppear {
+            if let start = app.settingsStartCategory.flatMap(Category.init(rawValue:)) { category = start }
+            app.settingsStartCategory = nil
+        }
         .font(.system(size: 13))
         .foregroundStyle(Theme.text)
         .background(Theme.bgPanel)

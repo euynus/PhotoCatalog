@@ -243,6 +243,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已取消增强，已完成 %lld 张</string>
 	</dict>
+	<key>已取消，已描述 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已取消，已描述 %lld 张照片</string>
+	</dict>
 	<key>已同步到 %lld 张照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -318,6 +323,16 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已按轨迹为 %lld 张照片添加位置</string>
 	</dict>
+	<key>已描述 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已描述 %lld 张照片</string>
+	</dict>
+	<key>已描述 %lld 张照片，%lld 张没有得到结果</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已描述 %lld 张照片，%lld 张没有得到结果</string>
+	</dict>
 	<key>已更新 %lld 张修改过的照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -388,6 +403,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>把 %lld 张不同曝光的照片合成一张，亮部和暗部的细节都保留。结果存为参考照片旁的 16 位 TIFF，加入目录库后可继续修图。</string>
 	</dict>
+	<key>按“%@”找到 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>按“%@”找到 %lld 张照片</string>
+	</dict>
 	<key>显示 %lld 个只出现一次的人脸</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -442,6 +462,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>筛选 %lld 张</string>
+	</dict>
+	<key>让 %@ 看 %lld 张照片的预览图（缩小到 1024 像素），写出下面选中的内容。关键词添加到已有的之中；可以撤销。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>让 %@ 看 %lld 张照片的预览图（缩小到 1024 像素），写出下面选中的内容。关键词添加到已有的之中；可以撤销。</string>
 	</dict>
 	<key>设置位置 · %lld 张照片</key>
 	<dict>

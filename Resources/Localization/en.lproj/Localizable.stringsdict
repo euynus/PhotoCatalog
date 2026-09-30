@@ -815,6 +815,22 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
+	<key>已取消，已描述 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Canceled; %#@n1@ described</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>已同步到 %lld 张照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -1053,6 +1069,49 @@
 			<string>%lld photo</string>
 			<key>other</key>
 			<string>%lld photos</string>
+		</dict>
+	</dict>
+	<key>已描述 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n1@ described</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
+	<key>已描述 %lld 张照片，%lld 张没有得到结果</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n1@ described; %#@n2@ got no result</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+		<key>n2</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld</string>
+			<key>other</key>
+			<string>%lld</string>
 		</dict>
 	</dict>
 	<key>已更新 %lld 张修改过的照片</key>
@@ -1301,6 +1360,22 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
+	<key>按“%@”找到 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Found %2$#@n1@ for “%1$@”</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>显示 %lld 个只出现一次的人脸</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -1466,6 +1541,22 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>Surveying %#@n1@</string>
 		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
+	<key>让 %@ 看 %lld 张照片的预览图（缩小到 1024 像素），写出下面选中的内容。关键词添加到已有的之中；可以撤销。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ looks at previews of %2$#@n2@ (reduced to 1024 pixels) and writes what's checked below. Keywords are added to the ones there; it can be undone.</string>
+		<key>n2</key>
 		<dict>
 			<key>NSStringFormatSpecTypeKey</key>
 			<string>NSStringPluralRuleType</string>

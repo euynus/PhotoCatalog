@@ -1989,6 +1989,15 @@ final class AppState {
 
     func showSettings() { sheet = "settings" }
 
+    /// The settings category to open at, taken once by the settings sheet.
+    @ObservationIgnored var settingsStartCategory: String?
+
+    /// Settings, opened at `category` (as the sheet names them, e.g. "ai").
+    func openSettings(category: String) {
+        settingsStartCategory = category
+        sheet = "settings"
+    }
+
     func showNewSmartAlbumBuilder() {
         smartAlbumEditingID = nil
         sheet = "smart"
@@ -4409,6 +4418,149 @@ final class AppState {
             }
             self.llmTesting = false
         }
+    }
+
+    // ---------- AI: describe photos ----------
+    struct DescribeOptions: Equatable, Sendable {
+        var keywords = true
+        var title = true
+        var caption = true
+        /// Replace titles and captions a photo already has (keywords are always added to).
+        var replace = false
+
+        var isEmpty: Bool { !keywords && !title && !caption }
+    }
+
+    var describeOptions = DescribeOptions()
+    /// The photos the describe dialog works on.
+    var describeTargets: [Asset] = []
+    /// The run in progress: photos answered, and how many in all.
+    var describeProgress: (done: Int, total: Int)?
+    @ObservationIgnored private var describeCancellation: CancellationFlag?
+
+    var canDescribePhotos: Bool {
+        onboarded && sheet == nil && describeProgress == nil && selectionSummary.hasLive
+    }
+
+    /// 照片 → AI 描述照片…: titles, captions and keywords from the language model.
+    func showDescribePhotos() {
+        let ids = selectionTargetIds
+        let targets = list.filter { ids.contains($0.id) && !$0.deleted && !$0.isDemo }
+        guard !targets.isEmpty else {
+            push("请选择已导入的照片", "info")
+            return
+        }
+        describeTargets = targets
+        sheet = "describe"
+    }
+
+    /// Sends each target's preview to the model, three at a time, and puts what comes back into
+    /// the catalog as one undoable step. A rejected key or a missing setting stops the run.
+    func describePhotos() {
+        let targets = describeTargets, options = describeOptions
+        guard !targets.isEmpty, !options.isEmpty, describeProgress == nil else { return }
+        guard isLLMReady else {
+            push(verbatim: (llmConfiguration.isComplete ? LLMError.missingKey : LLMError.notConfigured).message, "warning")
+            return
+        }
+        guard llmConfiguration.acceptsImages else {
+            push(verbatim: LLMError.imagesNotSupported.message, "warning")
+            return
+        }
+        let chinese = PhotoDescriber.answersInChinese
+        let work = targets.map { asset in
+            (id: asset.id, source: developSource(for: asset), settings: developSettings[asset.id] ?? .neutral,
+             preview: asset.preview.isEmpty ? nil : (URL(string: asset.preview).flatMap { $0.isFileURL ? $0 : nil }
+                 ?? URL(fileURLWithPath: asset.preview)),
+             details: PhotoDescriber.Details(date: asset.date, camera: asset.camera, place: asset.location, keywords: asset.keywords))
+        }
+        let cancellation = CancellationFlag()
+        describeCancellation = cancellation
+        describeProgress = (0, targets.count)
+        Task { [weak self] in
+            var results: [String: PhotoDescriber.Description] = [:]
+            var failed = 0
+            var stop: LLMError?
+            await withTaskGroup(of: (String, Result<PhotoDescriber.Description, LLMError>).self) { group in
+                var next = 0
+                func start() {
+                    guard next < work.count, !cancellation.isSet, stop == nil else { return }
+                    let item = work[next]
+                    next += 1
+                    group.addTask { @MainActor [weak self] in
+                        guard let self else { return (item.id, .failure(.malformed)) }
+                        let image = await ThumbnailRepairQueue.run(.visible) {
+                            PhotoDescriber.image(source: item.source, settings: item.settings, preview: item.preview)
+                        } ?? nil
+                        guard let image else { return (item.id, .failure(.malformed)) }
+                        do {
+                            let reply = try await self.askLLM(PhotoDescriber.request(image: image, details: item.details, chinese: chinese))
+                            let description = PhotoDescriber.parse(reply, excluding: [item.details.camera])
+                            return (item.id, description.map { .success($0) } ?? .failure(.malformed))
+                        } catch {
+                            return (item.id, .failure(error as? LLMError ?? .network(error.localizedDescription)))
+                        }
+                    }
+                }
+                for _ in 0..<3 { start() }
+                for await (id, result) in group {
+                    switch result {
+                    case .success(let description): results[id] = description
+                    case .failure(let error):
+                        failed += 1
+                        switch error {
+                        case .missingKey, .notConfigured, .imagesNotSupported: stop = error
+                        case .http(let status, _) where status == 401 || status == 403 || status == 404: stop = error
+                        default: break
+                        }
+                    }
+                    self?.describeProgress = (results.count + failed, work.count)
+                    start()
+                }
+            }
+            guard let self else { return }
+            self.describeProgress = nil
+            self.describeCancellation = nil
+            let applied = self.applyDescriptions(results, options: options)
+            if let stop {
+                let alert = NSAlert()
+                alert.messageText = L("AI 描述已停止")
+                alert.informativeText = stop.message
+                alert.runModal()
+            } else if failed > 0 {
+                self.push("已描述 \(applied) 张照片，\(failed) 张没有得到结果", "warning")
+            } else if cancellation.isSet {
+                self.push("已取消，已描述 \(applied) 张照片", "info")
+            } else {
+                self.push("已描述 \(applied) 张照片", "sparkles")
+            }
+        }
+    }
+
+    func cancelDescribePhotos() {
+        describeCancellation?.set()
+    }
+
+    /// Puts descriptions into the catalog as one undoable step: keywords are added to what's
+    /// there; titles and captions fill empty fields, or replace them with `options.replace`.
+    /// How many photos changed.
+    @discardableResult
+    func applyDescriptions(_ results: [String: PhotoDescriber.Description], options: DescribeOptions) -> Int {
+        guard !results.isEmpty else { return 0 }
+        var changed = 0
+        _ = mutate(Set(results.keys), undoName: L("AI 描述")) { asset in
+            guard let description = results[asset.id] else { return }
+            let before = (asset.keywords, asset.title, asset.caption)
+            if options.keywords {
+                for keyword in description.keywords where !asset.keywords.contains(keyword) { asset.keywords.append(keyword) }
+            }
+            if options.title, !description.title.isEmpty, options.replace || asset.title.isEmpty { asset.title = description.title }
+            if options.caption, !description.caption.isEmpty, options.replace || asset.caption.isEmpty {
+                asset.caption = description.caption
+            }
+            if before != (asset.keywords, asset.title, asset.caption) { changed += 1 }
+        }
+        return changed
     }
 
     // ---------- enhance: AI denoise and super resolution ----------

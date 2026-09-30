@@ -92,6 +92,8 @@ struct MainView: View {
             PhotoMergeSheet(targets: app.photoMergeTargets)
         case "enhance":
             EnhanceSheet(targets: app.enhanceTargets)
+        case "describe":
+            DescribeSheet(targets: app.describeTargets)
         case "developTransfer":
             DevelopTransferSheet(mode: app.developTransferMode,
                                  fields: app.developTransferMode == .preset

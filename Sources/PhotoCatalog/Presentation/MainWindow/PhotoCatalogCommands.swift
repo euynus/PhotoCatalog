@@ -87,6 +87,9 @@ struct PhotoCatalogCommands: Commands {
             Button("增强…") { perform("照片.增强") { app.showEnhance() } }
                 .keyboardShortcut("i", modifiers: [.control, .option])
                 .disabled(!app.canEnhance)
+            Button("AI 描述照片…") { perform("照片.AI描述") { app.showDescribePhotos() } }
+                .keyboardShortcut("d", modifiers: [.control, .option])
+                .disabled(!app.canDescribePhotos)
             Button("从文件读取元数据") { perform("照片.从文件读取元数据") { app.readMetadataFromFiles() } }
                 .disabled(!app.canReadMetadataFromFiles)
             Button("将元数据写入文件") { perform("照片.将元数据写入文件") { app.writeXMPForSelection() } }

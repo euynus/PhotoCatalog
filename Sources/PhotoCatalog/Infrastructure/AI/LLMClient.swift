@@ -108,7 +108,8 @@ enum LLMClient {
         let key = key?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if configuration.needsKey && key.isEmpty { throw LLMError.missingKey }
         if !request.images.isEmpty && !configuration.acceptsImages { throw LLMError.imagesNotSupported }
-        var urlRequest = URLRequest(url: url, timeoutInterval: 180)
+        // generous: a model on this Mac can take minutes over a photo
+        var urlRequest = URLRequest(url: url, timeoutInterval: 300)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "content-type")
         let body: [String: Any]
@@ -155,14 +156,41 @@ enum LLMClient {
         return text
     }
 
-    /// The JSON object in a model's reply, which may come wrapped in prose or a code fence.
+    /// The JSON object in a model's reply, which may come wrapped in prose or a code fence — and,
+    /// from smaller models, written with single quotes or cut off by the token limit.
     static func jsonObject(in text: String) -> [String: Any]? {
-        if let data = text.data(using: .utf8), let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
-            return object
+        func object(_ candidate: String) -> [String: Any]? {
+            guard let data = candidate.data(using: .utf8) else { return nil }
+            return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         }
-        guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"), start < end,
-              let data = String(text[start...end]).data(using: .utf8) else { return nil }
-        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        guard let start = text.firstIndex(of: "{") else { return nil }
+        var body = String(text[start...])
+        if let end = body.lastIndex(of: "}"), let found = object(String(body[...end])) { return found }
+        // Python-style quoting, when there's no double quote to confuse it with
+        if !body.contains("\"") { body = body.replacingOccurrences(of: "'", with: "\"") }
+        if let end = body.lastIndex(of: "}"), let found = object(String(body[...end])) { return found }
+        // cut off: drop the unfinished last item and close what's open
+        var trimmed = body
+        while let comma = trimmed.lastIndex(of: ",") {
+            trimmed = String(trimmed[..<comma])
+            if let found = object(trimmed + closers(for: trimmed)) { return found }
+        }
+        return nil
+    }
+
+    /// The brackets and braces `text` leaves open, closed in order.
+    private static func closers(for text: String) -> String {
+        var open: [Character] = []
+        var inString = false, escaped = false
+        for character in text {
+            if escaped { escaped = false; continue }
+            if character == "\\" { escaped = true; continue }
+            if character == "\"" { inString.toggle(); continue }
+            guard !inString else { continue }
+            if character == "{" || character == "[" { open.append(character) }
+            if character == "}" || character == "]" { _ = open.popLast() }
+        }
+        return (inString ? "\"" : "") + String(open.reversed().map { $0 == "{" ? "}" : "]" })
     }
 
     /// A photo as the model sees it: at most `maxPixel` on the long edge, as a JPEG.

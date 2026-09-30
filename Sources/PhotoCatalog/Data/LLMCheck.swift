@@ -11,6 +11,9 @@ enum LLMCheck {
         checkOpenAICompatible(server)
         checkErrors(server)
         checkParsing()
+        MainActor.assumeIsolated {
+            checkDescribe(server)
+        }
         print("--- llm assertions passed ---")
     }
 
@@ -105,12 +108,72 @@ enum LLMCheck {
         let fenced = LLMClient.jsonObject(in: "Here you go:\n```json\n{\"keywords\": [\"sea\", \"sky\"]}\n```")
         assert((fenced?["keywords"] as? [String]) == ["sea", "sky"], "JSON is found inside a code fence and prose")
         assert(LLMClient.jsonObject(in: "no json here") == nil, "and not invented where there's none")
+        let quoted = LLMClient.jsonObject(in: "{'title': 'woman', 'keywords': ['umbrella', 'sky']}")
+        assert(quoted?["title"] as? String == "woman" && (quoted?["keywords"] as? [String]) == ["umbrella", "sky"],
+               "single-quoted JSON from smaller models is read")
+        let cut = LLMClient.jsonObject(in: #"{"title": "海边", "keywords": ["海", "沙滩", "日落", "云"#)
+        assert(cut?["title"] as? String == "海边" && (cut?["keywords"] as? [String]) == ["海", "沙滩", "日落"],
+               "a reply cut off by the token limit keeps what came through whole")
         assert(LLMConfiguration(kind: .anthropic, baseURL: "https://api.anthropic.com/", model: "m").endpoint?.absoluteString
                == "https://api.anthropic.com/v1/messages"
                && LLMConfiguration(kind: .anthropic, baseURL: "https://proxy.example.com/v1", model: "m").endpoint?.absoluteString
                == "https://proxy.example.com/v1/messages"
                && LLMConfiguration(kind: .openAICompatible, baseURL: "ftp://x", model: "m").endpoint == nil,
                "endpoints are built from the service address")
+    }
+}
+
+extension LLMCheck {
+    @MainActor
+    static func checkDescribe(_ server: StandInServer) {
+        // the request: the image, the language, and what the catalog knows
+        let image = Data([0xFF, 0xD8, 0x42])
+        let chinese = PhotoDescriber.request(image: image, details: PhotoDescriber.Details(camera: "Canon EOS R6m2", place: "成都",
+                                                                                          keywords: ["夜景"]), chinese: true)
+        assert(chinese.images == [image] && chinese.system.contains("Simplified Chinese") && chinese.prompt.contains("成都")
+               && chinese.prompt.contains("夜景") && chinese.prompt.contains("Canon"),
+               "a describe request shows the photo, asks for the app's language and passes on what's known")
+        assert(PhotoDescriber.request(image: image, details: .init(), chinese: false).system.contains("English"), "or English")
+
+        // the answer: found in prose, keywords as a list or a comma string, tidied
+        let reply = "好的：\n```json\n{\"title\": \" 锦江夜色 \", \"caption\": \"夜晚河边的灯笼与游船。\", \"keywords\": [\"夜景\", \"灯笼\", \"灯笼\", \"河流\", \"\"]}\n```"
+        let parsed = PhotoDescriber.parse(reply)
+        assert(parsed == PhotoDescriber.Description(title: "锦江夜色", caption: "夜晚河边的灯笼与游船。", keywords: ["夜景", "灯笼", "河流"]),
+               "a description is read from the reply and tidied (\(String(describing: parsed)))")
+        assert(PhotoDescriber.parse(#"{"keywords": "sea, sky, sunset"}"#)?.keywords == ["sea", "sky", "sunset"],
+               "keywords given as one string are split")
+        assert(PhotoDescriber.parse(#"{"keywords": ["gymnastics", "Canon EOS R6m2"]}"#, excluding: ["Canon EOS R6m2"])?.keywords
+               == ["gymnastics"], "the camera passed as a hint doesn't come back as a keyword")
+        assert(PhotoDescriber.parse("I can't see an image.") == nil && PhotoDescriber.parse(#"{"title": ""}"#) == nil,
+               "no description is made up from an empty answer")
+
+        // into the catalog: keywords added, titles and captions kept unless replacing
+        let app = AppState.selfCheckFixture()
+        app.assets = Array(DemoData.assets.prefix(2)).map { demo in
+            var photo = demo
+            photo.isDemo = false
+            photo.localPath = "/tmp/pc-describe/\(demo.filename)"
+            return photo
+        }
+        guard app.assets.count >= 2 else { return assertionFailure("the fixture has photos") }
+        let first = app.assets[0].id, second = app.assets[1].id
+        _ = app.mutate([first, second]) { asset in
+            asset.keywords = ["旧"]
+            asset.title = asset.id == first ? "" : "原来的标题"
+            asset.caption = ""
+        }
+        let described = PhotoDescriber.Description(title: "新标题", caption: "新说明", keywords: ["旧", "海"])
+        var options = AppState.DescribeOptions()
+        let changed = app.applyDescriptions([first: described, second: described], options: options)
+        func asset(_ id: String) -> Asset { app.assets.first { $0.id == id }! }
+        assert(changed == 2 && asset(first).keywords == ["旧", "海"] && asset(first).title == "新标题"
+               && asset(second).title == "原来的标题" && asset(second).caption == "新说明",
+               "descriptions add keywords and fill empty titles and captions, keeping the ones there")
+        options.replace = true
+        options.keywords = false
+        app.applyDescriptions([second: PhotoDescriber.Description(title: "替换", caption: "", keywords: ["不加"])], options: options)
+        assert(asset(second).title == "替换" && asset(second).caption == "新说明" && !asset(second).keywords.contains("不加"),
+               "replacing swaps titles, leaves what the model didn't give, and adds no keywords when they're off")
     }
 }
 

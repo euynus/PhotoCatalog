@@ -79,6 +79,7 @@ struct PhotoContextMenu: View {
             Button("全景…") { act { app.showPhotoMerge(.panorama) } }
         }
         Button("增强…") { act { app.showEnhance() } }
+        Button("AI 描述照片…") { act { app.showDescribePhotos() } }
         Button("从文件读取元数据") { act { app.readMetadataFromFiles() } }
 
         Button("设置位置…") { act { app.showLocationEditor() } }
