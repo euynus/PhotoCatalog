@@ -171,6 +171,16 @@ enum MergeCheck {
         } else {
             assertionFailure("frames of different brightness still join")
         }
+        // a burst barely moves, and a sweep that turns back isn't one panorama
+        func failure(_ turns: [Double]) -> PhotoMerge.PanoramaFailure? {
+            let urls = turns.map { panoramaFrame(turn: $0, f: f) }
+            defer { for url in urls { try? FileManager.default.removeItem(at: url) } }
+            let small = urls.compactMap { PhotoMerge.decode(PhotoMerge.Frame(url: $0, isRaw: false, brightness: nil), maxPixel: 1024) }
+            if case .failure(let failure) = PhotoMerge.panoramaLayout(small, f: f, vertical: false) { return failure }
+            return nil
+        }
+        assert(failure([0, 0.01, 0.02]) == .notMoving(0), "a burst isn't taken for a panorama")
+        assert(failure([0, 0.35, 0.1]) == .notPanorama(1), "frames that go back the way they came aren't one sweep")
         // frames that don't overlap don't join
         let apart = [panoramaFrame(turn: 0, f: f), panoramaFrame(turn: 2, f: f)]
         defer { for url in apart { try? FileManager.default.removeItem(at: url) } }

@@ -103,7 +103,7 @@ struct PhotoMergeSheet: View {
         preview = nil
         previewFailed = false
         failure = nil
-        let result: (image: CGImage?, gap: Int?) = await withCheckedContinuation { continuation in
+        let result: (image: CGImage?, failure: PhotoMerge.PanoramaFailure?) = await withCheckedContinuation { continuation in
             PhotoMerge.queue.async {
                 let frames = AppState.photoMergeFrames(targets)
                 switch kind {
@@ -113,8 +113,7 @@ struct PhotoMergeSheet: View {
                 case .panorama:
                     switch PhotoMerge.panorama(frames, maxPixel: 600) {
                     case .success(let image): continuation.resume(returning: (DevelopRenderer.render(image), nil))
-                    case .failure(.noOverlap(let index)): continuation.resume(returning: (nil, index))
-                    case .failure: continuation.resume(returning: (nil, nil))
+                    case .failure(let failure): continuation.resume(returning: (nil, failure))
                     }
                 }
             }
@@ -122,6 +121,6 @@ struct PhotoMergeSheet: View {
         guard mine == generation else { return }
         preview = result.image
         previewFailed = result.image == nil
-        if let gap = result.gap { failure = L("第 \(gap + 1) 与第 \(gap + 2) 张照片没有足够的重叠，无法拼接") }
+        failure = result.failure.map(AppState.panoramaFailureMessage)
     }
 }

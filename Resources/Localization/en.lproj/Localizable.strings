@@ -820,6 +820,8 @@
 "把 %lld 张相互重叠的照片按拍摄顺序拼成一张全景，投影到柱面并裁去空白边缘。结果存为第一张照片旁的 16 位 TIFF，加入目录库后可继续修图。" = "Joins %lld overlapping photos, in the order they were taken, into a panorama projected onto a cylinder with the empty edges cropped away. The result is saved as a 16-bit TIFF beside the first photo and added to the catalog for further editing.";
 "正在合并全景…" = "Merging panorama…";
 "第 %lld 与第 %lld 张照片没有足够的重叠，无法拼接" = "Photos %lld and %lld don’t overlap enough to join";
+"第 %lld 与第 %lld 张照片几乎没有移动，更像连拍而不是全景" = "Photos %lld and %lld barely moved: this looks like a burst, not a panorama";
+"第 %lld 与第 %lld 张照片的移动方向与其他照片不一致，或上下偏移太大，不像一次连续的全景拍摄" = "Photos %lld and %lld moved another way than the rest, or too far up or down, to be one sweep of the camera";
 "预设删除后无法恢复，已用它修过的照片不受影响。" = "A deleted preset can’t be brought back. Photos already edited with it stay as they are.";
 "导入时修图" = "Develop on Import";
 "修图预设" = "Develop Preset";

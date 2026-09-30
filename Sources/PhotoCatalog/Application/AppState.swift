@@ -4142,7 +4142,18 @@ final class AppState {
         case merged(url: URL, reference: Int, asset: Asset?)
         case unreadable
         case readOnly
-        case noOverlap(Int)
+        case panorama(PhotoMerge.PanoramaFailure)
+    }
+
+    /// Why a panorama couldn't be made, for the dialog and the toast.
+    nonisolated static func panoramaFailureMessage(_ failure: PhotoMerge.PanoramaFailure) -> String {
+        switch failure {
+        case .unreadable: L("全景合并失败：有照片无法读取")
+        case .noOverlap(let index): L("第 \(index + 1) 与第 \(index + 2) 张照片没有足够的重叠，无法拼接")
+        case .notMoving(let index): L("第 \(index + 1) 与第 \(index + 2) 张照片几乎没有移动，更像连拍而不是全景")
+        case .notPanorama(let index):
+            L("第 \(index + 1) 与第 \(index + 2) 张照片的移动方向与其他照片不一致，或上下偏移太大，不像一次连续的全景拍摄")
+        }
     }
 
     /// Merges the dialog's photos — into an HDR photo beside the middle exposure
@@ -4172,8 +4183,7 @@ final class AppState {
                     case .panorama:
                         switch PhotoMerge.panorama(frames, maxPixel: nil) {
                         case .success(let image): merged = (image, 0)
-                        case .failure(.noOverlap(let index)): return continuation.resume(returning: .noOverlap(index))
-                        case .failure: return continuation.resume(returning: .unreadable)
+                        case .failure(let failure): return continuation.resume(returning: .panorama(failure))
                         }
                     }
                     let original = frames[merged.reference].url
@@ -4197,8 +4207,8 @@ final class AppState {
                 self.push(kind == .hdr ? "HDR 合并失败：有照片无法读取" : "全景合并失败：有照片无法读取", "warning")
             case .readOnly:
                 self.push("参考照片所在的文件夹是只读的，无法保存合并结果", "warning")
-            case .noOverlap(let index):
-                self.push("第 \(index + 1) 与第 \(index + 2) 张照片没有足够的重叠，无法拼接", "warning")
+            case .panorama(let failure):
+                self.push(verbatim: Self.panoramaFailureMessage(failure), "warning")
             case .merged(let url, let reference, let asset):
                 self.finishExternalEdit([(url, targets[reference], asset)], editor: nil, expected: 1, albumId: albumId)
                 self.push(kind == .hdr ? "已合并为 HDR 照片" : "已合并为全景照片", "square.stack.3d.up")

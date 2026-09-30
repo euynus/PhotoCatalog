@@ -22,6 +22,11 @@ enum PhotoMerge {
         case unreadable
         /// The frames at this index and the next don't overlap enough to join.
         case noOverlap(Int)
+        /// The frames at this index and the next barely moved: a burst, not a panorama.
+        case notMoving(Int)
+        /// The frames at this index and the next moved another way than the rest, or too far
+        /// across the pan: not one sweep of the camera.
+        case notPanorama(Int)
     }
 
     struct HDROptions: Equatable, Sendable {
@@ -187,6 +192,9 @@ enum PhotoMerge {
     /// frame covers.
     struct PanoramaLayout {
         let vertical: Bool
+        /// Each frame against the one before: how well they matched, and the shift found.
+        var scores: [Double] = []
+        var offsets: [CGPoint] = []
         let centers: [CGPoint]
         let gains: [Double]
         let canvas: CGSize
@@ -213,21 +221,28 @@ enum PhotoMerge {
         // each frame against the one before: the offset of its middle, by correlation over the
         // parts both cover
         let grays = rendered.map { maskedGray($0.rgba, width: $0.width, height: $0.height) }
-        var offsets: [CGPoint] = []
+        var offsets: [CGPoint] = [], scores: [Double] = []
         for index in 1..<rendered.count {
-            guard let found = correlationShift(of: grays[index], onto: grays[index - 1]), found.score >= 0.5 else {
+            // the same scene lines up closely; different pictures only resemble each other
+            guard let found = correlationShift(of: grays[index], onto: grays[index - 1]), found.score >= 0.7 else {
                 return .failure(.noOverlap(index - 1))
             }
             offsets.append(CGPoint(x: found.shift.x, y: -found.shift.y))   // Core Image's y points up
+            scores.append(found.score)
         }
         let sideways = offsets.reduce(0) { $0 + abs($1.x) }, upward = offsets.reduce(0) { $0 + abs($1.y) }
         if !vertical, upward > sideways * 1.5 {
             return .success(PanoramaLayout(vertical: true, centers: [], gains: [], canvas: .zero, crop: .zero))
         }
+        let alongSize = vertical ? box.height : box.width, acrossSize = vertical ? box.width : box.height
+        let direction = (vertical ? offsets[0].y : offsets[0].x).sign
         for (index, t) in offsets.enumerated() {
-            // along the pan, a frame has to have moved, and still overlap its neighbor by a tenth
-            let step = abs(vertical ? t.y : t.x), limit = (vertical ? box.height : box.width) * 0.9
-            guard step >= 4, step <= limit else { return .failure(.noOverlap(index)) }
+            let step = vertical ? t.y : t.x, drift = abs(vertical ? t.x : t.y)
+            // along the pan a frame has moved a tenth or more and still overlaps its neighbor;
+            // it keeps going the same way and doesn't wander far across
+            guard abs(step) >= alongSize * 0.1 else { return .failure(.notMoving(index)) }
+            guard abs(step) <= alongSize * 0.9 else { return .failure(.noOverlap(index)) }
+            guard step.sign == direction, drift <= acrossSize * 0.25 else { return .failure(.notPanorama(index)) }
         }
         var centers = [CGPoint.zero]
         for t in offsets { centers.append(CGPoint(x: centers[centers.count - 1].x + t.x, y: centers[centers.count - 1].y + t.y)) }
@@ -262,7 +277,7 @@ enum PhotoMerge {
         }
         guard let best = largestRectangle(covered, width: width, height: height) else { return .failure(.unreadable) }
         let crop = CGRect(x: best.x, y: height - best.y - best.height, width: best.width, height: best.height)
-        return .success(PanoramaLayout(vertical: vertical, centers: centers, gains: gains,
+        return .success(PanoramaLayout(vertical: vertical, scores: scores, offsets: offsets, centers: centers, gains: gains,
                                        canvas: CGSize(width: width, height: height), crop: crop))
     }
 
