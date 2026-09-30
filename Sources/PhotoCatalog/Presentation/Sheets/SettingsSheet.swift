@@ -13,7 +13,7 @@ struct SettingsSheet: View {
     @State private var category: Category = .general
 
     private enum Category: CaseIterable {
-        case general, importing, develop, exporting, metadata, cache, catalog, files
+        case general, importing, develop, exporting, metadata, ai, cache, catalog, files
 
         var title: String {
             switch self {
@@ -22,6 +22,7 @@ struct SettingsSheet: View {
             case .develop: return L("修图")
             case .exporting: return L("导出")
             case .metadata: return L("元数据")
+            case .ai: return L("AI")
             case .cache: return L("缓存与性能")
             case .catalog: return L("目录库")
             case .files: return L("文件操作")
@@ -35,6 +36,7 @@ struct SettingsSheet: View {
             case .develop: return "slider.horizontal.3"
             case .exporting: return "square.and.arrow.up"
             case .metadata: return "tag"
+            case .ai: return "sparkles"
             case .cache: return "internaldrive"
             case .catalog: return "photo.on.rectangle"
             case .files: return "folder"
@@ -274,6 +276,10 @@ struct SettingsSheet: View {
                                 disabled: !app.canExportPreviewSelection) { app.exportSelectionPreviews() }
                     Spacer()
                 }
+            }
+
+            section(L("AI"), category: .ai) {
+                AISettings()
             }
 
             section(L("元数据"), category: .metadata) {

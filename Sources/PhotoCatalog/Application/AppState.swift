@@ -4365,6 +4365,52 @@ final class AppState {
         }
     }
 
+    // ---------- AI: language models (Settings → AI) ----------
+    var llmConfiguration: LLMConfiguration = {
+        guard let data = UserDefaults.standard.data(forKey: "pc_llm"),
+              let configuration = try? JSONDecoder().decode(LLMConfiguration.self, from: data) else { return .anthropic }
+        return configuration
+    }() {
+        didSet {
+            if let data = try? JSONEncoder().encode(llmConfiguration) { UserDefaults.standard.set(data, forKey: "pc_llm") }
+            llmTestResult = nil
+        }
+    }
+    /// What the last connection test said, and whether it worked.
+    var llmTestResult: (ok: Bool, message: String)?
+    var llmTesting = false
+    /// Checks and tests set a key here instead of the keychain.
+    @ObservationIgnored var llmKeyOverride: String?
+
+    /// The API key saved for the current service.
+    var llmKey: String? { llmKeyOverride ?? LLMKeychain.key(for: llmConfiguration) }
+
+    var isLLMReady: Bool { llmConfiguration.isComplete && (!llmConfiguration.needsKey || !(llmKey ?? "").isEmpty) }
+
+    /// One request to the configured service.
+    func askLLM(_ request: LLMRequest) async throws -> String {
+        try await LLMClient.complete(request, configuration: llmConfiguration, key: llmKey)
+    }
+
+    /// Settings → AI → 测试连接: a one-word exchange with the service.
+    func testLLMConnection() {
+        guard !llmTesting else { return }
+        llmTesting = true
+        llmTestResult = nil
+        let request = LLMRequest(system: "You are a connection test.", prompt: "Reply with the single word OK.", maxTokens: 16)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let reply = try await self.askLLM(request)
+                let excerpt = String(reply.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
+                self.llmTestResult = (true, L("连接成功：\(excerpt)"))
+            } catch {
+                self.llmTestResult = (false, (error as? LLMError)?.message ?? error.localizedDescription)
+            }
+            self.llmTesting = false
+        }
+    }
+
     // ---------- enhance: AI denoise and super resolution ----------
     /// The photos the Enhance dialog works on.
     var enhanceTargets: [Asset] = []

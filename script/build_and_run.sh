@@ -129,6 +129,12 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$MIN_SYSTEM_VERSION</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <!-- language models served on this Mac (Ollama, LM Studio) speak plain HTTP -->
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+  </dict>
 </dict>
 </plist>
 PLIST

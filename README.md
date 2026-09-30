@@ -158,6 +158,15 @@ out-of-sync Command Line Tools installations.
 
 You can also open `Package.swift` directly in Xcode and run the `PhotoCatalog` scheme.
 
+### Language models
+
+Settings → AI points the AI features at a language-model service: Anthropic's Messages API or
+any OpenAI-compatible chat-completions endpoint (OpenAI, DeepSeek, Qwen, Doubao, Kimi, GLM, or
+Ollama / LM Studio on this Mac, which need no key), with its address, model and whether it
+reads images, and a connection test. The API key is kept in the login keychain, one per
+service. Nothing is sent until a feature is used, and photos go only as JPEG previews reduced to
+1024 pixels. `Infrastructure/AI/LLMClient.swift` holds both protocols (URLSession only).
+
 ### AI models
 
 `Resources/Models` holds the Core ML packages the app bundles (compiled on first use and kept in

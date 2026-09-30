@@ -126,6 +126,7 @@ enum SelfCheck {
         DevelopCheck.run()
         MergeCheck.run()
         EnhanceCheck.run()
+        LLMCheck.run()
         ExportCheck.run()
         KeywordCheck.run()
         LocationCheck.run()
