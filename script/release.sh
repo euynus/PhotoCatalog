@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Builds a signed, notarized PhotoCatalog.app and a zip ready to publish as a GitHub release,
-# which "Check for Updates…" then offers to everyone on an older version.
+# which "Check for Updates…" then offers to everyone on an older version. Keep the asset's name
+# (PhotoCatalog-<version>.zip): signed copies find it by that name and install it themselves.
 #
 #   DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=photocatalog \
 #     script/release.sh 1.1

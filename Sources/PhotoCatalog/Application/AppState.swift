@@ -4667,28 +4667,125 @@ final class AppState {
     /// The version in the app bundle ("1.0" outside one).
     static var appVersion: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0" }
 
-    /// Looks for a newer release on request and offers its download page.
+    /// Looks for a newer release on request and offers to install it.
     func checkForUpdates() {
         Task { [weak self] in
             let outcome = await UpdateChecker.check(currentVersion: Self.appVersion)
-            guard self != nil else { return }
-            let alert = NSAlert()
+            guard let self else { return }
             switch outcome {
             case .newer(let release):
-                alert.messageText = L("PhotoCatalog \(release.version) 已发布")
-                alert.informativeText = L("当前版本 \(Self.appVersion)。下载新版本后替换应用程序文件夹中的旧版本即可。")
-                alert.addButton(withTitle: L("前往下载"))
-                alert.addButton(withTitle: L("稍后"))
-                if alert.runModal() == .alertFirstButtonReturn { NSWorkspace.shared.open(release.htmlURL) }
+                self.offerUpdate(release, automatic: false)
             case .upToDate:
+                let alert = NSAlert()
                 alert.messageText = L("PhotoCatalog 已是最新版本")
                 alert.informativeText = L("当前版本 \(Self.appVersion)。")
                 alert.runModal()
             case .unavailable:
+                let alert = NSAlert()
                 alert.messageText = L("暂时无法检查更新")
                 alert.informativeText = L("请检查网络连接后再试。")
                 alert.runModal()
             }
+        }
+    }
+
+    /// Settings → 自动检查更新: at most once a day, shortly after launch.
+    var autoCheckForUpdates: Bool = (UserDefaults.standard.object(forKey: "pc_autoCheckUpdates") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(autoCheckForUpdates, forKey: "pc_autoCheckUpdates") }
+    }
+
+    /// The version being downloaded and installed.
+    var installingUpdate: String?
+
+    /// The daily check: quiet unless there's a newer release the user hasn't chosen to skip.
+    func checkForUpdatesAutomatically() {
+        guard autoCheckForUpdates else { return }
+        let defaults = UserDefaults.standard
+        let last = defaults.object(forKey: "pc_lastUpdateCheck") as? Date ?? .distantPast
+        guard Date().timeIntervalSince(last) > 20 * 3600 else { return }
+        Task { [weak self] in
+            // let the window settle first
+            try? await Task.sleep(for: .seconds(5))
+            let outcome = await UpdateChecker.check(currentVersion: Self.appVersion)
+            guard let self else { return }
+            if outcome != .unavailable { defaults.set(Date(), forKey: "pc_lastUpdateCheck") }
+            guard case .newer(let release) = outcome, release.version != defaults.string(forKey: "pc_skippedVersion"),
+                  self.sheet == nil, self.installingUpdate == nil else { return }
+            self.offerUpdate(release, automatic: true)
+        }
+    }
+
+    /// Whether this copy can install `release` itself: it's published as an archive, this app is
+    /// signed so a genuine update can be told apart, and its folder is writable.
+    func canInstallUpdate(_ release: UpdateChecker.Release) -> Bool {
+        release.archive != nil && UpdateInstaller.runningRequirement() != nil && UpdateInstaller.canReplace(Bundle.main.bundleURL)
+    }
+
+    private func offerUpdate(_ release: UpdateChecker.Release, automatic: Bool) {
+        let installable = canInstallUpdate(release)
+        let alert = NSAlert()
+        alert.messageText = L("PhotoCatalog \(release.version) 已发布")
+        if installable {
+            alert.informativeText = L("当前版本 \(Self.appVersion)。现在下载并安装，完成后 PhotoCatalog 会重新启动。")
+            alert.addButton(withTitle: L("安装并重新启动"))
+        } else {
+            alert.informativeText = L("当前版本 \(Self.appVersion)。下载新版本后替换应用程序文件夹中的旧版本即可。")
+            alert.addButton(withTitle: L("前往下载"))
+        }
+        alert.addButton(withTitle: L("稍后"))
+        if automatic { alert.addButton(withTitle: L("跳过此版本")) }
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            if installable { installUpdate(release) } else { NSWorkspace.shared.open(release.htmlURL) }
+        case .alertThirdButtonReturn:
+            UserDefaults.standard.set(release.version, forKey: "pc_skippedVersion")
+        default:
+            break
+        }
+    }
+
+    /// Downloads `release`, checks that it carries this app's signature, puts it in this app's
+    /// place and relaunches; on any failure the running copy is left as it was.
+    func installUpdate(_ release: UpdateChecker.Release) {
+        guard installingUpdate == nil, let archive = release.archive?.downloadURL,
+              let requirement = UpdateInstaller.runningRequirement(),
+              let identifier = Bundle.main.bundleIdentifier else { return }
+        guard !importing else {
+            push("导入完成后再安装更新", "info")
+            return
+        }
+        installingUpdate = release.version
+        push("正在下载 PhotoCatalog \(release.version)…", "arrow.down.circle")
+        let current = Bundle.main.bundleURL
+        let staging = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PhotoCatalog/Update", isDirectory: true)
+        Task { [weak self] in
+            do {
+                let app = try await UpdateInstaller.prepare(archive: archive, version: release.version, identifier: identifier,
+                                                            requirement: requirement, staging: staging)
+                try UpdateInstaller.install(app, replacing: current)
+                try? FileManager.default.removeItem(at: staging)
+                UpdateInstaller.relaunch(current)
+                NSApp.terminate(nil)
+            } catch {
+                guard let self else { return }
+                self.installingUpdate = nil
+                let alert = NSAlert()
+                alert.messageText = L("未能安装更新")
+                alert.informativeText = Self.updateFailureMessage(error as? UpdateInstaller.Failure)
+                alert.addButton(withTitle: L("前往下载"))
+                alert.addButton(withTitle: L("好"))
+                if alert.runModal() == .alertFirstButtonReturn { NSWorkspace.shared.open(release.htmlURL) }
+            }
+        }
+    }
+
+    nonisolated static func updateFailureMessage(_ failure: UpdateInstaller.Failure?) -> String {
+        switch failure {
+        case .download: L("下载没有完成，请检查网络连接后再试。")
+        case .unpack, .notTheApp: L("下载的文件不是这个版本的 PhotoCatalog。")
+        case .untrusted: L("下载的应用没有与当前应用相同的签名，为安全起见没有安装。")
+        case .replace, nil: L("无法替换应用程序文件夹中的 PhotoCatalog。当前版本没有改动。")
         }
     }
 

@@ -164,9 +164,15 @@ You can also open `Package.swift` directly in Xcode and run the `PhotoCatalog` s
 hardened runtime, notarizes and staples it, and leaves `dist/PhotoCatalog-<version>.zip` to
 publish as a GitHub release (`gh release create v<version> …`). It needs a Developer ID
 Application certificate (`DEVELOPER_ID`) and a notarytool keychain profile (`NOTARY_PROFILE`);
-the script's header shows the one-time setup. PhotoCatalog → Check for Updates… compares the
-running version with the latest GitHub release and offers its download page; it only contacts
-GitHub when chosen. After an unexpected quit, the next launch offers to show the crash report
+the script's header shows the one-time setup. Updates: PhotoCatalog → Check for Updates…, and
+once a day shortly after launch unless Settings → 常规 → 自动检查更新 is off, compares the running
+version with the latest GitHub release. A Developer ID-signed copy offers Install and Relaunch:
+it downloads the release's `PhotoCatalog-<version>.zip`, installs it only if the app inside is
+that version and meets the running app's own designated requirement (same identifier, same
+team; an altered or differently signed app is refused), swaps it in and relaunches. A copy signed
+ad hoc, or one in a folder it can't write, offers the download page instead. `PC_UPDATE_FEED`
+(an https or file URL of a release in GitHub's format) points the check elsewhere for testing;
+Debug builds also take `PC_UPDATE_REQUIREMENT` in place of the running app's requirement. After an unexpected quit, the next launch offers to show the crash report
 macOS saved (it stays on the Mac).
 
 Photos load from the Unsplash CDN; when offline each tile shows its deterministic gradient placeholder (matching the prototype's graceful fallback).
