@@ -1553,6 +1553,12 @@
 "查找" = "Find";
 "没能理解这句话，请换个说法" = "That sentence wasn't understood; try putting it another way";
 "按“%@”找到 %lld 张照片" = "Found %2$lld photos for “%1$@”";
+"AI 调整" = "AI Adjust";
+"描述想要的效果，例如：暖一点的胶片感" = "Describe the look you want, e.g. a warmer film look";
+"应用" = "Apply";
+"在“设置 → AI”中设置服务后可用" = "Available once a service is set up in Settings → AI";
+"没能从回复中得到调整，请换个说法" = "No adjustments came back; try putting it another way";
+"已按描述调整" = "Adjusted as described";
 "增强…" = "Enhance…";
 "增强" = "Enhance";
 "增强后" = "Enhanced";

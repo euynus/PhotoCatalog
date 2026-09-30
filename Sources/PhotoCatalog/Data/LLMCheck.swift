@@ -14,6 +14,7 @@ enum LLMCheck {
         MainActor.assumeIsolated {
             checkDescribe(server)
             checkSearch(server)
+            checkDevelopByText(server)
         }
         print("--- llm assertions passed ---")
     }
@@ -252,6 +253,65 @@ extension LLMCheck {
                "a sentence becomes the filter bar and the search box")
         server.reply = (200, #"{"choices":[{"message":{"content":"Sorry, I can't help with that."}}]}"#)
         assert(!run { await app.searchNaturally("随便") } && app.filters.minRating == 3, "an answer without filters changes nothing")
+    }
+}
+
+extension LLMCheck {
+    @MainActor
+    static func checkDevelopByText(_ server: StandInServer) {
+        var current = DevelopSettings()
+        current.exposure = 0.3
+        current.contrast = 10
+        let image = Data([0xFF, 0xD8, 9])
+        let asShot = DevelopByText.AsShot(temperature: 5200, tint: 4)
+        let raw = DevelopByText.request("暖一点的胶片感", settings: current, isRaw: true, asShot: asShot, image: image, chinese: true)
+        assert(raw.images == [image] && raw.system.contains("Kelvin") && raw.prompt.contains("temperature: 5200 K")
+               && raw.prompt.contains("tint: 4") && raw.prompt.contains("exposure: 0.30") && raw.prompt.contains("contrast: 10")
+               && raw.prompt.contains("暖一点的胶片感") && raw.system.contains("Simplified Chinese"),
+               "a look request carries the photo, its current values — a RAW's as-shot white balance in Kelvin among them")
+        assert(DevelopByText.request("x", settings: current, isRaw: false, image: nil, chinese: false).images.isEmpty,
+               "and no image when there's none")
+
+        let look = DevelopByText.parse(#"""
+        {"exposure": 9, "grain": -5, "shadow": "25", "temperature": 15000, "tint": 12,
+         "grading": {"shadows": {"hue": 400, "saturation": 150}}, "explanation": "更暖、更有颗粒"}
+        """#, onto: current, isRaw: true)
+        assert(look?.settings.exposure == 5 && look?.settings.grain == 0 && look?.settings.shadows == 25
+               && look?.settings.temperature == 12000 && look?.settings.tint == 12 && look?.settings.contrast == 10
+               && look?.settings.grading.shadows.hue == 40 && look?.settings.grading.shadows.saturation == 100
+               && look?.explanation == "更暖、更有颗粒",
+               "every value is kept within its slider, a slider named in the singular counts, and untouched sliders keep theirs (\(String(describing: look?.settings)))")
+        assert(DevelopByText.parse(#"{"temperature": 150}"#, onto: current, isRaw: false)?.settings.temperature == 100,
+               "white balance for other files stays on its relative scale")
+        assert(DevelopByText.parse(#"{"explanation": "nothing to do"}"#, onto: current, isRaw: false) == nil,
+               "a reply that sets nothing changes nothing")
+        // smaller models repeat every current value, white balance included
+        assert(DevelopByText.parse(#"{"exposure": 0.3, "contrast": 10, "clarity": 0, "temperature": 5200, "tint": 4, "explanation": "更暖"}"#,
+                                   onto: current, isRaw: true, asShot: asShot) == nil,
+               "a reply that only repeats the current values changes nothing, and says so")
+        let warmer = DevelopByText.parse(#"{"exposure": 0.3, "temperature": 5700, "tint": 4}"#, onto: current, isRaw: true, asShot: asShot)
+        assert(warmer?.settings.temperature == 5700 && warmer?.settings.tint == nil,
+               "a repeated as-shot tint stays as shot beside a changed temperature")
+
+        // the whole of it, against the stand-in: the photo in Develop takes the look, undoably
+        let saved = UserDefaults.standard.data(forKey: "pc_llm")
+        defer { UserDefaults.standard.set(saved, forKey: "pc_llm") }
+        let app = AppState.selfCheckFixture()
+        guard var photo = DemoData.assets.first(where: { !$0.isRaw }) ?? DemoData.assets.first else { return }
+        photo.isDemo = false
+        photo.localPath = "/tmp/pc-look/\(photo.filename)"
+        photo.status = .ready
+        app.assets = [photo]
+        app.setPrimary(photo.id)
+        app.view = .develop
+        var configuration = LLMConfiguration(kind: .openAICompatible, baseURL: "http://127.0.0.1:\(server.port)/v1", model: "stand-in")
+        configuration.acceptsImages = false
+        app.llmConfiguration = configuration
+        server.reply = (200, #"{"choices":[{"message":{"content":"{\"exposure\": 0.5, \"vibrance\": 20, \"explanation\": \"提亮一点\"}"}}]}"#)
+        let done = run { await app.developByText("提亮一点") }
+        let settings = app.developSettings[photo.id]
+        assert(done && settings?.exposure == 0.5 && settings?.vibrance == 20 && app.developByTextQuery == "提亮一点",
+               "a described look is applied to the photo in Develop (\(String(describing: settings)))")
     }
 }
 

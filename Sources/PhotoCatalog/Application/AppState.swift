@@ -4615,6 +4615,54 @@ final class AppState {
         }
     }
 
+    // ---------- AI: develop by text ----------
+    var developByTextRunning = false
+    /// The last look described, kept for the field.
+    var developByTextQuery = ""
+
+    /// Develop → AI 调整: the photo in Develop edited as `description` asks — the model sees its
+    /// current values, and the photo when it reads images — as one undoable step.
+    func developByText(_ description: String) async -> Bool {
+        let description = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !description.isEmpty, !developByTextRunning, view == .develop, let asset = primary, canDevelop(asset) else {
+            return false
+        }
+        guard isLLMReady else {
+            push(verbatim: (llmConfiguration.isComplete ? LLMError.missingKey : LLMError.notConfigured).message, "warning")
+            return false
+        }
+        developByTextRunning = true
+        defer { developByTextRunning = false }
+        developByTextQuery = description
+        let id = asset.id
+        let settings = developSettings[id] ?? .neutral
+        let source = developSource(for: asset)
+        let isRaw = source?.isRaw ?? false
+        let wantsImage = llmConfiguration.acceptsImages
+        // the photo as it looks now, and a RAW's as-shot white balance, read off the main thread
+        let seen = await ThumbnailRepairQueue.run(.visible) { () -> (image: Data?, asShot: DevelopByText.AsShot) in
+            guard let source, let photo = DevelopRenderer.Source(url: source.url, isRaw: source.isRaw, maxPixel: 1400) else {
+                return (nil, DevelopByText.AsShot())
+            }
+            let image = wantsImage ? photo.image(settings).flatMap(DevelopRenderer.render).flatMap { LLMClient.jpeg($0) } : nil
+            return (image, DevelopByText.AsShot(temperature: photo.asShotTemperature, tint: photo.asShotTint))
+        } ?? (image: nil, asShot: DevelopByText.AsShot())
+        do {
+            let reply = try await askLLM(DevelopByText.request(description, settings: settings, isRaw: isRaw, asShot: seen.asShot,
+                                                               image: seen.image, chinese: PhotoDescriber.answersInChinese))
+            guard let look = DevelopByText.parse(reply, onto: developSettings[id] ?? settings, isRaw: isRaw, asShot: seen.asShot) else {
+                push("没能从回复中得到调整，请换个说法", "warning")
+                return false
+            }
+            commitDevelop([id: look.settings], undoName: L("AI 调整"))
+            if look.explanation.isEmpty { push("已按描述调整", "sparkles") } else { push(verbatim: look.explanation, "sparkles") }
+            return true
+        } catch {
+            push(verbatim: (error as? LLMError)?.message ?? error.localizedDescription, "warning")
+            return false
+        }
+    }
+
     // ---------- enhance: AI denoise and super resolution ----------
     /// The photos the Enhance dialog works on.
     var enhanceTargets: [Asset] = []
