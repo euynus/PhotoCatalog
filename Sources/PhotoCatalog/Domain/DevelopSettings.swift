@@ -47,6 +47,12 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var distortion: Double = 0
     var lensVignette: Double = 0
     var lensVignetteMidpoint: Double = 50
+    /// Chromatic aberration, corrected first: lateral (red and blue magnified slightly
+    /// differently from green, measured per photo — see `ChromaticAberration`) when on, and
+    /// purple and green fringes along high-contrast edges desaturated by 0…20, as in Lightroom.
+    var removeChromaticAberration = false
+    var defringePurple: Double = 0
+    var defringeGreen: Double = 0
     /// Effects on the finished (cropped) photo: post-crop vignette -100…100 (negative darkens
     /// the corners) with midpoint and feather 0…100, and film grain amount, size and roughness.
     var vignette: Double = 0
@@ -87,7 +93,9 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
 
     var hasPresence: Bool { texture != 0 || clarity != 0 || dehaze != 0 }
 
-    var hasLensCorrection: Bool { distortion != 0 || lensVignette != 0 }
+    var hasLensCorrection: Bool { distortion != 0 || lensVignette != 0 || hasChromaticAberrationCorrection }
+
+    var hasChromaticAberrationCorrection: Bool { removeChromaticAberration || defringePurple != 0 || defringeGreen != 0 }
 
     var hasEffects: Bool { vignette != 0 || grain != 0 }
 
@@ -131,6 +139,9 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
         }
         if distortion != 0 || lensVignette != 0 || lensVignetteMidpoint != 50 {
             text += String(format: "|l%.1f,%.1f,%.1f", distortion, lensVignette, lensVignetteMidpoint)
+        }
+        if hasChromaticAberrationCorrection {
+            text += String(format: "|a%d,%.0f,%.0f", removeChromaticAberration ? 1 : 0, defringePurple, defringeGreen)
         }
         if vignette != 0 || vignetteMidpoint != 50 || vignetteFeather != 50 || grain != 0
             || grainSize != 25 || grainRoughness != 50 {
@@ -180,6 +191,9 @@ extension DevelopSettings {
         distortion = try container.decodeIfPresent(Double.self, forKey: .distortion) ?? 0
         lensVignette = try container.decodeIfPresent(Double.self, forKey: .lensVignette) ?? 0
         lensVignetteMidpoint = try container.decodeIfPresent(Double.self, forKey: .lensVignetteMidpoint) ?? 50
+        removeChromaticAberration = try container.decodeIfPresent(Bool.self, forKey: .removeChromaticAberration) ?? false
+        defringePurple = try container.decodeIfPresent(Double.self, forKey: .defringePurple) ?? 0
+        defringeGreen = try container.decodeIfPresent(Double.self, forKey: .defringeGreen) ?? 0
         vignette = try container.decodeIfPresent(Double.self, forKey: .vignette) ?? 0
         vignetteMidpoint = try container.decodeIfPresent(Double.self, forKey: .vignetteMidpoint) ?? 50
         vignetteFeather = try container.decodeIfPresent(Double.self, forKey: .vignetteFeather) ?? 50
@@ -562,6 +576,11 @@ struct DevelopControl: Identifiable {
         signed(\.distortion, L("扭曲度")),
         signed(\.lensVignette, L("镜头暗角")),
         amount(\.lensVignetteMidpoint, L("镜头暗角中点"), max: 100, neutral: 50),
+    ]
+
+    static let defringe: [DevelopControl] = [
+        amount(\.defringePurple, L("紫边去除"), max: 20),
+        amount(\.defringeGreen, L("绿边去除"), max: 20),
     ]
 
     static let lutAmount = amount(\.lutAmount, L("LUT 强度"), max: 100, neutral: 100)

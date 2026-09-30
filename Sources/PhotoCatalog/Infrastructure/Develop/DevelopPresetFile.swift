@@ -18,7 +18,7 @@ enum DevelopPresetFile {
     }
 
     enum Skipped: String, CaseIterable, Comparable, Sendable {
-        case profile, masks, lensProfile, perspective, chromaticAberration, parametricCurve
+        case profile, masks, lensProfile, perspective, parametricCurve
 
         var title: String {
             switch self {
@@ -26,7 +26,6 @@ enum DevelopPresetFile {
             case .masks: L("蒙版")
             case .lensProfile: L("镜头配置文件校正")
             case .perspective: L("Upright 与其他变换")
-            case .chromaticAberration: L("色差校正")
             case .parametricCurve: L("参数曲线")
             }
         }
@@ -69,6 +68,8 @@ enum DevelopPresetFile {
             Scalar(key: "LensManualDistortionAmount", path: \.distortion, field: .lensCorrections, format: "%+.0f"),
             Scalar(key: "VignetteAmount", path: \.lensVignette, field: .lensCorrections, format: "%+.0f"),
             Scalar(key: "VignetteMidpoint", path: \.lensVignetteMidpoint, field: .lensCorrections, format: "%.0f"),
+            Scalar(key: "DefringePurpleAmount", path: \.defringePurple, field: .lensCorrections, format: "%.0f"),
+            Scalar(key: "DefringeGreenAmount", path: \.defringeGreen, field: .lensCorrections, format: "%.0f"),
             Scalar(key: "PostCropVignetteAmount", path: \.vignette, field: .vignette, format: "%+.0f"),
             Scalar(key: "PostCropVignetteMidpoint", path: \.vignetteMidpoint, field: .vignette, format: "%.0f"),
             Scalar(key: "PostCropVignetteFeather", path: \.vignetteFeather, field: .vignette, format: "%.0f"),
@@ -137,6 +138,9 @@ enum DevelopPresetFile {
         for scalar in scalars where fields.contains(scalar.field) {
             let value = settings[keyPath: scalar.path] + scalar.offset
             attributes.append(("crs:" + scalar.key, String(format: scalar.format, value)))
+        }
+        if fields.contains(.lensCorrections) {
+            attributes.append(("crs:AutoLateralCA", settings.removeChromaticAberration ? "1" : "0"))
         }
         if fields.contains(.toneCurve) {
             attributes.append(("crs:ToneCurveName2012", settings.curve.isLinear ? "Linear" : "Custom"))
@@ -270,6 +274,10 @@ enum DevelopPresetFile {
             settings.grading.balance = number("SplitToningBalance") ?? 0
             fields.insert(.colorGrading)
         }
+        if let lateral = values["AutoLateralCA"] {
+            settings.removeChromaticAberration = lateral == "1"
+            fields.insert(.lensCorrections)
+        }
         if values["ConvertToGrayscale"] == "True" {
             settings.saturation = -100
             fields.insert(.saturation)
@@ -294,8 +302,6 @@ enum DevelopPresetFile {
             "PerspectiveY"].contains(where: { key in number(key).map { $0 != (key == "PerspectiveScale" ? 100 : 0) } ?? false }) {
             skipped.insert(.perspective)
         }
-        if values["AutoLateralCA"] == "1" || (number("DefringePurpleAmount") ?? 0) != 0
-            || (number("DefringeGreenAmount") ?? 0) != 0 { skipped.insert(.chromaticAberration) }
         if ["ParametricShadows", "ParametricDarks", "ParametricLights", "ParametricHighlights"]
             .contains(where: { (number($0) ?? 0) != 0 }) { skipped.insert(.parametricCurve) }
         let transfer = DevelopTransfer(settings: settings, fields: fields, sourceIsRaw: sourceIsRaw)

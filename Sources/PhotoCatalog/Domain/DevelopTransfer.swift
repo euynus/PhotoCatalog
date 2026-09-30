@@ -109,6 +109,9 @@ extension DevelopSettings {
                 next.distortion = source.distortion
                 next.lensVignette = source.lensVignette
                 next.lensVignetteMidpoint = source.lensVignetteMidpoint
+                next.removeChromaticAberration = source.removeChromaticAberration
+                next.defringePurple = source.defringePurple
+                next.defringeGreen = source.defringeGreen
             case .vignette:
                 next.vignette = source.vignette
                 next.vignetteMidpoint = source.vignetteMidpoint

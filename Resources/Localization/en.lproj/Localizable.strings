@@ -425,6 +425,8 @@
 "扭曲度" = "Distortion";
 "镜头暗角" = "Lens Vignetting";
 "镜头暗角中点" = "Vignetting Midpoint";
+"紫边去除" = "Defringe Purple";
+"绿边去除" = "Defringe Green";
 "锐化" = "Sharpening";
 "锐化半径" = "Sharpen Radius";
 "锐化蒙版" = "Sharpen Masking";
@@ -448,6 +450,8 @@
 "色调曲线" = "Tone Curve";
 "效果" = "Effects";
 "镜头校正" = "Lens Corrections";
+"删除色差" = "Remove Chromatic Aberration";
+"测量并校正镜头的横向色差：朝画面四角，边缘两侧出现的红、蓝或紫、绿色边" = "Measure and correct the lens's lateral chromatic aberration: red and blue, or purple and green, edges on either side of outlines toward the corners";
 "减少杂色" = "Noise Reduction";
 "细节" = "Detail";
 "偏好" = "Presence";
@@ -733,7 +737,6 @@
 " · 未导入：" = " · not imported: ";
 "、" = ", ";
 "参数曲线" = "parametric curve";
-"色差校正" = "chromatic aberration";
 "Upright 与其他变换" = "Upright and other transforms";
 "配置文件" = "profile";
 "镜头配置文件校正" = "lens profile corrections";

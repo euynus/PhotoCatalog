@@ -3,7 +3,7 @@
 // ============================================================
 import CoreImage
 
-/// Lens distortion, radial gain, film grain, local contrast, haze removal, the color mixer,
+/// Lens distortion, radial gain, chromatic aberration and defringing, film grain, local contrast, haze removal, the color mixer,
 /// color grading, mask shapes, healing and a high-pass view, each compiled from Metal source the first time a render needs it: the package
 /// has no Metal build step, and Core Image compiles stitchable kernels at run time. A kernel
 /// that fails to compile leaves its adjustment out of the render.
@@ -43,6 +43,42 @@ enum DevelopKernels {
             float2 p = (dest.coord() - center) / zoom;
             float r2 = dot(p, p) * invRadius2;
             return center + p * (1.0 - k * r2);
+        }
+        """,
+        "radialScale": """
+        // Samples at 1 + k1 + k2·r² times the distance from `center` (radius 1 is the corner):
+        // one color channel magnified by the lens more than green is shrunk back into place.
+        [[stitchable]] float2 radialScale(float2 center, float k1, float k2, float invRadius2, destination dest) {
+            float2 p = dest.coord() - center;
+            return center + p * (1.0 + k1 + k2 * dot(p, p) * invRadius2);
+        }
+        """,
+        "mergeChannels": """
+        // Red from `r`, green and alpha from `g`, blue from `b`.
+        [[stitchable]] float4 mergeChannels(sample_t r, sample_t g, sample_t b) {
+            return float4(r.r, g.g, b.b, g.a);
+        }
+        """,
+        "defringe": """
+        // Desaturates purple and green fringes: colors in those hue ranges (hue from roughly
+        // display-encoded values), next to a high-contrast edge — `hi` and `lo` hold the
+        // brightest and darkest display luma nearby — lose up to `purple` / `green` of their color.
+        [[stitchable]] float4 defringe(sample_t s, sample_t hi, sample_t lo, float purple, float green) {
+            float edge = smoothstep(0.1, 0.35, hi.r - lo.r);
+            float3 e = sqrt(max(s.rgb, 0.0));
+            float mx = max(e.r, max(e.g, e.b)), mn = min(e.r, min(e.g, e.b)), d = mx - mn;
+            if (edge <= 0.0 || d < 0.02) { return s; }
+            float h;
+            if (mx == e.r) { h = fmod((e.g - e.b) / d + 6.0, 6.0); }
+            else if (mx == e.g) { h = (e.b - e.r) / d + 2.0; }
+            else { h = (e.r - e.g) / d + 4.0; }
+            h *= 60.0;
+            // purple: blue-violet through magenta; green: yellow-green through green
+            float wp = smoothstep(235.0, 260.0, h) * (1.0 - smoothstep(315.0, 340.0, h));
+            float wg = smoothstep(75.0, 95.0, h) * (1.0 - smoothstep(150.0, 170.0, h));
+            float w = clamp((wp * purple + wg * green) * edge * smoothstep(0.02, 0.08, d), 0.0, 1.0);
+            float y = dot(s.rgb, float3(0.2126, 0.7152, 0.0722));
+            return float4(mix(s.rgb, float3(y), w), s.a);
         }
         """,
         "radialGain": """
@@ -314,6 +350,42 @@ enum DevelopKernels {
         return warp.apply(extent: extent, roiCallback: { _, rect in rect.insetBy(dx: -margin, dy: -margin) },
                           image: image.clampedToExtent(),
                           arguments: [center, k, 1 / max(halfDiagonal2, 1), zoom])?.cropped(to: extent) ?? image
+    }
+
+    /// Lateral chromatic aberration undone: red and blue sampled at their own radial scale
+    /// (see `ChromaticAberration.Scale`) about the middle of `image`, green left in place.
+    static func lateralChromaticAberration(_ image: CIImage, red: ChromaticAberration.Scale,
+                                           blue: ChromaticAberration.Scale) -> CIImage {
+        guard !red.isNone || !blue.isNone, let warp = kernel("radialScale") as? CIWarpKernel,
+              let merge = kernel("mergeChannels") as? CIColorKernel else { return image }
+        let extent = image.extent
+        let halfDiagonal2 = Double(extent.width * extent.width + extent.height * extent.height) / 4
+        let center = CIVector(x: extent.midX, y: extent.midY)
+        let clamped = image.clampedToExtent()
+        func scaled(_ scale: ChromaticAberration.Scale) -> CIImage? {
+            if scale.isNone { return image }
+            let margin = sqrt(halfDiagonal2) * max(abs(scale.k1), abs(scale.k1 + scale.k2)) + 2
+            return warp.apply(extent: extent, roiCallback: { _, rect in rect.insetBy(dx: -margin, dy: -margin) },
+                              image: clamped, arguments: [center, scale.k1, scale.k2, 1 / max(halfDiagonal2, 1)])
+        }
+        guard let r = scaled(red), let b = scaled(blue),
+              let merged = merge.apply(extent: extent, arguments: [r, image, b]) else { return image }
+        return merged
+    }
+
+    /// Purple and green fringes along high-contrast edges desaturated, by 0…1 each; `radius`
+    /// (render pixels) is how far from an edge a fringe may reach. `image` is linear light.
+    static func defringe(_ image: CIImage, purple: Double, green: Double, radius: Double) -> CIImage {
+        guard purple > 0 || green > 0, let kernel = kernel("defringe") as? CIColorKernel else { return image }
+        let extent = image.extent
+        let luma = image.applyingFilter("CILinearToSRGBToneCurve").applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: 0.2126, y: 0.7152, z: 0.0722, w: 0),
+            "inputGVector": CIVector(x: 0.2126, y: 0.7152, z: 0.0722, w: 0),
+            "inputBVector": CIVector(x: 0.2126, y: 0.7152, z: 0.0722, w: 0),
+        ]).clampedToExtent()
+        let hi = luma.applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": radius]).cropped(to: extent)
+        let lo = luma.applyingFilter("CIMorphologyMinimum", parameters: ["inputRadius": radius]).cropped(to: extent)
+        return kernel.apply(extent: extent, arguments: [image, hi, lo, purple, green]) ?? image
     }
 
     /// Film grain on display-encoded `image`: amount, size and roughness 0…100; `scale` is the

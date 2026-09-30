@@ -144,6 +144,15 @@ struct DevelopPanel: View {
                 }
                 section(L("镜头校正")) {
                     ForEach(DevelopControl.lens) { control in slider(control, asset, settings) }
+                    Toggle("删除色差", isOn: Binding(get: { settings.removeChromaticAberration }, set: { on in
+                        var next = app.developSettings[asset.id] ?? .neutral
+                        next.removeChromaticAberration = on
+                        app.commitDevelop([asset.id: next], undoName: L("删除色差"))
+                    }))
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
+                    .help("测量并校正镜头的横向色差：朝画面四角，边缘两侧出现的红、蓝或紫、绿色边")
+                    ForEach(DevelopControl.defringe) { control in slider(control, asset, settings) }
                 }
                 section(L("效果")) {
                     ForEach(DevelopControl.effects) { control in slider(control, asset, settings) }

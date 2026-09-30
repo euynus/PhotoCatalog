@@ -88,7 +88,10 @@ enum DevelopRenderer {
             guard let base = baseImage(settings, draft: draft) else { return nil }
             sourceSize = base.extent.integral.size
             let scale = max(base.extent.width, base.extent.height) / max(fullLongEdge, 1)
-            let healed = DevelopRenderer.applySpots(DevelopRenderer.applyLens(base, settings), settings)
+            // lateral chromatic aberration is measured on the photo itself, once per file
+            let lateral = settings.removeChromaticAberration ? ChromaticAberration.correction(url: url, isRaw: isRaw) : nil
+            let lensed = DevelopRenderer.applyLens(base, settings, scale: min(1, scale), lateral: lateral)
+            let healed = DevelopRenderer.applySpots(lensed, settings)
             let toned = DevelopRenderer.applyTone(healed, settings)
             let colored = DevelopRenderer.applyLUT(
                 DevelopRenderer.applyMixer(DevelopRenderer.applyCurve(toned, settings), settings), settings)
@@ -311,14 +314,24 @@ enum DevelopRenderer {
         return origin == .zero ? image : image.transformed(by: CGAffineTransform(translationX: -origin.x, y: -origin.y))
     }
 
-    /// Manual lens corrections on linear light: vignetting first (it belongs to the lens's own
-    /// frame), then distortion.
-    static func applyLens(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
+    /// Lens corrections on linear light: chromatic aberration first (`lateral`, as measured for
+    /// the photo, then fringes, whose reach `scale` fits to the render's size), vignetting (it
+    /// belongs to the lens's own frame), then distortion.
+    static func applyLens(_ input: CIImage, _ s: DevelopSettings, scale: Double = 1,
+                          lateral: ChromaticAberration.Correction? = nil) -> CIImage {
         guard s.hasLensCorrection else { return input }
+        var image = input
+        if let lateral { image = DevelopKernels.lateralChromaticAberration(image, red: lateral.red, blue: lateral.blue) }
+        if s.defringePurple > 0 || s.defringeGreen > 0 {
+            // fringes reach further from edges at higher amounts: 1.5 to 6.5 pixels of the full photo
+            let reach = (1.5 + max(s.defringePurple, s.defringeGreen) * 0.25) * scale
+            image = DevelopKernels.defringe(image, purple: min(1, s.defringePurple / 10), green: min(1, s.defringeGreen / 10),
+                                            radius: max(1, reach))
+        }
         let start = s.lensVignetteMidpoint / 100 * 0.8
         // +100 lifts the corners 1.3 EV, -100 darkens them as much
         let amount = s.lensVignette >= 0 ? s.lensVignette / 100 * 1.5 : s.lensVignette / 100 * 0.6
-        let corrected = DevelopKernels.radialGain(input, amount: amount, start: start, width: 1 - start)
+        let corrected = DevelopKernels.radialGain(image, amount: amount, start: start, width: 1 - start)
         return DevelopKernels.distort(corrected, k: s.distortion / 100 * 0.15)
     }
 

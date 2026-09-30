@@ -15,6 +15,7 @@ enum DevelopCheck {
         checkLocalAdjustments()
         checkSpotRemoval()
         checkLensCorrections()
+        checkChromaticAberration()
         checkEffects()
         checkAutoAdjustments()
         checkBoostCurve()
@@ -668,6 +669,133 @@ enum DevelopCheck {
         assert(carried.distortion == 30 && carried.lensVignette == 45 && carried.lensVignetteMidpoint == 20,
                "lens corrections travel together")
         assert(DevelopSettings().fingerprint != carried.fingerprint, "lens corrections change the fingerprint")
+    }
+
+    /// A `width`×`height` image in display P3 from a color per pixel.
+    private static func picture(_ width: Int, _ height: Int, _ color: (Int, Int) -> (Double, Double, Double)) -> CGImage {
+        var data = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let c = color(x, y), i = (y * width + x) * 4
+                data[i] = UInt8(max(0, min(255, (c.0 * 255).rounded())))
+                data[i + 1] = UInt8(max(0, min(255, (c.1 * 255).rounded())))
+                data[i + 2] = UInt8(max(0, min(255, (c.2 * 255).rounded())))
+            }
+        }
+        let context = CGContext(data: &data, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                space: DevelopRenderer.outputColorSpace,
+                                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        return context.makeImage()!
+    }
+
+    private static func checkChromaticAberration() {
+        // a scene of gray, black and white rectangles, with a few colored ones, 480 × 360
+        var seed: UInt64 = 0x9E37_79B9_7F4A_7C15
+        func random(_ n: Int) -> Int {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            return Int((seed >> 33) % UInt64(n))
+        }
+        var boxes: [(x: Int, y: Int, w: Int, h: Int, c: (Double, Double, Double))] = []
+        let grays = [0.08, 0.3, 0.7, 0.92]
+        for _ in 0..<90 {
+            let v = grays[random(4)]
+            boxes.append((random(470), random(350), 8 + random(50), 8 + random(50), (v, v, v)))
+        }
+        for i in 0..<8 {
+            let color = i.isMultiple(of: 2) ? (0.8, 0.15, 0.1) : (0.12, 0.25, 0.8)
+            boxes.append((random(440), random(320), 20 + random(30), 20 + random(30), color))
+        }
+        let halfDiagonal = (480.0 * 480 + 360 * 360).squareRoot() / 2
+        /// The scene with each channel drawn at its own magnification about the middle, with
+        /// exact antialiasing: a lens with lateral chromatic aberration.
+        func photographed(red: Double, blue: Double) -> CGImage {
+            let planes = [red, 1, blue].enumerated().map { channel, scale -> [UInt8] in
+                var plane = [UInt8](repeating: 0, count: 480 * 360)
+                let context = CGContext(data: &plane, width: 480, height: 360, bitsPerComponent: 8, bytesPerRow: 480,
+                                        space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)!
+                context.setFillColor(gray: 0.45, alpha: 1)
+                context.fill(CGRect(x: 0, y: 0, width: 480, height: 360))
+                context.translateBy(x: 240, y: 180)
+                context.scaleBy(x: scale, y: scale)
+                context.translateBy(x: -240, y: -180)
+                for box in boxes {
+                    context.setFillColor(gray: [box.c.0, box.c.1, box.c.2][channel], alpha: 1)
+                    context.fill(CGRect(x: box.x, y: box.y, width: box.w, height: box.h))
+                }
+                return plane
+            }
+            return picture(480, 360) { x, y in
+                let i = (359 - y) * 480 + x
+                return (Double(planes[0][i]) / 255, Double(planes[1][i]) / 255, Double(planes[2][i]) / 255)
+            }
+        }
+        let scene = photographed(red: 1, blue: 1)
+
+        // a lens that magnifies red 0.4% and shrinks blue 0.3% against green: 1.2 and 0.9 pixels
+        // at the corners
+        let fringed = photographed(red: 1.004, blue: 0.997)
+        let found = ChromaticAberration.measure(CIImage(cgImage: fringed))
+        func shift(_ scale: ChromaticAberration.Scale, at rho: Double) -> Double {
+            (scale.k1 + scale.k2 * rho * rho) * rho * halfDiagonal
+        }
+        assert(abs(shift(found.red, at: 1) - 1.2) < 0.15 && abs(shift(found.blue, at: 1) + 0.9) < 0.15
+               && abs(shift(found.red, at: 0.5) - 0.6) < 0.1 && abs(shift(found.blue, at: 0.5) + 0.45) < 0.1,
+               "lateral chromatic aberration is measured from the edges (\(found))")
+        assert(ChromaticAberration.measure(CIImage(cgImage: scene)).red.isNone
+               || abs(shift(ChromaticAberration.measure(CIImage(cgImage: scene)).red, at: 1)) < 0.1,
+               "a sharp photo measures none")
+
+        var settings = DevelopSettings()
+        settings.removeChromaticAberration = true
+        let corrected = develop(fringed, settings)
+        let left = ChromaticAberration.measure(CIImage(cgImage: corrected))
+        assert(abs(shift(left.red, at: 1)) < 0.2 && abs(shift(left.blue, at: 1)) < 0.2,
+               "removing chromatic aberration lines the channels back up (\(left))")
+        assert(settings.hasLensCorrection && settings.fingerprint != DevelopSettings().fingerprint,
+               "the correction is an edit of its own")
+
+        // defringe: a purple and a green fringe along a black-to-white edge, and a purple thing
+        // away from any edge
+        let fringes = image { x, y in
+            if x >= 32 && y < 32 { return (1, 1, 1) }
+            if x >= 29 && x < 32 && y < 16 { return (0.55, 0.2, 0.75) }   // purple fringe
+            if x >= 29 && x < 32 && y < 32 { return (0.3, 0.6, 0.25) }    // green fringe
+            if x >= 2 && x < 24 && y >= 40 && y < 62 { return (0.45, 0.25, 0.6) }
+            return (0.05, 0.05, 0.05)
+        }
+        func chroma(_ p: (r: UInt8, g: UInt8, b: UInt8, a: UInt8)) -> Int { Int(max(p.r, p.g, p.b)) - Int(min(p.r, p.g, p.b)) }
+        let plain = develop(fringes, .neutral)
+        var purple = DevelopSettings(); purple.defringePurple = 20
+        let noPurple = develop(fringes, purple)
+        assert(chroma(pixel(noPurple, 30, 8)) * 10 < chroma(pixel(plain, 30, 8)) * 3,
+               "purple defringing takes the color out of a purple fringe")
+        assert(chroma(pixel(noPurple, 30, 24)) * 10 > chroma(pixel(plain, 30, 24)) * 9
+               && chroma(pixel(noPurple, 13, 51)) * 10 > chroma(pixel(plain, 13, 51)) * 9,
+               "and leaves green fringes and purple things away from edges alone")
+        var green = DevelopSettings(); green.defringeGreen = 20
+        assert(chroma(pixel(develop(fringes, green), 30, 24)) * 10 < chroma(pixel(plain, 30, 24)) * 3,
+               "green defringing takes the color out of a green fringe")
+
+        // carried by copy, presets, preset files and blends; stored with the photo
+        var source = DevelopSettings()
+        source.removeChromaticAberration = true; source.defringePurple = 8; source.defringeGreen = 3
+        let carried = DevelopSettings().applying(source, fields: [.lensCorrections])
+        assert(carried.removeChromaticAberration && carried.defringePurple == 8 && carried.defringeGreen == 3,
+               "chromatic aberration settings travel with the lens corrections")
+        let preset = DevelopPreset(id: "ca", name: "CA", transfer: DevelopTransfer(settings: source, fields: [.lensCorrections],
+                                                                                  sourceIsRaw: true))
+        let text = DevelopPresetFile.xmp(for: preset)
+        let crsOnly = text.replacingOccurrences(of: #"\s*pc:Preset="[^"]*""#, with: "", options: .regularExpression)
+        let lightroom = DevelopPresetFile.read(Data(crsOnly.utf8), fileName: "ca.xmp")
+        assert(text.contains("crs:AutoLateralCA=\"1\"") && text.contains("crs:DefringePurpleAmount=\"8\"")
+               && lightroom?.preset.transfer.settings.removeChromaticAberration == true
+               && lightroom?.preset.transfer.settings.defringePurple == 8 && lightroom?.preset.transfer.settings.defringeGreen == 3
+               && lightroom?.skipped.isEmpty == true,
+               "Camera Raw's chromatic aberration settings map both ways")
+        let half = DevelopSettings.blend(.neutral, source, amount: 0.5, isRaw: true, whiteBalanceOrigin: nil)
+        assert(half.removeChromaticAberration && half.defringePurple == 4, "a preset's amount scales defringing")
+        let stored = (try? JSONEncoder().encode(source)).flatMap { try? JSONDecoder().decode(DevelopSettings.self, from: $0) }
+        assert(stored == source, "chromatic aberration settings are stored")
     }
 
     /// Mean luma over every pixel (0…255): a 1-pixel downsample only samples a noisy image.
