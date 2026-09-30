@@ -14,6 +14,10 @@
 "自动色调" = "Auto Tone";
 "无法读取照片，未能自动调整" = "Couldn't read the photo, so nothing was adjusted";
 "已自动调整 %lld 张照片的色调" = "Auto-toned %lld photos";
+"自动白平衡" = "Auto White Balance";
+"照片中没有足够的中性色，无法自动判断白平衡" = "The photo shows too little that's close to gray to set the white balance automatically";
+"已自动调整 %lld 张照片的白平衡" = "Auto white balance set on %lld photos";
+"按照片中的中性色自动设置色温与色调" = "Set temperature and tint automatically from the photo's gray surfaces";
 " · %lld 个 XMP 失败" = " · %lld XMP failed";
 " · %lld 失败" = " · %lld failed";
 " · %lld 张失败（%@）" = " · %lld failed (%@)";

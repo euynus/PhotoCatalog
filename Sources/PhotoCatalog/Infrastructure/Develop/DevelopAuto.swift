@@ -35,6 +35,81 @@ enum DevelopAuto {
     /// cropped photo); nil when the point is too dark or too bright to judge its color.
     static func whiteBalance(url: URL, isRaw: Bool, settings: DevelopSettings,
                              point: CGPoint) -> (temperature: Double, tint: Double)? {
+        whiteBalance(url: url, isRaw: isRaw, settings: settings) { image in
+            sample(image, at: point).flatMap { $0.min() > 0.002 && $0.max() < 0.97 ? $0 : nil }
+        }
+    }
+
+    /// Automatic white balance: temperature and tint that render the photo's gray surfaces
+    /// gray (see `neutralWeights`); nil when the photo shows too little to judge. The surfaces
+    /// are chosen on the photo with its white balance unset (as shot, or unchanged), where the
+    /// camera has already rendered them close to gray, so the answer doesn't depend on where
+    /// the sliders were; the same pixels are then followed through the solve, so the target
+    /// doesn't jump between trials.
+    static func autoWhiteBalance(url: URL, isRaw: Bool, settings: DevelopSettings) -> (temperature: Double, tint: Double)? {
+        var reference = settings
+        reference.temperature = nil
+        reference.tint = nil
+        var chosen: (width: Int, height: Int, weights: [(index: Int, weight: Double)])?
+        return whiteBalance(url: url, isRaw: isRaw, settings: reference) { image in
+            guard let (colors, width, height) = smallLinearRender(image) else { return nil }
+            if chosen.map({ $0.width != width || $0.height != height }) ?? true {
+                guard let weights = neutralWeights(colors) else { return nil }
+                chosen = (width, height, weights)
+            }
+            return chosen?.weights.reduce(SIMD3(repeating: 0)) { $0 + colors[$1.index] * $1.weight }
+        }
+    }
+
+    /// The photo rendered at most 160 pixels on the long edge, as linear display-P3 colors.
+    private static func smallLinearRender(_ image: CIImage) -> (colors: [SIMD3<Double>], width: Int, height: Int)? {
+        let extent = image.extent
+        let scale = min(1, 160 / max(extent.width, extent.height))
+        let small = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let rect = small.extent.integral
+        let width = Int(rect.width), height = Int(rect.height)
+        guard width > 4, height > 4 else { return nil }
+        var pixels = [Float](repeating: 0, count: width * height * 4)
+        DevelopRenderer.context.render(small, toBitmap: &pixels, rowBytes: width * 16, bounds: rect,
+                                       format: .RGBAf, colorSpace: DevelopRenderer.linearColorSpace)
+        let colors = stride(from: 0, to: pixels.count, by: 4).map {
+            SIMD3(Double(pixels[$0]), Double(pixels[$0 + 1]), Double(pixels[$0 + 2]))
+        }
+        return (colors, width, height)
+    }
+
+    /// The pixels showing the photo's gray surfaces, weighted by how sure that is: starting
+    /// from neutral, the weights follow the nearest cluster of colors (log red/green and log
+    /// blue/green) as the window around it narrows, so a cast is found while colorful things
+    /// further away — and big colored surfaces in particular — don't pull the choice their way.
+    /// Only well-exposed pixels count. Nil when too little is near enough to judge.
+    private static func neutralWeights(_ colors: [SIMD3<Double>]) -> [(index: Int, weight: Double)]? {
+        var samples: [(index: Int, r: Double, b: Double)] = []
+        for (i, c) in colors.enumerated() where c.min() > 0.004 && c.max() < 0.95 {
+            samples.append((i, log(c.x / c.y), log(c.z / c.y)))
+        }
+        guard samples.count >= 50 else { return nil }
+        var center = (r: 0.0, b: 0.0)
+        var weights: [(index: Int, weight: Double)] = []
+        for window in [0.3, 0.3, 0.2, 0.2, 0.12, 0.12] {
+            let near: [(index: Int, closeness: Double)] = samples.compactMap { s in
+                let distance = ((s.r - center.r) * (s.r - center.r) + (s.b - center.b) * (s.b - center.b)) / (window * window)
+                return distance < 9 ? (s.index, exp(-distance / 2)) : nil
+            }
+            // the cluster has to be more than a few stray pixels
+            guard near.reduce(0, { $0 + $1.closeness }) >= max(20, Double(samples.count) * 0.02) else { break }
+            // brighter pixels say more about the light
+            weights = near.map { ($0.index, $0.closeness * (colors[$0.index].y + 0.02)) }
+            let sum = weights.reduce(SIMD3<Double>(repeating: 0)) { $0 + colors[$1.index] * $1.weight }
+            center = (log(sum.x / sum.y), log(sum.z / sum.y))
+        }
+        return weights.isEmpty ? nil : weights
+    }
+
+    /// Temperature and tint that make `measure` (a color the render should show as gray)
+    /// neutral, solved on renders of the photo.
+    private static func whiteBalance(url: URL, isRaw: Bool, settings: DevelopSettings,
+                                     measure: @escaping (CIImage) -> SIMD3<Double>?) -> (temperature: Double, tint: Double)? {
         guard let source = DevelopRenderer.Source(url: url, isRaw: isRaw, maxPixel: workingPixel) else { return nil }
         // RAW Kelvin is searched in mireds, where equal steps look equally warmer; other formats
         // use their relative scale directly
@@ -56,10 +131,9 @@ enum DevelopAuto {
             next.tint = x.y
             return next
         }
-        /// How far from gray the point renders: log red/green and log blue/green.
+        /// How far from gray the measured color renders: log red/green and log blue/green.
         func residual(_ x: SIMD2<Double>, draft: Bool) -> SIMD2<Double>? {
-            guard let image = source.image(trial(at: x), draft: draft), let c = sample(image, at: point),
-                  c.min() > 0.002, c.max() < 0.97 else { return nil }
+            guard let image = source.image(trial(at: x), draft: draft), let c = measure(image), c.min() > 0 else { return nil }
             return SIMD2(log(c.x / c.y), log(c.z / c.y))
         }
 

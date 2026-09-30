@@ -743,6 +743,39 @@ enum DevelopCheck {
         assert(DevelopAuto.whiteBalance(url: black, isRaw: false, settings: .neutral, point: CGPoint(x: 0.5, y: 0.5)) == nil,
                "a black point can't be judged")
 
+        // auto white balance: a warm cast over gray surfaces, a strong red and a muted blue wall
+        // filling half the frame; the grays come out neutral and the colors don't drag the result
+        // their way
+        let castScene = image { x, y in
+            let gray = 0.25 + 0.5 * Double(x + y) / 126
+            var c = (gray, gray, gray)
+            if x < 24 && y < 20 { c = (0.7, 0.12, 0.1) }        // a red thing
+            if x >= 32 { c = (0.35, 0.45, 0.65) }               // a blue wall
+            return (min(1, c.0 * 1.12), c.1, c.2 * 0.85)       // under warm light
+        }
+        let castFile = pngFile(castScene)
+        defer { try? FileManager.default.removeItem(at: castFile) }
+        let auto = DevelopAuto.autoWhiteBalance(url: castFile, isRaw: false, settings: .neutral)
+        var neutralized = DevelopSettings()
+        neutralized.temperature = auto?.temperature
+        neutralized.tint = auto?.tint
+        let balanced = develop(castScene, neutralized)
+        let grayPatch = pixel(balanced, 12, 40), redPatch = pixel(balanced, 8, 8), bluePatch = pixel(balanced, 48, 30)
+        assert(auto != nil && abs(Int(grayPatch.r) - Int(grayPatch.b)) <= 6 && abs(Int(grayPatch.g) - Int(grayPatch.r)) <= 6
+               && Int(redPatch.r) > Int(redPatch.b) + 80 && Int(bluePatch.b) > Int(bluePatch.r) + 40,
+               "auto white balance makes the gray surfaces gray and leaves colors colored (\(String(describing: auto)), \(grayPatch))")
+        // the answer doesn't depend on where the sliders started
+        var cooled = DevelopSettings()
+        cooled.temperature = -40
+        let again = DevelopAuto.autoWhiteBalance(url: castFile, isRaw: false, settings: cooled)
+        assert(again.map { abs($0.temperature - (auto?.temperature ?? 0)) <= 3 && abs($0.tint - (auto?.tint ?? 0)) <= 3 } == true,
+               "auto white balance finds the same answer from any start (\(String(describing: again)))")
+        // a photo of nothing but a strong color gives no answer rather than a wrong one
+        let allBlue = pngFile(image { _, _ in (0.1, 0.2, 0.8) })
+        defer { try? FileManager.default.removeItem(at: allBlue) }
+        assert(DevelopAuto.autoWhiteBalance(url: allBlue, isRaw: false, settings: .neutral) == nil,
+               "auto white balance declines a photo with nothing near gray")
+
         // auto tone: dark photos brighten, bright ones darken, a full-range one barely moves
         func gradient(_ from: Double, _ to: Double) -> URL {
             pngFile(image { x, _ in let v = from + (to - from) * Double(x) / 63; return (v, v, v) })

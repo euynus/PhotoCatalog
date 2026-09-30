@@ -64,7 +64,11 @@ struct DevelopPanel: View {
                 section(L("变换")) { transform(asset, settings) }
                 section(L("蒙版")) { masks(asset, settings) }
                 section(L("污点去除")) { spots(asset, settings) }
-                section(L("白平衡")) {
+                section(L("白平衡"), accessory: {
+                    Button("自动") { app.autoWhiteBalance() }
+                        .controlSize(.small)
+                        .help("按照片中的中性色自动设置色温与色调")
+                }) {
                     Toggle(isOn: Binding(get: { app.developPickingWhiteBalance },
                                          set: { app.developPickingWhiteBalance = $0 })) {
                         Label("白平衡吸管", systemImage: "eyedropper")

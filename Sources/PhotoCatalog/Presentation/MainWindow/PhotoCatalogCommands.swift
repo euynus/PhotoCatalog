@@ -121,6 +121,9 @@ struct PhotoCatalogCommands: Commands {
             Button("自动色调") { perform("照片.自动色调") { app.autoTone() } }
                 .keyboardShortcut("u", modifiers: .command)
                 .disabled(!app.canAutoTone)
+            Button("自动白平衡") { perform("照片.自动白平衡") { app.autoWhiteBalance() } }
+                .keyboardShortcut("u", modifiers: [.command, .shift])
+                .disabled(!app.canAutoTone)
             Button("复位修图调整") { perform("照片.复位修图调整") { app.resetDevelopSelection() } }
                 .disabled(!app.canResetDevelopSelection)
             Button("创建虚拟副本") { perform("照片.创建虚拟副本") { app.createVirtualCopies() } }

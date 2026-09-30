@@ -1082,6 +1082,36 @@ final class AppState {
         }
     }
 
+    /// Automatic white balance for the photo in Develop, or every selected photo elsewhere,
+    /// each measured on its own; only temperature and tint change.
+    func autoWhiteBalance() {
+        let targets = developTargetIds.compactMap { id -> (id: String, url: URL, isRaw: Bool, settings: DevelopSettings)? in
+            guard let asset = assetIndex[id].map({ assets[$0] }), let source = developSource(for: asset) else { return nil }
+            return (id, source.url, source.isRaw, developSettings[id] ?? .neutral)
+        }
+        guard !targets.isEmpty else { return }
+        Task { [weak self, targets] in
+            let found = await ThumbnailRepairQueue.run(.visible) {
+                targets.compactMap { target in
+                    DevelopAuto.autoWhiteBalance(url: target.url, isRaw: target.isRaw, settings: target.settings)
+                        .map { (target.id, $0) }
+                }
+            } ?? []
+            guard let self else { return }
+            guard !found.isEmpty else {
+                self.push("照片中没有足够的中性色，无法自动判断白平衡", "info")
+                return
+            }
+            let balances = Dictionary(found, uniquingKeysWith: { $1 })
+            self.commitDevelopChange(Array(balances.keys), undoName: L("自动白平衡")) { id, settings in
+                guard let balance = balances[id] else { return }
+                settings.temperature = balance.temperature
+                settings.tint = balance.tint
+            }
+            if balances.count > 1 { self.push("已自动调整 \(balances.count) 张照片的白平衡", "wand") }
+        }
+    }
+
     var canAutoTone: Bool { canTransformSelection }
 
     /// Automatic tone (⌘U) for the photo in Develop, or every selected photo elsewhere; each
