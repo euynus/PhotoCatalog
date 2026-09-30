@@ -238,8 +238,26 @@ extension LLMCheck {
                && PhotoSearch.parse(#"{"text": "精选"}"#, vocabulary: vocabulary, query: "精选")?.filters.flag == "pick"
                && PhotoSearch.parse(#"{"text": "red"}"#, vocabulary: vocabulary, query: "red flowers")?.text == "red",
                "a flag or label put in the search words becomes that filter; a color alone stays a search word")
-        assert(PhotoSearch.parse(#"{"lens": "RF24-70mm F2.8 L IS USM"}"#, vocabulary: vocabulary, query: "用 24-70 拍的")?.filters.lens
-               == "RF24-70mm F2.8 L IS USM", "a lens named by its focal lengths counts")
+        // a camera or lens has to be one the catalog has, or the filter finds nothing
+        let gear = PhotoSearch.Vocabulary(cameras: ["Canon EOS R6m2", "Canon EOS R5", "SONY ILCE-7M4"],
+                                          lenses: ["RF24-70mm F2.8 L IS USM", "RF50mm F1.8 STM"], types: ["CR3"])
+        func camera(_ name: String, _ query: String) -> String? {
+            PhotoSearch.parse(#"{"camera": "\#(name)"}"#, vocabulary: gear, query: query)?.filters.camera
+        }
+        func lens(_ name: String, _ query: String) -> String? {
+            PhotoSearch.parse(#"{"lens": "\#(name)"}"#, vocabulary: gear, query: query)?.filters.lens
+        }
+        assert(lens("RF24-70mm F2.8 L IS USM", "用 24-70 拍的") == "RF24-70mm F2.8 L IS USM" && camera("R6m2", "R6m2 拍的") == "R6m2"
+               && camera("Canon", "佳能拍的") == "Canon", "a lens named by its focal lengths counts, and so does part of a camera's name")
+        assert(lens("RF 24-70mm f/2.8L IS USM", "用24-70拍的") == "RF24-70mm F2.8 L IS USM"
+               && camera("Sony ILCE 7M4", "索尼拍的") == "SONY ILCE-7M4",
+               "a name spelled differently becomes the catalog's spelling")
+        assert(lens("EF 24-70mm f/2.8L II USM", "用24-70拍的") == "RF24-70mm F2.8 L IS USM"
+               && lens("EF50mm f/1.4 USM", "50mm 拍的") == "RF50mm F1.8 STM"
+               && camera("Canon EOS R8", "用佳能拍的") == "canon" && camera("Canon EOS R6 Mark II", "佳能 R6m2") == "Canon EOS R6m2",
+               "a made-up name gives way to what the sentence names: the one camera or lens it fits, or the word they share")
+        assert(camera("Nikon Z8", "尼康拍的") == "" && lens("RF100mm F2.8 L Macro", "100mm 微距") == "",
+               "a camera or lens the catalog doesn't have filters nothing")
 
         // the whole of it, against the stand-in: the filter bar and the search box end up set
         let saved = UserDefaults.standard.data(forKey: "pc_llm")

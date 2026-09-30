@@ -61,7 +61,8 @@ enum PhotoSearch {
 
     /// The filters in a reply, each checked against what the filter bar accepts — and, since
     /// smaller models fill in fields for the sake of it, against `query`: a filter counts only
-    /// when the sentence says something about it. Nil when the reply holds no JSON.
+    /// when the sentence says something about it. A camera or lens is checked against the
+    /// catalog's own too. Nil when the reply holds no JSON.
     static func parse(_ reply: String, vocabulary: Vocabulary, query: String) -> Interpretation? {
         guard var json = LLMClient.jsonObject(in: reply) else { return nil }
         let asked = query.lowercased()
@@ -79,11 +80,8 @@ enum PhotoSearch {
             if !mentions([color, chinese]) || !mentions(Cue.labelCues + Cue.labelSuffixCues.map { chinese + $0 }) { json["color"] = nil }
         }
         if !mentions(Cue.typeCues + vocabulary.types.map { $0.lowercased() }) { json["type"] = nil }
-        if let camera = json["camera"] as? String {
-            let maker = Cue.makerCues.filter { camera.lowercased().contains($0.key) }.map(\.value)
-            if !mentions(nameParts(camera) + maker) { json["camera"] = nil }
-        }
-        if let lens = json["lens"] as? String, !mentions(focalParts(lens)) { json["lens"] = nil }
+        if let camera = json["camera"] as? String, !mentions(cameraCues(camera).flatMap(\.said)) { json["camera"] = nil }
+        if let lens = json["lens"] as? String, !mentions(lensCues(lens).flatMap(\.said)) { json["lens"] = nil }
         if !mentions(Cue.locationCues) { json["gps"] = nil }
         if !mentions(Cue.dateCues) && asked.range(of: #"(19|20)\d\d"#, options: .regularExpression) == nil {
             json["dateStart"] = nil
@@ -101,8 +99,8 @@ enum PhotoSearch {
         if ColorLabel(rawValue: text("color").lowercased()) != nil { result.filters.color = text("color").lowercased() }
         let type = text("type").uppercased()
         if type == "RAW" || vocabulary.types.contains(type) { result.filters.type = type }
-        result.filters.camera = text("camera")
-        result.filters.lens = text("lens")
+        result.filters.camera = resolve(text("camera"), among: vocabulary.cameras, cues: cameraCues, mentions: mentions)
+        result.filters.lens = resolve(text("lens"), among: vocabulary.lenses, cues: lensCues, mentions: mentions)
         let day = DateFormatter()
         day.calendar = Calendar(identifier: .gregorian)
         day.locale = Locale(identifier: "en_US_POSIX")
@@ -159,19 +157,48 @@ enum PhotoSearch {
                "summer", "autumn", "fall", "winter", "recent", "recently", "since", "before", "after"]
     }
 
-    /// A camera's name as the words someone might say: "Canon", "EOS", "R6m2".
-    private static func nameParts(_ name: String) -> [String] {
-        name.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init).filter { $0.count >= 2 }
+    /// Part of a camera or lens name as someone might say it, and what to filter by when they do.
+    private typealias NameCue = (said: [String], filter: String)
+
+    /// A camera's: "EOS" filters by "eos", "R6m2" by "r6m2", "Canon" or "佳能" by "canon".
+    private static func cameraCues(_ name: String) -> [NameCue] {
+        let lower = name.lowercased()
+        let parts = lower.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init).filter { $0.count >= 2 }
+        return parts.map { ([$0], $0) } + Cue.makerCues.filter { lower.contains($0.key) }.map { ([$0.key, $0.value], $0.key) }
     }
 
-    /// A lens's focal lengths as someone might say them: "24-70", "50mm", "85".
-    private static func focalParts(_ name: String) -> [String] {
+    /// A lens's focal lengths: "24-70" filters by "24-70", "50mm" (or "50 mm", "50毫米") by "50mm".
+    private static func lensCues(_ name: String) -> [NameCue] {
         let pattern = try? NSRegularExpression(pattern: #"(\d{2,3})(?:-(\d{2,3}))?\s*mm"#)
         let range = NSRange(name.startIndex..., in: name)
-        return (pattern?.matches(in: name, range: range) ?? []).flatMap { match -> [String] in
+        return (pattern?.matches(in: name, range: range) ?? []).map { match -> NameCue in
             let first = Range(match.range(at: 1), in: name).map { String(name[$0]) } ?? ""
-            if let second = Range(match.range(at: 2), in: name).map({ String(name[$0]) }) { return ["\(first)-\(second)"] }
-            return ["\(first)mm", "\(first) mm"] + Cue.millimetreCues.map { first + $0 }
+            if let second = Range(match.range(at: 2), in: name).map({ String(name[$0]) }) { return (["\(first)-\(second)"], "\(first)-\(second)") }
+            return (["\(first)mm", "\(first) mm"] + Cue.millimetreCues.map { first + $0 }, "\(first)mm")
         }
+    }
+
+    /// `name` as a filter that finds photos among the catalog's cameras or lenses, `names`. Kept when
+    /// it already matches one; else the catalog's spelling of it ("RF 24-70mm f/2.8L" → "RF24-70mm
+    /// F2.8 L IS USM"); else, as the model made it up, what `query` itself names of the catalog's: the
+    /// one camera or lens it fits best, or the longest word the best ones share ("佳能" → "canon").
+    /// Empty when there's nothing to go by, since a name no photo has would find nothing.
+    private static func resolve(_ name: String, among names: [String], cues: (String) -> [NameCue],
+                                mentions: ([String]) -> Bool) -> String {
+        guard !name.isEmpty else { return "" }
+        if names.contains(where: { $0.localizedStandardContains(name) }) { return name }
+        func compact(_ text: String) -> String { String(text.lowercased().filter { $0.isLetter || $0.isNumber }) }
+        let key = compact(name)
+        if let spelled = names.first(where: { compact($0) == key })
+            ?? names.filter({ compact($0).count >= 4 && key.contains(compact($0)) }).max(by: { $0.count < $1.count }) {
+            return spelled
+        }
+        // the ones the sentence names most of: "佳能 R6m2" is the R6m2, not every Canon
+        let named = names.map { entry in (entry, Set(cues(entry).filter { mentions($0.said) }.map(\.filter))) }.filter { !$0.1.isEmpty }
+        let most = named.map(\.1.count).max() ?? 0
+        let fitting = named.filter { $0.1.count == most }
+        if fitting.count == 1 { return fitting[0].0 }
+        let shared = fitting.dropFirst().reduce(fitting.first?.1 ?? []) { $0.intersection($1.1) }
+        return shared.sorted { ($0.count, $0) > ($1.count, $1) }.first ?? ""
     }
 }
