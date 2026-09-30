@@ -539,6 +539,16 @@ struct DevelopPanel: View {
                 .disabled(app.developDetectingMask != nil)
                 .help(Self.maskHelp(kind))
             }
+            Menu {
+                ForEach(PersonPart.allCases, id: \.self) { part in
+                    Button(part.title) { app.addPeopleMask(part) }
+                }
+            } label: {
+                Label("选择人物", systemImage: LocalAdjustment.Kind.person.symbol)
+            }
+            .fixedSize()
+            .disabled(app.developDetectingMask != nil)
+            .help("找出照片中的人物，为整个人物或面部皮肤、眼睛、嘴唇等部位建立蒙版")
             if app.developDetectingMask != nil { ProgressView().controlSize(.small) }
             Spacer(minLength: 0)
         }
@@ -577,6 +587,7 @@ struct DevelopPanel: View {
             .controlSize(.small)
             .help("让调整作用于渐变之外")
             if mask.kind == .radial { slider(DevelopControl.localFeather(index), asset, settings) }
+            if mask.kind == .person { peopleControls(mask, asset) }
             rangeControls(mask, asset)
             if mask.kind == .brush {
                 brushControls
@@ -616,6 +627,29 @@ struct DevelopPanel: View {
         }
     }
 
+    /// A people mask's part, and whose it is when the photo shows more than one person.
+    @ViewBuilder
+    private func peopleControls(_ mask: LocalAdjustment, _ asset: Asset) -> some View {
+        Picker("部位", selection: Binding(get: { mask.part }, set: { part in
+            app.setPeopleMask(mask.id, part: part, person: mask.person)
+        })) {
+            ForEach(PersonPart.allCases, id: \.self) { part in Text(part.title).tag(part) }
+        }
+        .controlSize(.small)
+        let count = app.developPeopleCounts[asset.id] ?? 0
+        if count > 1 {
+            Picker("人物", selection: Binding(get: { mask.person ?? -1 }, set: { person in
+                app.setPeopleMask(mask.id, part: mask.part, person: person < 0 ? nil : person)
+            })) {
+                Text("所有人").tag(-1)
+                ForEach(0..<count, id: \.self) { person in Text("人物 \(person + 1)").tag(person) }
+            }
+            .controlSize(.small)
+            .help("人物按从左到右的顺序编号")
+        }
+        Color.clear.frame(height: 0).task(id: asset.id) { app.loadPeopleCount(for: asset) }
+    }
+
     private static func maskHelp(_ kind: LocalAdjustment.Kind) -> String {
         switch kind {
         case .linear: L("新建线性渐变，在照片上拖动绘制 (M)")
@@ -623,6 +657,7 @@ struct DevelopPanel: View {
         case .brush: L("新建画笔蒙版，在照片上涂抹 (K)")
         case .subject: L("自动找出照片的主体（人物、动物或物体）并建立蒙版")
         case .sky: L("自动找出照片中的天空并建立蒙版")
+        case .person: L("找出照片中的人物，为整个人物或面部皮肤、眼睛、嘴唇等部位建立蒙版")
         case .colorRange: L("选中照片中某些颜色的部分，在照片上点按取样")
         case .luminanceRange: L("选中照片中某个明暗范围的部分")
         }
@@ -708,14 +743,14 @@ struct DevelopPanel: View {
 
     private func maskRow(_ mask: LocalAdjustment, in masks: [LocalAdjustment]) -> some View {
         let selected = mask.id == app.developSelectedMaskId
-        let ordinal = masks.filter { $0.kind == mask.kind }.firstIndex { $0.id == mask.id }.map { $0 + 1 } ?? 1
+        let ordinal = masks.filter { $0.title == mask.title }.firstIndex { $0.id == mask.id }.map { $0 + 1 } ?? 1
         return Button {
             app.developSelectedMaskId = mask.id
             app.developMasking = true
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: mask.kind.symbol).frame(width: 16)
-                Text("\(mask.kind.title) \(ordinal)").lineLimit(1)
+                Text("\(mask.title) \(ordinal)").lineLimit(1)
                 Spacer(minLength: 4)
                 if !mask.hasEffect {
                     Text("无调整").font(.system(size: 11)).foregroundStyle(Theme.text3)

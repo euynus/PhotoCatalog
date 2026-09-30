@@ -105,10 +105,11 @@ enum SemanticMasks {
     }
 
     // ---- the canonical image: as shot, 1024 px ----
-    private static func canonicalImage(url: URL, isRaw: Bool) -> CGImage? {
+    /// The photo as shot, at most `pixel` on the long edge.
+    static func canonicalImage(url: URL, isRaw: Bool, pixel: Int = workingPixel) -> CGImage? {
         if isRaw, let raw = CIRAWFilter(imageURL: url) {
             let longEdge = max(raw.nativeSize.width, raw.nativeSize.height)
-            if longEdge > CGFloat(workingPixel) { raw.scaleFactor = Float(CGFloat(workingPixel) / longEdge) }
+            if longEdge > CGFloat(pixel) { raw.scaleFactor = Float(CGFloat(pixel) / longEdge) }
             guard let output = raw.outputImage else { return nil }
             return DevelopRenderer.context.createCGImage(output, from: output.extent.integral, format: .RGBA8,
                                                          colorSpace: DevelopRenderer.outputColorSpace)
@@ -119,7 +120,7 @@ enum SemanticMasks {
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: workingPixel,
+            kCGImageSourceThumbnailMaxPixelSize: pixel,
         ] as CFDictionary)
     }
 
@@ -294,7 +295,7 @@ enum SemanticMasks {
     }
 
     /// Mean over a (2r+1)² window, clipped at the edges, from a summed-area table.
-    private static func boxBlur(_ values: [Float], width: Int, height: Int, radius: Int) -> [Float] {
+    static func boxBlur(_ values: [Float], width: Int, height: Int, radius: Int) -> [Float] {
         var table = [Double](repeating: 0, count: (width + 1) * (height + 1))
         for y in 0..<height {
             var row = 0.0
@@ -317,7 +318,7 @@ enum SemanticMasks {
     }
 
     /// An 8-bit mask image with its coverage and centroid; nil when it covers too little.
-    private static func result(_ weights: [Float], width: Int, height: Int, minimumCoverage: Double) -> Result? {
+    static func result(_ weights: [Float], width: Int, height: Int, minimumCoverage: Double) -> Result? {
         var bytes = [UInt8](repeating: 0, count: width * height)
         var total = 0.0, sumX = 0.0, sumY = 0.0
         for y in 0..<height {

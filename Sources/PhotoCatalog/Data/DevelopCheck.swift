@@ -14,6 +14,7 @@ enum DevelopCheck {
         checkColorGrading()
         checkLocalAdjustments()
         checkSpotRemoval()
+        checkPeopleMasks()
         checkLensCorrections()
         checkChromaticAberration()
         checkEffects()
@@ -327,6 +328,129 @@ enum DevelopCheck {
         source.grading.highlights = ColorGrading.Grade(hue: 45, saturation: 20, luminance: 5)
         let carried = DevelopSettings().applying(source, fields: [.colorGrading])
         assert(carried.grading == source.grading, "color grading travels as one setting")
+    }
+
+    /// A drawn face with its landmarks where they are, and a second one when `pair`: people
+    /// masks are checked on it without Vision, which only knows real faces.
+    private static func drawnPeople(pair: Bool) -> (analysis: PeopleMasks.Analysis, image: CGImage) {
+        let width = pair ? 800 : 400, height = 400
+        func ellipse(_ c: CGPoint, _ rx: Double, _ ry: Double, _ n: Int, from: Double = 0, to: Double = 2 * .pi) -> [CGPoint] {
+            (0..<n).map { k in
+                let t = from + (to - from) * Double(k) / Double(n - 1)
+                return CGPoint(x: Double(c.x) + rx * cos(t), y: Double(c.y) + ry * sin(t))
+            }
+        }
+        func face(_ dx: Double) -> PeopleMasks.Face {
+            // y points down: the jaw runs from the left temple (angle π) down round the chin (π/2)
+            PeopleMasks.Face(contour: ellipse(CGPoint(x: 200 + dx, y: 190), 90, 120, 17, from: .pi, to: 0),
+                             eyes: [ellipse(CGPoint(x: 165 + dx, y: 180), 18, 7, 8, to: 2 * .pi * 7 / 8),
+                                    ellipse(CGPoint(x: 235 + dx, y: 180), 18, 7, 8, to: 2 * .pi * 7 / 8)],
+                             brows: [[CGPoint(x: 145 + dx, y: 160), CGPoint(x: 165 + dx, y: 155), CGPoint(x: 185 + dx, y: 160)],
+                                     [CGPoint(x: 215 + dx, y: 160), CGPoint(x: 235 + dx, y: 155), CGPoint(x: 255 + dx, y: 160)]],
+                             outerLips: ellipse(CGPoint(x: 200 + dx, y: 260), 30, 12, 14, to: 2 * .pi * 13 / 14),
+                             innerLips: ellipse(CGPoint(x: 200 + dx, y: 260), 22, 4, 6, to: 2 * .pi * 5 / 6),
+                             pupils: [CGPoint(x: 165 + dx, y: 180), CGPoint(x: 235 + dx, y: 180)])
+        }
+        func inside(_ x: Double, _ y: Double, _ cx: Double, _ cy: Double, _ rx: Double, _ ry: Double) -> Bool {
+            let u = (x - cx) / rx, v = (y - cy) / ry
+            return u * u + v * v <= 1
+        }
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        var matte = [UInt8](repeating: 0, count: width * height)
+        for y in 0..<height {
+            for x in 0..<width {
+                let px = Double(x) + 0.5, py = Double(y) + 0.5
+                let dx = pair && px >= 400 ? 400.0 : 0
+                let fx = px - dx
+                var c = (0.2, 0.2, 0.2)
+                var person = false
+                if inside(fx, py, 200, 175, 95, 135) && py < 80 { c = (0.3, 0.2, 0.12); person = true }          // hair
+                else if fx > 170 && fx < 230 && py > 290 { c = (0.8, 0.6, 0.5); person = true }                 // neck
+                if inside(fx, py, 200, 185, 88, 125) && py >= 80 { c = (0.85, 0.65, 0.55); person = true }      // skin
+                if inside(fx, py, 165, 180, 18, 7) || inside(fx, py, 235, 180, 18, 7) {
+                    c = inside(fx, py, 165, 180, 7, 7) || inside(fx, py, 235, 180, 7, 7) ? (0.3, 0.2, 0.1) : (0.95, 0.95, 0.95)
+                }
+                let brow = [(145.0, 160.0, 165.0, 155.0), (165, 155, 185, 160), (215, 160, 235, 155), (235, 155, 255, 160)]
+                    .contains { x0, y0, x1, y1 in
+                        let t = max(0, min(1, ((fx - x0) * (x1 - x0) + (py - y0) * (y1 - y0)) / ((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0))))
+                        return hypot(fx - (x0 + t * (x1 - x0)), py - (y0 + t * (y1 - y0))) < 4
+                    }
+                if brow { c = (0.25, 0.2, 0.15) }
+                if inside(fx, py, 200, 260, 30, 12) { c = inside(fx, py, 200, 260, 22, 4) ? (0.95, 0.93, 0.9) : (0.75, 0.3, 0.35) }
+                let i = y * width + x
+                pixels[i * 4] = UInt8(c.0 * 255); pixels[i * 4 + 1] = UInt8(c.1 * 255); pixels[i * 4 + 2] = UInt8(c.2 * 255)
+                matte[i] = person ? 255 : 0
+            }
+        }
+        let faces = pair ? [face(0), face(400)] : [face(0)]
+        let people: [[UInt8]?] = pair
+            ? [matte.enumerated().map { $0.offset % width < 400 ? $0.element : 0 }, matte.enumerated().map { $0.offset % width >= 400 ? $0.element : 0 }]
+            : [matte]
+        let analysis = PeopleMasks.Analysis(width: width, height: height, pixels: pixels, faces: faces, matte: matte, people: people)
+        let context = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                space: DevelopRenderer.outputColorSpace, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        return (analysis, context.makeImage()!)
+    }
+
+    private static func checkPeopleMasks() {
+        let (one, drawn) = drawnPeople(pair: false)
+        func weight(_ part: PersonPart, _ x: Int, _ y: Int, person: Int? = nil, in a: PeopleMasks.Analysis = one) -> Float {
+            PeopleMasks.weights(part, person: person, in: a)?[y * a.width + x] ?? -1
+        }
+        let cheek = (150, 230), eyeWhite = (152, 180), iris = (165, 180), brow = (165, 156), lip = (200, 268)
+        let mouth = (200, 260), neck = (200, 340), hair = (200, 60), background = (20, 20)
+        assert(weight(.person, 200, 200) > 0.9 && weight(.person, background.0, background.1) < 0.1,
+               "the whole person is Vision's matte")
+        assert(weight(.faceSkin, cheek.0, cheek.1) > 0.5 && weight(.faceSkin, iris.0, iris.1) < 0.2
+               && weight(.faceSkin, brow.0, brow.1) < 0.2 && weight(.faceSkin, lip.0, lip.1) < 0.2
+               && weight(.faceSkin, hair.0, hair.1) < 0.2 && weight(.faceSkin, neck.0, neck.1) < 0.2,
+               "face skin leaves out the eyes, brows, lips, hair and neck")
+        assert(weight(.bodySkin, neck.0, neck.1) > 0.5 && weight(.bodySkin, cheek.0, cheek.1) < 0.2
+               && weight(.bodySkin, hair.0, hair.1) < 0.2 && weight(.bodySkin, background.0, background.1) < 0.1,
+               "body skin is the rest of the person's skin")
+        assert(weight(.eyebrows, brow.0, brow.1) > 0.5 && weight(.eyebrows, cheek.0, cheek.1) < 0.1, "eyebrows follow the brow lines")
+        assert(weight(.sclera, eyeWhite.0, eyeWhite.1) > 0.5 && weight(.sclera, iris.0, iris.1) < 0.3
+               && weight(.iris, iris.0, iris.1) > 0.5 && weight(.iris, eyeWhite.0, eyeWhite.1) < 0.3,
+               "an eye splits into its white and the iris round the pupil")
+        assert(weight(.lips, lip.0, lip.1) > 0.5 && weight(.lips, mouth.0, mouth.1) < 0.3
+               && weight(.teeth, mouth.0, mouth.1) > 0.5 && weight(.teeth, lip.0, lip.1) < 0.3,
+               "lips ring the mouth; teeth are the light inside it")
+        assert(one.count == 1 && PeopleMasks.weights(.lips, person: 1, in: one) == nil
+               && weight(.lips, lip.0, lip.1, person: 0) == weight(.lips, lip.0, lip.1),
+               "one person: the only index is theirs")
+
+        // two people: numbered left to right, each mask narrowed to one
+        let (two, _) = drawnPeople(pair: true)
+        assert(two.count == 2 && weight(.faceSkin, cheek.0, cheek.1, person: 1, in: two) < 0.1
+               && weight(.faceSkin, cheek.0 + 400, cheek.1, person: 1, in: two) > 0.5
+               && weight(.person, 200, 200, person: 0, in: two) > 0.9 && weight(.person, 600, 200, person: 0, in: two) < 0.1
+               && weight(.faceSkin, cheek.0, cheek.1, in: two) > 0.5 && weight(.faceSkin, cheek.0 + 400, cheek.1, in: two) > 0.5,
+               "each person can be picked alone, or everyone together")
+
+        // rendered: a lips mask brightens the lips and nothing else
+        let url = pngFile(drawn)
+        defer { try? FileManager.default.removeItem(at: url) }
+        PeopleMasks.remember(one, for: url)
+        var settings = DevelopSettings()
+        var lips = LocalAdjustment(kind: .person)
+        lips.part = .lips
+        lips.exposure = 1.5
+        settings.masks = [lips]
+        let source = DevelopRenderer.Source(url: url, isRaw: false, maxPixel: nil)!
+        let plain = DevelopRenderer.render(source.image(.neutral)!)!, bright = DevelopRenderer.render(source.image(settings)!)!
+        assert(Int(pixel(bright, lip.0, lip.1).g) > Int(pixel(plain, lip.0, lip.1).g) + 20
+               && abs(Int(pixel(bright, cheek.0, cheek.1).g) - Int(pixel(plain, cheek.0, cheek.1).g)) <= 2,
+               "a people mask adjusts only its part")
+
+        // stored with the photo; a different part or person is a different render
+        var eyes = lips
+        eyes.part = .iris
+        var second = lips
+        second.person = 1
+        let back = (try? JSONEncoder().encode(eyes)).flatMap { try? JSONDecoder().decode(LocalAdjustment.self, from: $0) }
+        assert(back == eyes && lips.fingerprintText != eyes.fingerprintText && lips.fingerprintText != second.fingerprintText
+               && eyes.title == PersonPart.iris.title,
+               "a people mask keeps its part and person")
     }
 
     private static func checkLocalAdjustments() {

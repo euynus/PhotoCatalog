@@ -403,8 +403,8 @@ enum DevelopRenderer {
         return image.applyingFilter("CISRGBToneCurveToLinear").cropped(to: extent)
     }
 
-    /// A mask's weight over `extent`: drawn masks from their shapes and strokes, a subject or
-    /// sky from the photo itself (`photo`, the file being rendered), then any brush strokes
+    /// A mask's weight over `extent`: drawn masks from their shapes and strokes, a subject, sky
+    /// or people from the photo itself (`photo`, the file being rendered), then any brush strokes
     /// that add to or erase from a mask that isn't itself a brush.
     static func maskWeight(_ mask: LocalAdjustment, _ s: DevelopSettings, extent: CGRect,
                            photo: (url: URL, isRaw: Bool)?, rangeSource: CIImage? = nil) -> CIImage? {
@@ -413,11 +413,16 @@ enum DevelopRenderer {
             // the whole photo, narrowed to its range below
             base = CIImage(color: .white).cropped(to: extent)
         } else if mask.kind.isAutomatic {
-            switch photo.map({ SemanticMasks.lookup(mask.kind, url: $0.url, isRaw: $0.isRaw) }) {
+            let lookup = photo.map { photo in
+                mask.kind == .person
+                    ? PeopleMasks.lookup(mask.part, person: mask.person, url: photo.url, isRaw: photo.isRaw)
+                    : SemanticMasks.lookup(mask.kind, url: photo.url, isRaw: photo.isRaw)
+            }
+            switch lookup {
             case .found(let result):
                 base = SemanticMasks.weight(result, extent: extent, inverted: mask.inverted, distortion: s.distortion)
             case .notFound:
-                // no subject (or sky) in the photo: everything else is the whole photo
+                // no subject (or sky, or person) in the photo: everything else is the whole photo
                 base = mask.inverted ? CIImage(color: .white).cropped(to: extent) : nil
             case .unreadable, nil:
                 base = nil

@@ -1,5 +1,5 @@
 // ============================================================
-//  Local adjustments — Lightroom's masks: gradients, brush, subject and sky
+//  Local adjustments — Lightroom's masks: gradients, brush, subject, sky and people
 // ============================================================
 import Foundation
 import CoreGraphics
@@ -9,14 +9,15 @@ import CoreGraphics
 /// and crop), so a mask stays on the same part of the picture when the framing changes.
 struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
     enum Kind: String, Codable, CaseIterable, Sendable {
-        case linear, radial, brush, subject, sky, colorRange, luminanceRange
+        case linear, radial, brush, subject, sky, person, colorRange, luminanceRange
 
         /// Masks drawn on the photo, masks found in it, and masks of a range of its colors or tones.
         static let drawn: [Kind] = [.linear, .radial, .brush]
         static let automatic: [Kind] = [.subject, .sky]
         static let ranges: [Kind] = [.colorRange, .luminanceRange]
 
-        var isAutomatic: Bool { Self.automatic.contains(self) }
+        /// Found in the photo itself: a subject, the sky or people.
+        var isAutomatic: Bool { Self.automatic.contains(self) || self == .person }
         /// The whole photo, narrowed to its range.
         var isRange: Bool { Self.ranges.contains(self) }
 
@@ -27,6 +28,7 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
             case .brush: L("画笔")
             case .subject: L("主体")
             case .sky: L("天空")
+            case .person: L("人物")
             case .colorRange: L("颜色范围")
             case .luminanceRange: L("明亮度范围")
             }
@@ -39,6 +41,7 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
             case .brush: "paintbrush.pointed"
             case .subject: "person.and.background.dotted"
             case .sky: "cloud.sun"
+            case .person: "person.crop.circle"
             case .colorRange: "eyedropper.halffull"
             case .luminanceRange: "circle.lefthalf.striped.horizontal"
             }
@@ -66,6 +69,10 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
     var inverted = false
     /// Narrows the mask to a range of the photo's tones or colors; a range mask is only this.
     var range: MaskRange?
+    /// People: which part of them, and whose — an index into the faces found, left to right,
+    /// or nil for everyone.
+    var part: PersonPart = .person
+    var person: Int?
 
     // adjustments, -100…100 unless noted
     var exposure = 0.0      // EV, -4…4
@@ -90,6 +97,9 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         }
     }
 
+    /// What the mask is called: its kind, or for people the part it selects.
+    var title: String { kind == .person ? part.title : kind.title }
+
     /// Whether any adjustment is set; a mask without one changes nothing.
     var hasEffect: Bool {
         [exposure, contrast, highlights, shadows, whites, blacks, temperature, tint, texture, clarity, dehaze, saturation]
@@ -103,6 +113,7 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         copy.start = start; copy.end = end
         copy.center = center; copy.radiusX = radiusX; copy.radiusY = radiusY; copy.angle = angle
         copy.feather = feather; copy.strokes = strokes; copy.inverted = inverted; copy.range = range
+        copy.part = part; copy.person = person
         return copy
     }
 
@@ -121,7 +132,7 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         case .linear: [start.x, start.y, end.x, end.y]
         case .radial: [center.x, center.y, radiusX, radiusY, angle, feather]
         case .brush: [Double(strokes.count), Double(BrushStroke.hash(strokes))]
-        case .subject, .sky, .colorRange, .luminanceRange: []   // found in the photo itself
+        case .subject, .sky, .person, .colorRange, .luminanceRange: []   // found in the photo itself
         }
         let values = [exposure, contrast, highlights, shadows, whites, blacks, temperature, tint,
                       texture, clarity, dehaze, saturation]
@@ -130,6 +141,25 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
             + geometry.map { String(format: "%.4f", $0) }.joined(separator: ",") + ":"
             + values.map { String(format: "%.2f", $0) }.joined(separator: ",") + refinement
             + (range.map { ":" + $0.fingerprintText } ?? "")
+            + (kind == .person ? ":p\(part.rawValue),\(person ?? -1)" : "")
+    }
+}
+
+/// The parts of people a mask can select, as in Lightroom's Select People.
+enum PersonPart: String, Codable, CaseIterable, Sendable {
+    case person, faceSkin, bodySkin, eyebrows, sclera, iris, lips, teeth
+
+    var title: String {
+        switch self {
+        case .person: L("整个人物")
+        case .faceSkin: L("面部皮肤")
+        case .bodySkin: L("身体皮肤")
+        case .eyebrows: L("眉毛")
+        case .sclera: L("眼白")
+        case .iris: L("虹膜和瞳孔")
+        case .lips: L("嘴唇")
+        case .teeth: L("牙齿")
+        }
     }
 }
 
@@ -190,6 +220,8 @@ extension LocalAdjustment {
         strokes = try c.decodeIfPresent([BrushStroke].self, forKey: .strokes) ?? []
         inverted = try c.decodeIfPresent(Bool.self, forKey: .inverted) ?? false
         range = try c.decodeIfPresent(MaskRange.self, forKey: .range)
+        part = try c.decodeIfPresent(PersonPart.self, forKey: .part) ?? .person
+        person = try c.decodeIfPresent(Int.self, forKey: .person)
         func value(_ key: CodingKeys) throws -> Double { try c.decodeIfPresent(Double.self, forKey: key) ?? 0 }
         exposure = try value(.exposure)
         contrast = try value(.contrast)

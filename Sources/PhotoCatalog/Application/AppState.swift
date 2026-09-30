@@ -811,6 +811,86 @@ final class AppState {
         }
     }
 
+    /// How many people each photo looked at for a people mask shows (asset id → count), for
+    /// the mask's choice of person.
+    var developPeopleCounts: [String: Int] = [:]
+
+    /// Finds the people in the photo and adds a mask of `part` of all of them, or says what
+    /// wasn't there.
+    func addPeopleMask(_ part: PersonPart) {
+        guard developDetectingMask == nil, view == .develop, let asset = primary,
+              let source = developSource(for: asset) else { return }
+        developMasking = true
+        developMaskCreation = nil
+        developDetectingMask = .person
+        let id = asset.id
+        Task { [weak self] in
+            let (lookup, count) = await ThumbnailRepairQueue.run(.visible) {
+                (PeopleMasks.lookup(part, person: nil, url: source.url, isRaw: source.isRaw),
+                 PeopleMasks.analysis(url: source.url, isRaw: source.isRaw)?.count)
+            } ?? (.unreadable, nil)
+            guard let self else { return }
+            self.developDetectingMask = nil
+            if let count { self.developPeopleCounts[id] = count }
+            guard let result = self.peopleMaskResult(lookup, count: count) else { return }
+            var mask = LocalAdjustment(kind: .person)
+            mask.part = part
+            mask.center = result.centroid
+            mask.exposure = 0.3   // a visible start, as with the other masks
+            self.developSelectedMaskId = mask.id
+            self.commitDevelopChange([id], undoName: L("添加\(mask.title)")) { _, settings in
+                settings.masks.append(mask)
+            }
+        }
+    }
+
+    /// Points a people mask at another part, or another person (nil: everyone), once the photo
+    /// is seen to show it.
+    func setPeopleMask(_ maskId: String, part: PersonPart, person: Int?) {
+        guard let asset = primary, let source = developSource(for: asset),
+              let mask = developSettings[asset.id]?.masks.first(where: { $0.id == maskId && $0.kind == .person }),
+              mask.part != part || mask.person != person else { return }
+        let id = asset.id
+        Task { [weak self] in
+            let (lookup, count) = await ThumbnailRepairQueue.run(.visible) {
+                (PeopleMasks.lookup(part, person: person, url: source.url, isRaw: source.isRaw),
+                 PeopleMasks.analysis(url: source.url, isRaw: source.isRaw)?.count)
+            } ?? (.unreadable, nil)
+            guard let self, let result = self.peopleMaskResult(lookup, count: count) else { return }
+            self.commitDevelopChange([id], undoName: L("更改人物蒙版")) { _, settings in
+                guard let index = settings.masks.firstIndex(where: { $0.id == maskId }) else { return }
+                settings.masks[index].part = part
+                settings.masks[index].person = person
+                settings.masks[index].center = result.centroid
+            }
+        }
+    }
+
+    /// Looks at the photo's people when a people mask is shown without knowing how many there are.
+    func loadPeopleCount(for asset: Asset) {
+        guard developPeopleCounts[asset.id] == nil, let source = developSource(for: asset) else { return }
+        let id = asset.id
+        Task { [weak self] in
+            let count = await ThumbnailRepairQueue.run(.visible) {
+                PeopleMasks.analysis(url: source.url, isRaw: source.isRaw)?.count
+            } ?? nil
+            if let count { self?.developPeopleCounts[id] = count }
+        }
+    }
+
+    /// The mask found, or nil after saying why there's none.
+    private func peopleMaskResult(_ lookup: SemanticMasks.Lookup, count: Int?) -> SemanticMasks.Result? {
+        switch lookup {
+        case .found(let result):
+            return result
+        case .notFound:
+            if count == 0 { push("没有找到人物", "info") } else { push("照片中看不到这个部位", "info") }
+        case .unreadable:
+            push("原件不可用", "warning")
+        }
+        return nil
+    }
+
     /// [ and ]: a smaller or larger brush.
     func resizeBrush(by delta: Double) {
         developBrush.size = min(100, max(1, developBrush.size + delta))
@@ -883,7 +963,7 @@ final class AppState {
         guard let index = next.masks.firstIndex(where: { $0.id == id }) else { return }
         let removed = next.masks.remove(at: index)
         if developSelectedMaskId == id { developSelectedMaskId = next.masks.last?.id }
-        commitDevelop([assetId: next], undoName: L("删除\(removed.kind.title)"))
+        commitDevelop([assetId: next], undoName: L("删除\(removed.title)"))
     }
     /// Crop shape the tool holds while resizing.
     var developCropAspect: CropAspect = .original
