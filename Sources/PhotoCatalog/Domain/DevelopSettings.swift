@@ -11,6 +11,10 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     /// Other formats: relative shifts on a -100…100 scale.
     var temperature: Double?
     var tint: Double?
+    /// The profile (see `DevelopProfile`), nil for Standard: the base look, at `profileAmount`
+    /// 0…200 percent, before every tone and color adjustment.
+    var profile: String?
+    var profileAmount: Double = 100
     var exposure: Double = 0      // EV, -5…5
     var contrast: Double = 0      // -100…100
     var highlights: Double = 0
@@ -125,6 +129,7 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
         let fields: [Double?] = [temperature, tint, exposure, contrast, highlights, shadows,
                                  whites, blacks, vibrance, saturation]
         var text = fields.map { $0.map { String(format: "%.3f", $0) } ?? "-" }.joined(separator: ",")
+        if let profile { text += String(format: "|f%.0f,", profileAmount) + profile }   // only when set, like geometry
         if hasPresence {
             text += String(format: "|p%.1f,%.1f,%.1f", texture, clarity, dehaze)
         }
@@ -167,6 +172,8 @@ extension DevelopSettings {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         temperature = try container.decodeIfPresent(Double.self, forKey: .temperature)
         tint = try container.decodeIfPresent(Double.self, forKey: .tint)
+        profile = try container.decodeIfPresent(String.self, forKey: .profile)
+        profileAmount = try container.decodeIfPresent(Double.self, forKey: .profileAmount) ?? 100
         exposure = try container.decodeIfPresent(Double.self, forKey: .exposure) ?? 0
         contrast = try container.decodeIfPresent(Double.self, forKey: .contrast) ?? 0
         highlights = try container.decodeIfPresent(Double.self, forKey: .highlights) ?? 0
@@ -584,6 +591,8 @@ struct DevelopControl: Identifiable {
     ]
 
     static let lutAmount = amount(\.lutAmount, L("LUT 强度"), max: 100, neutral: 100)
+
+    static let profileAmount = amount(\.profileAmount, L("数量"), max: 200, neutral: 100)
 
     static let transform: [DevelopControl] = [
         signed(\.perspectiveVertical, L("垂直")),

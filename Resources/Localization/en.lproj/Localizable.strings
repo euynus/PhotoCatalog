@@ -755,7 +755,7 @@
 "、" = ", ";
 "参数曲线" = "parametric curve";
 "Upright 与其他变换" = "Upright and other transforms";
-"配置文件" = "profile";
+"配置文件" = "Profile";
 "镜头配置文件校正" = "lens profile corrections";
 "导入或导出预设（.xmp，可与 Lightroom 互通）" = "Import or export presets (.xmp, compatible with Lightroom)";
 "导入预设…" = "Import Presets…";
@@ -1597,3 +1597,16 @@
 "当前版本 %@。" = "You have version %@.";
 "暂时无法检查更新" = "Can't Check for Updates Right Now";
 "请检查网络连接后再试。" = "Check your internet connection and try again.";
+
+/* Develop profiles */
+"标准" = "Standard";
+"中性" = "Neutral";
+"人像" = "Portrait";
+"风景" = "Landscape";
+"相机引擎的原始渲染" = "The RAW engine's own rendering";
+"低对比、柔和的颜色，适合细致后期" = "Low contrast and soft color, a starting point for careful editing";
+"更高的对比度与饱和度" = "More contrast and saturation";
+"柔和的影调，自然、明亮的肤色" = "Soft tones with natural, glowing skin";
+"更浓的绿色与蓝色，更深的天空" = "Richer greens and blues, deeper skies";
+"配置文件“%@”" = "Profile “%@”";
+"配置文件数量" = "Profile Amount";

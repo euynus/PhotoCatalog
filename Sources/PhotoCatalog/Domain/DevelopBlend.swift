@@ -24,6 +24,18 @@ extension DevelopSettings {
                                               step: control.step)
         }
 
+        // a profile the photo didn't have grows from nothing; one the preset takes away fades out
+        if base.profile != target.profile, amount > 0 {
+            if let profile = target.profile {
+                result.profile = profile
+                result.profileAmount = mix(0, target.profileAmount, 0...200, step: 1)
+            } else {
+                result.profileAmount = mix(base.profileAmount, 0, 0...200, step: 1)
+                result.profile = result.profileAmount > 0 ? base.profile : nil
+                if result.profile == nil { result.profileAmount = 100 }
+            }
+        }
+
         // white balance: an unset value counts from where it stands, as shot or zero
         let temperatureRange: ClosedRange<Double> = isRaw ? 2000...12000 : -100...100
         let tintRange: ClosedRange<Double> = isRaw ? -150...150 : -100...100
@@ -71,7 +83,7 @@ extension DevelopSettings {
         return DevelopControl.tone + DevelopControl.presence + Array(regions) + DevelopControl.gradingShape + mixer
             + DevelopControl.detail + DevelopControl.lens + DevelopControl.defringe + DevelopControl.effects
             + DevelopControl.transform
-            + [DevelopControl.lutAmount]
+            + [DevelopControl.lutAmount, DevelopControl.profileAmount]
     }()
 
     private static let localAdjustments: [(WritableKeyPath<LocalAdjustment, Double>, ClosedRange<Double>)] = [

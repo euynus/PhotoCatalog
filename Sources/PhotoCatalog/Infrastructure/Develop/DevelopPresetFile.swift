@@ -278,6 +278,15 @@ enum DevelopPresetFile {
             settings.removeChromaticAberration = lateral == "1"
             fields.insert(.lensCorrections)
         }
+        // the profile: a Look (Adobe Color, Adobe Vivid…), else the camera profile, where one of ours is near
+        let lookName = elements["Look"].flatMap(lookName)
+        let profileName = lookName?.name ?? values["CameraProfile"]
+        let profile = profileName.flatMap(DevelopProfile.named(cameraRaw:))
+        if let profile {
+            settings.profile = profile.stored
+            settings.profileAmount = profile == .standard ? 100 : min(200, max(0, (lookName?.amount ?? 1) * 100))
+            fields.insert(.profile)
+        }
         if values["ConvertToGrayscale"] == "True" {
             settings.saturation = -100
             fields.insert(.saturation)
@@ -294,7 +303,7 @@ enum DevelopPresetFile {
         guard !fields.isEmpty else { return nil }
 
         var skipped = Set<Skipped>()
-        if values["CameraProfile"] != nil || elements["Look"] != nil { skipped.insert(.profile) }
+        if profileName != nil && profile == nil { skipped.insert(.profile) }
         if ["MaskGroupBasedCorrections", "GradientBasedCorrections", "CircularGradientBasedCorrections",
             "PaintBasedCorrections"].contains(where: { elements[$0] != nil }) { skipped.insert(.masks) }
         if values["LensProfileEnable"] == "1" { skipped.insert(.lensProfile) }
@@ -307,6 +316,18 @@ enum DevelopPresetFile {
         let transfer = DevelopTransfer(settings: settings, fields: fields, sourceIsRaw: sourceIsRaw)
         return Reading(preset: DevelopPreset(id: UUID().uuidString, name: name, transfer: transfer, group: group),
                        skipped: skipped)
+    }
+
+    /// A Look's name and amount (1 is 100%), from the description inside it.
+    private static func lookName(_ look: XMLElement) -> (name: String, amount: Double?)? {
+        guard let description = (try? look.nodes(forXPath: ".//*[local-name()='Description']"))?.first as? XMLElement
+        else { return nil }
+        func property(_ key: String) -> String? {
+            (description.attributes ?? []).first { $0.localName == key && isCRS($0) }?.stringValue
+                ?? (description.children ?? []).first { $0.localName == key && isCRS($0) }?.stringValue
+        }
+        guard let name = property("Name")?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
+        return (name, property("Amount").flatMap { Double($0.trimmingCharacters(in: .whitespaces)) })
     }
 
     private static func isCRS(_ node: XMLNode) -> Bool {

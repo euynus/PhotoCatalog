@@ -1612,6 +1612,29 @@ final class AppState {
         commitDevelop([asset.id: next], undoName: L("LUT"))
     }
 
+    /// The photo's profile, as one undoable step; a newly chosen profile starts at 100%.
+    func setDevelopProfile(_ profile: DevelopProfile, for asset: Asset) {
+        endDevelopProfilePreview(profile)
+        var next = developSettings[asset.id] ?? .neutral
+        guard next.profile != profile.stored else { return }
+        next.profile = profile.stored
+        next.profileAmount = 100
+        commitDevelop([asset.id: next], undoName: L("配置文件“\(profile.title)”"))
+    }
+
+    /// Shows `profile` on the photo while the pointer rests on it, the way presets preview.
+    func previewDevelopProfile(_ profile: DevelopProfile, on asset: Asset) {
+        var settings = DevelopSettings()
+        settings.profile = profile.stored
+        let preset = DevelopPreset(id: "profile." + profile.rawValue, name: profile.title,
+                                   transfer: DevelopTransfer(settings: settings, fields: [.profile], sourceIsRaw: asset.isRaw))
+        previewDevelopPreset(preset, on: asset)
+    }
+
+    func endDevelopProfilePreview(_ profile: DevelopProfile) {
+        endDevelopPresetPreview("profile." + profile.rawValue)
+    }
+
     // ----- preset files -----
     /// Adds the presets in `urls` — XMP files from this app, Lightroom or Camera Raw; a name
     /// already taken gets a number. How many were added, how many couldn't be read, and what

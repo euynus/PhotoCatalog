@@ -65,6 +65,7 @@ struct DevelopPanel: View {
                 section(L("变换")) { transform(asset, settings) }
                 section(L("蒙版")) { masks(asset, settings) }
                 section(L("污点去除")) { spots(asset, settings) }
+                section(L("配置文件")) { DevelopProfilePicker(asset: asset, settings: settings) }
                 section(L("白平衡"), accessory: {
                     Button("自动") { app.autoWhiteBalance() }
                         .controlSize(.small)
@@ -942,7 +943,7 @@ struct DevelopPanel: View {
 }
 
 /// Label + value + slider. Double-clicking the label resets to neutral, as in Lightroom.
-private struct DevelopSlider: View {
+struct DevelopSlider: View {
     let title: String
     let value: Double
     let range: ClosedRange<Double>

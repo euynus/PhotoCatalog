@@ -11,6 +11,7 @@ enum DevelopCheck {
         checkPresence()
         checkToneCurve()
         checkColorMixer()
+        checkProfiles()
         checkColorGrading()
         checkLocalAdjustments()
         checkSpotRemoval()
@@ -287,6 +288,60 @@ enum DevelopCheck {
         let carried = DevelopSettings().applying(s, fields: [.colorMixer])
         assert(carried.mixer == s.mixer && carried.fingerprint != DevelopSettings().fingerprint,
                "the mixer travels as one setting and changes the fingerprint")
+    }
+
+    /// Profiles change the photo's base look in the right direction, from nothing at 0%.
+    private static func checkProfiles() {
+        let dark = (0.25, 0.25, 0.25), light = (0.75, 0.75, 0.75), red = (0.75, 0.3, 0.25), green = (0.3, 0.6, 0.25)
+        func with(_ profile: DevelopProfile, amount: Double = 100) -> DevelopSettings {
+            var settings = DevelopSettings()
+            settings.profile = profile.stored
+            settings.profileAmount = amount
+            return settings
+        }
+        func chroma(_ c: (r: Double, g: Double, b: Double)) -> Double { max(c.r, c.g, c.b) - min(c.r, c.g, c.b) }
+        func spread(_ settings: DevelopSettings) -> Double { luma(mean(light, settings)) - luma(mean(dark, settings)) }
+        assert(with(.standard) == .neutral && with(.standard).isNeutral, "Standard stores nothing")
+        let plain = mean(red, .neutral)
+        for profile in DevelopProfile.allCases {
+            let none = mean(red, with(profile, amount: 0))
+            assert(abs(none.r - plain.r) < 0.005 && abs(none.g - plain.g) < 0.005 && abs(none.b - plain.b) < 0.005,
+                   "\(profile) at 0% is Standard")
+        }
+        let standard = spread(.neutral), neutral = spread(with(.neutral)), vivid = spread(with(.vivid))
+        assert(neutral < standard - 0.02 && vivid > standard + 0.02, "Neutral flattens the tones, Vivid adds contrast")
+        assert(chroma(mean(red, with(.vivid))) > chroma(plain) + 0.02 && chroma(mean(red, with(.neutral))) < chroma(plain) - 0.01,
+               "Vivid is more colorful, Neutral quieter")
+        assert(chroma(mean(green, with(.landscape))) > chroma(mean(green, .neutral)) + 0.02, "Landscape deepens greens")
+        let portraitRed = mean(red, with(.portrait))
+        assert(chroma(portraitRed) < chroma(plain) && luma(mean((0.8, 0.5, 0.35), with(.portrait))) > luma(mean((0.8, 0.5, 0.35), .neutral)),
+               "Portrait calms reds and lightens skin tones")
+        for profile in DevelopProfile.allCases {
+            let gray = mean((0.5, 0.5, 0.5), with(profile))
+            assert(abs(gray.r - gray.g) < 0.01 && abs(gray.g - gray.b) < 0.01, "\(profile) keeps grays gray")
+        }
+        assert(spread(with(.vivid, amount: 200)) > vivid + 0.01, "200% goes further than 100%")
+
+        // stored by name: an unknown one renders as Standard; only a set profile changes the fingerprint
+        let stored = try! JSONDecoder().decode(DevelopSettings.self, from: JSONEncoder().encode(with(.landscape, amount: 140)))
+        let unknown = try! JSONDecoder().decode(DevelopSettings.self, from: Data(#"{"profile":"cinematic"}"#.utf8))
+        assert(stored.profile == "landscape" && stored.profileAmount == 140 && DevelopProfile(stored: unknown.profile) == .standard
+               && stored.fingerprint != DevelopSettings().fingerprint
+               && with(.vivid, amount: 50).fingerprint != with(.vivid).fingerprint,
+               "a profile and its amount persist and change the fingerprint")
+        let carried = DevelopSettings().applying(with(.portrait, amount: 70), fields: [.profile])
+        assert(carried.profile == "portrait" && carried.profileAmount == 70 && DevelopField.defaultCopy.contains(.profile),
+               "copy and presets carry the profile with its amount")
+
+        // a preset's Amount: a profile the photo didn't have grows from nothing, one it takes away fades
+        func blend(_ base: DevelopSettings, _ target: DevelopSettings, _ amount: Double) -> DevelopSettings {
+            DevelopSettings.blend(base, target, amount: amount, isRaw: false, whiteBalanceOrigin: (0, 0))
+        }
+        let grown = blend(.neutral, with(.vivid), 0.5), faded = blend(with(.vivid), .neutral, 0.5)
+        let gone = blend(with(.vivid), .neutral, 1.5), swapped = blend(with(.neutral), with(.vivid, amount: 120), 0.5)
+        assert(grown.profile == "vivid" && grown.profileAmount == 50 && faded.profile == "vivid" && faded.profileAmount == 50
+               && gone.profile == nil && gone.profileAmount == 100 && swapped.profile == "vivid" && swapped.profileAmount == 60,
+               "a preset's amount scales its profile from nothing")
     }
 
     private static func checkColorGrading() {
@@ -1787,14 +1842,41 @@ enum DevelopCheck {
         let matte = DevelopPresetFile.read(Data(lightroom.utf8), fileName: "matte.xmp")
         let m = matte?.preset.transfer
         assert(matte?.preset.name == "Matte" && matte?.preset.group == "Film Looks"
-               && m?.fields == [.whiteBalance, .contrast, .colorMixer, .sharpening, .noiseReduction, .colorGrading, .toneCurve]
+               && m?.fields == [.whiteBalance, .contrast, .colorMixer, .sharpening, .noiseReduction, .colorGrading, .toneCurve, .profile]
+               && m?.settings.profile == nil
                && m?.settings.temperature == nil && m?.settings.contrast == 15
                && m?.settings.mixer.saturation[ColorMixer.Band.orange.rawValue] == -8
                && m?.settings.sharpening == 0 && m?.settings.colorNoise == 0
                && m?.settings.grading.shadows.hue == 220 && m?.settings.grading.shadows.saturation == 18
                && m.map { abs(ToneCurve.evaluate($0.settings.curve.editablePoints(for: .rgb), at: 0) - 30.0 / 255) < 0.001 } == true
-               && matte?.skipped == [.profile],
-               "a Lightroom preset maps what both apps have, and says what it left out")
+               && matte?.skipped.isEmpty == true,
+               "a Lightroom preset maps what both apps have, Adobe Standard as Standard")
+        func profiled(_ look: String, amount: String) -> DevelopPresetFile.Reading? {
+            DevelopPresetFile.read(Data("""
+            <x:xmpmeta xmlns:x="adobe:ns:meta/">
+             <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+              <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+               crs:PresetType="Normal" crs:Version="15.0" crs:Contrast2012="+10" crs:CameraProfile="Adobe Standard"
+               crs:HasSettings="True">
+               <crs:Name><rdf:Alt><rdf:li xml:lang="x-default">Look</rdf:li></rdf:Alt></crs:Name>
+               <crs:Look>
+                <rdf:Description crs:Name="\(look)" crs:Amount="\(amount)" crs:UUID="EA1DE074F188405965EF399C72C221D9"
+                 crs:SupportsAmount="false" crs:SupportsMonochrome="false" crs:SupportsOutputReferred="false">
+                 <crs:Group><rdf:Alt><rdf:li xml:lang="x-default">Profiles</rdf:li></rdf:Alt></crs:Group>
+                 <crs:Parameters><rdf:Description crs:Version="15.0" crs:ConvertToGrayscale="False"/></crs:Parameters>
+                </rdf:Description>
+               </crs:Look>
+              </rdf:Description>
+             </rdf:RDF>
+            </x:xmpmeta>
+            """.utf8), fileName: "look.xmp")
+        }
+        let vivid = profiled("Adobe Vivid", amount: "0.6"), creative = profiled("Modern 01", amount: "1")
+        assert(vivid?.preset.transfer.settings.profile == "vivid" && vivid?.preset.transfer.settings.profileAmount == 60
+               && vivid?.preset.transfer.fields == [.contrast, .profile] && vivid?.skipped.isEmpty == true,
+               "a Lightroom profile with a near one here becomes it, at its amount")
+        assert(creative?.preset.transfer.settings.profile == nil && creative?.preset.transfer.fields == [.contrast]
+               && creative?.skipped == [.profile], "a creative profile with none near is left out and said so")
         assert(DevelopPresetFile.read(Data("not xml".utf8), fileName: "a.xmp") == nil
                && DevelopPresetFile.read(Data(#"<x:xmpmeta xmlns:x="adobe:ns:meta/"/>"#.utf8), fileName: "b.xmp") == nil,
                "files that aren't presets are refused")

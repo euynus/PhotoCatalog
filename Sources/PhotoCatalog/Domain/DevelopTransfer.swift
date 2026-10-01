@@ -6,7 +6,7 @@ import Foundation
 /// One setting that copy, sync and presets can carry, as in Lightroom's Copy Settings dialog.
 /// Orientation comes before crop so a copied crop lands in the copied frame.
 enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
-    case whiteBalance, exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze
+    case profile, whiteBalance, exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze
     case vibrance, saturation, toneCurve, colorMixer, colorGrading, lut
     case sharpening, noiseReduction, lensCorrections, vignette, grain, masks, spots
     case orientation, perspective, crop
@@ -15,6 +15,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
 
     var title: String {
         switch self {
+        case .profile: L("配置文件")
         case .whiteBalance: L("白平衡")
         case .exposure: L("曝光度")
         case .contrast: L("对比度")
@@ -46,6 +47,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
 
     /// Sections of the copy dialog.
     static let groups: [(title: String, fields: [DevelopField])] = [
+        (L("配置文件"), [.profile]),
         (L("白平衡"), [.whiteBalance]),
         (L("色调"), [.exposure, .contrast, .highlights, .shadows, .whites, .blacks]),
         (L("偏好"), [.texture, .clarity, .dehaze, .vibrance, .saturation]),
@@ -78,6 +80,9 @@ extension DevelopSettings {
         var next = self
         for field in DevelopField.allCases where fields.contains(field) {
             switch field {
+            case .profile:
+                next.profile = source.profile
+                next.profileAmount = source.profileAmount
             case .whiteBalance:
                 next.temperature = source.temperature
                 next.tint = source.tint

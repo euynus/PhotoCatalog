@@ -92,7 +92,7 @@ enum DevelopRenderer {
             let lateral = settings.removeChromaticAberration ? ChromaticAberration.correction(url: url, isRaw: isRaw) : nil
             let lensed = DevelopRenderer.applyLens(base, settings, scale: min(1, scale), lateral: lateral)
             let healed = DevelopRenderer.applySpots(lensed, settings, photo: (url: url, isRaw: isRaw))
-            let toned = DevelopRenderer.applyTone(healed, settings)
+            let toned = DevelopRenderer.applyTone(DevelopRenderer.applyProfile(healed, settings), settings)
             let colored = DevelopRenderer.applyLUT(
                 DevelopRenderer.applyMixer(DevelopRenderer.applyCurve(toned, settings), settings), settings)
             let present = DevelopRenderer.applyPresence(colored, settings)
@@ -356,6 +356,33 @@ enum DevelopRenderer {
             "inputCurvesDomain": CIVector(x: 0, y: 1),
             "inputColorSpace": outputColorSpace,
         ])
+    }
+
+    /// The profile's look (see `DevelopProfile`) at its amount: its curve, then its color
+    /// response, on display-encoded values like the curve and mixer it's made of. Standard, or
+    /// an amount of 0, leaves the photo as it is.
+    static func applyProfile(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
+        let profile = DevelopProfile(stored: s.profile)
+        guard profile != .standard, s.profileAmount > 0 else { return input }
+        let look = profile.look(amount: s.profileAmount)
+        var image = input
+        if !look.curve.isEmpty {
+            var curve = ToneCurve()
+            curve.setPoints(look.curve, for: .rgb)
+            image = image.applyingFilter("CIColorCurves", parameters: [
+                "inputCurvesData": curveTable(curve),
+                "inputCurvesDomain": CIVector(x: 0, y: 1),
+                "inputColorSpace": outputColorSpace,
+            ])
+        }
+        guard !look.mixer.isNeutral || look.saturation != 0 else { return image }
+        var encoded = DevelopKernels.colorMixer(image.applyingFilter("CILinearToSRGBToneCurve"), look.mixer)
+        if look.saturation != 0 {
+            encoded = encoded.applyingFilter("CIColorControls", parameters: [
+                "inputSaturation": 1 + look.saturation / 100, "inputContrast": 1, "inputBrightness": 0,
+            ])
+        }
+        return encoded.applyingFilter("CISRGBToneCurveToLinear")
     }
 
     /// The HSL mixer, then color grading, on display-encoded values.
