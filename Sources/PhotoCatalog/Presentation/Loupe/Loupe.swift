@@ -202,7 +202,7 @@ struct Filmstrip: View {
                             app.setPrimary(a.id)
                         }
                         .equatable()
-                        .id(a.id)   // a position showing another photo starts fresh
+                        .id(PositionedPhoto(position: position, id: a.id))   // a position showing another photo starts fresh
                     }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)

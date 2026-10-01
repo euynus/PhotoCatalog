@@ -73,8 +73,10 @@ struct GridView: View {
                                 // drag the original out to Finder, an editor, Mail…
                                 .onDrag { Self.dragProvider(for: asset) }
                                 .contextMenu { PhotoContextMenu(asset: asset, pairedJPEGPath: pair.first?.localPath) }
-                                // a position showing another photo starts fresh (no stale thumbnail)
-                                .id(asset.id)
+                                // a position showing another photo starts fresh (no stale thumbnail); the
+                                // position is part of it, or a photo moving to another position would bring
+                                // back its old cell there, no longer updated (badges, selection)
+                                .id(PositionedPhoto(position: position, id: asset.id))
                         }
                     }
                     .padding(Self.inset)
@@ -121,6 +123,12 @@ struct GridView: View {
         if let stack { parts.append(stack.collapsed ? L("堆栈 \(stack.count) 张（已折叠）") : L("堆栈 \(stack.count) 张")) }
         return parts.joined(separator: L("，"))
     }
+}
+
+/// A grid or filmstrip cell's identity: the photo at a position.
+struct PositionedPhoto: Hashable {
+    let position: Int
+    let id: String
 }
 
 struct GridCell: View {
