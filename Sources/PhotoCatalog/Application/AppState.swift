@@ -1248,6 +1248,26 @@ final class AppState {
         }
     }
 
+    // ----- soft proofing: the photo in Develop as another color space or a printer shows it -----
+    /// Whether Develop shows the proof (S): a way of looking, off at each launch.
+    var softProofing = false
+    var softProof: SoftProof = {
+        UserDefaults.standard.data(forKey: "pc_softProof").flatMap { try? JSONDecoder().decode(SoftProof.self, from: $0) }
+            ?? SoftProof()
+    }() {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(softProof), forKey: "pc_softProof") }
+    }
+    /// The profiles to proof with, found when proofing first turns on.
+    var softProofProfiles: [SoftProofing.Profile] = []
+
+    func toggleSoftProofing() {
+        guard view == .develop else { return }
+        softProofing.toggle()
+        if softProofing && softProofProfiles.isEmpty { softProofProfiles = SoftProofing.profiles() }
+        // a profile that's gone falls back to sRGB
+        if softProofing, !softProofProfiles.contains(where: { $0.id == softProof.profile }) { softProof.profile = "sRGB" }
+    }
+
     var canAutoTone: Bool { canTransformSelection }
 
     /// Automatic tone (⌘U) for the photo in Develop, or every selected photo elsewhere; each
@@ -9040,7 +9060,8 @@ final class AppState {
         case "i":
             toggleGridInfo()
         case "s":
-            toggleStackForPrimary()
+            // S proofs in Develop, as in Lightroom; elsewhere it opens or closes a stack
+            if view == .develop { toggleSoftProofing() } else { toggleStackForPrimary() }
         case "up", "down", "left", "right":
             if view == .compare || view == .analysis { return false }
             if view == .survey { moveInSurvey(key); return true }

@@ -51,6 +51,8 @@ private struct DevelopCanvas: View {
         let visualize = spotting && app.developVisualizeSpots
         let dragging = app.developDraft?.assetId == asset.id
         let fullResolution = app.loupeZoom != nil && !dragging && !cropping && !app.developMasking && !app.developSpotting
+        // proofing shows the finished photo, not a tool's working view
+        let proof = app.softProofing && !cropping && !masking && !spotting ? app.softProof : nil
         // the crop tool draws the crop itself, so moving it never re-renders
         var rendered = settings
         if cropping { rendered.crop = nil }
@@ -84,6 +86,8 @@ private struct DevelopCanvas: View {
                         badge(L("修改前（按 \\ 切换）"))
                     } else if app.developPickingWhiteBalance {
                         badge(L("点选照片中应为灰色或白色的地方（Esc 取消）"))
+                    } else if let proof {
+                        badge(L("校样预览 · \(SoftProofing.name(of: proof.profile))"))
                     }
                 }
                 .overlay(alignment: .topTrailing) {
@@ -91,12 +95,12 @@ private struct DevelopCanvas: View {
                 }
                 .onChange(of: DevelopRenderKey(assetId: asset.id, settings: rendered, draft: dragging,
                                                fullResolution: fullResolution, wholeFrame: cropping,
-                                               overlayMask: overlay, visualizeSpots: visualize),
+                                               overlayMask: overlay, visualizeSpots: visualize, proof: proof),
                           initial: true) {
                     engine.render(assetId: asset.id, url: source.url, isRaw: source.isRaw, settings: rendered,
                                   draft: dragging, fullResolution: fullResolution,
                                   wholeFrame: cropping, overlayMask: overlay,
-                                  visualizeSpots: visualize) { result, histogram in
+                                  visualizeSpots: visualize, proof: proof) { result, histogram in
                         if let temperature = result.asShotTemperature, let tint = result.asShotTint {
                             app.recordAsShotWhiteBalance(asset.id, temperature: temperature, tint: tint)
                         }
@@ -104,11 +108,12 @@ private struct DevelopCanvas: View {
                         if let histogram { app.recordDevelopHistogram(histogram, for: asset.id) }
                     }
                 }
-                .onChange(of: app.developComparing ? Self.before(settings) : nil, initial: true) { _, before in
+                .onChange(of: app.developComparing ? BeforeKey(settings: Self.before(settings), proof: proof) : nil,
+                          initial: true) { _, before in
                     guard let before else { return }
-                    beforeEngine.render(assetId: asset.id, url: source.url, isRaw: source.isRaw, settings: before,
+                    beforeEngine.render(assetId: asset.id, url: source.url, isRaw: source.isRaw, settings: before.settings,
                                         draft: false, fullResolution: false, wholeFrame: false, overlayMask: nil,
-                                        visualizeSpots: false) { _, _ in }
+                                        visualizeSpots: false, proof: before.proof) { _, _ in }
                 }
             } else {
                 ContentUnavailableView("原件不可用",
@@ -208,6 +213,11 @@ private struct BeforeAfterPanes: View {
     }
 }
 
+private struct BeforeKey: Equatable {
+    let settings: DevelopSettings
+    let proof: SoftProof?
+}
+
 private struct DevelopRenderKey: Equatable {
     let assetId: String
     let settings: DevelopSettings
@@ -216,6 +226,7 @@ private struct DevelopRenderKey: Equatable {
     let wholeFrame: Bool
     let overlayMask: String?
     let visualizeSpots: Bool
+    let proof: SoftProof?
 }
 
 /// Owns two render workers — preview size and full resolution — so switching zoom
@@ -259,6 +270,7 @@ final class DevelopPreviewEngine: ObservableObject {
 
     func render(assetId: String, url: URL, isRaw: Bool, settings: DevelopSettings, draft: Bool,
                 fullResolution: Bool, wholeFrame: Bool, overlayMask: String? = nil, visualizeSpots: Bool = false,
+                proof: SoftProof? = nil,
                 finished: @escaping (DevelopRenderWorker.Result, _ newestHistogram: DevelopHistogram?) -> Void) {
         token += 1
         var request = DevelopRenderWorker.Request(url: url, isRaw: isRaw,
@@ -267,6 +279,7 @@ final class DevelopPreviewEngine: ObservableObject {
         request.wholeFrame = wholeFrame
         request.overlayMask = overlayMask
         request.visualizeSpots = visualizeSpots
+        request.proof = proof
         renderingAssetId = assetId
         (fullResolution ? fullWorker : previewWorker).submit(request) { [weak self] result in
             Task { @MainActor [weak self] in

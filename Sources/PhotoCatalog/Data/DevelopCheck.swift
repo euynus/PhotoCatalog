@@ -14,6 +14,7 @@ enum DevelopCheck {
         checkProfiles()
         checkBlackAndWhite()
         checkCalibration()
+        checkSoftProofing()
         checkColorGrading()
         checkLocalAdjustments()
         checkSpotRemoval()
@@ -36,6 +37,7 @@ enum DevelopCheck {
             checkEditsAndUndo()
             checkCopyPasteAndPresets()
             checkPresetFiles()
+            checkSoftProofingState()
         }
         print("--- develop assertions passed ---")
     }
@@ -445,6 +447,64 @@ enum DevelopCheck {
         assert(text.contains(#"crs:RedHue="+60""#) && text.contains(#"crs:BlueSaturation="-80""#)
                && back?.settings.greenSaturation == 70 && back?.settings.redHue == 60 && back?.fields == [.calibration],
                "calibration maps to Camera Raw's own settings")
+    }
+
+    /// Soft proofing: a narrower profile clips what it can't hold and lets grays through; the
+    /// warning marks exactly what doesn't fit.
+    private static func checkSoftProofing() {
+        let colors: [(Double, Double, Double)] = [(0, 1, 0), (0.5, 0.5, 0.5), (0.85, 0.65, 0.5)]   // P3 green, gray, skin
+        let context = CGContext(data: nil, width: colors.count, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: DevelopRenderer.outputColorSpace, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        for (i, c) in colors.enumerated() {
+            context.setFillColor(CGColor(colorSpace: DevelopRenderer.outputColorSpace, components: [c.0, c.1, c.2, 1])!)
+            context.fill(CGRect(x: i, y: 0, width: 1, height: 1))
+        }
+        let image = context.makeImage()!
+        let original = SoftProofing.rgba(image)!
+        func shown(_ edit: (inout SoftProof) -> Void) -> [UInt8] {
+            var proof = SoftProof()
+            edit(&proof)
+            return SoftProofing.proof(image, proof).flatMap(SoftProofing.rgba) ?? []
+        }
+        func near(_ a: [UInt8], _ b: [UInt8], _ pixel: Int, _ tolerance: Int = 3) -> Bool {
+            (0..<3).allSatisfy { abs(Int(a[pixel * 4 + $0]) - Int(b[pixel * 4 + $0])) <= tolerance }
+        }
+        let srgb = shown { _ in }
+        assert(srgb[0] > 80 && near(srgb, original, 1) && near(srgb, original, 2),
+               "proofing in sRGB clips Display P3's green and leaves gray and skin")
+        assert(near(shown { $0.profile = "displayP3" }, original, 0) && near(shown { $0.profile = "displayP3" }, original, 1),
+               "proofing in the display's own space changes nothing")
+        let warned = shown { $0.gamutWarning = true }
+        assert(Array(warned[0..<3]) == [255, 0, 0] && near(warned, original, 1) && near(warned, original, 2),
+               "the gamut warning marks only the color sRGB can't hold")
+        let cmyk = "/System/Library/ColorSync/Profiles/Generic CMYK Profile.icc"
+        if FileManager.default.fileExists(atPath: cmyk) {
+            let printed = shown { $0.profile = cmyk; $0.gamutWarning = true }
+            assert(Array(printed[0..<3]) == [255, 0, 0] && near(printed, original, 1, 4),
+                   "a printer profile flags a vivid green and passes gray")
+            assert(SoftProofing.isPrinterProfile(cmyk) && !SoftProofing.isPrinterProfile("/System/Library/ColorSync/Profiles/sRGB Profile.icc")
+                   && SoftProofing.profiles().contains { $0.id == cmyk }, "printer profiles are found, display profiles aren't")
+        }
+        assert(SoftProofing.profiles().prefix(3).map(\.id) == ["sRGB", "displayP3", "adobeRGB"]
+               && (try? JSONDecoder().decode(SoftProof.self, from: Data("{}".utf8))) == SoftProof(),
+               "the output spaces come first, and settings saved before a field existed still load")
+    }
+
+    @MainActor
+    private static func checkSoftProofingState() {
+        let saved = UserDefaults.standard.data(forKey: "pc_softProof")
+        defer { UserDefaults.standard.set(saved, forKey: "pc_softProof") }
+        let app = AppState.selfCheckFixture()
+        app.view = .grid
+        app.toggleSoftProofing()
+        assert(!app.softProofing, "proofing is a Develop view")
+        app.view = .develop
+        app.softProof.profile = "/gone/printer.icc"
+        app.toggleSoftProofing()
+        assert(app.softProofing && app.softProof.profile == "sRGB" && !app.softProofProfiles.isEmpty,
+               "turning it on finds the profiles, and one that's gone falls back to sRGB")
+        app.toggleSoftProofing()
+        assert(!app.softProofing, "and S turns it off again")
     }
 
     private static func checkColorGrading() {

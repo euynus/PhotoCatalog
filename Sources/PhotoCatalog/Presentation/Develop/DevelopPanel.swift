@@ -33,6 +33,13 @@ struct DevelopPanel: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header(asset, settings: settings)
+                section(L("软打样"), accessory: {
+                    Toggle("软打样", isOn: Binding(get: { app.softProofing }, set: { _ in app.toggleSoftProofing() }))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .labelsHidden()
+                        .help("用输出色彩空间或打印机配置文件预览照片 (S)")
+                }) { softProof() }
                 section(L("预设"), accessory: {
                     HStack(spacing: 8) {
                         Menu {
@@ -794,6 +801,35 @@ struct DevelopPanel: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    // ---- soft proofing: the photo through an output profile ----
+    @ViewBuilder
+    private func softProof() -> some View {
+        if app.softProofing {
+            Picker("配置文件", selection: Binding(get: { app.softProof.profile }, set: { app.softProof.profile = $0 })) {
+                ForEach(app.softProofProfiles) { Text($0.name).tag($0.id) }
+            }
+            .controlSize(.small)
+            Picker("方法", selection: Binding(get: { app.softProof.intent }, set: { app.softProof.intent = $0 })) {
+                ForEach(SoftProof.Intent.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            .disabled(app.softProof.simulatePaper)
+            .help("可感知：压缩所有颜色以容纳超出色域的颜色；相对比色：保留色域内的颜色，超出的剪切")
+            Toggle("模拟纸张与墨水", isOn: Binding(get: { app.softProof.simulatePaper }, set: { app.softProof.simulatePaper = $0 }))
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .help("显示纸张的白色与墨水的黑色")
+            Toggle("色域警告", isOn: Binding(get: { app.softProof.gamutWarning }, set: { app.softProof.gamutWarning = $0 }))
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .help("以红色标出这个配置文件无法表现的颜色")
+        } else {
+            Text("预览照片在其他色彩空间或打印出来的样子 (S)")
+                .font(.system(size: 11)).foregroundStyle(Theme.text3)
+        }
     }
 
     // ---- LUT: a creative look from the library ----

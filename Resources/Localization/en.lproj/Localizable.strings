@@ -1639,3 +1639,19 @@
 "低" = "Low";
 "高" = "High";
 "锐化：%@" = "Sharpened for %@";
+
+/* Soft proofing */
+"软打样" = "Soft Proofing";
+"软打样 (S)" = "Soft Proofing (S)";
+"结束软打样 (S)" = "End Soft Proofing (S)";
+"可感知" = "Perceptual";
+"相对比色" = "Relative";
+"模拟纸张与墨水" = "Simulate Paper & Ink";
+"色域警告" = "Gamut Warning";
+"校样预览 · %@" = "Proof Preview · %@";
+"用输出色彩空间或打印机配置文件预览照片 (S)" = "Preview the photo through an output color space or printer profile (S)";
+"可感知：压缩所有颜色以容纳超出色域的颜色；相对比色：保留色域内的颜色，超出的剪切" = "Perceptual compresses all colors to fit the out-of-gamut ones; Relative keeps in-gamut colors and clips the rest";
+"显示纸张的白色与墨水的黑色" = "Show the paper's white and the ink's black";
+"以红色标出这个配置文件无法表现的颜色" = "Mark in red the colors this profile can't reproduce";
+"预览照片在其他色彩空间或打印出来的样子 (S)" = "See how the photo looks in another color space or in print (S)";
+"方法" = "Intent";

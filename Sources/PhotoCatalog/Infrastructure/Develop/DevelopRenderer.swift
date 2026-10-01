@@ -786,6 +786,8 @@ final class DevelopRenderWorker: @unchecked Sendable {
         var wholeFrame = false
         var overlayMask: String?
         var visualizeSpots = false
+        /// Soft proofing: the render shown through this profile (see `SoftProofing`).
+        var proof: SoftProof?
         let token: Int
     }
 
@@ -819,10 +821,12 @@ final class DevelopRenderWorker: @unchecked Sendable {
             source = DevelopRenderer.Source(url: request.url, isRaw: request.isRaw, maxPixel: request.maxPixel)
                 .map { (key, $0) }
         }
-        let image = autoreleasepool {
-            source?.source.image(request.settings, draft: request.draft, wholeFrame: request.wholeFrame,
-                                 overlayMask: request.overlayMask, visualizeSpots: request.visualizeSpots)
+        let image = autoreleasepool { () -> CGImage? in
+            let rendered = source?.source.image(request.settings, draft: request.draft, wholeFrame: request.wholeFrame,
+                                                overlayMask: request.overlayMask, visualizeSpots: request.visualizeSpots)
                 .flatMap(DevelopRenderer.render)
+            guard let rendered, let proof = request.proof else { return rendered }
+            return SoftProofing.proof(rendered, proof) ?? rendered
         }
         // the crop tool's empty corners and the mask overlay's tint would skew the histogram
         let histogram = request.wholeFrame || request.overlayMask != nil || request.visualizeSpots

@@ -67,6 +67,7 @@ struct PhotoCatalogApp: App {
                 .frame(minWidth: 1080, minHeight: 680)
                 .onAppear {
                     app.startDeferredCatalogLoadingIfNeeded()
+                    SnapHarness.startIfRequested(app)
                     app.startDeviceBrowsing()
                     app.checkForCrashReport()
                     app.checkForUpdatesAutomatically()

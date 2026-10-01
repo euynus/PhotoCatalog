@@ -189,6 +189,10 @@ struct PhotoCatalogCommands: Commands {
                 perform("视图.修改前后对比") { app.developComparing.toggle() }
             }
             .disabled(app.sheet != nil || !app.onboarded || app.view != .develop)
+            Button(app.softProofing ? "结束软打样 (S)" : "软打样 (S)") {
+                perform("视图.软打样") { app.toggleSoftProofing() }
+            }
+            .disabled(app.sheet != nil || !app.onboarded || app.view != .develop)
             Button("拍摄参数分析") { perform("视图.拍摄参数分析") { app.switchView(.analysis) } }
                 .disabled(app.sheet != nil || !app.onboarded)
             Divider()
