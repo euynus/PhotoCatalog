@@ -1656,6 +1656,38 @@
 "预览照片在其他色彩空间或打印出来的样子 (S)" = "See how the photo looks in another color space or in print (S)";
 "方法" = "Intent";
 
+/* Slideshow */
+"幻灯片" = "Slideshow";
+"幻灯片…" = "Slideshow…";
+"即兴放映" = "Impromptu Slideshow";
+"放映 %lld 张照片（选中多张时为所选照片，否则为当前列表），共 %@" = "Plays %lld photos (the selected ones when several are selected, otherwise the current list), %@ in all";
+"每张" = "Each Photo";
+"淡入淡出" = "Fade";
+"文字" = "Text";
+"背景" = "Backdrop";
+"黑色" = "Black";
+"灰色" = "Gray";
+"白色" = "White";
+"播放" = "Play";
+"平移和缩放" = "Pan and Zoom";
+"随机顺序" = "Random Order";
+"循环" = "Repeat";
+"音乐" = "Music";
+"按音乐长度安排每张照片的时间" = "Time each photo to fit the music";
+"音乐长 %@" = "The music lasts %@";
+"视频尺寸" = "Video Size";
+"导出视频…" = "Export Video…";
+"把幻灯片存为 MP4 视频，带上音乐" = "Save the slideshow as an MP4 video, with its music";
+"选择幻灯片的音乐" = "Choose music for the slideshow";
+"%lld 分 %lld 秒" = "%lld min %lld s";
+"%@ 秒" = "%@ s";
+"结束放映 (Esc)" = "End Slideshow (Esc)";
+"没有可放映的照片" = "No photos to show";
+"这些照片没有可用的本地原件" = "These photos have no local originals";
+"正在导出幻灯片视频…" = "Exporting slideshow video…";
+"幻灯片视频已导出：%@" = "Slideshow video exported: %@";
+"幻灯片视频未能导出" = "The slideshow video couldn't be exported";
+
 /* Tethered capture */
 "联机拍摄" = "Tethered Capture";
 "联机拍摄…" = "Tethered Capture…";

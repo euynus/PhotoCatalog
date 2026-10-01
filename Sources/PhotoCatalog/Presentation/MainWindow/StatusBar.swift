@@ -18,6 +18,7 @@ struct StatusBar: View {
             ImportProgressLabel()
             ExportProgressLabel()
             EnhanceProgressLabel()
+            SlideshowExportLabel()
             DescribeProgressLabel()
             OriginalsCheckLabel()
             MaintenanceLabels()

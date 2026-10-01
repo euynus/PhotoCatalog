@@ -6291,6 +6291,103 @@ final class AppState {
         }
     }
 
+    // ----- slideshow (Lightroom's Slideshow module) -----
+    var slideshowSettings: SlideshowSettings =
+        AppState.loadJSON(SlideshowSettings.self, forKey: "pc_slideshow") ?? SlideshowSettings() {
+        didSet { AppState.store(slideshowSettings, forKey: "pc_slideshow") }
+    }
+    /// How far a slideshow video has got, while one is being written.
+    var slideshowExportProgress: Double?
+    @ObservationIgnored private var slideshowCancellation: CancellationFlag?
+    @ObservationIgnored private var slideshowPlayer: SlideshowPlayer?
+
+    /// What a slideshow plays: the selected photos when several are selected, otherwise every
+    /// photo in the list, in list order (videos left out).
+    func slideshowAssets() -> [Asset] {
+        let ids = selectedIds
+        let base = ids.count > 1 ? list.filter { ids.contains($0.id) } : list
+        return base.filter { !$0.isVideo && !$0.preview.isEmpty }
+    }
+
+    var canSlideshow: Bool { onboarded && sheet == nil && slideshowPlayer == nil && !list.isEmpty }
+
+    func showSlideshow() {
+        guard canSlideshow else { return }
+        guard !slideshowAssets().isEmpty else {
+            push("没有可放映的照片", "info")
+            return
+        }
+        sheet = "slideshow"
+    }
+
+    /// The photos in the order the slideshow plays them, shuffled alike every time for them.
+    private func slideshowOrder(_ assets: [Asset], settings: SlideshowSettings) -> [Asset] {
+        var seed: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in assets.map(\.id).joined(separator: "|").utf8 { seed = (seed ^ UInt64(byte)) &* 0x100_0000_01b3 }
+        return settings.order(assets.count, seed: seed).map { assets[$0] }
+    }
+
+    private func slideshowMusic(_ settings: SlideshowSettings) -> URL? {
+        guard !settings.musicPath.isEmpty, FileManager.default.fileExists(atPath: settings.musicPath) else { return nil }
+        return URL(fileURLWithPath: settings.musicPath)
+    }
+
+    /// ⌘↩ or 播放: the slideshow full screen with the current settings.
+    func playSlideshow() {
+        let assets = slideshowOrder(slideshowAssets(), settings: slideshowSettings)
+        guard !assets.isEmpty, slideshowPlayer == nil else { return }
+        sheet = nil
+        let music = slideshowMusic(slideshowSettings)
+        let seconds = slideshowSettings.slideSeconds(fitting: assets.count, toMusic: music.flatMap(SlideshowVideo.musicDuration))
+        let player = SlideshowPlayer(app: self, assets: assets, settings: slideshowSettings, slideSeconds: seconds)
+        slideshowPlayer = player
+        player.show()
+    }
+
+    func slideshowEnded() { slideshowPlayer = nil }
+
+    /// Writes the slideshow as an MP4 video at `url`: the photos with a local original, rendered
+    /// with their develop settings at the video's size, and the music.
+    func exportSlideshowVideo(to url: URL) {
+        guard slideshowExportProgress == nil else { return }
+        let settings = slideshowSettings
+        let slides = slideshowOrder(slideshowAssets(), settings: settings).compactMap { asset -> SlideshowSlide? in
+            guard let source = developSource(for: asset) else { return nil }
+            return SlideshowSlide(item: PrintItem(sourcePath: source.url.path, isRaw: source.isRaw,
+                                                  develop: developSettings[asset.id] ?? .neutral,
+                                                  originalSize: CGSize(width: asset.width, height: asset.height),
+                                                  filename: asset.filename, title: asset.title),
+                                  caption: SlideshowModel.caption(asset, settings.caption))
+        }
+        guard !slides.isEmpty else {
+            push("这些照片没有可用的本地原件", "warning")
+            return
+        }
+        sheet = nil
+        let music = slideshowMusic(settings)
+        let seconds = settings.slideSeconds(fitting: slides.count, toMusic: music.flatMap(SlideshowVideo.musicDuration))
+        let cancellation = CancellationFlag()
+        slideshowCancellation = cancellation
+        slideshowExportProgress = 0
+        Task { [weak self] in
+            let made = await Task.detached(priority: .userInitiated) {
+                SlideshowVideo.export(slides, settings: settings, slideSeconds: seconds, music: music, to: url, progress: { fraction in
+                    Task { @MainActor in if self?.slideshowExportProgress != nil { self?.slideshowExportProgress = fraction } }
+                }, cancelled: { cancellation.isSet })
+            }.value
+            guard let self else { return }
+            self.slideshowExportProgress = nil
+            self.slideshowCancellation = nil
+            if made {
+                self.push(verbatim: L("幻灯片视频已导出：\(url.lastPathComponent)"), "check")
+            } else if !cancellation.isSet {
+                self.push("幻灯片视频未能导出", "warning")
+            }
+        }
+    }
+
+    func cancelSlideshowExport() { slideshowCancellation?.set() }
+
     // ----- print: the selection on paper (Lightroom's Print module) -----
     var printSettings: PrintSettings = AppState.loadJSON(PrintSettings.self, forKey: "pc_printSettings") ?? PrintSettings() {
         didSet { AppState.store(printSettings, forKey: "pc_printSettings") }

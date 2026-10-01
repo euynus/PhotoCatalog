@@ -197,6 +197,8 @@ struct KeyCatcher: NSViewRepresentable {
         }
 
         private func handle(_ event: NSEvent) -> NSEvent? {
+            // the slideshow takes its own keys
+            if event.window is SlideshowWindow { return event }
             let app = app
             let handled = MainActor.assumeIsolated {
                 if event.modifierFlags.contains(.command) { KeyCatcher.refreshMenuItems() }

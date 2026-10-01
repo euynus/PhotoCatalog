@@ -82,6 +82,11 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals)
             Button("在访达中显示") { perform("照片.在访达中显示") { app.revealSelectionInFinder() } }
                 .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals)
+            Button("幻灯片…") { perform("照片.幻灯片") { app.showSlideshow() } }
+                .disabled(!app.canSlideshow)
+            Button("即兴放映") { perform("照片.即兴放映") { app.playSlideshow() } }
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!app.canSlideshow)
             Button("重命名照片…") { perform("照片.重命名照片") { app.showRenameSheet() } }
                 .disabled(!app.canRenameOriginals)
             Button(app.externalEditorName.map { editor in L("在 \(editor) 中编辑") } ?? L("在外部编辑器中编辑…")) {

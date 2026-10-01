@@ -1467,6 +1467,22 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
+	<key>放映 %lld 张照片（选中多张时为所选照片，否则为当前列表），共 %@</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Plays %#@n1@ (the selected ones when several are selected, otherwise the current list), %@ in all</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>显示 %lld 个只出现一次的人脸</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

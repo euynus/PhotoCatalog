@@ -433,6 +433,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>按“%@”找到 %lld 张照片</string>
 	</dict>
+	<key>放映 %lld 张照片（选中多张时为所选照片，否则为当前列表），共 %@</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>放映 %lld 张照片（选中多张时为所选照片，否则为当前列表），共 %@</string>
+	</dict>
 	<key>显示 %lld 个只出现一次的人脸</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
