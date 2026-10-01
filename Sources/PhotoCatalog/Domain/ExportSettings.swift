@@ -95,6 +95,17 @@ struct ExportSettings: Codable, Equatable, Sendable {
             case .glossyPaper: L("光面纸")
             }
         }
+        /// The luminance sharpness at `amount` (0 = none): stronger for paper, matte most.
+        func strength(_ amount: SharpenAmount) -> Double {
+            let levels: [Double] = switch self {
+            case .none: [0, 0, 0]
+            case .screen: [0.25, 0.45, 0.7]
+            case .mattePaper: [0.5, 0.8, 1.1]
+            case .glossyPaper: [0.35, 0.6, 0.85]
+            }
+            return levels[SharpenAmount.allCases.firstIndex(of: amount) ?? 1]
+        }
+
         /// Radius in output pixels.
         var radius: Double {
             switch self {
@@ -224,16 +235,8 @@ extension ExportSettings {
         return pixels >= Int(long) ? nil : pixels
     }
 
-    /// The output sharpening's luminance sharpness (0 = none): stronger for paper, matte most.
-    var sharpenStrength: Double {
-        let levels: [Double] = switch sharpenFor {
-        case .none: [0, 0, 0]
-        case .screen: [0.25, 0.45, 0.7]
-        case .mattePaper: [0.5, 0.8, 1.1]
-        case .glossyPaper: [0.35, 0.6, 0.85]
-        }
-        return levels[SharpenAmount.allCases.firstIndex(of: sharpenAmount) ?? 1]
-    }
+    /// The output sharpening's luminance sharpness (0 = none).
+    var sharpenStrength: Double { sharpenFor.strength(sharpenAmount) }
 
     /// The file name (without extension) for one photo.
     func fileName(original: String, sequence: Int, date: Date, camera: String, title: String,

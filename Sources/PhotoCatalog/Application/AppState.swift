@@ -5901,6 +5901,93 @@ final class AppState {
         }
     }
 
+    // ----- print: the selection on paper (Lightroom's Print module) -----
+    var printSettings: PrintSettings = AppState.loadJSON(PrintSettings.self, forKey: "pc_printSettings") ?? PrintSettings() {
+        didSet { AppState.store(printSettings, forKey: "pc_printSettings") }
+    }
+    private static let printQueue = DispatchQueue(label: "PhotoCatalog.print", qos: .userInitiated)
+
+    /// The selection's photos with a local original, in list order, as they print.
+    func printItems() -> [PrintItem] {
+        renderedExportItems().compactMap { item in
+            guard let asset = assetIndex[item.assetId].map({ assets[$0] }) else { return nil }
+            return PrintItem(sourcePath: item.sourcePath, isRaw: item.isRaw, develop: item.develop,
+                             originalSize: item.originalSize, filename: asset.filename, title: asset.title)
+        }
+    }
+
+    var canPrint: Bool { canRenderedExport }
+
+    func showPrint() {
+        guard canPrint else {
+            push(selectionTargetIds.isEmpty ? "请先选择照片" : "选中的照片没有可用的本地原件", "warning")
+            return
+        }
+        sheet = "print"
+    }
+
+    /// Prints the selection with `settings` through the system print panel, drawing on a
+    /// separate thread so RAW decoding never holds up the app.
+    func printPhotos(_ settings: PrintSettings) {
+        printSettings = settings
+        let renderer = PrintRenderer(items: printItems(), settings: settings)
+        guard renderer.pageCount > 0 else {
+            push("没有可打印的照片（需要本地原件）", "warning")
+            return
+        }
+        sheet = nil
+        let info = (NSPrintInfo.shared.copy() as? NSPrintInfo) ?? NSPrintInfo()
+        info.paperSize = settings.paper.size
+        info.orientation = settings.orientation == .portrait ? .portrait : .landscape
+        info.topMargin = 0
+        info.bottomMargin = 0
+        info.leftMargin = 0
+        info.rightMargin = 0
+        info.horizontalPagination = .clip
+        info.verticalPagination = .clip
+        info.isHorizontallyCentered = false
+        info.isVerticallyCentered = false
+        let operation = NSPrintOperation(view: PrintPagesView(renderer: renderer), printInfo: info)
+        operation.jobTitle = L("PhotoCatalog 打印 \(renderer.items.count) 张照片")
+        operation.showsPrintPanel = true
+        operation.showsProgressPanel = true
+        operation.canSpawnSeparateThread = true
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+        } else {
+            operation.run()
+        }
+    }
+
+    /// Asks where, then writes the pages as a PDF in the background.
+    func savePrintPDF(_ settings: PrintSettings) {
+        printSettings = settings
+        let renderer = PrintRenderer(items: printItems(), settings: settings)
+        guard renderer.pageCount > 0 else {
+            push("没有可打印的照片（需要本地原件）", "warning")
+            return
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = L("打印") + ".pdf"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        sheet = nil
+        let pages = renderer.pageCount
+        push("正在生成 PDF…", "printer")
+        Self.printQueue.async { [weak self] in
+            let written = renderer.writePDF(to: url)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if written {
+                    self.push(verbatim: L("已存储 \(String(pages)) 页的 PDF"), "checkmark.circle")
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                } else {
+                    self.push("无法存储 PDF", "warning")
+                }
+            }
+        }
+    }
+
     /// Menu state: stops at the first photo with a local original.
     var canRenderedExport: Bool {
         guard onboarded, sheet == nil, view != .analysis else { return false }

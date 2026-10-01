@@ -33,6 +33,7 @@ enum IconName {
         "sort": "arrow.up.arrow.down",
         "importIcon": "square.and.arrow.down",
         "export": "square.and.arrow.up",
+        "pdf": "doc.richtext",
         "plus": "plus",
         "minus": "minus",
         "close": "xmark",

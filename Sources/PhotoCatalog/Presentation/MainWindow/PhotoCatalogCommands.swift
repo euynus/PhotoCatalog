@@ -13,6 +13,11 @@ struct PhotoCatalogCommands: Commands {
         // 目录库 ▸ 新建目录库 whenever a text field has focus (the key
         // monitor passes typing through), opening a stray duplicate window.
         CommandGroup(replacing: .newItem) {}
+        CommandGroup(replacing: .printItem) {
+            Button("打印…") { perform("文件.打印") { app.showPrint() } }
+                .keyboardShortcut("p", modifiers: .command)
+                .disabled(!app.canPrint)
+        }
         CommandGroup(after: .appInfo) {
             Button("检查更新…") { perform("应用.检查更新") { app.checkForUpdates() } }
         }

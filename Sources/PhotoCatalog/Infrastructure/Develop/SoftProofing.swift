@@ -126,6 +126,24 @@ enum SoftProofing {
         return bitmap(shown, width: size.width, height: size.height, space: space)
     }
 
+    /// `image` (in Display P3) converted into the profile `id` with `intent`, tagged with that
+    /// profile's color space so drawing it hands the profile's own values on — what printing
+    /// with a printer profile needs. Nil when the profile can't be used.
+    static func converted(_ image: CGImage, toProfile id: String, intent: SoftProof.Intent) -> CGImage? {
+        guard let device = colorSyncProfile(id), let display = displayProfile, let space = colorSpace(id),
+              let original = rgba(image) else { return nil }
+        let channels = space.numberOfComponents
+        let size = (width: image.width, height: image.height)
+        let chosen = intent == .perceptual ? Self.intent(kColorSyncRenderingIntentPerceptual)
+            : Self.intent(kColorSyncRenderingIntentRelative)
+        guard let pixels = convert(original, size, from: (display, .rgbx), to: (device, .plain(channels)), intent: chosen),
+              let provider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
+        return CGImage(width: size.width, height: size.height, bitsPerComponent: 8, bitsPerPixel: 8 * channels,
+                       bytesPerRow: size.width * channels, space: space,
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue), provider: provider,
+                       decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+    }
+
     /// A color that comes back from the profile with its hue or saturation more than a few
     /// levels off, or its lightness above the deepest shadows, didn't fit in it. (Black that
     /// only prints as the ink's black isn't a color out of gamut.)

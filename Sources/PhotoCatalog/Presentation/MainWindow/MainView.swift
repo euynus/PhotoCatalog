@@ -86,6 +86,8 @@ struct MainView: View {
             let items = app.renderedExportItems()
             RenderedExportSheet(settings: app.renderedExportSettings, folder: app.renderedExportFolder,
                                 sample: items.first, count: items.count)
+        case "print":
+            PrintSheet(settings: app.printSettings, items: app.printItems())
         case "rename":
             RenameSheet(targets: app.renameSheetTargets, template: app.renameTemplate)
         case "photoMerge":

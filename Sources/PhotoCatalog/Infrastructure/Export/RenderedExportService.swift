@@ -77,12 +77,17 @@ enum RenderedExportService {
     /// Output sharpening on the finished, resized photo: luminance only, in display-encoded
     /// values like Develop's own, at the radius and strength its medium needs.
     static func outputSharpened(_ image: CIImage, _ settings: ExportSettings) -> CIImage {
-        let strength = settings.sharpenStrength
+        sharpened(image, for: settings.sharpenFor, amount: settings.sharpenAmount)
+    }
+
+    /// `image` sharpened for `medium` at `amount` (see `ExportSettings.SharpenFor`); export and
+    /// print share it.
+    static func sharpened(_ image: CIImage, for medium: ExportSettings.SharpenFor,
+                          amount: ExportSettings.SharpenAmount) -> CIImage {
+        let strength = medium.strength(amount)
         guard strength > 0 else { return image }
         return image.applyingFilter("CILinearToSRGBToneCurve")
-            .applyingFilter("CISharpenLuminance", parameters: [
-                "inputSharpness": strength, "inputRadius": settings.sharpenFor.radius,
-            ])
+            .applyingFilter("CISharpenLuminance", parameters: ["inputSharpness": strength, "inputRadius": medium.radius])
             .applyingFilter("CISRGBToneCurveToLinear")
             .cropped(to: image.extent)
     }
