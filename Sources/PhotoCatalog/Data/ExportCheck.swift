@@ -12,6 +12,7 @@ enum ExportCheck {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         checkRenderedFiles(in: directory)
+        checkOutputSharpening(in: directory)
         MainActor.assumeIsolated { checkQueue(in: directory) }
         print("--- rendered export assertions passed ---")
     }
@@ -108,6 +109,35 @@ enum ExportCheck {
                            originalSize: CGSize(width: 400, height: 300), baseName: "IMG_0001",
                            date: Date(timeIntervalSince1970: 1_704_067_200), camera: "Test", title: "标题",
                            caption: "说明", keywords: ["旅行", "海"], rating: 4, author: "作者", copyright: "© 作者")
+    }
+
+    /// Output sharpening: none leaves the edge alone; it overshoots more for paper and at higher amounts.
+    private static func checkOutputSharpening(in directory: URL) {
+        let source = directory.appendingPathComponent("sharpen-source.jpg")
+        writeSource(to: source)
+        /// The darkest and lightest values across the photo's one hard edge (0…255).
+        func range(_ sharpenFor: ExportSettings.SharpenFor, _ amount: ExportSettings.SharpenAmount = .standard) -> (Int, Int) {
+            var settings = ExportSettings()
+            settings.sharpenFor = sharpenFor
+            settings.sharpenAmount = amount
+            guard let image = RenderedExportService.render(item(source.path), settings: settings) else { return (0, 0) }
+            var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+            let context = CGContext(data: &pixels, width: image.width, height: image.height, bitsPerComponent: 8,
+                                    bytesPerRow: image.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                    bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            let values = stride(from: 0, to: pixels.count, by: 4).map { Int(pixels[$0 + 1]) }
+            return (values.min() ?? 0, values.max() ?? 0)
+        }
+        let plain = range(.none), screen = range(.screen), matte = range(.mattePaper)
+        let low = range(.screen, .low), high = range(.screen, .high)
+        assert(screen.0 < plain.0 && screen.1 > plain.1, "screen sharpening overshoots the edge (\(plain) → \(screen))")
+        assert(matte.1 - matte.0 > screen.1 - screen.0 && high.1 - high.0 > screen.1 - screen.0
+               && screen.1 - screen.0 > low.1 - low.0, "paper and higher amounts sharpen more")
+        let old = try? JSONDecoder().decode(ExportSettings.self, from: Data(#"{"format":"jpeg"}"#.utf8))
+        assert(old?.sharpenFor == ExportSettings.SharpenFor.none && old?.sharpenAmount == .standard
+               && RenderedExportPreset.builtIns.first { $0.id == "builtin.web" }?.settings.sharpenFor == .screen,
+               "settings saved before output sharpening load without it; the web preset sharpens for screens")
     }
 
     private static func properties(_ url: URL) -> [CFString: Any] {

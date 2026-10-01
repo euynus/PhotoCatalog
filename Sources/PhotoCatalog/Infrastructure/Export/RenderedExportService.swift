@@ -65,12 +65,26 @@ enum RenderedExportService {
             ])
             image = image.cropped(to: CGRect(origin: image.extent.origin, size: target))
         }
+        image = outputSharpened(image, settings)
         guard let rendered = bitmap(image, bounds: CGRect(origin: image.extent.origin, size: target),
                                     sixteenBit: settings.format == .tiff && settings.sixteenBit,
                                     colorSpace: settings.colorSpace.cgColorSpace) else { return nil }
         let text = settings.watermark.trimmingCharacters(in: .whitespacesAndNewlines)
         guard settings.watermarkEnabled, !text.isEmpty else { return rendered }
         return watermarked(rendered, text: text) ?? rendered
+    }
+
+    /// Output sharpening on the finished, resized photo: luminance only, in display-encoded
+    /// values like Develop's own, at the radius and strength its medium needs.
+    static func outputSharpened(_ image: CIImage, _ settings: ExportSettings) -> CIImage {
+        let strength = settings.sharpenStrength
+        guard strength > 0 else { return image }
+        return image.applyingFilter("CILinearToSRGBToneCurve")
+            .applyingFilter("CISharpenLuminance", parameters: [
+                "inputSharpness": strength, "inputRadius": settings.sharpenFor.radius,
+            ])
+            .applyingFilter("CISRGBToneCurveToLinear")
+            .cropped(to: image.extent)
     }
 
     /// One GPU render straight into memory. (A CGImage from `createCGImage` renders lazily, and

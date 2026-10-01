@@ -1628,3 +1628,14 @@
 "绿原色饱和度" = "Green Primary Saturation";
 "蓝原色色相" = "Blue Primary Hue";
 "蓝原色饱和度" = "Blue Primary Saturation";
+
+/* Output sharpening */
+"输出锐化" = "Output Sharpening";
+"锐化对象" = "Sharpen For";
+"不锐化" = "None";
+"屏幕" = "Screen";
+"亚光纸" = "Matte Paper";
+"光面纸" = "Glossy Paper";
+"低" = "Low";
+"高" = "High";
+"锐化：%@" = "Sharpened for %@";

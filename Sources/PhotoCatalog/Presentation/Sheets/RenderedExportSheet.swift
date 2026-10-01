@@ -178,6 +178,17 @@ struct RenderedExportSheet: View {
                     Toggle("允许放大", isOn: $settings.allowEnlarge)
                 }
             }
+            Section("输出锐化") {
+                Picker("锐化对象", selection: $settings.sharpenFor) {
+                    ForEach(ExportSettings.SharpenFor.allCases) { Text($0.title).tag($0) }
+                }
+                if settings.sharpenFor != .none {
+                    Picker("数量", selection: $settings.sharpenAmount) {
+                        ForEach(ExportSettings.SharpenAmount.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
             Section("元数据") {
                 Picker("包含", selection: $settings.metadata) {
                     ForEach(ExportSettings.Metadata.allCases) { Text($0.title).tag($0) }
@@ -217,6 +228,7 @@ struct RenderedExportSheet: View {
         case .shortEdge: parts.append(L("短边 \(String(settings.edge)) px"))
         case .fitWithin: parts.append(L("\(String(settings.maxWidth)) × \(String(settings.maxHeight)) 以内"))
         }
+        if settings.sharpenFor != .none { parts.append(L("锐化：\(settings.sharpenFor.title)")) }
         if settings.watermarkEnabled { parts.append(L("水印")) }
         return parts.joined(separator: " · ")
     }

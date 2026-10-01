@@ -81,6 +81,44 @@ struct ExportSettings: Codable, Equatable, Sendable {
         }
     }
 
+    /// Output sharpening, as in Lightroom's Export dialog: what the photo is sharpened for, at
+    /// its final size. Paper takes a wider radius, since ink spreads and softens a print.
+    enum SharpenFor: String, Codable, CaseIterable, Identifiable, Sendable {
+        case none, screen, mattePaper, glossyPaper
+
+        var id: Self { self }
+        var title: String {
+            switch self {
+            case .none: L("不锐化")
+            case .screen: L("屏幕")
+            case .mattePaper: L("亚光纸")
+            case .glossyPaper: L("光面纸")
+            }
+        }
+        /// Radius in output pixels.
+        var radius: Double {
+            switch self {
+            case .none: 0
+            case .screen: 0.6
+            case .mattePaper: 1.2
+            case .glossyPaper: 1.0
+            }
+        }
+    }
+
+    enum SharpenAmount: String, Codable, CaseIterable, Identifiable, Sendable {
+        case low, standard, high
+
+        var id: Self { self }
+        var title: String {
+            switch self {
+            case .low: L("低")
+            case .standard: L("标准")
+            case .high: L("高")
+            }
+        }
+    }
+
     enum Collision: String, Codable, CaseIterable, Identifiable, Sendable {
         case uniqueName, overwrite, skip
 
@@ -106,6 +144,8 @@ struct ExportSettings: Codable, Equatable, Sendable {
     var maxWidth = 1920
     var maxHeight = 1080
     var allowEnlarge = false
+    var sharpenFor = SharpenFor.none
+    var sharpenAmount = SharpenAmount.standard
     /// Tokens: {original} {seq} {date} {time} {camera} {title} {rating}.
     var fileNameTemplate = "{original}"
     var sequenceStart = 1
@@ -138,6 +178,8 @@ extension ExportSettings {
         maxWidth = try c.decodeIfPresent(Int.self, forKey: .maxWidth) ?? d.maxWidth
         maxHeight = try c.decodeIfPresent(Int.self, forKey: .maxHeight) ?? d.maxHeight
         allowEnlarge = try c.decodeIfPresent(Bool.self, forKey: .allowEnlarge) ?? d.allowEnlarge
+        sharpenFor = try c.decodeIfPresent(SharpenFor.self, forKey: .sharpenFor) ?? d.sharpenFor
+        sharpenAmount = try c.decodeIfPresent(SharpenAmount.self, forKey: .sharpenAmount) ?? d.sharpenAmount
         fileNameTemplate = try c.decodeIfPresent(String.self, forKey: .fileNameTemplate) ?? d.fileNameTemplate
         sequenceStart = try c.decodeIfPresent(Int.self, forKey: .sequenceStart) ?? d.sequenceStart
         subfolder = try c.decodeIfPresent(String.self, forKey: .subfolder) ?? d.subfolder
@@ -182,6 +224,17 @@ extension ExportSettings {
         return pixels >= Int(long) ? nil : pixels
     }
 
+    /// The output sharpening's luminance sharpness (0 = none): stronger for paper, matte most.
+    var sharpenStrength: Double {
+        let levels: [Double] = switch sharpenFor {
+        case .none: [0, 0, 0]
+        case .screen: [0.25, 0.45, 0.7]
+        case .mattePaper: [0.5, 0.8, 1.1]
+        case .glossyPaper: [0.35, 0.6, 0.85]
+        }
+        return levels[SharpenAmount.allCases.firstIndex(of: sharpenAmount) ?? 1]
+    }
+
     /// The file name (without extension) for one photo.
     func fileName(original: String, sequence: Int, date: Date, camera: String, title: String,
                   rating: Int) -> String {
@@ -205,6 +258,7 @@ struct RenderedExportPreset: Codable, Equatable, Identifiable, Sendable {
             $0.edge = 2048
             $0.quality = 0.82
             $0.removeLocation = true
+            $0.sharpenFor = .screen
         },
         builtIn("social", L("社交媒体 · 1080 px")) {
             $0.resize = .shortEdge
@@ -212,6 +266,7 @@ struct RenderedExportPreset: Codable, Equatable, Identifiable, Sendable {
             $0.quality = 0.85
             $0.removeLocation = true
             $0.metadata = .copyrightOnly
+            $0.sharpenFor = .screen
         },
         builtIn("print-tiff", L("打印 · 16 位 TIFF")) {
             $0.format = .tiff
