@@ -31,7 +31,9 @@ struct DevelopPanel: View {
     private func content(_ asset: Asset) -> some View {
         let settings = app.developSettings(for: asset.id)
         return ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            // lazy: of some sixty sliders, only the sections on screen are built and laid out,
+            // when Develop opens and on every slider move
+            LazyVStack(alignment: .leading, spacing: 18) {
                 header(asset, settings: settings)
                 section(L("软打样"), accessory: {
                     Toggle("软打样", isOn: Binding(get: { app.softProofing }, set: { _ in app.toggleSoftProofing() }))
