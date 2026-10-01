@@ -186,6 +186,16 @@ struct GridCell: View {
                         .padding(4)
                         .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 4))
                         .padding(Self.pad + 4)
+                } else if asset.isVideo {
+                    Label(asset.durationText ?? L("视频"), systemImage: "play.fill")
+                        .labelStyle(.titleAndIcon)
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.canvasText)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 4))
+                        .padding(Self.pad + 4)
+                        .accessibilityLabel(L("视频 \(asset.durationText ?? "")"))
                 }
             }
             .overlay(alignment: .topTrailing) {

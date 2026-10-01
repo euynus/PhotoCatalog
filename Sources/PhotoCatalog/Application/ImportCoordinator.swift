@@ -230,10 +230,10 @@ final class ImportCoordinator: @unchecked Sendable {
             location: gpsLabel(meta.gps, hasGPS: meta.hasGPS), gps: meta.gps, gpsAltitude: meta.gpsAltitude,
             status: .ready, importedAt: Date(), deleted: false,
             localPath: finalURL.path, captureDateSource: meta.captureDateSource,
-            contentHash: content, quickHash: quick, isDemo: false)
+            contentHash: content, quickHash: quick, isDemo: false, duration: meta.duration)
 
-        // on-device Vision scene tags + face count (§4.3)
-        if autoTag {
+        // on-device Vision scene tags + face count (§4.3); a movie isn't an image Vision can read
+        if autoTag, !asset.isVideo {
             let v = VisionService.analyze(finalURL)
             asset.faces = v.faces
             for tag in v.sceneLabels where !asset.keywords.contains(tag) { asset.keywords.append(tag) }

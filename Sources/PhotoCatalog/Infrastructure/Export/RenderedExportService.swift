@@ -23,6 +23,8 @@ struct RenderedExportItem: Sendable {
     let rating: Int
     let author: String
     let copyright: String
+    /// A video exports as its original file, renamed by the template.
+    var isVideo = false
 }
 
 /// A flag the export queue checks between photos.
@@ -92,6 +94,30 @@ enum RenderedExportService {
             .cropped(to: image.extent)
     }
 
+    /// A video's original copied in under the template's name (its own extension), through a
+    /// partial file so a cancelled copy never leaves half a movie.
+    private static func copyVideo(_ item: RenderedExportItem, named name: String, settings: ExportSettings,
+                                  to folder: URL, reserved: inout Set<String>) -> Outcome {
+        let source = URL(fileURLWithPath: item.sourcePath)
+        guard let destination = destinationURL(in: folder, name: name, ext: source.pathExtension,
+                                               collision: settings.collision, reserved: &reserved) else {
+            return .skipped
+        }
+        let partial = folder.appendingPathComponent(".\(UUID().uuidString).partial")
+        do {
+            try FileManager.default.copyItem(at: source, to: partial)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                _ = try FileManager.default.replaceItemAt(destination, withItemAt: partial)
+            } else {
+                try FileManager.default.moveItem(at: partial, to: destination)
+            }
+            return .written(destination)
+        } catch {
+            try? FileManager.default.removeItem(at: partial)
+            return .failed(L("\(item.baseName)：无法复制视频"))
+        }
+    }
+
     /// One GPU render straight into memory. (A CGImage from `createCGImage` renders lazily, and
     /// the encoder then pulls it through in pieces — several times slower for a full-size photo.)
     /// Pixels are opaque, so the file gets no alpha channel.
@@ -117,6 +143,7 @@ enum RenderedExportService {
                        reserved: inout Set<String>) -> Outcome {
         let name = settings.fileName(original: item.baseName, sequence: sequence, date: item.date,
                                      camera: item.camera, title: item.title, rating: item.rating)
+        if item.isVideo { return copyVideo(item, named: name, settings: settings, to: folder, reserved: &reserved) }
         guard let destination = destinationURL(in: folder, name: name, ext: settings.format.fileExtension,
                                                collision: settings.collision, reserved: &reserved) else {
             return .skipped

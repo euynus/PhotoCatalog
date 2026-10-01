@@ -30,6 +30,7 @@ enum CaptureDateSource {
         switch stored {
         case "文件创建时间": return L("文件创建时间")
         case "文件修改时间": return L("文件修改时间")
+        case "视频创建时间": return L("视频创建时间")
         case "手动调整": return L("手动调整")
         case "手动设置": return L("手动设置")
         case "sidecar": return L("XMP 附属文件")

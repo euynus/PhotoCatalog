@@ -56,7 +56,7 @@ struct FilterBar: View {
                     .accessibilityValue(ColorLabel(rawValue: app.filters.color)?.name ?? L("全部颜色"))
                 }
                 filterMenu(L("文件类型"), value: app.filters.type,
-                           options: [("any", L("全部类型")), ("RAW", "RAW"), ("HEIC", "HEIC")]) {
+                           options: [("any", L("全部类型")), ("RAW", "RAW"), ("HEIC", "HEIC"), ("VIDEO", L("视频"))]) {
                     var filters = app.filters; filters.type = $0; app.setFilters(filters)
                 }
                 field(L("相机")) { metadataField(L("全部相机"), label: L("相机"), text: $cameraText) }

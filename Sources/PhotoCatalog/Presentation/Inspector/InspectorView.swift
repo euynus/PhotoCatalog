@@ -88,7 +88,7 @@ struct InspectorView: View {
                 .lineLimit(2).truncationMode(.middle)
                 .help(asset.filename)
                 .textSelection(.enabled)
-            Text("\(asset.width) × \(asset.height) · \(megapixelText(asset.megapixels)) · \(fileSizeText(megabytes: asset.fileMB))")
+            Text("\(asset.width) × \(asset.height) · \(asset.durationText ?? megapixelText(asset.megapixels)) · \(fileSizeText(megabytes: asset.fileMB))")
                 .font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.text2)
                 .lineLimit(1)
             if app.selectedIds.count > 1 {
@@ -122,9 +122,10 @@ struct InspectorView: View {
                 .init(L("类型"), a.isRaw ? "RAW · \(a.type)" : a.type),
                 .init(L("大小"), fileSizeText(megabytes: a.fileMB)),
                 .init(L("尺寸"), "\(a.width) × \(a.height)", mono: true),
+            ] + (a.isVideo ? [.init(L("时长"), a.durationText ?? "—", mono: true)] : [
                 .init(L("色彩空间"), a.colorSpace),
                 .init("ICC", a.hasICCProfile ? L("有") : L("无")),
-            ] + pairRows(a), title: L("文件"))
+            ]) + pairRows(a), title: L("文件"))
             InsGroup({
                 var rows: [InfoRowData] = [
                     .init(L("文件夹", table: "Context"), a.folderName),
@@ -328,11 +329,31 @@ func makerNoteRows(_ summary: String) -> [InfoRowData] {
     }
 }
 
-/// Camera exposure at a glance — the four numbers photographers scan first.
+/// Camera exposure at a glance — the four numbers photographers scan first. A video shows its
+/// length, frame size and file type instead.
 struct ExposureStrip: View {
     let asset: Asset
 
     var body: some View {
+        HStack(spacing: 0) {
+            if asset.isVideo {
+                cell(asset.durationText ?? "—", L("时长"))
+                divider
+                cell("\(min(asset.width, asset.height))p", L("分辨率"))
+                divider
+                cell(asset.type, L("格式"))
+            } else {
+                exposure
+            }
+        }
+        .frame(height: 44)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var exposure: some View {
         HStack(spacing: 0) {
             cell(formatFocalLength(asset.focal), L("焦距"))
             divider
@@ -342,10 +363,6 @@ struct ExposureStrip: View {
             divider
             cell(formatISOValue(asset.iso), "ISO")
         }
-        .frame(height: 44)
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
-        .accessibilityElement(children: .combine)
     }
 
     private var divider: some View {

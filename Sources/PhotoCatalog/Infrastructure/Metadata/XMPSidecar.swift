@@ -39,9 +39,20 @@ enum XMPSidecar {
         return f
     }()
 
-    /// Sidecar path for an original: `<original>.xmp`.
+    /// Sidecar path for an original: `<original>.xmp`. A video beside a photo of the same name
+    /// (a Live Photo's HEIC and MOV) keeps its own, `<original>.<ext>.xmp`, so it never
+    /// overwrites the photo's.
     static func sidecarURL(for original: URL) -> URL {
-        original.deletingPathExtension().appendingPathExtension("xmp")
+        let plain = original.deletingPathExtension().appendingPathExtension("xmp")
+        guard VideoMetadata.isVideo(original) else { return plain }
+        let stem = original.deletingPathExtension().lastPathComponent.lowercased()
+        let siblings = (try? FileManager.default.contentsOfDirectory(atPath: original.deletingLastPathComponent().path)) ?? []
+        let photoBeside = siblings.contains { name in
+            let url = URL(fileURLWithPath: name)
+            return url.deletingPathExtension().lastPathComponent.lowercased() == stem && !VideoMetadata.isVideo(url)
+                && url.pathExtension.lowercased() != "xmp" && FileScanner.isSupported(url)
+        }
+        return photoBeside ? original.appendingPathExtension("xmp") : plain
     }
 
     /// Moves an original's sidecar with it (`original` is where the file was, `moved` where it

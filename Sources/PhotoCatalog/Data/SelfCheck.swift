@@ -129,6 +129,7 @@ enum SelfCheck {
         LLMCheck.run()
         ExportCheck.run()
         PrintCheck.run()
+        VideoCheck.run()
         KeywordCheck.run()
         LocationCheck.run()
         FaceCheck.run()

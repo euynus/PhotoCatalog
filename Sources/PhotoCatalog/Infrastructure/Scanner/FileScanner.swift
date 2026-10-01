@@ -26,7 +26,9 @@ enum FileScanner {
 
     static func isSupported(_ url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
-        if rawExtensions.contains(ext) || imageExtensions.contains(ext) { return true }
+        if rawExtensions.contains(ext) || imageExtensions.contains(ext) || Asset.videoTypes.contains(ext.uppercased()) {
+            return true
+        }
         if let type = UTType(filenameExtension: ext) {
             return type.conforms(to: .image) || type.conforms(to: .rawImage)
         }

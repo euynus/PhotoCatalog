@@ -29,6 +29,8 @@ struct ScannedMetadata {
     var fileSize: Int64 = 0
     var fileModifiedAt: Date?
     var fileCreatedAt: Date?
+    /// A video's length in seconds.
+    var duration: Double?
 }
 
 enum MetadataReader {
@@ -42,6 +44,12 @@ enum MetadataReader {
         let fileCreated = (attrs[.creationDate] as? Date)
         m.fileModifiedAt = fileModified
         m.fileCreatedAt = fileCreated
+
+        // a movie: AVFoundation, not Image I/O (left at width 0 when it can't be read)
+        if VideoMetadata.isVideo(url) {
+            if !VideoMetadata.read(url, into: &m) { m.captureDate = fileModified }
+            return m
+        }
 
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]

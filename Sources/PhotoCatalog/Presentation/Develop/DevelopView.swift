@@ -57,7 +57,10 @@ private struct DevelopCanvas: View {
         var rendered = settings
         if cropping { rendered.crop = nil }
         return Group {
-            if let source {
+            if asset.isVideo {
+                ContentUnavailableView("视频不能修图", systemImage: "video",
+                                       description: Text("修图只用于照片。在单张视图中播放视频。"))
+            } else if let source {
                 Group {
                     if app.developComparing {
                         BeforeAfterPanes(before: beforeEngine.image(for: asset.id), after: engine.image(for: asset.id))

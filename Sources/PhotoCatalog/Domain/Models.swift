@@ -73,8 +73,9 @@ struct Asset: Identifiable, Equatable, Sendable {
         var perceptualHash: UInt64?
         var masterId: String?
         var copyName: String?
+        var duration: Double?
 
-        init(id: String, pid: Int, ori: String, thumb: String, preview: String, filename: String, type: String, isRaw: Bool, folderId: String, folderName: String, date: Date, width: Int, height: Int, orientation: Int, camera: String, lens: String, focal: Int, aperture: Double, shutter: String, iso: Int, colorSpace: String, hasICCProfile: Bool, fileMB: Double, fileModifiedAt: Date?, fileCreatedAt: Date?, rating: Int, flag: Flag, colorLabel: ColorLabel?, keywords: [String], title: String, caption: String, author: String, copyright: String, makerNotes: String, project: String, client: String, location: String, gps: (Double, Double), gpsAltitude: Double?, status: AssetStatus, importedAt: Date, deleted: Bool, localPath: String?, captureDateSource: String, contentHash: String?, quickHash: String?, isDemo: Bool, faces: Int, perceptualHash: UInt64?, masterId: String?, copyName: String?) {
+        init(id: String, pid: Int, ori: String, thumb: String, preview: String, filename: String, type: String, isRaw: Bool, folderId: String, folderName: String, date: Date, width: Int, height: Int, orientation: Int, camera: String, lens: String, focal: Int, aperture: Double, shutter: String, iso: Int, colorSpace: String, hasICCProfile: Bool, fileMB: Double, fileModifiedAt: Date?, fileCreatedAt: Date?, rating: Int, flag: Flag, colorLabel: ColorLabel?, keywords: [String], title: String, caption: String, author: String, copyright: String, makerNotes: String, project: String, client: String, location: String, gps: (Double, Double), gpsAltitude: Double?, status: AssetStatus, importedAt: Date, deleted: Bool, localPath: String?, captureDateSource: String, contentHash: String?, quickHash: String?, isDemo: Bool, faces: Int, perceptualHash: UInt64?, masterId: String?, copyName: String?, duration: Double?) {
             self.id = id
             self.pid = pid
             self.ori = ori
@@ -126,10 +127,11 @@ struct Asset: Identifiable, Equatable, Sendable {
             self.perceptualHash = perceptualHash
             self.masterId = masterId
             self.copyName = copyName
+            self.duration = duration
         }
 
         func copy() -> Storage {
-            Storage(id: id, pid: pid, ori: ori, thumb: thumb, preview: preview, filename: filename, type: type, isRaw: isRaw, folderId: folderId, folderName: folderName, date: date, width: width, height: height, orientation: orientation, camera: camera, lens: lens, focal: focal, aperture: aperture, shutter: shutter, iso: iso, colorSpace: colorSpace, hasICCProfile: hasICCProfile, fileMB: fileMB, fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt, rating: rating, flag: flag, colorLabel: colorLabel, keywords: keywords, title: title, caption: caption, author: author, copyright: copyright, makerNotes: makerNotes, project: project, client: client, location: location, gps: gps, gpsAltitude: gpsAltitude, status: status, importedAt: importedAt, deleted: deleted, localPath: localPath, captureDateSource: captureDateSource, contentHash: contentHash, quickHash: quickHash, isDemo: isDemo, faces: faces, perceptualHash: perceptualHash, masterId: masterId, copyName: copyName)
+            Storage(id: id, pid: pid, ori: ori, thumb: thumb, preview: preview, filename: filename, type: type, isRaw: isRaw, folderId: folderId, folderName: folderName, date: date, width: width, height: height, orientation: orientation, camera: camera, lens: lens, focal: focal, aperture: aperture, shutter: shutter, iso: iso, colorSpace: colorSpace, hasICCProfile: hasICCProfile, fileMB: fileMB, fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt, rating: rating, flag: flag, colorLabel: colorLabel, keywords: keywords, title: title, caption: caption, author: author, copyright: copyright, makerNotes: makerNotes, project: project, client: client, location: location, gps: gps, gpsAltitude: gpsAltitude, status: status, importedAt: importedAt, deleted: deleted, localPath: localPath, captureDateSource: captureDateSource, contentHash: contentHash, quickHash: quickHash, isDemo: isDemo, faces: faces, perceptualHash: perceptualHash, masterId: masterId, copyName: copyName, duration: duration)
         }
     }
 
@@ -185,8 +187,9 @@ struct Asset: Identifiable, Equatable, Sendable {
          faces: Int = 0,
          perceptualHash: UInt64? = nil,
          masterId: String? = nil,
-         copyName: String? = nil) {
-        storage = Storage(id: id, pid: pid, ori: ori, thumb: thumb, preview: preview, filename: filename, type: type, isRaw: isRaw, folderId: folderId, folderName: folderName, date: date, width: width, height: height, orientation: orientation, camera: camera, lens: lens, focal: focal, aperture: aperture, shutter: shutter, iso: iso, colorSpace: colorSpace, hasICCProfile: hasICCProfile, fileMB: fileMB, fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt, rating: rating, flag: flag, colorLabel: colorLabel, keywords: keywords, title: title, caption: caption, author: author, copyright: copyright, makerNotes: makerNotes, project: project, client: client, location: location, gps: gps, gpsAltitude: gpsAltitude, status: status, importedAt: importedAt, deleted: deleted, localPath: localPath, captureDateSource: captureDateSource, contentHash: contentHash, quickHash: quickHash, isDemo: isDemo, faces: faces, perceptualHash: perceptualHash, masterId: masterId, copyName: copyName)
+         copyName: String? = nil,
+         duration: Double? = nil) {
+        storage = Storage(id: id, pid: pid, ori: ori, thumb: thumb, preview: preview, filename: filename, type: type, isRaw: isRaw, folderId: folderId, folderName: folderName, date: date, width: width, height: height, orientation: orientation, camera: camera, lens: lens, focal: focal, aperture: aperture, shutter: shutter, iso: iso, colorSpace: colorSpace, hasICCProfile: hasICCProfile, fileMB: fileMB, fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt, rating: rating, flag: flag, colorLabel: colorLabel, keywords: keywords, title: title, caption: caption, author: author, copyright: copyright, makerNotes: makerNotes, project: project, client: client, location: location, gps: gps, gpsAltitude: gpsAltitude, status: status, importedAt: importedAt, deleted: deleted, localPath: localPath, captureDateSource: captureDateSource, contentHash: contentHash, quickHash: quickHash, isDemo: isDemo, faces: faces, perceptualHash: perceptualHash, masterId: masterId, copyName: copyName, duration: duration)
     }
 
     private mutating func uniqueStorage() -> Storage {
@@ -206,9 +209,15 @@ struct Asset: Identifiable, Equatable, Sendable {
         get { storage.filename }
         set { uniqueStorage().filename = newValue }
     }
-    /// ARW / CR3 / NEF / RAF / DNG / HEIC.
+    /// ARW / CR3 / NEF / RAF / DNG / HEIC, or a video's MOV / MP4 / M4V.
     var type: String { storage.type }
     var isRaw: Bool { storage.isRaw }
+    /// A video's length in seconds (nil for photos, or a video whose length couldn't be read).
+    var duration: Double? { storage.duration }
+    /// The file types imported as videos (played, never developed).
+    static let videoTypes: Set<String> = ["MOV", "MP4", "M4V"]
+    /// Decided by the file type, so a video whose metadata couldn't be read is still a video.
+    var isVideo: Bool { Self.videoTypes.contains(type) }
     var folderId: String {
         get { storage.folderId }
         set { uniqueStorage().folderId = newValue }
@@ -374,10 +383,19 @@ struct Asset: Identifiable, Equatable, Sendable {
               gps: gps, gpsAltitude: gpsAltitude, status: status, importedAt: .now, deleted: false,
               localPath: localPath, captureDateSource: captureDateSource, contentHash: contentHash,
               quickHash: quickHash, isDemo: false, faces: 0, perceptualHash: perceptualHash,
-              masterId: masterId ?? self.id, copyName: name)
+              masterId: masterId ?? self.id, copyName: name, duration: duration)
     }
 
     var megapixels: Double { Double(width * height) / 1_000_000 }
+
+    /// A video's length as a clock: "0:23", "12:05", "1:02:09".
+    var durationText: String? { duration.map(Self.clock) }
+
+    static func clock(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        let hours = total / 3600, minutes = total / 60 % 60, rest = total % 60
+        return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, rest) : String(format: "%d:%02d", minutes, rest)
+    }
 
     /// The label stored with coordinates: "30.500, 114.300", or empty without a location.
     static func locationLabel(_ gps: (Double, Double)?) -> String {

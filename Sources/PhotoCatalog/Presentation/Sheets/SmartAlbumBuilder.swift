@@ -183,7 +183,7 @@ struct SmartAlbumBuilder: View {
         case .color:
             SASelect(value: conditions[i].value, options: [("", L("无"))] + ColorLabel.allCases.map { ($0.rawValue, $0.name) }) { conditions[i].value = $0 }
         case .type:
-            SASelect(value: conditions[i].value, options: ["RAW", "HEIC", "ARW", "CR3", "NEF", "RAF", "DNG"].map { ($0, $0) }) { conditions[i].value = $0 }
+            SASelect(value: conditions[i].value, options: ["RAW", "HEIC", "ARW", "CR3", "NEF", "RAF", "DNG"].map { ($0, $0) } + [("VIDEO", L("视频"))]) { conditions[i].value = $0 }
         case .status:
             SASelect(value: conditions[i].value, options: [("ready", L("可访问")), ("offline", L("离线")), ("missing", L("缺失"))]) { conditions[i].value = $0 }
         case .datePreset:

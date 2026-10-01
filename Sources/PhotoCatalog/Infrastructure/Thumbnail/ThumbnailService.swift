@@ -203,6 +203,11 @@ final class ThumbnailService: @unchecked Sendable {
         try? FileManager.default.createDirectory(at: out.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
 
+        // a movie's thumbnails show an early frame
+        if VideoMetadata.isVideo(original) {
+            return VideoMetadata.frame(original, maxPixel: kind.maxPixel).flatMap { writeJPEG($0, to: out) }
+        }
+
         let prefersQuickLook = Self.prefersQuickLook(for: original)
         if prefersQuickLook,
            let written = quickLookThumbnail(from: original, maxPixel: kind.maxPixel)

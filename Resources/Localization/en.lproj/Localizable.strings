@@ -1710,3 +1710,12 @@
 "%lld 分钟" = "%lld minutes";
 "将生成 %lld 个堆栈，共 %lld 张照片" = "Makes %lld stacks of %lld photos";
 "已按拍摄时间叠放为 %lld 个堆栈" = "Stacked by capture time into %lld stacks";
+
+/* Video */
+"%@：无法复制视频" = "%@: couldn't copy the video";
+"修图只用于照片。在单张视图中播放视频。" = "Develop is for photos. Play the video in Loupe view.";
+"时长" = "Duration";
+"视频" = "Video";
+"视频 %@" = "Video %@";
+"视频不能修图" = "Videos Can't Be Developed";
+"视频创建时间" = "Video creation time";

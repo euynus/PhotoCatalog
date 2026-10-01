@@ -89,7 +89,11 @@ enum SmartMatcher {
             if c.op == "=" { return a.lens == c.value }
             return a.lens.localizedStandardContains(c.value)
         case "type":
-            return c.value == "RAW" ? a.isRaw : a.type == c.value
+            switch c.value {
+            case "RAW": return a.isRaw
+            case "VIDEO": return a.isVideo
+            default: return a.type == c.value
+            }
         case "captureYear":
             let y = Calendar.captureWallClock.component(.year, from: a.date)
             let v = Int(c.value) ?? 0

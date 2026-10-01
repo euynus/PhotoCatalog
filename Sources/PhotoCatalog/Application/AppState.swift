@@ -1036,8 +1036,9 @@ final class AppState {
         return DevelopGeometry.rotatedSize(size, settings.rotation)
     }
 
-    /// Photos with pixels to render: a local original, or at least a local preview.
+    /// Photos with pixels to render: a local original, or at least a local preview. Never a video.
     func canDevelop(_ asset: Asset) -> Bool {
+        guard !asset.isVideo else { return false }
         if asset.status == .ready, asset.localPath != nil { return true }
         return Self.isLocalReference(asset.preview)
     }
@@ -4210,7 +4211,7 @@ final class AppState {
     /// One TIFF to render per photo, beside its original.
     func externalEditJobs(_ targets: [Asset]) -> [ExternalEditJob] {
         targets.compactMap { asset -> ExternalEditJob? in
-            guard let path = asset.localPath else { return nil }
+            guard let path = asset.localPath, !asset.isVideo else { return nil }
             let original = URL(fileURLWithPath: path)
             let item = RenderedExportItem(assetId: asset.id, sourcePath: path, isRaw: asset.isRaw,
                                           develop: developSettings[asset.id] ?? .neutral,
@@ -4326,7 +4327,7 @@ final class AppState {
     /// The selection's photos with originals on disk, one per file, in list order.
     func photoMergeCandidates() -> [Asset] {
         let ids = selectionTargetIds
-        return fileOwners(list.filter { ids.contains($0.id) }).filter(hasExistingOriginal)
+        return fileOwners(list.filter { ids.contains($0.id) }).filter { hasExistingOriginal($0) && !$0.isVideo }
     }
 
     /// 照片 → 照片合并 → HDR… / 全景…: the merge dialog, with a preview.
@@ -5911,7 +5912,7 @@ final class AppState {
                                           + (asset.copyName.map { "-" + $0.replacingOccurrences(of: " ", with: "") } ?? ""),
                                       date: asset.date, camera: asset.camera, title: asset.title,
                                       caption: asset.caption, keywords: asset.keywords, rating: asset.rating,
-                                      author: asset.author, copyright: asset.copyright)
+                                      author: asset.author, copyright: asset.copyright, isVideo: asset.isVideo)
         }
     }
 
@@ -5924,7 +5925,7 @@ final class AppState {
     /// The selection's photos with a local original, in list order, as they print.
     func printItems() -> [PrintItem] {
         renderedExportItems().compactMap { item in
-            guard let asset = assetIndex[item.assetId].map({ assets[$0] }) else { return nil }
+            guard !item.isVideo, let asset = assetIndex[item.assetId].map({ assets[$0] }) else { return nil }
             return PrintItem(sourcePath: item.sourcePath, isRaw: item.isRaw, develop: item.develop,
                              originalSize: item.originalSize, filename: asset.filename, title: asset.title)
         }
@@ -7307,8 +7308,11 @@ final class AppState {
             if filters.flag != "any" && a.flag.rawValue != filters.flag { return false }
             if filters.color != "any" && a.colorLabel?.rawValue != filters.color { return false }
             if filters.type != "any" {
-                if filters.type == "RAW" && !a.isRaw { return false }
-                if filters.type != "RAW" && a.type != filters.type { return false }
+                switch filters.type {
+                case "RAW": if !a.isRaw { return false }
+                case "VIDEO": if !a.isVideo { return false }
+                default: if a.type != filters.type { return false }
+                }
             }
             if !cameraQuery.isEmpty && !a.camera.localizedStandardContains(cameraQuery) { return false }
             if !lensQuery.isEmpty && !a.lens.localizedStandardContains(lensQuery) { return false }

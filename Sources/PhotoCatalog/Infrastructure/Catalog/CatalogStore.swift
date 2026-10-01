@@ -105,7 +105,7 @@ struct AssetPage: Sendable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    static let latestSchemaVersion = 23
+    static let latestSchemaVersion = 24
     let packageURL: URL
     let db: Database
 
@@ -341,6 +341,12 @@ final class CatalogStore: @unchecked Sendable {
             """)
             try recordMigration(23)
         }
+        if current < 24 {
+            // videos: their length in seconds (added only when missing, as v22)
+            let existing = Set(try db.queryMap("PRAGMA table_info(assets);", [], transform: { $0.text("name") }))
+            if !existing.contains("duration") { try db.run("ALTER TABLE assets ADD COLUMN duration REAL;") }
+            try recordMigration(24)
+        }
     }
 
     private func recordMigration(_ version: Int) throws {
@@ -459,13 +465,16 @@ final class CatalogStore: @unchecked Sendable {
       ON assets(deleted, file_mb, id);
     """
 
+    /// Videos, by their file type (`Asset.videoTypes`).
+    static let videoPredicate = "a.type IN (" + Asset.videoTypes.sorted().map { "'\($0)'" }.joined(separator: ",") + ")"
+
     // ---------- assets ----------
     private static let columns = """
     id,pid,ori,thumb,preview,filename,type,is_raw,folder_id,folder_name,\
     capture_date,width,height,orientation,camera,lens,focal,aperture,shutter,iso,\
     color_space,has_icc_profile,file_mb,rating,flag,color_label,keywords,title,caption,author,copyright,maker_notes,project,client,location,gps_lat,gps_lon,gps_altitude,\
     status,imported_at,deleted,is_demo,local_path,capture_date_source,content_hash,quick_hash,faces,\
-    file_modified_at,file_created_at,perceptual_hash,master_id,copy_name
+    file_modified_at,file_created_at,perceptual_hash,master_id,copy_name,duration
     """
 
     func upsert(_ assets: [Asset]) throws {
@@ -588,7 +597,7 @@ final class CatalogStore: @unchecked Sendable {
                     colorSpace, hasICCProfile, fileMB, rating, flag, colorLabel, keywords, title, caption,
                     author, copyright, makerNotes, project, client, location, gpsLat, gpsLon, gpsAltitude,
                     status, importedAt, deleted, isDemo, localPath, captureDateSource, contentHash,
-                    quickHash, faces, fileModifiedAt, fileCreatedAt, perceptualHash, masterId, copyName: Int32
+                    quickHash, faces, fileModifiedAt, fileCreatedAt, perceptualHash, masterId, copyName, duration: Int32
 
         init(columns: [String]) {
             let index = Dictionary(uniqueKeysWithValues: columns.enumerated().map { ($1, Int32($0)) })
@@ -607,7 +616,7 @@ final class CatalogStore: @unchecked Sendable {
             captureDateSource = c("capture_date_source"); contentHash = c("content_hash")
             quickHash = c("quick_hash"); faces = c("faces"); fileModifiedAt = c("file_modified_at")
             fileCreatedAt = c("file_created_at"); perceptualHash = c("perceptual_hash")
-            masterId = c("master_id"); copyName = c("copy_name")
+            masterId = c("master_id"); copyName = c("copy_name"); duration = c("duration")
         }
 
         func asset(from row: SQLiteRow) -> Asset? {
@@ -656,7 +665,8 @@ final class CatalogStore: @unchecked Sendable {
                 contentHash: row.text(contentHash), quickHash: row.text(quickHash),
                 isDemo: row.int(isDemo) != 0, faces: row.int(faces),
                 perceptualHash: row.isNull(perceptualHash) ? nil : UInt64(bitPattern: Int64(row.int(perceptualHash))),
-                masterId: masterId < 0 ? nil : row.text(masterId), copyName: copyName < 0 ? nil : row.text(copyName))
+                masterId: masterId < 0 ? nil : row.text(masterId), copyName: copyName < 0 ? nil : row.text(copyName),
+                duration: duration < 0 || row.isNull(duration) ? nil : row.double(duration))
         }
 
         private func shared(_ value: String) -> String {
@@ -829,6 +839,8 @@ final class CatalogStore: @unchecked Sendable {
         if filters.type != "any" {
             if filters.type == "RAW" {
                 append("a.is_raw=1")
+            } else if filters.type == "VIDEO" {
+                append(Self.videoPredicate)
             } else {
                 append("a.type=?", [.text(filters.type)])
             }
@@ -911,6 +923,9 @@ final class CatalogStore: @unchecked Sendable {
         case "type":
             if condition.value == "RAW" {
                 return AssetSQL(predicate: "a.is_raw=1", params: [])
+            }
+            if condition.value == "VIDEO" {
+                return AssetSQL(predicate: Self.videoPredicate, params: [])
             }
             return AssetSQL(predicate: "a.type=?", params: [.text(condition.value)])
         case "captureYear":
@@ -1599,6 +1614,7 @@ final class CatalogStore: @unchecked Sendable {
             a.perceptualHash.map { SQLValue.int(Int(Int64(bitPattern: $0))) } ?? .null,
             a.masterId.map { SQLValue.text($0) } ?? .null,
             a.copyName.map { SQLValue.text($0) } ?? .null,
+            a.duration.map { SQLValue.double($0) } ?? .null,
         ]
     }
 
@@ -1641,7 +1657,7 @@ final class CatalogStore: @unchecked Sendable {
             contentHash: row.text("content_hash"), quickHash: row.text("quick_hash"),
             isDemo: row.bool("is_demo"), faces: row.int("faces") ?? 0,
             perceptualHash: row.int("perceptual_hash").map { UInt64(bitPattern: Int64($0)) },
-            masterId: row.text("master_id"), copyName: row.text("copy_name"))
+            masterId: row.text("master_id"), copyName: row.text("copy_name"), duration: row.double("duration"))
     }
 
     private static func importSession(from row: Row) -> ImportSessionRecord? {
