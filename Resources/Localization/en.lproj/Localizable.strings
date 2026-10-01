@@ -1656,6 +1656,25 @@
 "预览照片在其他色彩空间或打印出来的样子 (S)" = "See how the photo looks in another color space or in print (S)";
 "方法" = "Intent";
 
+/* Web gallery */
+"网页画廊" = "Web Gallery";
+"导出网页画廊…" = "Export Web Gallery…";
+"把 %lld 张照片（选中多张时为所选照片，否则为当前列表）连同一个网页存进一个文件夹：点开缩略图看大图，可用方向键或滑动翻看。文件夹可直接放到任何网站空间。" = "Saves %lld photos (the selected ones when several are selected, otherwise the current list) in a folder with a web page: click a thumbnail to see the photo, then page through with the arrow keys or a swipe. The folder can go on any web host as it is.";
+"副标题" = "Subtitle";
+"例如摄影师和联系方式" = "For example, the photographer and how to reach them";
+"配色" = "Colors";
+"照片文字" = "Photo Text";
+"大图下显示相机、镜头和曝光" = "Show camera, lens and exposure under each photo";
+"大图" = "Photos";
+"缩略图" = "Thumbnails";
+"长边 %@ 像素" = "%@ px long edge";
+"短边 %@ 像素" = "%@ px short edge";
+"照片按修图后的样子以 sRGB JPEG 输出，不含元数据。" = "Photos are saved as developed, as sRGB JPEGs without metadata.";
+"选择存放网页画廊的位置，画廊会存进其中一个新文件夹" = "Choose where the web gallery goes; it is saved in a new folder there";
+"正在导出网页画廊…" = "Exporting web gallery…";
+"网页画廊已导出：%@" = "Web gallery exported: %@";
+"网页画廊未能导出" = "The web gallery couldn't be exported";
+
 /* Slideshow */
 "幻灯片" = "Slideshow";
 "幻灯片…" = "Slideshow…";

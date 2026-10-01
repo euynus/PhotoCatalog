@@ -27,6 +27,32 @@ struct PrintItem: Sendable {
     }
 }
 
+extension PrintItem {
+    /// The photo developed, at most `longEdge` on its long side (never enlarged), in
+    /// `colorSpace`: decoded no larger than that needs, allowing for the crop.
+    func rendered(longEdge: Int, colorSpace: CGColorSpace) -> CGImage? {
+        var cropShare = 1.0
+        if develop.hasGeometry {
+            let frame = DevelopGeometry.rotatedSize(originalSize, develop.rotation)
+            let crop = DevelopGeometry.effectiveCrop(develop, frame: frame)
+            cropShare = max(0.05, min(crop.width, crop.height))
+        }
+        let decode = Double(longEdge) / cropShare
+        let maxPixel = decode >= Double(max(originalSize.width, originalSize.height)) ? nil : Int(decode.rounded(.up)) + 2
+        guard let source = DevelopRenderer.Source(url: URL(fileURLWithPath: sourcePath), isRaw: isRaw,
+                                                  maxPixel: maxPixel, interactive: false),
+              var image = source.image(develop) else { return nil }
+        let extent = image.extent.integral
+        let scale = min(1, Double(longEdge) / Double(max(extent.width, extent.height)))
+        if scale < 1 {
+            image = image.applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1])
+        }
+        let size = CGSize(width: (extent.width * scale).rounded(), height: (extent.height * scale).rounded())
+        return RenderedExportService.bitmap(image, bounds: CGRect(origin: image.extent.origin, size: size),
+                                            sixteenBit: false, colorSpace: colorSpace)
+    }
+}
+
 /// Draws print pages: each photo rendered at the pixels its place on the paper needs (never
 /// the full original for a small cell), sharpened for the paper and, with a printer profile,
 /// converted to it; captions under the photos. The printer, a PDF and the preview all draw

@@ -1451,6 +1451,22 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
+	<key>把 %lld 张照片（选中多张时为所选照片，否则为当前列表）连同一个网页存进一个文件夹：点开缩略图看大图，可用方向键或滑动翻看。文件夹可直接放到任何网站空间。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Saves %#@n1@ (the selected ones when several are selected, otherwise the current list) in a folder with a web page: click a thumbnail to see the photo, then page through with the arrow keys or a swipe. The folder can go on any web host as it is.</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>按“%@”找到 %lld 张照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

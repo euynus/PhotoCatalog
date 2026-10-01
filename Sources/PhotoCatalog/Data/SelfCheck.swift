@@ -132,6 +132,7 @@ enum SelfCheck {
         ExportCheck.run()
         PrintCheck.run()
         SlideshowCheck.run()
+        WebGalleryCheck.run()
         VideoCheck.run()
         KeywordCheck.run()
         LocationCheck.run()

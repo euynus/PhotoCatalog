@@ -91,7 +91,10 @@ struct MainView: View {
         case "print":
             PrintSheet(settings: app.printSettings, items: app.printItems())
         case "slideshow":
-            SlideshowSheet(settings: app.slideshowSettings, count: app.slideshowAssets().count)
+            SlideshowSheet(settings: app.slideshowSettings, count: app.presentationAssets().count)
+        case "webGallery":
+            WebGallerySheet(settings: app.webGallerySettings, count: app.presentationAssets().count,
+                            defaultTitle: app.webGalleryDefaultTitle)
         case "tether":
             TetherSheet(settings: app.tetherSettings, cameras: app.cameraDevices.filter { !$0.isPhone })
         case "rename":

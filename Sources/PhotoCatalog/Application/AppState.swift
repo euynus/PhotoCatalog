@@ -6301,9 +6301,9 @@ final class AppState {
     @ObservationIgnored private var slideshowCancellation: CancellationFlag?
     @ObservationIgnored private var slideshowPlayer: SlideshowPlayer?
 
-    /// What a slideshow plays: the selected photos when several are selected, otherwise every
-    /// photo in the list, in list order (videos left out).
-    func slideshowAssets() -> [Asset] {
+    /// What a slideshow plays, a web gallery shows or a book lays out: the selected photos when
+    /// several are selected, otherwise every photo in the list, in list order (videos left out).
+    func presentationAssets() -> [Asset] {
         let ids = selectedIds
         let base = ids.count > 1 ? list.filter { ids.contains($0.id) } : list
         return base.filter { !$0.isVideo && !$0.preview.isEmpty }
@@ -6313,7 +6313,7 @@ final class AppState {
 
     func showSlideshow() {
         guard canSlideshow else { return }
-        guard !slideshowAssets().isEmpty else {
+        guard !presentationAssets().isEmpty else {
             push("没有可放映的照片", "info")
             return
         }
@@ -6334,7 +6334,7 @@ final class AppState {
 
     /// ⌘↩ or 播放: the slideshow full screen with the current settings.
     func playSlideshow() {
-        let assets = slideshowOrder(slideshowAssets(), settings: slideshowSettings)
+        let assets = slideshowOrder(presentationAssets(), settings: slideshowSettings)
         guard !assets.isEmpty, slideshowPlayer == nil else { return }
         sheet = nil
         let music = slideshowMusic(slideshowSettings)
@@ -6351,7 +6351,7 @@ final class AppState {
     func exportSlideshowVideo(to url: URL) {
         guard slideshowExportProgress == nil else { return }
         let settings = slideshowSettings
-        let slides = slideshowOrder(slideshowAssets(), settings: settings).compactMap { asset -> SlideshowSlide? in
+        let slides = slideshowOrder(presentationAssets(), settings: settings).compactMap { asset -> SlideshowSlide? in
             guard let source = developSource(for: asset) else { return nil }
             return SlideshowSlide(item: PrintItem(sourcePath: source.url.path, isRaw: source.isRaw,
                                                   develop: developSettings[asset.id] ?? .neutral,
@@ -6387,6 +6387,92 @@ final class AppState {
     }
 
     func cancelSlideshowExport() { slideshowCancellation?.set() }
+
+    // ----- web gallery (Lightroom's Web module) -----
+    var webGallerySettings: WebGallerySettings =
+        AppState.loadJSON(WebGallerySettings.self, forKey: "pc_webGallery") ?? WebGallerySettings() {
+        didSet { AppState.store(webGallerySettings, forKey: "pc_webGallery") }
+    }
+    /// How far a web gallery has got, while one is being written.
+    var webGalleryProgress: Double?
+    @ObservationIgnored private var webGalleryCancellation: CancellationFlag?
+
+    var canExportWebGallery: Bool { onboarded && sheet == nil && webGalleryProgress == nil && !list.isEmpty }
+
+    func showWebGallery() {
+        guard canExportWebGallery else { return }
+        guard presentationAssets().contains(where: { developSource(for: $0) != nil }) else {
+            push("这些照片没有可用的本地原件", "warning")
+            return
+        }
+        sheet = "webGallery"
+    }
+
+    /// The name a gallery of what's showing takes by default: the album, folder or collection.
+    var webGalleryDefaultTitle: String { selection.name.isEmpty ? L("网页画廊") : selection.name }
+
+    /// Camera, lens and exposure in a line, as under a photo opened in a web gallery.
+    static func exposureDetails(_ asset: Asset) -> String {
+        var parts: [String] = []
+        if !asset.camera.isEmpty { parts.append(asset.camera) }
+        if !asset.lens.isEmpty { parts.append(asset.lens) }
+        var exposure: [String] = []
+        if asset.focal > 0 { exposure.append("\(asset.focal) mm") }
+        if asset.aperture > 0 { exposure.append(String(format: "ƒ/%g", asset.aperture)) }
+        if !asset.shutter.isEmpty { exposure.append(asset.shutter.hasSuffix("s") ? asset.shutter : asset.shutter + " s") }
+        if asset.iso > 0 { exposure.append("ISO \(asset.iso)") }
+        if !exposure.isEmpty { parts.append(exposure.joined(separator: " · ")) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Writes a web gallery of the photos with local originals into a new folder in `parent`,
+    /// then shows it in the Finder.
+    func exportWebGallery(to parent: URL) {
+        guard webGalleryProgress == nil else { return }
+        let settings = webGallerySettings
+        let photos = presentationAssets().compactMap { asset -> WebGalleryPhoto? in
+            guard let source = developSource(for: asset) else { return nil }
+            let caption = switch settings.caption {
+            case .none: ""
+            case .title: asset.title
+            case .caption: asset.caption
+            case .filename: asset.filename
+            }
+            return WebGalleryPhoto(item: PrintItem(sourcePath: source.url.path, isRaw: source.isRaw,
+                                                   develop: developSettings[asset.id] ?? .neutral,
+                                                   originalSize: CGSize(width: asset.width, height: asset.height),
+                                                   filename: asset.filename, title: asset.title),
+                                   baseName: (asset.filename as NSString).deletingPathExtension,
+                                   caption: caption, details: Self.exposureDetails(asset))
+        }
+        guard !photos.isEmpty else {
+            push("这些照片没有可用的本地原件", "warning")
+            return
+        }
+        sheet = nil
+        let name = settings.title.isEmpty ? webGalleryDefaultTitle : settings.title
+        let cancellation = CancellationFlag()
+        webGalleryCancellation = cancellation
+        webGalleryProgress = 0
+        Task { [weak self] in
+            let page = await Task.detached(priority: .userInitiated) {
+                WebGalleryExporter.export(photos, settings: settings, name: name, in: parent, progress: { fraction in
+                    Task { @MainActor in if self?.webGalleryProgress != nil { self?.webGalleryProgress = fraction } }
+                }, cancelled: { cancellation.isSet })
+            }.value
+            guard let self else { return }
+            self.webGalleryProgress = nil
+            self.webGalleryCancellation = nil
+            if let page {
+                self.push(verbatim: L("网页画廊已导出：\(page.deletingLastPathComponent().lastPathComponent)"), "check")
+                NSWorkspace.shared.activateFileViewerSelecting([page])
+            } else if !cancellation.isSet {
+                self.push("网页画廊未能导出", "warning")
+            }
+        }
+    }
+
+    func cancelWebGallery() { webGalleryCancellation?.set() }
 
     // ----- print: the selection on paper (Lightroom's Print module) -----
     var printSettings: PrintSettings = AppState.loadJSON(PrintSettings.self, forKey: "pc_printSettings") ?? PrintSettings() {
