@@ -151,6 +151,31 @@ enum DevelopKernels {
             return float4(s.rgb + fromHSL(hsl) - fromHSL(toHSL(c)), s.a);
         }
         """,
+        "grayMixer": """
+        \(hsl)
+        // Black and white on display-encoded color: the luminance, each color band made lighter
+        // or darker by its slider (m0 holds bands 0…3, m1 bands 4…7, each -1…1), in proportion to
+        // how colorful the pixel is, so grays keep their tone. Band centers and cross-fades match
+        // the color mixer's.
+        [[stitchable]] float4 grayMixer(sample_t s, float4 m0, float4 m1) {
+            float mixes[8] = { m0.x, m0.y, m0.z, m0.w, m1.x, m1.y, m1.z, m1.w };
+            const float centers[8] = { 0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 270.0, 300.0 };
+            float3 c = clamp(s.rgb, 0.0, 1.0);
+            float3 hsl = toHSL(c);
+            float shift = 0.0;
+            for (int i = 0; i < 8; i++) {
+                float a = centers[i], b = i == 7 ? centers[0] + 360.0 : centers[i + 1];
+                float h = hsl.x < a ? hsl.x + 360.0 : hsl.x;
+                if (h >= a && h < b) {
+                    float t = smoothstep(0.0, 1.0, (h - a) / (b - a));
+                    shift = (1.0 - t) * mixes[i] + t * mixes[(i + 1) % 8];
+                }
+            }
+            float chroma = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
+            float y = dot(s.rgb, float3(0.2126, 0.7152, 0.0722)) * exp2(shift * chroma * 1.6);
+            return float4(y, y, y, s.a);
+        }
+        """,
         "colorGrading": """
         \(hsl)
         // Color grading on display-encoded color. Each grade is (hue°, saturation 0…1, luminance
@@ -449,6 +474,17 @@ enum DevelopKernels {
             CIVector(x: mixer.hue[i] / 100, y: mixer.saturation[i] / 100, z: mixer.luminance[i] / 100, w: 0)
         }
         return kernel.apply(extent: image.extent, arguments: [image] + bands) ?? image
+    }
+
+    /// Black and white on display-encoded `image`, `mix` (-100…100 per band) lightening or
+    /// darkening each color band (see the kernel).
+    static func grayMixer(_ image: CIImage, _ mix: [Double]) -> CIImage {
+        guard mix.count == 8, let kernel = kernel("grayMixer") as? CIColorKernel else {
+            return image.applyingFilter("CIColorControls", parameters: ["inputSaturation": 0])
+        }
+        let m = mix.map { $0 / 100 }
+        return kernel.apply(extent: image.extent, arguments: [image, CIVector(x: m[0], y: m[1], z: m[2], w: m[3]),
+                                                              CIVector(x: m[4], y: m[5], z: m[6], w: m[7])]) ?? image
     }
 
     /// Color grading on display-encoded `image` (see the kernel).

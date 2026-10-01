@@ -31,6 +31,9 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var curve = ToneCurve()
     /// Hue, saturation and luminance per color band (see `ColorMixer`).
     var mixer = ColorMixer()
+    /// The black-and-white mix, used in place of `mixer` while the profile is Monochrome: how
+    /// light each color band turns, -100…100 per band (in `ColorMixer.Band` order).
+    var grayMixer = [Double](repeating: 0, count: 8)
     /// Tints for shadows, midtones and highlights (see `ColorGrading`).
     var grading = ColorGrading()
     /// A creative look from the LUT library (see `LUTLibrary`), after the curves, mixer and
@@ -135,6 +138,7 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
         }
         if !curve.isLinear { text += "|c" + curve.fingerprintText }
         if !mixer.isNeutral { text += "|m" + mixer.fingerprintText }
+        if grayMixer.contains(where: { $0 != 0 }) { text += "|b" + grayMixer.map { String(format: "%.0f", $0) }.joined(separator: ",") }
         if !grading.isNeutral { text += "|g" + grading.fingerprintText }
         if let lutId { text += String(format: "|u%.0f,", lutAmount) + lutId }
         if sharpening != 0 || sharpenRadius != 1 || sharpenMasking != 0 || luminanceNoise != 0 || colorNoise != 0 {
@@ -187,6 +191,8 @@ extension DevelopSettings {
         dehaze = try container.decodeIfPresent(Double.self, forKey: .dehaze) ?? 0
         curve = try container.decodeIfPresent(ToneCurve.self, forKey: .curve) ?? ToneCurve()
         mixer = try container.decodeIfPresent(ColorMixer.self, forKey: .mixer) ?? ColorMixer()
+        let gray = try container.decodeIfPresent([Double].self, forKey: .grayMixer) ?? []
+        grayMixer = gray.count == 8 ? gray : [Double](repeating: 0, count: 8)
         grading = try container.decodeIfPresent(ColorGrading.self, forKey: .grading) ?? ColorGrading()
         lutId = try container.decodeIfPresent(String.self, forKey: .lutId)
         lutAmount = try container.decodeIfPresent(Double.self, forKey: .lutAmount) ?? 100
@@ -545,6 +551,11 @@ struct DevelopControl: Identifiable {
             }
             return signed(keyPath, band.title)
         }
+    }
+
+    /// One slider per color band of the black-and-white mix.
+    static let grayMixer: [DevelopControl] = ColorMixer.Band.allCases.map { band in
+        signed(\DevelopSettings.grayMixer[band.rawValue], band.title)
     }
 
     /// Hue, saturation and luminance of one color-grading region.

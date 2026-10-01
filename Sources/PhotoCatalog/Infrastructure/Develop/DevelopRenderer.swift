@@ -385,12 +385,21 @@ enum DevelopRenderer {
         return encoded.applyingFilter("CISRGBToneCurveToLinear")
     }
 
-    /// The HSL mixer, then color grading, on display-encoded values.
+    /// The HSL mixer — or, with the Monochrome profile, the black-and-white mix in its place —
+    /// then color grading (which tones a black-and-white photo), on display-encoded values.
+    /// Monochrome below 100% (a preset's partial amount) mixes the gray with the color.
     static func applyMixer(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
-        guard !s.mixer.isNeutral || !s.grading.isNeutral else { return input }
+        let monochrome = DevelopProfile(stored: s.profile) == .monochrome && s.profileAmount > 0
+        guard monochrome || !s.mixer.isNeutral || !s.grading.isNeutral else { return input }
         let encoded = input.applyingFilter("CILinearToSRGBToneCurve")
-        return DevelopKernels.colorGrading(DevelopKernels.colorMixer(encoded, s.mixer), s.grading)
-            .applyingFilter("CISRGBToneCurveToLinear")
+        var mixed = DevelopKernels.colorMixer(encoded, s.mixer)
+        if monochrome {
+            let gray = DevelopKernels.grayMixer(encoded, s.grayMixer)
+            mixed = s.profileAmount >= 100 ? gray : gray.applyingFilter("CIDissolveTransition", parameters: [
+                kCIInputTargetImageKey: mixed, "inputTime": 1 - s.profileAmount / 100,
+            ]).cropped(to: encoded.extent)
+        }
+        return DevelopKernels.colorGrading(mixed, s.grading).applyingFilter("CISRGBToneCurveToLinear")
     }
 
     /// The LUT's look, in sRGB as LUTs are made, mixed in at its amount. A LUT no longer in

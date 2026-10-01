@@ -100,6 +100,7 @@ enum DevelopPresetFile {
                                format: "%+.0f"))
             list.append(Scalar(key: "LuminanceAdjustment\(band)", path: \.mixer.luminance[index], field: .colorMixer,
                                format: "%+.0f"))
+            list.append(Scalar(key: "GrayMixer\(band)", path: \.grayMixer[index], field: .grayMixer, format: "%+.0f"))
         }
         return list
     }()
@@ -141,6 +142,11 @@ enum DevelopPresetFile {
         }
         if fields.contains(.lensCorrections) {
             attributes.append(("crs:AutoLateralCA", settings.removeChromaticAberration ? "1" : "0"))
+        }
+        if fields.contains(.profile) {
+            // the one part of a profile Camera Raw shares: black and white or color
+            let monochrome = DevelopProfile(stored: settings.profile) == .monochrome
+            attributes.append(("crs:ConvertToGrayscale", monochrome ? "True" : "False"))
         }
         if fields.contains(.toneCurve) {
             attributes.append(("crs:ToneCurveName2012", settings.curve.isLinear ? "Linear" : "Custom"))
@@ -288,8 +294,9 @@ enum DevelopPresetFile {
             fields.insert(.profile)
         }
         if values["ConvertToGrayscale"] == "True" {
-            settings.saturation = -100
-            fields.insert(.saturation)
+            settings.profile = DevelopProfile.monochrome.stored
+            settings.profileAmount = 100
+            fields.insert(.profile)
         }
         for (key, channel) in curveKeys {
             guard let element = elements[key] else { continue }

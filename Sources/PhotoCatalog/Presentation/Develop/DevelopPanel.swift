@@ -104,14 +104,24 @@ struct DevelopPanel: View {
                                         app.commitDevelop([asset.id: draft.settings], undoName: undoName)
                                     })
                 }
-                section(L("混色器")) {
-                    Picker("混色器属性", selection: $mixerProperty) {
-                        ForEach(ColorMixer.Property.allCases) { Text($0.title).tag($0) }
+                if DevelopProfile(stored: settings.profile) == .monochrome {
+                    section(L("黑白混合"), accessory: {
+                        Button("自动") { app.autoGrayMix() }
+                            .controlSize(.small)
+                            .help("按照片中各颜色的明暗把它们在黑白中分开")
+                    }) {
+                        ForEach(DevelopControl.grayMixer) { control in slider(control, asset, settings) }
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .controlSize(.small)
-                    ForEach(DevelopControl.mixer(mixerProperty)) { control in slider(control, asset, settings) }
+                } else {
+                    section(L("混色器")) {
+                        Picker("混色器属性", selection: $mixerProperty) {
+                            ForEach(ColorMixer.Property.allCases) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .controlSize(.small)
+                        ForEach(DevelopControl.mixer(mixerProperty)) { control in slider(control, asset, settings) }
+                    }
                 }
                 section(L("颜色分级"), accessory: { gradingSwatch(settings) }) {
                     Picker("颜色分级区域", selection: $gradingRegion) {

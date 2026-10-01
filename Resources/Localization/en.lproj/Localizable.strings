@@ -1610,3 +1610,11 @@
 "更浓的绿色与蓝色，更深的天空" = "Richer greens and blues, deeper skies";
 "配置文件“%@”" = "Profile “%@”";
 "配置文件数量" = "Profile Amount";
+"单色" = "Monochrome";
+"黑白：混色器换成各颜色的黑白混合" = "Black and white: the color mixer becomes a mix of how light each color turns";
+"处理方式" = "Treatment";
+"彩色" = "Color";
+"黑白混合" = "B&W Mix";
+"按照片中各颜色的明暗把它们在黑白中分开" = "Keep the photo's colors apart in gray by how light they are";
+"照片中的颜色太少，无法自动混合" = "The photo has too few colors for an automatic mix";
+"自动黑白混合" = "Auto B&W Mix";

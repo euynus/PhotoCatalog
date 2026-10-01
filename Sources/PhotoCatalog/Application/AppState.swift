@@ -1231,6 +1231,23 @@ final class AppState {
         }
     }
 
+    /// The black-and-white mix chosen from the photo in Develop's colors (see `DevelopAuto.grayMix`).
+    func autoGrayMix() {
+        guard let asset = primary, view == .develop, let source = developSource(for: asset) else { return }
+        let id = asset.id, settings = developSettings[id] ?? .neutral
+        Task { [weak self] in
+            let mix = await ThumbnailRepairQueue.run(.visible) {
+                DevelopAuto.grayMix(url: source.url, isRaw: source.isRaw, settings: settings)
+            } ?? nil
+            guard let self else { return }
+            guard let mix else {
+                self.push("照片中的颜色太少，无法自动混合", "info")
+                return
+            }
+            self.commitDevelopChange([id], undoName: L("自动黑白混合")) { _, settings in settings.grayMixer = mix }
+        }
+    }
+
     var canAutoTone: Bool { canTransformSelection }
 
     /// Automatic tone (⌘U) for the photo in Develop, or every selected photo elsewhere; each

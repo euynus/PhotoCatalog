@@ -3,8 +3,9 @@
 // ============================================================
 import SwiftUI
 
-/// The profiles as buttons. Resting the pointer on one shows its look on the photo, as the
-/// presets do; a click chooses it. Any but Standard shows its amount.
+/// The treatment (color or black and white) and the profiles as buttons. Resting the pointer on
+/// a profile shows its look on the photo, as the presets do; a click chooses it. The color
+/// profiles but Standard show their amount.
 struct DevelopProfilePicker: View {
     @Environment(AppState.self) private var app
     let asset: Asset
@@ -14,12 +15,22 @@ struct DevelopProfilePicker: View {
     var body: some View {
         let current = DevelopProfile(stored: settings.profile)
         VStack(alignment: .leading, spacing: 8) {
+            Picker("处理方式", selection: Binding(get: { current == .monochrome }, set: { monochrome in
+                guard monochrome != (current == .monochrome) else { return }
+                app.setDevelopProfile(monochrome ? .monochrome : .standard, for: asset)
+            })) {
+                Text("彩色").tag(false)
+                Text("黑白").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
                 ForEach(DevelopProfile.allCases) { profile in
                     button(profile, selected: profile == current)
                 }
             }
-            if current != .standard {
+            if current != .standard && current != .monochrome {
                 let control = DevelopControl.profileAmount
                 DevelopSlider(title: control.title, value: settings.profileAmount, range: control.range, step: control.step,
                               format: control.format, isNeutral: settings.profileAmount == control.neutral,

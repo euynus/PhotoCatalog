@@ -7,7 +7,7 @@ import Foundation
 /// Orientation comes before crop so a copied crop lands in the copied frame.
 enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
     case profile, whiteBalance, exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze
-    case vibrance, saturation, toneCurve, colorMixer, colorGrading, lut
+    case vibrance, saturation, toneCurve, colorMixer, grayMixer, colorGrading, lut
     case sharpening, noiseReduction, lensCorrections, vignette, grain, masks, spots
     case orientation, perspective, crop
 
@@ -28,6 +28,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         case .dehaze: L("去朦胧")
         case .toneCurve: L("色调曲线")
         case .colorMixer: L("混色器")
+        case .grayMixer: L("黑白混合")
         case .colorGrading: L("颜色分级")
         case .lut: L("LUT")
         case .vibrance: L("鲜艳度")
@@ -52,7 +53,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         (L("色调"), [.exposure, .contrast, .highlights, .shadows, .whites, .blacks]),
         (L("偏好"), [.texture, .clarity, .dehaze, .vibrance, .saturation]),
         (L("色调曲线"), [.toneCurve]),
-        (L("混色器"), [.colorMixer]),
+        (L("混色器"), [.colorMixer, .grayMixer]),
         (L("颜色分级"), [.colorGrading]),
         (L("LUT"), [.lut]),
         (L("细节"), [.sharpening, .noiseReduction]),
@@ -97,6 +98,7 @@ extension DevelopSettings {
             case .dehaze: next.dehaze = source.dehaze
             case .toneCurve: next.curve = source.curve
             case .colorMixer: next.mixer = source.mixer
+            case .grayMixer: next.grayMixer = source.grayMixer
             case .colorGrading: next.grading = source.grading
             case .lut:
                 next.lutId = source.lutId
@@ -170,9 +172,9 @@ struct DevelopPreset: Codable, Equatable, Identifiable, Sendable {
     var isBuiltIn: Bool { id.hasPrefix("builtin.") }
 
     static let builtIns: [DevelopPreset] = [
-        builtIn("bw", L("黑白"), [.vibrance, .saturation]) { $0.saturation = -100 },
-        builtIn("bw-contrast", L("黑白 · 高对比"), [.vibrance, .saturation, .contrast, .whites, .blacks]) {
-            $0.saturation = -100
+        builtIn("bw", L("黑白"), [.profile]) { $0.profile = DevelopProfile.monochrome.stored },
+        builtIn("bw-contrast", L("黑白 · 高对比"), [.profile, .contrast, .whites, .blacks]) {
+            $0.profile = DevelopProfile.monochrome.stored
             $0.contrast = 40
             $0.whites = 20
             $0.blacks = -20

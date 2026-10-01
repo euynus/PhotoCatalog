@@ -166,6 +166,74 @@ enum DevelopAuto {
         return (fromParameter(x.x).rounded(), x.y.rounded())
     }
 
+    /// A black-and-white mix that keeps the photo's colors apart in gray: the colors it has
+    /// plenty of, ordered by how light they render, spread from darker (-30) to lighter (+30), so
+    /// two colors of the same lightness don't merge into one gray; skin's orange is never
+    /// darkened. Nil when the photo can't be rendered or has fewer than two such colors.
+    static func grayMix(url: URL, isRaw: Bool, settings: DevelopSettings) -> [Double]? {
+        guard let source = DevelopRenderer.Source(url: url, isRaw: isRaw, maxPixel: workingPixel) else { return nil }
+        var color = settings
+        color.profile = nil   // measured in color, as the mix will see it
+        guard var image = source.image(color, draft: true) else { return nil }
+        let longEdge = max(image.extent.width, image.extent.height)
+        if longEdge > 200 { image = image.transformed(by: CGAffineTransform(scaleX: 200 / longEdge, y: 200 / longEdge)) }
+        let rect = image.extent.integral
+        let width = Int(rect.width), height = Int(rect.height)
+        guard width > 0, height > 0 else { return nil }
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        DevelopRenderer.context.render(image, toBitmap: &pixels, rowBytes: width * 4, bounds: rect,
+                                       format: .RGBA8, colorSpace: DevelopRenderer.outputColorSpace)
+        return grayMix(rgba: pixels)
+    }
+
+    /// The mix for display-encoded RGBA `pixels` (see `grayMix(url:isRaw:settings:)`).
+    static func grayMix(rgba pixels: [UInt8]) -> [Double]? {
+        let centers = ColorMixer.Band.allCases.map(\.hue)
+        var amount = [Double](repeating: 0, count: 8), light = amount
+        var total = 0.0
+        for i in stride(from: 0, to: pixels.count - 3, by: 4) {
+            let r = Double(pixels[i]) / 255, g = Double(pixels[i + 1]) / 255, b = Double(pixels[i + 2]) / 255
+            let high = max(r, g, b), low = min(r, g, b), chroma = high - low
+            guard chroma > 0.08 else { continue }
+            var hue: Double = high == r ? (g - b) / chroma : high == g ? 2 + (b - r) / chroma : 4 + (r - g) / chroma
+            hue = (hue * 60 + 360).truncatingRemainder(dividingBy: 360)
+            let y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+            // the two neighboring bands, cross-faded as the mixers do
+            for band in 0..<8 {
+                let a = centers[band], next = band == 7 ? centers[0] + 360 : centers[band + 1]
+                let h = hue < a ? hue + 360 : hue
+                guard h >= a && h < next else { continue }
+                let x = (h - a) / (next - a), t = x * x * (3 - 2 * x)
+                for (index, weight) in [(band, 1 - t), ((band + 1) % 8, t)] {
+                    amount[index] += weight * chroma
+                    light[index] += weight * chroma * y
+                }
+            }
+            total += chroma
+        }
+        let plenty = (0..<8).filter { total > 0 && amount[$0] / total >= 0.05 }
+        let lightness = { (band: Int) in light[band] / amount[band] }
+        // one color can straddle two neighboring bands: those of about the same lightness move as one
+        var groups: [[Int]] = []
+        for band in plenty.sorted(by: { (lightness($0), $0) < (lightness($1), $1) }) {
+            if let last = groups.last, last.contains(where: { abs($0 - band) == 1 || abs($0 - band) == 7 }),
+               abs(lightness(band) - last.map(lightness).reduce(0, +) / Double(last.count)) < 0.03 {
+                groups[groups.count - 1].append(band)
+            } else {
+                groups.append([band])
+            }
+        }
+        guard groups.count >= 2 else { return nil }
+        var mix = [Double](repeating: 0, count: 8)
+        for (rank, group) in groups.enumerated() {
+            var value = (-30 + 60 * Double(rank) / Double(groups.count - 1)).rounded()
+            // skin is mostly orange, and darker skin rarely pleases: the other colors move instead
+            if group.contains(ColorMixer.Band.orange.rawValue) { value = max(0, value) }
+            for band in group { mix[band] = value }
+        }
+        return mix
+    }
+
     /// Exposure, highlights, shadows, whites and blacks chosen from the photo's tones; every
     /// other setting is kept. Nil when the photo can't be rendered.
     static func tone(url: URL, isRaw: Bool, settings: DevelopSettings) -> DevelopSettings? {

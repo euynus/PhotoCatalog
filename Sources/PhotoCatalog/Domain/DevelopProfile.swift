@@ -6,9 +6,10 @@ import Foundation
 /// A profile, as in Lightroom's Profile browser: how the photo looks before any slider moves.
 /// Each is the app's own look — a tone curve, a response per color band and an overall
 /// saturation — applied after white balance and exposure and before the Basic tone controls,
-/// at an amount of 0…200%. Standard is the RAW engine's own rendering, untouched.
+/// at an amount of 0…200%. Standard is the RAW engine's own rendering, untouched. Monochrome is
+/// black and white: the color mixer gives way to the black-and-white mix (see `DevelopSettings.grayMixer`).
 enum DevelopProfile: String, CaseIterable, Identifiable, Sendable {
-    case standard, neutral, vivid, portrait, landscape
+    case standard, neutral, vivid, portrait, landscape, monochrome
 
     var id: Self { self }
 
@@ -27,6 +28,7 @@ enum DevelopProfile: String, CaseIterable, Identifiable, Sendable {
         case .vivid: L("鲜艳")
         case .portrait: L("人像")
         case .landscape: L("风景")
+        case .monochrome: L("单色")
         }
     }
 
@@ -37,6 +39,7 @@ enum DevelopProfile: String, CaseIterable, Identifiable, Sendable {
         case .vivid: L("更高的对比度与饱和度")
         case .portrait: L("柔和的影调，自然、明亮的肤色")
         case .landscape: L("更浓的绿色与蓝色，更深的天空")
+        case .monochrome: L("黑白：混色器换成各颜色的黑白混合")
         }
     }
 
@@ -48,6 +51,7 @@ enum DevelopProfile: String, CaseIterable, Identifiable, Sendable {
         case "adobe vivid", "camera vivid": .vivid
         case "adobe portrait", "camera portrait": .portrait
         case "adobe landscape", "camera landscape": .landscape
+        case "adobe monochrome", "camera monochrome": .monochrome
         default: nil
         }
     }
@@ -66,8 +70,8 @@ enum DevelopProfile: String, CaseIterable, Identifiable, Sendable {
         func points(_ values: [(Double, Double)]) -> [CurvePoint] { values.map { CurvePoint(x: $0.0, y: $0.1) } }
         var look = Look()
         switch self {
-        case .standard:
-            break
+        case .standard, .monochrome:
+            break   // black and white happens in place of the color mixer
         case .neutral:
             // a gentle reverse S: open shadows, softer highlights, quieter color
             look.curve = points([(0, 0), (0.15, 0.185), (0.5, 0.5), (0.85, 0.83), (1, 1)])

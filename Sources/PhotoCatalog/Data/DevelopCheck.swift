@@ -12,6 +12,7 @@ enum DevelopCheck {
         checkToneCurve()
         checkColorMixer()
         checkProfiles()
+        checkBlackAndWhite()
         checkColorGrading()
         checkLocalAdjustments()
         checkSpotRemoval()
@@ -342,6 +343,59 @@ enum DevelopCheck {
         assert(grown.profile == "vivid" && grown.profileAmount == 50 && faded.profile == "vivid" && faded.profileAmount == 50
                && gone.profile == nil && gone.profileAmount == 100 && swapped.profile == "vivid" && swapped.profileAmount == 60,
                "a preset's amount scales its profile from nothing")
+    }
+
+    /// Black and white: gray, each color band lighter or darker by the mix, toned by grading.
+    private static func checkBlackAndWhite() {
+        let red = (0.8, 0.2, 0.15), blue = (0.15, 0.25, 0.85), gray = (0.5, 0.5, 0.5)
+        var mono = DevelopSettings()
+        mono.profile = DevelopProfile.monochrome.stored
+        func isGray(_ c: (r: Double, g: Double, b: Double)) -> Bool { abs(c.r - c.g) < 0.01 && abs(c.g - c.b) < 0.01 }
+        let plainRed = mean(red, mono), plainBlue = mean(blue, mono)
+        assert(isGray(plainRed) && isGray(plainBlue) && isGray(mean(gray, mono)), "Monochrome renders gray")
+        var lighter = mono, darker = mono
+        lighter.grayMixer[ColorMixer.Band.red.rawValue] = 100
+        darker.grayMixer[ColorMixer.Band.red.rawValue] = -100
+        assert(luma(mean(red, lighter)) > luma(plainRed) + 0.08 && luma(mean(red, darker)) < luma(plainRed) - 0.05,
+               "the red slider lightens or darkens reds")
+        assert(abs(luma(mean(blue, lighter)) - luma(plainBlue)) < 0.01 && abs(luma(mean(gray, lighter)) - luma(mean(gray, mono))) < 0.01,
+               "and leaves blues and grays alone")
+        var toned = mono
+        toned.grading.global = ColorGrading.Grade(hue: 35, saturation: 40, luminance: 0)
+        let sepia = mean(gray, toned)
+        assert(sepia.r > sepia.b + 0.03, "color grading tones a black-and-white photo")
+        var half = mono
+        half.profileAmount = 50
+        let partly = mean(red, half), full = mean(red, .neutral)
+        assert(partly.r - partly.b > 0.1 && partly.r - partly.b < (full.r - full.b) - 0.1,
+               "below 100% (a preset's partial amount) keeps some color")
+        var color = DevelopSettings()
+        color.grayMixer[ColorMixer.Band.red.rawValue] = 100
+        assert(abs(mean(red, color).r - full.r) < 0.01, "the mix does nothing in color")
+
+        // the mix persists, travels with copy and presets, and scales with a preset's amount
+        let stored = try! JSONDecoder().decode(DevelopSettings.self, from: JSONEncoder().encode(lighter))
+        let malformed = try! JSONDecoder().decode(DevelopSettings.self, from: Data(#"{"grayMixer":[1,2]}"#.utf8))
+        assert(stored.grayMixer == lighter.grayMixer && malformed.grayMixer == [Double](repeating: 0, count: 8)
+               && lighter.fingerprint != mono.fingerprint, "the mix persists and changes the fingerprint")
+        assert(DevelopSettings().applying(lighter, fields: [.grayMixer]).grayMixer == lighter.grayMixer
+               && DevelopSettings.blend(mono, lighter, amount: 0.5, isRaw: false, whiteBalanceOrigin: (0, 0))
+                   .grayMixer[ColorMixer.Band.red.rawValue] == 50, "copy carries the mix and a preset's amount scales it")
+
+        // auto: the photo's colors pulled apart, the lighter one up; a color between two bands moves as one
+        func pixels(_ colors: [(UInt8, UInt8, UInt8)]) -> [UInt8] {
+            colors.flatMap { c in (0..<200).flatMap { _ in [c.0, c.1, c.2, 255] } }
+        }
+        let blueGreen = DevelopAuto.grayMix(rgba: pixels([(40, 90, 230), (60, 200, 50)]))   // a darker blue, a lighter green
+        let redBlue = DevelopAuto.grayMix(rgba: pixels([(200, 60, 40), (40, 120, 220)]))   // a darker red-orange, a lighter blue
+        assert(blueGreen?[ColorMixer.Band.blue.rawValue] == -30 && blueGreen?[ColorMixer.Band.green.rawValue] == 30
+               && blueGreen?[ColorMixer.Band.red.rawValue] == 0, "auto spreads the photo's colors by their lightness")
+        assert(redBlue?[ColorMixer.Band.red.rawValue] == 0 && redBlue?[ColorMixer.Band.orange.rawValue] == 0
+               && redBlue?[ColorMixer.Band.aqua.rawValue] == 30 && redBlue?[ColorMixer.Band.blue.rawValue] == 30,
+               "a color between two bands moves as one, and skin's orange is never darkened")
+        assert(DevelopAuto.grayMix(rgba: pixels([(40, 120, 220)])) == nil
+               && DevelopAuto.grayMix(rgba: [UInt8](repeating: 128, count: 400 * 4)) == nil,
+               "and needs two colors to spread")
     }
 
     private static func checkColorGrading() {
@@ -1416,7 +1470,7 @@ enum DevelopCheck {
 
         app.setPrimary(c.id)
         app.applyDevelopPreset(DevelopPreset.builtIns.first { $0.name == "黑白" }!)
-        assert(app.developSettings[c.id]?.saturation == -100 && app.developSettings[c.id]?.exposure == 0.6,
+        assert(app.developSettings[c.id]?.profile == "monochrome" && app.developSettings[c.id]?.exposure == 0.6,
                "a preset changes only its own settings")
         assert(app.developPresetAmount(for: c.id) == nil, "the grid applies presets at full strength, without an amount")
 
@@ -1429,7 +1483,7 @@ enum DevelopCheck {
                "dragging the amount previews it")
         app.commitDevelopPresetAmount()
         let halfVivid = app.developSettings[c.id]
-        assert(halfVivid.map { $0.vibrance == 18 && $0.saturation == -46 } == true
+        assert(halfVivid.map { $0.vibrance == 18 && $0.saturation == 4 && $0.profile == "monochrome" } == true
                && app.developPresetAmount(for: c.id)?.amount == 0.5 && app.developPresetAmountDraft == nil,
                "releasing saves it")
         var other = app.developSettings(for: c.id)
@@ -1474,7 +1528,7 @@ enum DevelopCheck {
         app.importDevelopPresetId = "builtin.bw"
         _ = app.developHistory(for: b.id)   // shown, so its history is kept in memory without a catalog
         app.applyImportDevelopSettings(to: [a, b])
-        assert(app.developSettings[a.id]?.saturation == -100 && app.developSettings[b.id]?.saturation == -100
+        assert(app.developSettings[a.id]?.profile == "monochrome" && app.developSettings[b.id]?.profile == "monochrome"
                && app.developSettings[c.id] == nil, "imported photos get the import preset")
         assert(app.developHistory(for: b.id).last?.name == L("导入预设“\(L("黑白"))”"),
                "the import preset is recorded as a history step")
@@ -1495,8 +1549,8 @@ enum DevelopCheck {
         app.importDevelopPresetId = "builtin.bw"
         app.developSettings[a.id] = nil
         app.applyImportDevelopSettings(to: [a, d])
-        assert(app.developSettings[d.id]?.contrast == -15 && app.developSettings[d.id]?.saturation == -100
-               && app.developSettings[a.id]?.contrast == 35 && app.developSettings[a.id]?.saturation == -100,
+        assert(app.developSettings[d.id]?.contrast == -15 && app.developSettings[d.id]?.profile == "monochrome"
+               && app.developSettings[a.id]?.contrast == 35 && app.developSettings[a.id]?.profile == "monochrome",
                "RAW photos start from their camera's default, or every camera's, then the import preset")
         app.setRawDefaultPreset("none", forCamera: d.camera)
         assert(app.defaultDevelopSettings(for: d) == .neutral && app.defaultDevelopSettings(for: a).contrast == 35,
@@ -1872,6 +1926,25 @@ enum DevelopCheck {
             """.utf8), fileName: "look.xmp")
         }
         let vivid = profiled("Adobe Vivid", amount: "0.6"), creative = profiled("Modern 01", amount: "1")
+        let monochrome = profiled("Adobe Monochrome", amount: "1")
+        assert(monochrome?.preset.transfer.settings.profile == "monochrome" && monochrome?.skipped.isEmpty == true,
+               "Adobe Monochrome is black and white")
+        let grayscale = DevelopPresetFile.read(Data("""
+        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+         <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:ConvertToGrayscale="True"
+          crs:GrayMixerRed="+20" crs:GrayMixerBlue="-35" crs:HasSettings="True"/>
+        </rdf:RDF></x:xmpmeta>
+        """.utf8), fileName: "gray.xmp")?.preset.transfer
+        assert(grayscale?.settings.profile == "monochrome" && grayscale?.settings.grayMixer[0] == 20
+               && grayscale?.settings.grayMixer[ColorMixer.Band.blue.rawValue] == -35 && grayscale?.fields == [.profile, .grayMixer],
+               "Camera Raw's black and white and its gray mix map to Monochrome and the mix")
+        var bw = DevelopSettings()
+        bw.profile = DevelopProfile.monochrome.stored
+        bw.grayMixer[ColorMixer.Band.orange.rawValue] = 15
+        let bwText = DevelopPresetFile.xmp(for: DevelopPreset(id: "bw", name: "BW", transfer: DevelopTransfer(
+            settings: bw, fields: [.profile, .grayMixer], sourceIsRaw: true)))
+        assert(bwText.contains(#"crs:ConvertToGrayscale="True""#) && bwText.contains(#"crs:GrayMixerOrange="+15""#),
+               "a black-and-white preset tells Lightroom so")
         assert(vivid?.preset.transfer.settings.profile == "vivid" && vivid?.preset.transfer.settings.profileAmount == 60
                && vivid?.preset.transfer.fields == [.contrast, .profile] && vivid?.skipped.isEmpty == true,
                "a Lightroom profile with a near one here becomes it, at its amount")
