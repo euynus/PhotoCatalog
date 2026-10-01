@@ -638,7 +638,7 @@ final class AppState {
         didSet {
             if view != .develop {
                 developCropping = false; developPickingWhiteBalance = false; developMasking = false; developSpotting = false
-                developComparing = false
+                developComparing = false; developPickingFocus = false; developShowsDepth = false
             }
             if oldValue == .survey && view != .survey { leaveSurvey() }
         }
@@ -1189,7 +1189,65 @@ final class AppState {
     var developPickingWhiteBalance = false {
         didSet {
             // the eyedropper clicks on the photo itself: the other tools make way
-            if developPickingWhiteBalance { developCropping = false; developMasking = false; developSpotting = false }
+            if developPickingWhiteBalance {
+                developCropping = false; developMasking = false; developSpotting = false; developPickingFocus = false
+            }
+        }
+    }
+
+    // ----- lens blur: the photo blurred by depth (see LensBlur, DepthMap) -----
+    /// The next click on the photo in Develop sets lens blur's focus.
+    var developPickingFocus = false {
+        didSet {
+            if developPickingFocus {
+                developCropping = false; developMasking = false; developSpotting = false; developPickingWhiteBalance = false
+            }
+        }
+    }
+    /// Develop shows lens blur's depth map instead of the photo.
+    var developShowsDepth = false
+
+    /// Turns lens blur on (focused on the subject, see `DepthMap.defaultFocus`) or off, as one
+    /// undoable step.
+    func setLensBlur(_ enabled: Bool, for asset: Asset) {
+        guard canDevelop(asset), let source = developSource(for: asset) else { return }
+        let id = asset.id
+        guard enabled else {
+            commitDevelopChange([id], undoName: L("镜头模糊")) { _, settings in settings.lensBlur.enabled = false }
+            return
+        }
+        Task { [weak self] in
+            let focus = await ThumbnailRepairQueue.run(.visible) { () -> Double? in
+                guard let map = DepthMap.map(for: source.url, isRaw: source.isRaw) else { return nil }
+                return DepthMap.defaultFocus(map, url: source.url, isRaw: source.isRaw)
+            } ?? nil
+            guard let self else { return }
+            guard let focus else {
+                self.push("无法估计这张照片的深度", "warning")
+                return
+            }
+            self.commitDevelopChange([id], undoName: L("镜头模糊")) { _, settings in
+                settings.lensBlur.enabled = true
+                settings.lensBlur.focus = (focus * 100).rounded() / 100
+            }
+        }
+    }
+
+    /// Sets lens blur's focus to the depth at `point` (fractions of the finished photo,
+    /// top-left origin), turning it on.
+    func pickLensBlurFocus(_ asset: Asset, at point: CGPoint) {
+        developPickingFocus = false
+        guard canDevelop(asset), let source = developSource(for: asset) else { return }
+        let id = asset.id, settings = developSettings[id] ?? .neutral, size = developSourceSize(for: asset)
+        Task { [weak self] in
+            let map = await ThumbnailRepairQueue.run(.visible) { DepthMap.map(for: source.url, isRaw: source.isRaw) } ?? nil
+            guard let self, let map else { return }
+            let pixel = DevelopGeometry.sourcePoint(fromFinished: point, settings: settings, sourceSize: size)
+            let depth = map.depth(at: CGPoint(x: pixel.x / max(size.width, 1), y: pixel.y / max(size.height, 1)))
+            self.commitDevelopChange([id], undoName: L("镜头模糊焦点")) { _, settings in
+                settings.lensBlur.enabled = true
+                settings.lensBlur.focus = (depth * 100).rounded() / 100
+            }
         }
     }
 
@@ -2115,6 +2173,10 @@ final class AppState {
         }
         if view == .develop, developPickingWhiteBalance {
             developPickingWhiteBalance = false
+            return true
+        }
+        if view == .develop, developPickingFocus {
+            developPickingFocus = false
             return true
         }
         if view == .develop, developCropping {

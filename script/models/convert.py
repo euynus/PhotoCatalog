@@ -226,6 +226,28 @@ def quantize_inpaint(mlmodel):
 
 MODELS = {"superresolution": super_resolution, "denoise": denoise, "inpaint": inpaint}
 
+# ---- depth: Depth Anything V2 Small (Apache-2.0), as Apple converted it to Core ML ----
+DEPTH_PACKAGE = ("https://huggingface.co/apple/coreml-depth-anything-v2-small/resolve/main/"
+                 "DepthAnythingV2SmallF16P8.mlpackage/")
+DEPTH_FILES = {
+    "Manifest.json": "5530317f2a7c4318b34efd9855694480a78122d8be89e703278b0f7b9337dbdc",
+    "Data/com.apple.CoreML/model.mlmodel": "da3f4c6a8be93a439b1bc56ba57074c09f270b3d28052d798bc106d1259e5a1d",
+    "Data/com.apple.CoreML/weights/weight.bin": "660a57cf7becfeac080a9bb02a263be59fd57b5c4d17ff8912833bc8b6edae04",
+}
+
+
+def fetch_depth(out):
+    """Apple's Core ML conversion (16-bit activations, 8-bit palettized weights) is used as
+    published: each file checked against its SHA-256 and put into Depth.mlpackage."""
+    for relative, sha256 in DEPTH_FILES.items():
+        target = os.path.join(out, "Depth.mlpackage", relative)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        print("downloading", DEPTH_PACKAGE + relative)
+        urllib.request.urlretrieve(DEPTH_PACKAGE + relative, target)
+        digest = hashlib.sha256(open(target, "rb").read()).hexdigest()
+        if digest != sha256:
+            sys.exit(f"{target}: SHA-256 {digest} is not the expected {sha256}")
+
 
 def convert(name, weights, denoise, out):
     import coremltools as ct
@@ -265,9 +287,12 @@ def convert(name, weights, denoise, out):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("model", choices=sorted(MODELS))
+    parser.add_argument("model", choices=sorted(MODELS) + ["depth"])
     parser.add_argument("--weights", default=os.path.join(ROOT, ".build", "model-weights"))
     parser.add_argument("--denoise", type=float, default=0.0, help="super resolution: 0 keeps texture, 1 smooths")
     parser.add_argument("--out", default=OUT)
     arguments = parser.parse_args()
-    convert(arguments.model, arguments.weights, arguments.denoise, arguments.out)
+    if arguments.model == "depth":
+        fetch_depth(arguments.out)
+    else:
+        convert(arguments.model, arguments.weights, arguments.denoise, arguments.out)

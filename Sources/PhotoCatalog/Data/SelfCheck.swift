@@ -124,6 +124,7 @@ enum SelfCheck {
         UndoCheck.run()
         CullingCheck.run()
         DevelopCheck.run()
+        LensBlurCheck.run()
         MergeCheck.run()
         EnhanceCheck.run()
         LLMCheck.run()

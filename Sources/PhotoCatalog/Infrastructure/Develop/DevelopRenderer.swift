@@ -84,7 +84,7 @@ enum DevelopRenderer {
         /// `overlayMask` tints that mask's coverage red, for the masking tool; `visualizeSpots`
         /// shows only fine detail, where dust stands out, for the spot tool.
         func image(_ settings: DevelopSettings, draft: Bool = false, wholeFrame: Bool = false,
-                   overlayMask: String? = nil, visualizeSpots: Bool = false) -> CIImage? {
+                   overlayMask: String? = nil, visualizeSpots: Bool = false, visualizeDepth: Bool = false) -> CIImage? {
             guard let base = baseImage(settings, draft: draft) else { return nil }
             sourceSize = base.extent.integral.size
             let scale = max(base.extent.width, base.extent.height) / max(fullLongEdge, 1)
@@ -98,8 +98,9 @@ enum DevelopRenderer {
                 DevelopRenderer.applyMixer(DevelopRenderer.applyCurve(toned, settings), settings), settings)
             let present = DevelopRenderer.applyPresence(colored, settings)
             let photo = (url: url, isRaw: isRaw)
-            let local = DevelopRenderer.applyOverlay(DevelopRenderer.applyMasks(present, settings, photo: photo), settings,
-                                                     maskId: overlayMask, photo: photo, rangeSource: present)
+            let masked = DevelopRenderer.applyMasks(present, settings, photo: photo)
+            let blurred = DevelopRenderer.applyLensBlur(masked, settings, photo: photo, visualize: visualizeDepth)
+            let local = DevelopRenderer.applyOverlay(blurred, settings, maskId: overlayMask, photo: photo, rangeSource: present)
             let detailed = DevelopRenderer.applyDetail(local, settings, scale: min(1, scale))
             let framed = DevelopRenderer.applyGeometry(detailed, settings, wholeFrame: wholeFrame)
             // effects follow the crop, which the crop tool's whole-frame view doesn't apply yet
@@ -357,6 +358,38 @@ enum DevelopRenderer {
             "inputCurvesDomain": CIVector(x: 0, y: 1),
             "inputColorSpace": outputColorSpace,
         ])
+    }
+
+    /// Lens blur (see `LensBlur`): each part blurred by how far its depth lies outside the band
+    /// in focus, up to a radius that's a share of the long edge, so a preview matches the full
+    /// photo. `visualize` shows the depth instead, near warm and far cool.
+    static func applyLensBlur(_ input: CIImage, _ s: DevelopSettings, photo: (url: URL, isRaw: Bool)?,
+                              visualize: Bool = false) -> CIImage {
+        guard s.hasLensBlur || visualize, let photo, let map = DepthMap.map(for: photo.url, isRaw: photo.isRaw) else {
+            return input
+        }
+        let extent = input.extent
+        let depth = DepthMap.image(map, extent: extent, guide: input)
+        if visualize {
+            return depth.applyingFilter("CIFalseColor", parameters: [
+                "inputColor0": CIColor(red: 0.08, green: 0.16, blue: 0.45), "inputColor1": CIColor(red: 1, green: 0.62, blue: 0.25),
+            ]).cropped(to: extent)
+        }
+        let blur = s.lensBlur
+        let longEdge = Double(max(extent.width, extent.height))
+        // Where depth sweeps past the focus between two blurred parts (a near edge before a far
+        // background), a thin band would stay sharp as an outline: closing the mask (widest,
+        // then narrowest, over a few pixels) fills bands that thin and leaves wider sharp parts.
+        let close = max(1, 0.0025 * longEdge)
+        let mask = DevelopKernels.lensBlurMask(depth, focus: blur.focus, inner: blur.range / 100 * 0.3, soft: 0.12)
+            .clampedToExtent()
+            .applyingFilter("CIMorphologyMaximum", parameters: ["inputRadius": close])
+            .applyingFilter("CIMorphologyMinimum", parameters: ["inputRadius": close])
+            .cropped(to: extent)
+        let radius = blur.amount / 100 * 0.02 * longEdge
+        return input.clampedToExtent()
+            .applyingFilter("CIMaskedVariableBlur", parameters: ["inputMask": mask, "inputRadius": radius])
+            .cropped(to: extent)
     }
 
     /// Calibration on linear light: the primaries moved by a matrix that keeps white white, then
@@ -786,6 +819,8 @@ final class DevelopRenderWorker: @unchecked Sendable {
         var wholeFrame = false
         var overlayMask: String?
         var visualizeSpots = false
+        /// Lens blur's depth shown instead of the photo.
+        var visualizeDepth = false
         /// Soft proofing: the render shown through this profile (see `SoftProofing`).
         var proof: SoftProof?
         let token: Int
@@ -823,13 +858,14 @@ final class DevelopRenderWorker: @unchecked Sendable {
         }
         let image = autoreleasepool { () -> CGImage? in
             let rendered = source?.source.image(request.settings, draft: request.draft, wholeFrame: request.wholeFrame,
-                                                overlayMask: request.overlayMask, visualizeSpots: request.visualizeSpots)
+                                                overlayMask: request.overlayMask, visualizeSpots: request.visualizeSpots,
+                                                visualizeDepth: request.visualizeDepth)
                 .flatMap(DevelopRenderer.render)
             guard let rendered, let proof = request.proof else { return rendered }
             return SoftProofing.proof(rendered, proof) ?? rendered
         }
         // the crop tool's empty corners and the mask overlay's tint would skew the histogram
-        let histogram = request.wholeFrame || request.overlayMask != nil || request.visualizeSpots
+        let histogram = request.wholeFrame || request.overlayMask != nil || request.visualizeSpots || request.visualizeDepth
             ? nil : image.flatMap(DevelopRenderer.histogram)
         completion(Result(request: request, image: image, histogram: histogram, sourceSize: source?.source.sourceSize,
                           asShotTemperature: source?.source.asShotTemperature,

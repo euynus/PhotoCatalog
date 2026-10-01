@@ -176,6 +176,15 @@ enum DevelopKernels {
             return float4(y, y, y, s.a);
         }
         """,
+        "lensBlurMask": """
+        // How much lens blur each part gets, from its depth (red, 0 far … 1 near): none within
+        // `inner` of the focal depth, rising smoothly to all over the next `soft`. (Not `half`:
+        // that's a Metal type, and the kernel would silently fail to compile.)
+        [[stitchable]] float4 lensBlurMask(sample_t d, float focus, float inner, float soft) {
+            float m = smoothstep(inner, inner + soft, abs(d.r - focus));
+            return float4(m, m, m, 1.0);
+        }
+        """,
         "shadowTint": """
         // Calibration's shadows tint on linear light: magenta (amount > 0) or green, strongest in
         // the deepest tones and gone by mid-gray; multiplied in, so black stays black.
@@ -356,6 +365,10 @@ enum DevelopKernels {
         """,
     ]
 
+    /// The kernels that don't compile: each wrapper quietly hands its input back when its kernel
+    /// is missing, so a typo would otherwise only show as an adjustment doing nothing.
+    static var failedKernels: [String] { bodies.keys.sorted().filter { kernel($0) == nil } }
+
     private static let lock = NSLock()
     /// Each kernel once compiled, or nil once it failed to: a failure isn't retried every render.
     nonisolated(unsafe) private static var compiled: [String: CIKernel?] = [:]
@@ -494,6 +507,12 @@ enum DevelopKernels {
         let m = mix.map { $0 / 100 }
         return kernel.apply(extent: image.extent, arguments: [image, CIVector(x: m[0], y: m[1], z: m[2], w: m[3]),
                                                               CIVector(x: m[4], y: m[5], z: m[6], w: m[7])]) ?? image
+    }
+
+    /// How much lens blur each part of `depth` gets (see the kernel), as a gray mask.
+    static func lensBlurMask(_ depth: CIImage, focus: Double, inner: Double, soft: Double) -> CIImage {
+        guard let kernel = kernel("lensBlurMask") as? CIColorKernel else { return depth }
+        return kernel.apply(extent: depth.extent, arguments: [depth, focus, inner, soft]) ?? depth
     }
 
     /// Calibration's shadows tint on linear `image`, `amount` -100…100 (see the kernel).

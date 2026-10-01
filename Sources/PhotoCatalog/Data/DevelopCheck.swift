@@ -1808,8 +1808,8 @@ enum DevelopCheck {
         assert(tr.x - tl.x > br.x - bl.x + 20, "negative Vertical widens the top")
         let back = h.inverse.apply(h.apply(CGPoint(x: 123, y: 45))!)!
         assert(abs(back.x - 123) < 1e-6 && abs(back.y - 45) < 1e-6, "the correction undoes exactly")
-        assert([tl, tr, bl, br].allSatisfy { $0.x >= -1e-6 && $0.x <= 600 + 1e-6 && $0.y >= -1e-6 && $0.y <= 400 + 1e-6 },
-               "the corrected photo fits the frame, nothing lost")
+        let bounds = CGRect(x: 0, y: 0, width: 600, height: 400).insetBy(dx: -1e-6, dy: -1e-6)
+        assert([tl, tr, bl, br].allSatisfy { bounds.contains($0) }, "the corrected photo fits the frame, nothing lost")
         let crop = DevelopGeometry.effectiveCrop(s, frame: frame)
         let larger = DevelopCrop(x: crop.x - 0.01, y: crop.y - 0.01, width: crop.width + 0.02, height: crop.height + 0.02)
         assert(crop.width < 1 && DevelopGeometry.fits(crop, angle: 0, perspective: h, frame: frame)

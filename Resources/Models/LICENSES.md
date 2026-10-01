@@ -8,6 +8,7 @@ from its authors' release, checks it against a SHA-256, converts it and writes t
 | `SuperResolution.mlpackage` | Real-ESRGAN `realesr-general-wdn-x4v3` (the weak-denoise general model) | https://github.com/xinntao/Real-ESRGAN | BSD 3-Clause |
 | `Denoise.mlpackage` | SCUNet `scunet_color_real_psnr` | https://github.com/cszn/SCUNet | Apache License 2.0 |
 | `Inpaint.mlpackage` | LaMa `big-lama` (the TorchScript export published by IOPaint, github.com/Sanster/models) | https://github.com/advimman/lama | Apache License 2.0 |
+| `Depth.mlpackage` | Depth Anything V2 Small, as converted to Core ML by Apple (`DepthAnythingV2SmallF16P8`, huggingface.co/apple/coreml-depth-anything-v2-small) | https://github.com/DepthAnything/Depth-Anything-V2 | Apache License 2.0 |
 
 Changes made: both networks were traced at a fixed 256 × 256 tile and converted to Core ML with
 16-bit weights. SCUNet's network was re-implemented in plain tensor operations (no einops,
@@ -15,6 +16,9 @@ einsum or boolean masks) so Core ML can convert it; its weights are used unchang
 re-implementation gives the same output as the original. LaMa is converted at a fixed 512 × 512 square; the
 weights of its plain convolutions (between its local and global branches) are quantized to
 8 bits, the Fourier units and the first and last layers stay 16-bit.
+
+`Depth.mlpackage` is Apple's published package, unchanged apart from its name (16-bit
+activations, 8-bit palettized weights; it takes a 518 × 392 image and gives relative depth).
 
 ## Real-ESRGAN — BSD 3-Clause License
 
@@ -460,4 +464,26 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+```
+
+## Depth Anything V2 Small — Apache License 2.0
+
+Depth Anything V2 (Lihe Yang, Bingyi Kang, Zilong Huang, Zhen Zhao, Xiaogang Xu, Jiashi Feng,
+Hengshuang Zhao). The Small model and Apple's Core ML conversion of it are released under the
+Apache License 2.0, whose full text is given above under SCUNet.
+
+```
+Copyright 2024 Depth Anything V2 authors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 ```

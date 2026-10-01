@@ -1656,6 +1656,22 @@
 "预览照片在其他色彩空间或打印出来的样子 (S)" = "See how the photo looks in another color space or in print (S)";
 "方法" = "Intent";
 
+/* Lens blur */
+"镜头模糊" = "Lens Blur";
+"镜头模糊焦点" = "Lens Blur Focus";
+"模糊量" = "Blur Amount";
+"焦点距离" = "Focus Distance";
+"对焦范围" = "Focus Range";
+"点选焦点" = "Pick Focus";
+"显示深度" = "Show Depth";
+"点选照片中要保持清晰的地方" = "Click the part of the photo to keep sharp";
+"点选照片中要保持清晰的地方（Esc 取消）" = "Click the part of the photo to keep sharp (Esc to cancel)";
+"深度：暖色近，冷色远" = "Depth: warm is near, cool is far";
+"按照片中的远近模糊焦点以外的部分" = "Blur what lies outside the focus, by distance in the photo";
+"用颜色显示照片中的远近：暖色近，冷色远" = "Show distance in the photo as color: warm is near, cool is far";
+"按照片中的远近虚化背景或前景，深度由本机模型估计" = "Blur the background or foreground by distance; depth is estimated by an on-device model";
+"无法估计这张照片的深度" = "Couldn't estimate this photo's depth";
+
 /* Print */
 "4 × 6 英寸" = "4 × 6 in";
 "5 × 7 英寸" = "5 × 7 in";

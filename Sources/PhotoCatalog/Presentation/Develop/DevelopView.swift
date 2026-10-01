@@ -53,6 +53,7 @@ private struct DevelopCanvas: View {
         let fullResolution = app.loupeZoom != nil && !dragging && !cropping && !app.developMasking && !app.developSpotting
         // proofing shows the finished photo, not a tool's working view
         let proof = app.softProofing && !cropping && !masking && !spotting ? app.softProof : nil
+        let depthView = app.developShowsDepth && !cropping && !app.developShowsOriginal
         // the crop tool draws the crop itself, so moving it never re-renders
         var rendered = settings
         if cropping { rendered.crop = nil }
@@ -80,7 +81,8 @@ private struct DevelopCanvas: View {
                         ZoomableImageView(image: engine.image(for: asset.id), pixelSize: pixelSize,
                                           zoom: app.loupeZoom, onZoomChange: { app.loupeZoom = $0 },
                                           onPick: app.developPickingWhiteBalance
-                                              ? { app.pickWhiteBalance(asset, at: $0) } : nil)
+                                              ? { app.pickWhiteBalance(asset, at: $0) }
+                                              : app.developPickingFocus ? { app.pickLensBlurFocus(asset, at: $0) } : nil)
                             .padding(app.loupeZoom == nil ? 12 : 0)
                     }
                 }
@@ -89,6 +91,10 @@ private struct DevelopCanvas: View {
                         badge(L("修改前（按 \\ 切换）"))
                     } else if app.developPickingWhiteBalance {
                         badge(L("点选照片中应为灰色或白色的地方（Esc 取消）"))
+                    } else if app.developPickingFocus {
+                        badge(L("点选照片中要保持清晰的地方（Esc 取消）"))
+                    } else if depthView {
+                        badge(L("深度：暖色近，冷色远"))
                     } else if let proof {
                         badge(L("校样预览 · \(SoftProofing.name(of: proof.profile))"))
                     }
@@ -98,12 +104,13 @@ private struct DevelopCanvas: View {
                 }
                 .onChange(of: DevelopRenderKey(assetId: asset.id, settings: rendered, draft: dragging,
                                                fullResolution: fullResolution, wholeFrame: cropping,
-                                               overlayMask: overlay, visualizeSpots: visualize, proof: proof),
+                                               overlayMask: overlay, visualizeSpots: visualize, visualizeDepth: depthView,
+                                               proof: proof),
                           initial: true) {
                     engine.render(assetId: asset.id, url: source.url, isRaw: source.isRaw, settings: rendered,
                                   draft: dragging, fullResolution: fullResolution,
                                   wholeFrame: cropping, overlayMask: overlay,
-                                  visualizeSpots: visualize, proof: proof) { result, histogram in
+                                  visualizeSpots: visualize, visualizeDepth: depthView, proof: proof) { result, histogram in
                         if let temperature = result.asShotTemperature, let tint = result.asShotTint {
                             app.recordAsShotWhiteBalance(asset.id, temperature: temperature, tint: tint)
                         }
@@ -229,6 +236,7 @@ private struct DevelopRenderKey: Equatable {
     let wholeFrame: Bool
     let overlayMask: String?
     let visualizeSpots: Bool
+    let visualizeDepth: Bool
     let proof: SoftProof?
 }
 
@@ -273,7 +281,7 @@ final class DevelopPreviewEngine: ObservableObject {
 
     func render(assetId: String, url: URL, isRaw: Bool, settings: DevelopSettings, draft: Bool,
                 fullResolution: Bool, wholeFrame: Bool, overlayMask: String? = nil, visualizeSpots: Bool = false,
-                proof: SoftProof? = nil,
+                visualizeDepth: Bool = false, proof: SoftProof? = nil,
                 finished: @escaping (DevelopRenderWorker.Result, _ newestHistogram: DevelopHistogram?) -> Void) {
         token += 1
         var request = DevelopRenderWorker.Request(url: url, isRaw: isRaw,
@@ -282,6 +290,7 @@ final class DevelopPreviewEngine: ObservableObject {
         request.wholeFrame = wholeFrame
         request.overlayMask = overlayMask
         request.visualizeSpots = visualizeSpots
+        request.visualizeDepth = visualizeDepth
         request.proof = proof
         renderingAssetId = assetId
         (fullResolution ? fullWorker : previewWorker).submit(request) { [weak self] result in

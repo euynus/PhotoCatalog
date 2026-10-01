@@ -8,7 +8,7 @@ import Foundation
 enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
     case profile, whiteBalance, exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze
     case vibrance, saturation, toneCurve, colorMixer, grayMixer, colorGrading, lut
-    case sharpening, noiseReduction, lensCorrections, vignette, grain, calibration, masks, spots
+    case sharpening, noiseReduction, lensCorrections, vignette, grain, lensBlur, calibration, masks, spots
     case orientation, perspective, crop
 
     var id: Self { self }
@@ -38,6 +38,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         case .lensCorrections: L("镜头校正")
         case .vignette: L("裁剪后暗角")
         case .grain: L("颗粒")
+        case .lensBlur: L("镜头模糊")
         case .calibration: L("校准")
         case .masks: L("蒙版")
         case .spots: L("污点去除")
@@ -59,16 +60,17 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         (L("LUT"), [.lut]),
         (L("细节"), [.sharpening, .noiseReduction]),
         (L("镜头校正"), [.lensCorrections]),
-        (L("效果"), [.vignette, .grain]),
+        (L("效果"), [.vignette, .grain, .lensBlur]),
         (L("校准"), [.calibration]),
         (L("蒙版"), [.masks]),
         (L("污点去除"), [.spots]),
         (L("裁剪与旋转"), [.orientation, .perspective, .crop]),
     ]
 
-    /// Copy leaves framing, masks and spots alone unless asked: they belong to one photo's
-    /// content (sensor dust in a burst is the exception worth ticking spots for).
-    static let defaultCopy = Set(allCases).subtracting([.orientation, .perspective, .crop, .masks, .spots])
+    /// Copy leaves framing, masks, spots and lens blur alone unless asked: they belong to one
+    /// photo's content (lens blur's focus is a depth in that photo; sensor dust in a burst is the
+    /// exception worth ticking spots for).
+    static let defaultCopy = Set(allCases).subtracting([.orientation, .perspective, .crop, .masks, .spots, .lensBlur])
 
     /// Whether `settings` differ from as shot in this field.
     func isAdjusted(in settings: DevelopSettings) -> Bool {
@@ -129,6 +131,7 @@ extension DevelopSettings {
                 next.grain = source.grain
                 next.grainSize = source.grainSize
                 next.grainRoughness = source.grainRoughness
+            case .lensBlur: next.lensBlur = source.lensBlur
             case .calibration:
                 next.shadowTint = source.shadowTint
                 next.redHue = source.redHue

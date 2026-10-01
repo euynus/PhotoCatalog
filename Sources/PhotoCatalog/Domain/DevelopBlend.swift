@@ -36,6 +36,14 @@ extension DevelopSettings {
             }
         }
 
+        // so does lens blur: from no blur, not from the amount an unused one keeps
+        if base.hasLensBlur != target.hasLensBlur, amount > 0 {
+            let on = base.hasLensBlur ? base.lensBlur : target.lensBlur
+            result.lensBlur = on
+            result.lensBlur.amount = mix(base.hasLensBlur ? on.amount : 0, target.hasLensBlur ? on.amount : 0, 0...100, step: 1)
+            result.lensBlur.enabled = result.lensBlur.amount > 0
+        }
+
         // white balance: an unset value counts from where it stands, as shot or zero
         let temperatureRange: ClosedRange<Double> = isRaw ? 2000...12000 : -100...100
         let tintRange: ClosedRange<Double> = isRaw ? -150...150 : -100...100
@@ -81,7 +89,7 @@ extension DevelopSettings {
         let regions = ColorGrading.Region.allCases.flatMap { DevelopControl.grading($0).dropFirst() }
         let mixer = ColorMixer.Property.allCases.flatMap { DevelopControl.mixer($0) }
         return DevelopControl.tone + DevelopControl.presence + Array(regions) + DevelopControl.gradingShape + mixer
-            + DevelopControl.grayMixer + DevelopControl.calibration
+            + DevelopControl.grayMixer + DevelopControl.calibration + [DevelopControl.lensBlur[0]]
             + DevelopControl.detail + DevelopControl.lens + DevelopControl.defringe + DevelopControl.effects
             + DevelopControl.transform
             + [DevelopControl.lutAmount, DevelopControl.profileAmount]

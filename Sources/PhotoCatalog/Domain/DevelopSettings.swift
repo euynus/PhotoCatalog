@@ -68,6 +68,8 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var grain: Double = 0
     var grainSize: Double = 25
     var grainRoughness: Double = 50
+    /// Lens blur by depth (see `LensBlur`), off unless enabled.
+    var lensBlur = LensBlur()
     /// Calibration, applied first, as Lightroom's changes the camera's color rendering: a green
     /// (negative) to magenta tint in the shadows, and each primary's hue and saturation, all
     /// -100…100 (see `DevelopRenderer.applyCalibration`).
@@ -115,6 +117,8 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var hasChromaticAberrationCorrection: Bool { removeChromaticAberration || defringePurple != 0 || defringeGreen != 0 }
 
     var hasEffects: Bool { vignette != 0 || grain != 0 }
+
+    var hasLensBlur: Bool { lensBlur.enabled && lensBlur.amount > 0 }
 
     var hasCalibration: Bool {
         [shadowTint, redHue, redSaturation, greenHue, greenSaturation, blueHue, blueSaturation].contains { $0 != 0 }
@@ -170,6 +174,9 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
             || grainSize != 25 || grainRoughness != 50 {
             text += String(format: "|e%.1f,%.1f,%.1f,%.1f,%.1f,%.1f", vignette, vignetteMidpoint, vignetteFeather,
                            grain, grainSize, grainRoughness)
+        }
+        if lensBlur.enabled {
+            text += String(format: "|b%.0f,%.3f,%.0f", lensBlur.amount, lensBlur.focus, lensBlur.range)
         }
         if hasCalibration {
             text += String(format: "|q%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f", shadowTint, redHue, redSaturation, greenHue,
@@ -231,6 +238,7 @@ extension DevelopSettings {
         grain = try container.decodeIfPresent(Double.self, forKey: .grain) ?? 0
         grainSize = try container.decodeIfPresent(Double.self, forKey: .grainSize) ?? 25
         grainRoughness = try container.decodeIfPresent(Double.self, forKey: .grainRoughness) ?? 50
+        lensBlur = try container.decodeIfPresent(LensBlur.self, forKey: .lensBlur) ?? LensBlur()
         shadowTint = try container.decodeIfPresent(Double.self, forKey: .shadowTint) ?? 0
         redHue = try container.decodeIfPresent(Double.self, forKey: .redHue) ?? 0
         redSaturation = try container.decodeIfPresent(Double.self, forKey: .redSaturation) ?? 0
@@ -247,6 +255,29 @@ extension DevelopSettings {
         perspectiveHorizontal = try container.decodeIfPresent(Double.self, forKey: .perspectiveHorizontal) ?? 0
         straighten = try container.decodeIfPresent(Double.self, forKey: .straighten) ?? 0
         crop = try container.decodeIfPresent(DevelopCrop.self, forKey: .crop)
+    }
+}
+
+/// Lens blur, as Lightroom's: the photo blurred by how far each part is from a band of depth
+/// kept sharp (see `DepthMap`). Depth runs from 0, the farthest part of the photo, to 1, the
+/// nearest.
+struct LensBlur: Codable, Equatable, Hashable, Sendable {
+    var enabled = false
+    /// 0…100: how strongly the farthest-out parts blur.
+    var amount: Double = 50
+    /// The depth in focus.
+    var focus: Double = 0.8
+    /// 0…100: how deep the sharp band around it is.
+    var range: Double = 20
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        amount = try c.decodeIfPresent(Double.self, forKey: .amount) ?? 50
+        focus = try c.decodeIfPresent(Double.self, forKey: .focus) ?? 0.8
+        range = try c.decodeIfPresent(Double.self, forKey: .range) ?? 20
     }
 }
 
@@ -633,6 +664,14 @@ struct DevelopControl: Identifiable {
     static let transform: [DevelopControl] = [
         signed(\.perspectiveVertical, L("垂直")),
         signed(\.perspectiveHorizontal, L("水平")),
+    ]
+
+    static let lensBlur: [DevelopControl] = [
+        amount(\.lensBlur.amount, L("模糊量"), max: 100, neutral: 50),
+        DevelopControl(id: \.lensBlur.focus, title: L("焦点距离"), range: 0...1, step: 0.01, neutral: 0.8) {
+            String(format: "%.0f", $0 * 100)
+        },
+        amount(\.lensBlur.range, L("对焦范围"), max: 100, neutral: 20),
     ]
 
     static let calibration: [DevelopControl] = [

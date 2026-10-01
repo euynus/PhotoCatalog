@@ -176,6 +176,13 @@ struct DevelopPanel: View {
                 section(L("效果")) {
                     ForEach(DevelopControl.effects) { control in slider(control, asset, settings) }
                 }
+                section(L("镜头模糊"), accessory: {
+                    Toggle("镜头模糊", isOn: Binding(get: { settings.lensBlur.enabled }, set: { app.setLensBlur($0, for: asset) }))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .labelsHidden()
+                        .help("按照片中的远近模糊焦点以外的部分")
+                }) { lensBlur(asset, settings) }
                 section(L("校准")) {
                     ForEach(DevelopControl.calibration) { control in slider(control, asset, settings) }
                 }
@@ -801,6 +808,30 @@ struct DevelopPanel: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    // ---- lens blur: depth-of-field from the photo's estimated depth ----
+    @ViewBuilder
+    private func lensBlur(_ asset: Asset, _ settings: DevelopSettings) -> some View {
+        if settings.lensBlur.enabled {
+            ForEach(DevelopControl.lensBlur) { control in slider(control, asset, settings) }
+            HStack(spacing: 6) {
+                Toggle(isOn: Binding(get: { app.developPickingFocus }, set: { app.developPickingFocus = $0 })) {
+                    Label("点选焦点", systemImage: "scope")
+                }
+                .toggleStyle(.button)
+                .help("点选照片中要保持清晰的地方")
+                Toggle(isOn: Binding(get: { app.developShowsDepth }, set: { app.developShowsDepth = $0 })) {
+                    Label("显示深度", systemImage: "square.3.layers.3d.down.backward")
+                }
+                .toggleStyle(.button)
+                .help("用颜色显示照片中的远近：暖色近，冷色远")
+            }
+            .controlSize(.small)
+        } else {
+            Text("按照片中的远近虚化背景或前景，深度由本机模型估计")
+                .font(.system(size: 11)).foregroundStyle(Theme.text3)
+        }
     }
 
     // ---- soft proofing: the photo through an output profile ----
