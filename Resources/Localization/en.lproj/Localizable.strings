@@ -1692,3 +1692,21 @@
 "纸张" = "Paper";
 "边距" = "Margins";
 "间距" = "Spacing";
+
+/* Auto-stack */
+"堆叠" = "Stacking";
+"按拍摄时间自动叠放…" = "Auto-Stack by Capture Time…";
+"取消自动叠放" = "Turn Off Auto-Stacking";
+"展开/折叠堆栈 (S)" = "Expand/Collapse Stack (S)";
+"折叠全部堆栈" = "Collapse All Stacks";
+"展开全部堆栈" = "Expand All Stacks";
+"按拍摄时间自动叠放" = "Auto-Stack by Capture Time";
+"同一台相机在这段时间内接连拍下的照片（连拍、包围曝光）叠放为一组，之后导入的照片也一样。" = "Photos one camera took in quick succession (bursts, brackets) stack together, and so will photos imported later.";
+"间隔不超过" = "Time between";
+"叠放" = "Stack";
+"自动叠放" = "Auto-Stack";
+"已取消按拍摄时间自动叠放" = "Auto-stacking by capture time is off";
+"%lld 秒" = "%lld seconds";
+"%lld 分钟" = "%lld minutes";
+"将生成 %lld 个堆栈，共 %lld 张照片" = "Makes %lld stacks of %lld photos";
+"已按拍摄时间叠放为 %lld 个堆栈" = "Stacked by capture time into %lld stacks";

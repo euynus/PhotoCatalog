@@ -3,8 +3,55 @@ import Foundation
 /// Culling keys keep the cursor's place, advance on Shift or auto-advance, and never move a batch.
 enum CullingCheck {
     static func run() {
-        MainActor.assumeIsolated { check() }
+        MainActor.assumeIsolated {
+            check()
+            checkAutoStack()
+        }
         print("--- culling rhythm assertions passed ---")
+    }
+
+    /// Auto-stack by capture time: bursts from one camera stack, collapsed, undoably.
+    @MainActor
+    private static func checkAutoStack() {
+        let byCamera = Dictionary(grouping: DemoData.assets.filter { !$0.camera.isEmpty }, by: \.camera)
+        guard let burstCamera = byCamera.first(where: { $0.value.count >= 6 })?.key,
+              let other = DemoData.assets.first(where: { !$0.camera.isEmpty && $0.camera != burstCamera }) else {
+            assertionFailure("the demo set has several cameras")
+            return
+        }
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var photos = Array(byCamera[burstCamera]!.prefix(6))
+        for (i, offset) in [0.0, 1, 2, 10, 11, 100].enumerated() { photos[i].date = start.addingTimeInterval(offset) }
+        var stranger = other
+        stranger.date = start.addingTimeInterval(1.5)   // between two of the burst, from another camera
+        let groups = PhotoStackService.captureTimeGroups(photos + [stranger], within: 2)
+        assert(groups == [photos[0...2].map(\.id), photos[3...4].map(\.id)],
+               "photos from one camera within the interval stack in order; another camera's and lone photos don't")
+        assert(PhotoStackService.captureTimeGroups(photos, within: 0.5).isEmpty
+               && PhotoStackService.captureTimeGroups(photos, within: 3600).first?.count == 6, "the interval decides")
+
+        let saved = UserDefaults.standard.object(forKey: "pc_autoStackSeconds")
+        defer { UserDefaults.standard.set(saved, forKey: "pc_autoStackSeconds") }
+        let app = AppState.selfCheckFixture()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        app.undoManager = undo
+        app.duplicateGroupsCache = []
+        app.autoStackSeconds = nil
+        app.assets = photos + [stranger]
+        let before = app.list.count
+        let preview = app.autoStackPreview(seconds: 2)
+        assert(preview.stacks == 2 && preview.photos == 5, "the dialog's preview counts the stacks it would make")
+        undo.beginUndoGrouping()
+        app.setAutoStack(seconds: 2)
+        undo.endUndoGrouping()
+        let info = app.stackInfo(for: photos[0])
+        assert(info?.count == 3 && info?.collapsed == true && app.list.count == before - 3,
+               "auto-stacking collapses the bursts to their first photos")
+        app.setAllStacksCollapsed(false)
+        assert(app.list.count == before && app.stackInfo(for: photos[3])?.collapsed == false, "expand all opens every stack")
+        undo.undo()
+        assert(app.autoStackSeconds == nil && app.stackInfo(for: photos[0]) == nil, "undo turns auto-stacking off again")
     }
 
     @MainActor

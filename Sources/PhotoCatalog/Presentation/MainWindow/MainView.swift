@@ -86,6 +86,8 @@ struct MainView: View {
             let items = app.renderedExportItems()
             RenderedExportSheet(settings: app.renderedExportSettings, folder: app.renderedExportFolder,
                                 sample: items.first, count: items.count)
+        case "autoStack":
+            AutoStackSheet(seconds: app.autoStackSeconds ?? 5)
         case "print":
             PrintSheet(settings: app.printSettings, items: app.printItems())
         case "rename":

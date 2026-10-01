@@ -82,6 +82,19 @@ struct PhotoCatalogCommands: Commands {
             .disabled(!app.canEditInExternalEditor)
             Button("选择外部编辑器…") { perform("照片.选择外部编辑器") { app.chooseExternalEditor() } }
                 .disabled(app.sheet != nil)
+            Menu("堆叠") {
+                Button("按拍摄时间自动叠放…") { perform("照片.自动叠放") { app.sheet = "autoStack" } }
+                Button("取消自动叠放") { perform("照片.取消自动叠放") { app.setAutoStack(seconds: nil) } }
+                    .disabled(app.autoStackSeconds == nil)
+                Divider()
+                Button("展开/折叠堆栈 (S)") { perform("照片.展开折叠堆栈") { app.toggleStackForPrimary() } }
+                    .disabled(!app.hasStacks || app.primaryId == nil)
+                Button("折叠全部堆栈") { perform("照片.折叠全部堆栈") { app.setAllStacksCollapsed(true) } }
+                    .disabled(!app.hasStacks)
+                Button("展开全部堆栈") { perform("照片.展开全部堆栈") { app.setAllStacksCollapsed(false) } }
+                    .disabled(!app.hasStacks)
+            }
+            .disabled(app.sheet != nil || !app.onboarded)
             Menu("照片合并") {
                 Button("HDR…") { perform("照片.HDR合并") { app.showPhotoMerge(.hdr) } }
                     .keyboardShortcut("h", modifiers: .control)

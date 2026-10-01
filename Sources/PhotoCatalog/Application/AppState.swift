@@ -130,6 +130,19 @@ final class AppState {
     }
     private var collapsedStackIds: Set<String> = []
     @ObservationIgnored private var photoStacksCache: [PhotoStack]?
+    @ObservationIgnored private var captureTimeGroupsCache: (version: Int, seconds: Double, groups: [[String]])?
+    /// Auto-stacking by capture time: photos from one camera taken within this many seconds of
+    /// each other stack together, as Lightroom's Auto-Stack by Capture Time (nil: off).
+    var autoStackSeconds: Double? = UserDefaults.standard.object(forKey: "pc_autoStackSeconds") as? Double {
+        didSet {
+            UserDefaults.standard.set(autoStackSeconds, forKey: "pc_autoStackSeconds")
+            captureTimeGroupsCache = nil
+            photoStacksCache = nil
+            stackByAssetCache = nil
+            stackInputsVersion &+= 1
+            listInputsVersion &+= 1
+        }
+    }
     /// Originals with their edited copies, derived from file names once per structure change.
     @ObservationIgnored private var editGroupsCache: (version: Int, groups: [DuplicateGroup])?
     @ObservationIgnored private var stackByAssetCache: [String: PhotoStack]?
@@ -482,6 +495,7 @@ final class AppState {
 
     /// Pairing changes what every count and list shows.
     private func invalidatePresentationCaches() {
+        captureTimeGroupsCache = nil
         folderTreeCountCache = nil
         captureDateGroupsCache = nil
         keywordListCache = nil
@@ -6834,10 +6848,57 @@ final class AppState {
             edits = EditedVersions.groups(assets)
             editGroupsCache = (structureVersion, edits)
         }
-        let stacks = PhotoStackService.stacks(from: edits + duplicateGroupsCache)
+        let stacks = PhotoStackService.stacks(from: edits + duplicateGroupsCache, captureTimeGroups: captureTimeGroups())
         photoStacksCache = stacks
         return stacks
     }
+
+    /// The capture-time groups for `autoStackSeconds` (none when it's off), kept per structure change.
+    private func captureTimeGroups(seconds: Double? = nil) -> [[String]] {
+        guard let seconds = seconds ?? autoStackSeconds else { return [] }
+        if let cached = captureTimeGroupsCache, cached.version == structureVersion, cached.seconds == seconds {
+            return cached.groups
+        }
+        let pairing = assetPairing
+        let groups = PhotoStackService.captureTimeGroups(
+            assets.filter { !$0.deleted && !pairing.isHiddenCompanion($0.id) }, within: seconds)
+        if seconds == autoStackSeconds { captureTimeGroupsCache = (structureVersion, seconds, groups) }
+        return groups
+    }
+
+    /// How many stacks, of how many photos, auto-stacking with `seconds` makes.
+    func autoStackPreview(seconds: Double) -> (stacks: Int, photos: Int) {
+        let groups = captureTimeGroups(seconds: seconds)
+        return (groups.count, groups.reduce(0) { $0 + $1.count })
+    }
+
+    /// Turns auto-stacking on with `seconds` (folding the new stacks shut) or off, undoably.
+    func setAutoStack(seconds: Double?) {
+        let previous = autoStackSeconds
+        guard previous != seconds else { return }
+        autoStackSeconds = seconds
+        if seconds != nil {
+            let made = photoStacks.filter { $0.method == "captureTime" }
+            collapsedStackIds.formUnion(made.map(\.id))
+            push("已按拍摄时间叠放为 \(made.count) 个堆栈", "square.stack.3d.down.right")
+        } else {
+            push("已取消按拍摄时间自动叠放", "square.stack.3d.up.slash")
+        }
+        collapsedStackIds.formIntersection(Set(photoStacks.map(\.id)))
+        normalizeSelectionToVisibleList()
+        undoManager?.registerUndo(withTarget: self) { app in
+            MainActor.assumeIsolated { app.setAutoStack(seconds: previous) }
+        }
+        undoManager?.setActionName(L("自动叠放"))
+    }
+
+    /// Folds every stack shut, or opens every one.
+    func setAllStacksCollapsed(_ collapsed: Bool) {
+        collapsedStackIds = collapsed ? Set(photoStacks.map(\.id)) : []
+        normalizeSelectionToVisibleList()
+    }
+
+    var hasStacks: Bool { !photoStacks.isEmpty }
 
     /// O(1) asset → stack lookup, rebuilt only when the stacks change (invalidated in didSet).
     private var stackByAsset: [String: PhotoStack] {

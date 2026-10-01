@@ -143,6 +143,22 @@
 			<string>%lld files</string>
 		</dict>
 	</dict>
+	<key>%lld 分钟</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld minute</string>
+			<key>other</key>
+			<string>%lld minutes</string>
+		</dict>
+	</dict>
 	<key>%lld 处</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -383,6 +399,22 @@
 			<string>%lld stars</string>
 		</dict>
 	</dict>
+	<key>%lld 秒</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld second</string>
+			<key>other</key>
+			<string>%lld seconds</string>
+		</dict>
+	</dict>
 	<key>%lld 项条件</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -557,6 +589,33 @@
 			<string>%lld duplicate photo</string>
 			<key>other</key>
 			<string>%lld duplicate photos</string>
+		</dict>
+	</dict>
+	<key>将生成 %lld 个堆栈，共 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Makes %#@n1@ of %#@n2@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld stack</string>
+			<key>other</key>
+			<string>%lld stacks</string>
+		</dict>
+		<key>n2</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
 		</dict>
 	</dict>
 	<key>将移动 %lld 个磁盘原件，并更新目录库中的文件路径。</key>
@@ -1053,6 +1112,22 @@
 			<string>%lld photo</string>
 			<key>other</key>
 			<string>%lld photos</string>
+		</dict>
+	</dict>
+	<key>已按拍摄时间叠放为 %lld 个堆栈</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Stacked by capture time into %#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld stack</string>
+			<key>other</key>
+			<string>%lld stacks</string>
 		</dict>
 	</dict>
 	<key>已按轨迹为 %lld 张照片添加位置</key>
@@ -1614,6 +1689,38 @@
 			<string>%lld photo</string>
 			<key>other</key>
 			<string>%lld photos</string>
+		</dict>
+	</dict>
+	<key>预计约 %lld 分钟</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>About %#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld minute</string>
+			<key>other</key>
+			<string>%lld minutes</string>
+		</dict>
+	</dict>
+	<key>预计约 %lld 秒</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>About %#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld second</string>
+			<key>other</key>
+			<string>%lld seconds</string>
 		</dict>
 	</dict>
 </dict>

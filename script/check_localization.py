@@ -65,13 +65,14 @@ SPEC_OVERRIDES = {
     'DateFmt.shortCapture(last)': '%@', 'DateFmt.shortCapture(first)': '%@',
     'shiftMinutes': '%lld', 'shiftHours': '%lld', 'pair': '%@', 'app.recentImportDays': '%lld',
     'singles': '%lld', 'unconfirmed': '%lld', 'person.unconfirmed': '%lld', 'k': '%@', 'active': '%lld',
-    'app.cacheLimitMB': '%lld', 'person': '%@', 'plan.clashes': '%lld', 'plan.taken': '%lld', 'result.added': '%lld', 'gap + 1': '%lld', 'gap + 2': '%lld', 'person + 1': '%lld', 'readOnly': '%lld', 'status': '%lld', 'excerpt': '%@', 'applied': '%lld', 'query': '%@', 'unreadable': '%lld', 'roundedSeconds': '%lld', 'minutes': '%lld', 'editor': '%@', 'settings.rows': '%lld', 'settings.columns': '%lld',
+    'app.cacheLimitMB': '%lld', 'person': '%@', 'plan.clashes': '%lld', 'plan.taken': '%lld', 'result.added': '%lld', 'gap + 1': '%lld', 'gap + 2': '%lld', 'person + 1': '%lld', 'readOnly': '%lld', 'status': '%lld', 'excerpt': '%@', 'applied': '%lld', 'query': '%@', 'unreadable': '%lld', 'roundedSeconds': '%lld', 'minutes': '%lld', 'editor': '%@', 'settings.rows': '%lld', 'settings.columns': '%lld', 'preview.stacks': '%lld', 'preview.photos': '%lld',
 }
 # English plurals: "%lld <noun>" gets a singular form in the .stringsdict
 NOUNS = {'photos': 'photo', 'files': 'file', 'originals': 'original', 'faces': 'face', 'groups': 'group',
          'people': 'person', 'days': 'day', 'stars': 'star', 'jobs': 'job', 'sidecars': 'sidecar',
          'conditions': 'condition', 'values': 'value', 'locations': 'location', 'previews': 'preview',
-         'assets': 'asset', 'records': 'record', 'spots': 'spot', 'steps': 'step', 'copies': 'copy', 'presets': 'preset', 'colors': 'color', 'LUTs': 'LUT'}
+         'assets': 'asset', 'records': 'record', 'spots': 'spot', 'steps': 'step', 'copies': 'copy', 'presets': 'preset', 'colors': 'color', 'LUTs': 'LUT',
+         'stacks': 'stack', 'seconds': 'second', 'minutes': 'minute'}
 ADJECTIVES = r'(?:(?:duplicate|new|changed|failed|automatically|recognized|unnamed|XMP|disk|photo|virtual) )*'
 
 

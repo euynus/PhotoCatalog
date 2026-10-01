@@ -28,6 +28,7 @@ appearance (Settings → 外观), a neutral dark photo canvas in every mode, and
 - **Inspector** — header with focal length / aperture / shutter / ISO at a glance, then Info / Metadata (EXIF, GPS, maker notes) / Organize (rating, flags, color, keywords, title, caption) / History.
 - **Smart Album builder** — AND/OR rule rows with a live match-count preview.
 - **Duplicate detection** — exact (content-hash) & perceptual groups with keep-one resolution.
+- **Stacks** — duplicates and edited copies stack with their originals; 照片 → 堆叠 → 按拍摄时间自动叠放… (Lightroom's Auto-Stack by Capture Time) stacks photos one camera took within 1 s – 1 h of each other (bursts, brackets; the dialog counts the stacks as the slider moves), keeps doing so for later imports, collapses the new stacks, and undoes in one step; `S` (or the badge) opens or closes a stack, and the menu collapses or expands them all.
 - **Import / scan** — animated scan→import progress with a 5-stat panel and a thumbnail wall.
 - **First-launch / Welcome** — catalog creation card with recents.
 - **Interactions** — click / ⌘-click / ⇧-click selection, live search, filter bar, sort, toasts, and keyboard shortcuts:

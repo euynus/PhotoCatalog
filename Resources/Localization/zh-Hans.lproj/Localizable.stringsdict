@@ -33,6 +33,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>%lld 个文件失败 · 可稍后重试</string>
 	</dict>
+	<key>%lld 分钟</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 分钟</string>
+	</dict>
 	<key>%lld 处</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -108,6 +113,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>%lld 星及以上</string>
 	</dict>
+	<key>%lld 秒</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 秒</string>
+	</dict>
 	<key>%lld 项条件</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -162,6 +172,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>将把 %lld 个重复照片的磁盘原件移到废纸篓，并从目录库移除对应记录。</string>
+	</dict>
+	<key>将生成 %lld 个堆栈，共 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>将生成 %lld 个堆栈，共 %lld 张照片</string>
 	</dict>
 	<key>将移动 %lld 个磁盘原件，并更新目录库中的文件路径。</key>
 	<dict>
@@ -317,6 +332,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已折叠 %lld 张照片为堆栈</string>
+	</dict>
+	<key>已按拍摄时间叠放为 %lld 个堆栈</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已按拍摄时间叠放为 %lld 个堆栈</string>
 	</dict>
 	<key>已按轨迹为 %lld 张照片添加位置</key>
 	<dict>
@@ -482,6 +502,16 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>重命名 %lld 张</string>
+	</dict>
+	<key>预计约 %lld 分钟</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>预计约 %lld 分钟</string>
+	</dict>
+	<key>预计约 %lld 秒</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>预计约 %lld 秒</string>
 	</dict>
 </dict>
 </plist>
