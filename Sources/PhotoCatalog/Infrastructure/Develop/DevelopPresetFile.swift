@@ -78,6 +78,13 @@ enum DevelopPresetFile {
             Scalar(key: "GrainFrequency", path: \.grainRoughness, field: .grain, format: "%.0f"),
             Scalar(key: "PerspectiveVertical", path: \.perspectiveVertical, field: .perspective, format: "%+.0f"),
             Scalar(key: "PerspectiveHorizontal", path: \.perspectiveHorizontal, field: .perspective, format: "%+.0f"),
+            Scalar(key: "ShadowTint", path: \.shadowTint, field: .calibration, format: "%+.0f"),
+            Scalar(key: "RedHue", path: \.redHue, field: .calibration, format: "%+.0f"),
+            Scalar(key: "RedSaturation", path: \.redSaturation, field: .calibration, format: "%+.0f"),
+            Scalar(key: "GreenHue", path: \.greenHue, field: .calibration, format: "%+.0f"),
+            Scalar(key: "GreenSaturation", path: \.greenSaturation, field: .calibration, format: "%+.0f"),
+            Scalar(key: "BlueHue", path: \.blueHue, field: .calibration, format: "%+.0f"),
+            Scalar(key: "BlueSaturation", path: \.blueSaturation, field: .calibration, format: "%+.0f"),
             Scalar(key: "ColorGradeBlending", path: \.grading.blending, field: .colorGrading, format: "%.0f"),
             Scalar(key: "ColorGradeBalance", path: \.grading.balance, field: .colorGrading, format: "%+.0f"),
         ]

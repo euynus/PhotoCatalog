@@ -8,7 +8,7 @@ import Foundation
 enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
     case profile, whiteBalance, exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze
     case vibrance, saturation, toneCurve, colorMixer, grayMixer, colorGrading, lut
-    case sharpening, noiseReduction, lensCorrections, vignette, grain, masks, spots
+    case sharpening, noiseReduction, lensCorrections, vignette, grain, calibration, masks, spots
     case orientation, perspective, crop
 
     var id: Self { self }
@@ -38,6 +38,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         case .lensCorrections: L("镜头校正")
         case .vignette: L("裁剪后暗角")
         case .grain: L("颗粒")
+        case .calibration: L("校准")
         case .masks: L("蒙版")
         case .spots: L("污点去除")
         case .orientation: L("旋转与翻转")
@@ -59,6 +60,7 @@ enum DevelopField: String, CaseIterable, Codable, Identifiable, Sendable {
         (L("细节"), [.sharpening, .noiseReduction]),
         (L("镜头校正"), [.lensCorrections]),
         (L("效果"), [.vignette, .grain]),
+        (L("校准"), [.calibration]),
         (L("蒙版"), [.masks]),
         (L("污点去除"), [.spots]),
         (L("裁剪与旋转"), [.orientation, .perspective, .crop]),
@@ -127,6 +129,14 @@ extension DevelopSettings {
                 next.grain = source.grain
                 next.grainSize = source.grainSize
                 next.grainRoughness = source.grainRoughness
+            case .calibration:
+                next.shadowTint = source.shadowTint
+                next.redHue = source.redHue
+                next.redSaturation = source.redSaturation
+                next.greenHue = source.greenHue
+                next.greenSaturation = source.greenSaturation
+                next.blueHue = source.blueHue
+                next.blueSaturation = source.blueSaturation
             case .masks: next.masks = source.masks
             case .spots: next.spots = source.spots
             case .orientation:

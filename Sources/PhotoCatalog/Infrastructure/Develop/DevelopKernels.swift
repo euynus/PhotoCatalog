@@ -176,6 +176,15 @@ enum DevelopKernels {
             return float4(y, y, y, s.a);
         }
         """,
+        "shadowTint": """
+        // Calibration's shadows tint on linear light: magenta (amount > 0) or green, strongest in
+        // the deepest tones and gone by mid-gray; multiplied in, so black stays black.
+        [[stitchable]] float4 shadowTint(sample_t s, float amount) {
+            float y = dot(max(s.rgb, 0.0), float3(0.2290, 0.6917, 0.0793));
+            float w = 1.0 - smoothstep(0.0, 0.15, y);
+            return float4(s.rgb * (1.0 + float3(1.0, -1.0, 1.0) * amount * 0.3 * w), s.a);
+        }
+        """,
         "colorGrading": """
         \(hsl)
         // Color grading on display-encoded color. Each grade is (hue°, saturation 0…1, luminance
@@ -485,6 +494,12 @@ enum DevelopKernels {
         let m = mix.map { $0 / 100 }
         return kernel.apply(extent: image.extent, arguments: [image, CIVector(x: m[0], y: m[1], z: m[2], w: m[3]),
                                                               CIVector(x: m[4], y: m[5], z: m[6], w: m[7])]) ?? image
+    }
+
+    /// Calibration's shadows tint on linear `image`, `amount` -100…100 (see the kernel).
+    static func shadowTint(_ image: CIImage, _ amount: Double) -> CIImage {
+        guard amount != 0, let kernel = kernel("shadowTint") as? CIColorKernel else { return image }
+        return kernel.apply(extent: image.extent, arguments: [image, amount / 100]) ?? image
     }
 
     /// Color grading on display-encoded `image` (see the kernel).

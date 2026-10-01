@@ -92,7 +92,8 @@ enum DevelopRenderer {
             let lateral = settings.removeChromaticAberration ? ChromaticAberration.correction(url: url, isRaw: isRaw) : nil
             let lensed = DevelopRenderer.applyLens(base, settings, scale: min(1, scale), lateral: lateral)
             let healed = DevelopRenderer.applySpots(lensed, settings, photo: (url: url, isRaw: isRaw))
-            let toned = DevelopRenderer.applyTone(DevelopRenderer.applyProfile(healed, settings), settings)
+            let calibrated = DevelopRenderer.applyCalibration(healed, settings)
+            let toned = DevelopRenderer.applyTone(DevelopRenderer.applyProfile(calibrated, settings), settings)
             let colored = DevelopRenderer.applyLUT(
                 DevelopRenderer.applyMixer(DevelopRenderer.applyCurve(toned, settings), settings), settings)
             let present = DevelopRenderer.applyPresence(colored, settings)
@@ -356,6 +357,45 @@ enum DevelopRenderer {
             "inputCurvesDomain": CIVector(x: 0, y: 1),
             "inputColorSpace": outputColorSpace,
         ])
+    }
+
+    /// Calibration on linear light: the primaries moved by a matrix that keeps white white, then
+    /// the shadows tinted (see `calibrationMatrix` and the kernel).
+    static func applyCalibration(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
+        guard s.hasCalibration else { return input }
+        var image = input
+        if [s.redHue, s.redSaturation, s.greenHue, s.greenSaturation, s.blueHue, s.blueSaturation].contains(where: { $0 != 0 }) {
+            let rows = calibrationMatrix(s)
+            func vector(_ row: SIMD3<Double>) -> CIVector { CIVector(x: row.x, y: row.y, z: row.z, w: 0) }
+            image = image.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": vector(rows.r), "inputGVector": vector(rows.g), "inputBVector": vector(rows.b),
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1), "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            ])
+        }
+        return DevelopKernels.shadowTint(image, s.shadowTint)
+    }
+
+    /// The rows of the calibration matrix on linear RGB. Each primary's hue leans toward a
+    /// neighbor (red: + yellow, − magenta; green: + cyan, − yellow; blue: + purple, − cyan) and its
+    /// saturation scales its distance from its own gray; then every row is scaled so white —
+    /// and every gray — comes out as it went in.
+    static func calibrationMatrix(_ s: DevelopSettings) -> (r: SIMD3<Double>, g: SIMD3<Double>, b: SIMD3<Double>) {
+        let luma = SIMD3<Double>(0.2290, 0.6917, 0.0793)   // linear Display P3
+        func primary(_ unit: SIMD3<Double>, hue: Double, saturation: Double,
+                     plus: SIMD3<Double>, minus: SIMD3<Double>) -> SIMD3<Double> {
+            let h = max(-1, min(1, hue / 100)), sat = max(-1, min(1, saturation / 100))
+            var color = unit + (h > 0 ? plus : minus) * abs(h) * 0.3
+            let gray = SIMD3<Double>(repeating: (color * luma).sum())
+            color = gray + (color - gray) * (1 + sat * 0.6)
+            return color
+        }
+        let red = primary(SIMD3(1, 0, 0), hue: s.redHue, saturation: s.redSaturation, plus: SIMD3(0, 1, 0), minus: SIMD3(0, 0, 1))
+        let green = primary(SIMD3(0, 1, 0), hue: s.greenHue, saturation: s.greenSaturation, plus: SIMD3(0, 0, 1), minus: SIMD3(1, 0, 0))
+        let blue = primary(SIMD3(0, 0, 1), hue: s.blueHue, saturation: s.blueSaturation, plus: SIMD3(1, 0, 0), minus: SIMD3(0, 1, 0))
+        // the columns are where each primary goes; the rows are what the filter takes
+        let white = red + green + blue
+        return (SIMD3(red.x, green.x, blue.x) / white.x, SIMD3(red.y, green.y, blue.y) / white.y,
+                SIMD3(red.z, green.z, blue.z) / white.z)
     }
 
     /// The profile's look (see `DevelopProfile`) at its amount: its curve, then its color

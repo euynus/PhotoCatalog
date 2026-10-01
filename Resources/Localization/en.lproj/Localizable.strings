@@ -1618,3 +1618,13 @@
 "按照片中各颜色的明暗把它们在黑白中分开" = "Keep the photo's colors apart in gray by how light they are";
 "照片中的颜色太少，无法自动混合" = "The photo has too few colors for an automatic mix";
 "自动黑白混合" = "Auto B&W Mix";
+
+/* Calibration */
+"校准" = "Calibration";
+"阴影色调" = "Shadows Tint";
+"红原色色相" = "Red Primary Hue";
+"红原色饱和度" = "Red Primary Saturation";
+"绿原色色相" = "Green Primary Hue";
+"绿原色饱和度" = "Green Primary Saturation";
+"蓝原色色相" = "Blue Primary Hue";
+"蓝原色饱和度" = "Blue Primary Saturation";

@@ -13,6 +13,7 @@ enum DevelopCheck {
         checkColorMixer()
         checkProfiles()
         checkBlackAndWhite()
+        checkCalibration()
         checkColorGrading()
         checkLocalAdjustments()
         checkSpotRemoval()
@@ -396,6 +397,54 @@ enum DevelopCheck {
         assert(DevelopAuto.grayMix(rgba: pixels([(40, 120, 220)])) == nil
                && DevelopAuto.grayMix(rgba: [UInt8](repeating: 128, count: 400 * 4)) == nil,
                "and needs two colors to spread")
+    }
+
+    /// Calibration moves the primaries and tints the shadows, leaving white and grays alone.
+    private static func checkCalibration() {
+        let red = (0.85, 0.12, 0.1), blue = (0.12, 0.2, 0.85), gray = (0.5, 0.5, 0.5), white = (0.95, 0.95, 0.95)
+        func with(_ edit: (inout DevelopSettings) -> Void) -> DevelopSettings {
+            var settings = DevelopSettings()
+            edit(&settings)
+            return settings
+        }
+        func chroma(_ c: (r: Double, g: Double, b: Double)) -> Double { max(c.r, c.g, c.b) - min(c.r, c.g, c.b) }
+        let plainRed = mean(red, .neutral), plainBlue = mean(blue, .neutral)
+        let toward = with { $0.redHue = 100 }, away = with { $0.redHue = -100 }
+        assert(mean(red, toward).g > plainRed.g + 0.05 && mean(red, away).b > plainRed.b + 0.05,
+               "the red primary's hue leans toward orange or toward magenta")
+        assert(chroma(mean(red, with { $0.redSaturation = -100 })) < chroma(plainRed) - 0.05
+               && chroma(mean(blue, with { $0.blueSaturation = 100 })) >= chroma(plainBlue) - 0.005
+               && mean(blue, with { $0.blueHue = 100 }).r > plainBlue.r + 0.03,
+               "saturation scales a primary, and blue's hue leans toward purple")
+        let everything = with {
+            $0.redHue = 60; $0.redSaturation = -40; $0.greenHue = -50; $0.greenSaturation = 70; $0.blueHue = 30; $0.blueSaturation = -80
+        }
+        for tone in [gray, white] {
+            let c = mean(tone, everything), plain = mean(tone, .neutral)
+            assert(abs(c.r - plain.r) < 0.01 && abs(c.g - plain.g) < 0.01 && abs(c.b - plain.b) < 0.01,
+                   "the primaries move without tinting grays")
+        }
+        let rows = DevelopRenderer.calibrationMatrix(everything)
+        assert(abs(rows.r.sum() - 1) < 1e-9 && abs(rows.g.sum() - 1) < 1e-9 && abs(rows.b.sum() - 1) < 1e-9,
+               "the matrix keeps white")
+        let shadow = mean((0.12, 0.12, 0.12), with { $0.shadowTint = 100 })
+        let green = mean((0.12, 0.12, 0.12), with { $0.shadowTint = -100 })
+        let light = mean(white, with { $0.shadowTint = 100 })
+        assert(shadow.r > shadow.g + 0.01 && green.g > green.r + 0.01 && abs(light.r - light.g) < 0.01,
+               "the shadows tint turns dark tones magenta or green and leaves light ones")
+
+        let stored = try! JSONDecoder().decode(DevelopSettings.self, from: JSONEncoder().encode(everything))
+        assert(stored == everything && everything.fingerprint != DevelopSettings().fingerprint && everything.hasCalibration,
+               "calibration persists and changes the fingerprint")
+        assert(DevelopSettings().applying(everything, fields: [.calibration]).blueSaturation == -80
+               && DevelopField.defaultCopy.contains(.calibration), "calibration copies as one setting")
+        let text = DevelopPresetFile.xmp(for: DevelopPreset(id: "c", name: "C", transfer: DevelopTransfer(
+            settings: everything, fields: [.calibration], sourceIsRaw: true)))
+        let crsOnly = text.replacingOccurrences(of: #"\s*pc:Preset="[^"]*""#, with: "", options: .regularExpression)
+        let back = DevelopPresetFile.read(Data(crsOnly.utf8), fileName: "c.xmp")?.preset.transfer
+        assert(text.contains(#"crs:RedHue="+60""#) && text.contains(#"crs:BlueSaturation="-80""#)
+               && back?.settings.greenSaturation == 70 && back?.settings.redHue == 60 && back?.fields == [.calibration],
+               "calibration maps to Camera Raw's own settings")
     }
 
     private static func checkColorGrading() {

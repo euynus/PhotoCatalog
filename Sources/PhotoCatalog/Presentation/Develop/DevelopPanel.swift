@@ -169,6 +169,9 @@ struct DevelopPanel: View {
                 section(L("效果")) {
                     ForEach(DevelopControl.effects) { control in slider(control, asset, settings) }
                 }
+                section(L("校准")) {
+                    ForEach(DevelopControl.calibration) { control in slider(control, asset, settings) }
+                }
                 section(L("快照"), accessory: {
                     Button { app.createDevelopSnapshot(for: asset.id) } label: { Image(systemName: "plus") }
                         .buttonStyle(.borderless)

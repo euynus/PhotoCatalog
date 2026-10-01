@@ -68,6 +68,16 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var grain: Double = 0
     var grainSize: Double = 25
     var grainRoughness: Double = 50
+    /// Calibration, applied first, as Lightroom's changes the camera's color rendering: a green
+    /// (negative) to magenta tint in the shadows, and each primary's hue and saturation, all
+    /// -100…100 (see `DevelopRenderer.applyCalibration`).
+    var shadowTint: Double = 0
+    var redHue: Double = 0
+    var redSaturation: Double = 0
+    var greenHue: Double = 0
+    var greenSaturation: Double = 0
+    var blueHue: Double = 0
+    var blueSaturation: Double = 0
     /// Linear and radial gradients with their own adjustments, applied in order after the
     /// global tone, color and presence (see `LocalAdjustment`).
     var masks: [LocalAdjustment] = []
@@ -105,6 +115,10 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     var hasChromaticAberrationCorrection: Bool { removeChromaticAberration || defringePurple != 0 || defringeGreen != 0 }
 
     var hasEffects: Bool { vignette != 0 || grain != 0 }
+
+    var hasCalibration: Bool {
+        [shadowTint, redHue, redSaturation, greenHue, greenSaturation, blueHue, blueSaturation].contains { $0 != 0 }
+    }
 
     /// Tone and color only.
     var withoutGeometry: DevelopSettings {
@@ -156,6 +170,10 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
             || grainSize != 25 || grainRoughness != 50 {
             text += String(format: "|e%.1f,%.1f,%.1f,%.1f,%.1f,%.1f", vignette, vignetteMidpoint, vignetteFeather,
                            grain, grainSize, grainRoughness)
+        }
+        if hasCalibration {
+            text += String(format: "|q%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f", shadowTint, redHue, redSaturation, greenHue,
+                           greenSaturation, blueHue, blueSaturation)
         }
         if !masks.isEmpty { text += "|k" + masks.map(\.fingerprintText).joined(separator: ";") }
         if !spots.isEmpty { text += "|r" + spots.map(\.fingerprintText).joined(separator: ";") }
@@ -213,6 +231,13 @@ extension DevelopSettings {
         grain = try container.decodeIfPresent(Double.self, forKey: .grain) ?? 0
         grainSize = try container.decodeIfPresent(Double.self, forKey: .grainSize) ?? 25
         grainRoughness = try container.decodeIfPresent(Double.self, forKey: .grainRoughness) ?? 50
+        shadowTint = try container.decodeIfPresent(Double.self, forKey: .shadowTint) ?? 0
+        redHue = try container.decodeIfPresent(Double.self, forKey: .redHue) ?? 0
+        redSaturation = try container.decodeIfPresent(Double.self, forKey: .redSaturation) ?? 0
+        greenHue = try container.decodeIfPresent(Double.self, forKey: .greenHue) ?? 0
+        greenSaturation = try container.decodeIfPresent(Double.self, forKey: .greenSaturation) ?? 0
+        blueHue = try container.decodeIfPresent(Double.self, forKey: .blueHue) ?? 0
+        blueSaturation = try container.decodeIfPresent(Double.self, forKey: .blueSaturation) ?? 0
         // one by one: a mask of a kind this version doesn't know is left out, not the photo's edit
         masks = try container.decodeIfPresent(Lenient<LocalAdjustment>.self, forKey: .masks)?.elements ?? []
         spots = try container.decodeIfPresent(Lenient<SpotRemoval>.self, forKey: .spots)?.elements ?? []
@@ -608,6 +633,16 @@ struct DevelopControl: Identifiable {
     static let transform: [DevelopControl] = [
         signed(\.perspectiveVertical, L("垂直")),
         signed(\.perspectiveHorizontal, L("水平")),
+    ]
+
+    static let calibration: [DevelopControl] = [
+        signed(\.shadowTint, L("阴影色调")),
+        signed(\.redHue, L("红原色色相")),
+        signed(\.redSaturation, L("红原色饱和度")),
+        signed(\.greenHue, L("绿原色色相")),
+        signed(\.greenSaturation, L("绿原色饱和度")),
+        signed(\.blueHue, L("蓝原色色相")),
+        signed(\.blueSaturation, L("蓝原色饱和度")),
     ]
 
     static let effects: [DevelopControl] = [
