@@ -6,6 +6,7 @@
 
 Each model's weights are downloaded from its authors' release, checked against the SHA-256 below,
 traced at a fixed tile size and saved as Resources/Models/<Name>.mlpackage (16-bit weights).
+`depth`, `segmentation` and `objects` fetch Apple's own Core ML conversions instead, unchanged.
 Licenses are listed in Resources/Models/LICENSES.md.
 """
 import argparse
@@ -226,27 +227,56 @@ def quantize_inpaint(mlmodel):
 
 MODELS = {"superresolution": super_resolution, "denoise": denoise, "inpaint": inpaint}
 
-# ---- depth: Depth Anything V2 Small (Apache-2.0), as Apple converted it to Core ML ----
-DEPTH_PACKAGE = ("https://huggingface.co/apple/coreml-depth-anything-v2-small/resolve/main/"
-                 "DepthAnythingV2SmallF16P8.mlpackage/")
-DEPTH_FILES = {
-    "Manifest.json": "5530317f2a7c4318b34efd9855694480a78122d8be89e703278b0f7b9337dbdc",
-    "Data/com.apple.CoreML/model.mlmodel": "da3f4c6a8be93a439b1bc56ba57074c09f270b3d28052d798bc106d1259e5a1d",
-    "Data/com.apple.CoreML/weights/weight.bin": "660a57cf7becfeac080a9bb02a263be59fd57b5c4d17ff8912833bc8b6edae04",
+# ---- used as Apple converted and published them in Core ML (all Apache-2.0) ----
+HF = "https://huggingface.co/apple/"
+CORE_ML = "Data/com.apple.CoreML/"
+PUBLISHED = {
+    # Depth Anything V2 Small: 16-bit activations, 8-bit palettized weights
+    "depth": [("Depth", HF + "coreml-depth-anything-v2-small/resolve/main/DepthAnythingV2SmallF16P8.mlpackage/", {
+        "Manifest.json": "5530317f2a7c4318b34efd9855694480a78122d8be89e703278b0f7b9337dbdc",
+        CORE_ML + "model.mlmodel": "da3f4c6a8be93a439b1bc56ba57074c09f270b3d28052d798bc106d1259e5a1d",
+        CORE_ML + "weights/weight.bin": "660a57cf7becfeac080a9bb02a263be59fd57b5c4d17ff8912833bc8b6edae04",
+    })],
+    # DETR ResNet-50 semantic segmentation (COCO things and stuff), 8-bit palettized weights
+    "segmentation": [("Segmentation", HF + "coreml-detr-semantic-segmentation/resolve/main/"
+                      "DETRResnet50SemanticSegmentationF16P8.mlpackage/", {
+        "Manifest.json": "e7154240ddfd55b776642ae4f6b47d42bf8ad1b9425d97151d4d7b7875d0bf95",
+        CORE_ML + "model.mlmodel": "3d3666837fe990d3948308e417949864b5c2ab0dd9f21091c755c8effa005c40",
+        CORE_ML + "weights/weight.bin": "8e0a22ecc1921f81611864434714ae1989f3e992ec04994ed22a8ead6deccce7",
+    })],
+    # SAM 2.1 Tiny, 16-bit: the image encoder, the prompt encoder and the mask decoder
+    "objects": [
+        ("ObjectEncoder", HF + "coreml-sam2.1-tiny/resolve/main/SAM2_1TinyImageEncoderFLOAT16.mlpackage/", {
+            "Manifest.json": "dd72aa75e3f2f92d0653696bf4d8350d87690d92b116b34912fe640f2b116e08",
+            CORE_ML + "model.mlmodel": "6cbc50301ee3ff4a9366083f9647e1f06762759542d8dd0fac394ebc3682cce7",
+            CORE_ML + "weights/weight.bin": "eab96eb8ff35720c79eedc0cac2a4ef32d685f9c994c39736027078528c48a97",
+        }),
+        ("ObjectPrompt", HF + "coreml-sam2.1-tiny/resolve/main/SAM2_1TinyPromptEncoderFLOAT16.mlpackage/", {
+            "Manifest.json": "0c0f9b80f0445017dac52f81e93aeb50b9c2c9918708c882df4a65671fda2bd4",
+            CORE_ML + "model.mlmodel": "3a83c167d8bd63e80f86349a78c2ab0527ce97eca1f848a4ce57fe5351241fa3",
+            CORE_ML + "weights/weight.bin": "af466cf28ef8838f409c2bfd8cc0049b9efbf9db335d60a57dbfc5160af883f2",
+        }),
+        ("ObjectDecoder", HF + "coreml-sam2.1-tiny/resolve/main/SAM2_1TinyMaskDecoderFLOAT16.mlpackage/", {
+            "Manifest.json": "dc6121b61ac560498080d55f9d5fb293cdb305f942a85adb5b71dc8e9d14a8aa",
+            CORE_ML + "model.mlmodel": "4601f302d4c6936e15de3a22089c2afe1fa009ef703f82147ff829b4be677577",
+            CORE_ML + "weights/weight.bin": "f5a8635981199fa1199007ed6798c61a326288548b74553b3c2ddb932fcdc8de",
+        }),
+    ],
 }
 
 
-def fetch_depth(out):
-    """Apple's Core ML conversion (16-bit activations, 8-bit palettized weights) is used as
-    published: each file checked against its SHA-256 and put into Depth.mlpackage."""
-    for relative, sha256 in DEPTH_FILES.items():
-        target = os.path.join(out, "Depth.mlpackage", relative)
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        print("downloading", DEPTH_PACKAGE + relative)
-        urllib.request.urlretrieve(DEPTH_PACKAGE + relative, target)
-        digest = hashlib.sha256(open(target, "rb").read()).hexdigest()
-        if digest != sha256:
-            sys.exit(f"{target}: SHA-256 {digest} is not the expected {sha256}")
+def fetch_published(name, out):
+    """Apple's Core ML packages are used as published: each file checked against its SHA-256
+    and put into the package under the app's name for it."""
+    for package, base, files in PUBLISHED[name]:
+        for relative, sha256 in files.items():
+            target = os.path.join(out, f"{package}.mlpackage", relative)
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            print("downloading", base + relative)
+            urllib.request.urlretrieve(base + relative, target)
+            digest = hashlib.sha256(open(target, "rb").read()).hexdigest()
+            if digest != sha256:
+                sys.exit(f"{target}: SHA-256 {digest} is not the expected {sha256}")
 
 
 def convert(name, weights, denoise, out):
@@ -287,12 +317,12 @@ def convert(name, weights, denoise, out):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("model", choices=sorted(MODELS) + ["depth"])
+    parser.add_argument("model", choices=sorted(MODELS) + sorted(PUBLISHED))
     parser.add_argument("--weights", default=os.path.join(ROOT, ".build", "model-weights"))
     parser.add_argument("--denoise", type=float, default=0.0, help="super resolution: 0 keeps texture, 1 smooths")
     parser.add_argument("--out", default=OUT)
     arguments = parser.parse_args()
-    if arguments.model == "depth":
-        fetch_depth(arguments.out)
+    if arguments.model in PUBLISHED:
+        fetch_published(arguments.model, arguments.out)
     else:
         convert(arguments.model, arguments.weights, arguments.denoise, arguments.out)

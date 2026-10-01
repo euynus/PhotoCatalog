@@ -6,8 +6,11 @@ import AppKit
 
 /// The finished photo with the masks drawn over it. With a gradient armed, a drag draws it
 /// (a click places one of default size); with the brush armed or a brush mask selected, a drag
-/// paints (⌥ erases); otherwise the selected mask's handles reshape it. A click on another
-/// mask's pin selects that mask. Edits preview live and save on release.
+/// paints (⌥ erases); with Select Object armed, a drag boxes an object (a click picks one), and
+/// with an object mask selected, clicks add parts it missed (⌥ takes extra parts out) and a drag
+/// boxes it again;
+/// otherwise the selected mask's handles reshape it. A click on another mask's pin selects
+/// that mask. Edits preview live and save on release.
 struct MaskEditor: View {
     @Environment(AppState.self) private var app
     let asset: Asset
@@ -22,6 +25,8 @@ struct MaskEditor: View {
 
     @State private var drag: MaskDrag?
     @State private var hover: CGPoint?
+    /// The box being drawn around an object, on screen.
+    @State private var objectBox: CGRect?
 
     private static let handleRadius: CGFloat = 9
 
@@ -36,7 +41,8 @@ struct MaskEditor: View {
                         .interpolation(.high)
                         .frame(width: display.width, height: display.height)
                         .offset(x: display.minX, y: display.minY)
-                    MaskOverlay(masks: settings.masks, selectedId: app.developSelectedMaskId, mapper: mapper)
+                    MaskOverlay(masks: settings.masks, selectedId: app.developSelectedMaskId, mapper: mapper,
+                                objectBox: objectBox)
                     if let hover, isPainting { brushCursor(at: hover, mapper) }
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
@@ -67,8 +73,11 @@ struct MaskEditor: View {
         case .linear: L("拖动绘制线性渐变：起点处效果最强，终点处消失 · 点按放置 · Esc 取消")
         case .radial: L("从中心向外拖动绘制径向渐变 · 点按放置 · Esc 取消")
         case .brush: L("在照片上涂抹 · 按住 ⌥ 擦除 · [ ] 调整大小 · Esc 取消")
-        case nil, .subject, .sky, .person, .colorRange, .luminanceRange: app.developPickingRangeColor
+        case .object: L("拖动框选一个物体，或点按它 · Esc 取消")
+        case nil, .subject, .sky, .person, .colorRange, .luminanceRange, .landscape: app.developPickingRangeColor
             ? L("点按照片选取颜色，最多 5 处 · Esc 完成取样")
+            : selectedIndex.map { settings.masks[$0].kind == .object } == true && !isPainting
+            ? L("点按补上漏选的部分 · 按住 ⌥ 点按去掉多选的部分 · 拖动重新框选 · Delete 删除 · Esc 完成")
             : selectedIndex.map { settings.masks[$0].kind == .brush } == true
             ? L("涂抹添加 · 按住 ⌥ 擦除 · [ ] 调整大小 · 点按圆点选择其他蒙版 · Esc 完成")
             : isPainting
@@ -92,7 +101,7 @@ struct MaskEditor: View {
     private var isPainting: Bool {
         switch app.developMaskCreation {
         case .brush: true
-        case .linear, .radial, .subject, .sky, .person, .colorRange, .luminanceRange: false
+        case .linear, .radial, .subject, .sky, .person, .colorRange, .luminanceRange, .object, .landscape: false
         case nil: !app.developPickingRangeColor
             && selectedIndex.map { settings.masks[$0].kind == .brush || app.developRefiningMask } == true
         }
@@ -141,13 +150,15 @@ struct MaskEditor: View {
         for mask in settings.masks.reversed() where distance(mapper.pin(of: mask), point) <= Self.handleRadius {
             return .select(mask.id)
         }
+        // anywhere else on a selected object: a click adds to it, a drag boxes it again
+        if let index = selectedIndex, settings.masks[index].kind == .object { return .prompt(settings.masks[index].id) }
         return nil
     }
 
     private func cursor(at point: CGPoint, _ mapper: MaskMapper) -> NSCursor {
         switch target(at: point, mapper) {
         case .create(.brush), .paint: .crosshair
-        case .create, .sample: .crosshair
+        case .create, .sample, .prompt: .crosshair
         case .handle(_, .move), .select: .openHand
         case .handle: .pointingHand
         case nil: .arrow
@@ -175,6 +186,12 @@ struct MaskEditor: View {
                 }
                 guard let drag, hypot(value.translation.width, value.translation.height) >= 2 else { return }
                 switch drag.target {
+                case .create(.object), .prompt:
+                    // the object is found once the box is let go
+                    objectBox = CGRect(x: min(value.startLocation.x, value.location.x), y: min(value.startLocation.y, value.location.y),
+                                       width: abs(value.location.x - value.startLocation.x),
+                                       height: abs(value.location.y - value.startLocation.y))
+                        .intersection(mapper.display)
                 case .create(let kind):
                     let mask = drawn(kind, id: drag.newId, from: value.startLocation, to: value.location, mapper)
                     preview(mask, adding: true)
@@ -187,7 +204,8 @@ struct MaskEditor: View {
                 }
             }
             .onEnded { value in
-                defer { drag = nil }
+                let box = objectBox
+                defer { drag = nil; objectBox = nil }
                 guard let drag else { return }
                 let moved = hypot(value.translation.width, value.translation.height) >= 2
                 // Esc (or leaving the tool) while drawing takes the drawing back
@@ -206,6 +224,19 @@ struct MaskEditor: View {
                     return
                 }
                 switch drag.target {
+                case .create(.object):
+                    if moved, let box, let prompt = boxPrompt(box, mapper) {
+                        app.selectObject(prompt)
+                    } else if !moved, mapper.display.contains(value.startLocation) {
+                        app.selectObject(ObjectPrompt(points: [.init(point: mapper.source(value.startLocation))]))
+                    }
+                case .prompt(let id):
+                    if moved, let box, let prompt = boxPrompt(box, mapper) {
+                        app.selectObject(prompt, maskId: id)
+                    } else if !moved, mapper.display.contains(value.startLocation) {
+                        app.addObjectPoint(mapper.source(value.startLocation), include: !NSEvent.modifierFlags.contains(.option),
+                                           maskId: id)
+                    }
                 case .create(let kind):
                     // a click places a gradient of default size at the point
                     let mask = moved
@@ -225,6 +256,16 @@ struct MaskEditor: View {
                     break
                 }
             }
+    }
+
+    /// A box drawn on screen as a prompt: the source region it covers (whatever the photo's
+    /// turns), nil when it's too small to mean anything.
+    private func boxPrompt(_ box: CGRect, _ mapper: MaskMapper) -> ObjectPrompt? {
+        guard box.width >= 4, box.height >= 4 else { return nil }
+        let corners = [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.minY),
+                       CGPoint(x: box.minX, y: box.maxY), CGPoint(x: box.maxX, y: box.maxY)].map(mapper.source)
+        let xs = corners.map { min(1, max(0, $0.x)) }, ys = corners.map { min(1, max(0, $0.y)) }
+        return ObjectPrompt(box: CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!))
     }
 
     /// Drops this photo's unsaved preview, left by a drag that ends without saving.
@@ -302,7 +343,7 @@ struct MaskEditor: View {
             mask.radiusX = max(0.01, radius)
             mask.radiusY = max(0.01, radius)
             mask.angle = mapper.sourceAngle(ofScreenDirection: CGVector(dx: 1, dy: 0), at: start)
-        case .brush, .subject, .sky, .person, .colorRange, .luminanceRange:
+        case .brush, .subject, .sky, .person, .colorRange, .luminanceRange, .object, .landscape:
             break   // painted stroke by stroke, or found in the photo
         }
         return mask
@@ -323,7 +364,7 @@ struct MaskEditor: View {
                              to: CGPoint(x: point.x + max(display.width, display.height) / 6, y: point.y), mapper)
             mask.radiusY = mask.radiusX * 0.75
             return mask
-        case .brush, .subject, .sky, .person, .colorRange, .luminanceRange:
+        case .brush, .subject, .sky, .person, .colorRange, .luminanceRange, .object, .landscape:
             return drawn(kind, id: id, from: point, to: point, mapper)
         }
     }
@@ -376,6 +417,8 @@ struct MaskDrag {
         case paint(String)
         /// A click adding a color to the mask's range.
         case sample(String)
+        /// A click adding to (or leaving out of) an object mask, or a drag boxing it again.
+        case prompt(String)
     }
 
     let target: Target
@@ -452,7 +495,7 @@ struct MaskMapper {
             return screen(mask.center)
         case .brush:
             return screen(mask.strokes.first { $0.pointCount > 0 }?.point(0) ?? mask.center)
-        case .subject, .sky, .person, .luminanceRange:
+        case .subject, .sky, .person, .luminanceRange, .object, .landscape:
             return screen(mask.center)
         case .colorRange:
             return screen(mask.range?.samples.first ?? mask.center)
@@ -471,7 +514,7 @@ struct MaskMapper {
                 (.axisY(1), screen(sourcePoint(from: mask.center, angle: mask.angle + 90, length: mask.radiusY))),
                 (.axisY(-1), screen(sourcePoint(from: mask.center, angle: mask.angle - 90, length: mask.radiusY))),
             ]
-        case .brush, .subject, .sky, .person, .colorRange, .luminanceRange:
+        case .brush, .subject, .sky, .person, .colorRange, .luminanceRange, .object, .landscape:
             return []   // painted or found, not reshaped
         }
     }
@@ -482,9 +525,16 @@ private struct MaskOverlay: View {
     let masks: [LocalAdjustment]
     let selectedId: String?
     let mapper: MaskMapper
+    /// A box being drawn around an object.
+    var objectBox: CGRect?
 
     var body: some View {
         Canvas { context, _ in
+            if let objectBox {
+                let box = Path(objectBox)
+                context.stroke(box, with: .color(.black.opacity(0.5)), lineWidth: 3)
+                context.stroke(box, with: .color(.white), style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
+            }
             for mask in masks where mask.id != selectedId {
                 let pin = mapper.pin(of: mask)
                 let dot = Path(ellipseIn: CGRect(x: pin.x - 5, y: pin.y - 5, width: 10, height: 10))
@@ -538,12 +588,29 @@ private struct MaskOverlay: View {
                                                      width: rx * inner * 2, height: ry * inner * 2)).applying(turn)
                 context.stroke(feather, with: .color(.white.opacity(0.55)), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
             }
-        case .brush, .subject, .sky, .person, .colorRange, .luminanceRange:
+        case .brush, .subject, .sky, .person, .colorRange, .luminanceRange, .object, .landscape:
             // no outline to drag: its pin, filled to show it's the selected one
             let pin = mapper.pin(of: mask)
             let dot = Path(ellipseIn: CGRect(x: pin.x - 6, y: pin.y - 6, width: 12, height: 12))
             context.fill(dot, with: .color(Theme.accentFill))
             context.stroke(dot, with: .color(.white), lineWidth: 1.5)
+        }
+        // an object's box and the places clicked in (green) or out (red) of it
+        if mask.kind == .object {
+            if let box = mask.prompt.box {
+                let corners = [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.minY),
+                               CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.maxY)].map(mapper.screen)
+                var outline = Path()
+                outline.addLines(corners)
+                outline.closeSubpath()
+                context.stroke(outline, with: .color(.white.opacity(0.7)), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            }
+            for place in mask.prompt.points {
+                let p = mapper.screen(place.point)
+                let dot = Path(ellipseIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8))
+                context.fill(dot, with: .color(place.include ? Color.green : Color.red))
+                context.stroke(dot, with: .color(.white), lineWidth: 1.2)
+            }
         }
         // where its colors were sampled
         for sample in mask.range?.samples ?? [] {

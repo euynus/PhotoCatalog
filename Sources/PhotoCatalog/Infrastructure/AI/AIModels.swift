@@ -14,14 +14,22 @@ enum AIModels {
         case denoise = "Denoise"
         case inpaint = "Inpaint"
         case depth = "Depth"
+        case segmentation = "Segmentation"
+        /// Selecting an object: the photo encoded once, then each box or click encoded and
+        /// decoded into the object's mask.
+        case objectEncoder = "ObjectEncoder"
+        case objectPrompt = "ObjectPrompt"
+        case objectDecoder = "ObjectDecoder"
 
         /// Where the model runs fastest (measured on Apple silicon): the convolutional super
         /// resolution on the Neural Engine, the attention in the denoiser and LaMa's Fourier
         /// convolutions on the GPU (the Neural Engine is slower and, for LaMa, less precise).
+        /// The segmentation and object models run once per photo, where loading for the Neural
+        /// Engine costs seconds more than it saves.
         var computeUnits: MLComputeUnits {
             switch self {
             case .superResolution, .depth: .all
-            case .denoise, .inpaint: .cpuAndGPU
+            case .denoise, .inpaint, .segmentation, .objectEncoder, .objectPrompt, .objectDecoder: .cpuAndGPU
             }
         }
     }

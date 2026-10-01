@@ -1656,6 +1656,27 @@
 "预览照片在其他色彩空间或打印出来的样子 (S)" = "See how the photo looks in another color space or in print (S)";
 "方法" = "Intent";
 
+/* Select object and landscape */
+"物体" = "Object";
+"景观" = "Landscape";
+"选择物体" = "Select Object";
+"选择景观" = "Select Landscape";
+"水面" = "Water";
+"植被" = "Vegetation";
+"山体" = "Mountains";
+"自然地面" = "Natural Ground";
+"人造地面" = "Artificial Ground";
+"类别" = "Category";
+"修改物体蒙版" = "Change Object Mask";
+"更改景观蒙版" = "Change Landscape Mask";
+"照片中没有找到%@" = "%@: none found in this photo";
+"这里没有找到物体" = "No object found here";
+"在照片上框选或点按一个物体，为它建立蒙版" = "Box or click an object in the photo to mask it";
+"找出照片中的水面、植被、山体、建筑或地面并建立蒙版" = "Find the water, vegetation, mountains, architecture or ground in the photo and mask it";
+"拖动框选一个物体，或点按它 · Esc 取消" = "Drag a box around an object, or click it · Esc to cancel";
+"点按补上漏选的部分 · 按住 ⌥ 点按去掉多选的部分 · 拖动重新框选 · Delete 删除 · Esc 完成" = "Click a missed part to add it · ⌥-click an extra part to remove it · Drag to box again · Delete to remove · Esc when done";
+"点按补上物体漏选的部分，按住 ⌥ 点按去掉多选的部分，拖动重新框选；要选另一个物体，再点“选择物体”" = "Click a part of the object that was missed to add it, ⌥-click an extra part to remove it, or drag to box it again. For another object, use Select Object again.";
+
 /* Lens blur */
 "镜头模糊" = "Lens Blur";
 "镜头模糊焦点" = "Lens Blur Focus";

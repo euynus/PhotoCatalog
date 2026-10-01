@@ -931,6 +931,112 @@ final class AppState {
         }
     }
 
+    /// Finds `category` of the landscape in the photo and adds it as a mask, or says it isn't
+    /// there.
+    func addLandscapeMask(_ category: LandscapeCategory) {
+        guard developDetectingMask == nil, view == .develop, let asset = primary,
+              let source = developSource(for: asset) else { return }
+        developMasking = true
+        developMaskCreation = nil
+        developDetectingMask = .landscape
+        let id = asset.id
+        Task { [weak self] in
+            let lookup = await ThumbnailRepairQueue.run(.visible) {
+                SceneSegmentation.lookup(category, url: source.url, isRaw: source.isRaw)
+            } ?? .unreadable
+            guard let self else { return }
+            self.developDetectingMask = nil
+            guard let result = self.landscapeMaskResult(lookup, category) else { return }
+            var mask = LocalAdjustment(kind: .landscape)
+            mask.landscape = category
+            mask.center = result.centroid
+            mask.exposure = 0.3   // a visible start, as with the other masks
+            self.developSelectedMaskId = mask.id
+            self.commitDevelopChange([id], undoName: L("添加\(mask.title)")) { _, settings in
+                settings.masks.append(mask)
+            }
+        }
+    }
+
+    /// Points a landscape mask at another category, once the photo is seen to show it.
+    func setLandscapeMask(_ maskId: String, category: LandscapeCategory) {
+        guard let asset = primary, let source = developSource(for: asset),
+              let mask = developSettings[asset.id]?.masks.first(where: { $0.id == maskId && $0.kind == .landscape }),
+              mask.landscape != category else { return }
+        let id = asset.id
+        Task { [weak self] in
+            let lookup = await ThumbnailRepairQueue.run(.visible) {
+                SceneSegmentation.lookup(category, url: source.url, isRaw: source.isRaw)
+            } ?? .unreadable
+            guard let self, let result = self.landscapeMaskResult(lookup, category) else { return }
+            self.commitDevelopChange([id], undoName: L("更改景观蒙版")) { _, settings in
+                guard let index = settings.masks.firstIndex(where: { $0.id == maskId }) else { return }
+                settings.masks[index].landscape = category
+                settings.masks[index].center = result.centroid
+            }
+        }
+    }
+
+    private func landscapeMaskResult(_ lookup: SemanticMasks.Lookup, _ category: LandscapeCategory) -> SemanticMasks.Result? {
+        switch lookup {
+        case .found(let result): return result
+        case .notFound: push(verbatim: L("照片中没有找到\(category.title)"), "info")
+        case .unreadable: push("原件不可用", "warning")
+        }
+        return nil
+    }
+
+    /// Selects the object `prompt` (a box or a click) picks out as a new mask, or, with `maskId`,
+    /// gives that object mask the new prompt (more clicks, or a new box).
+    func selectObject(_ prompt: ObjectPrompt, maskId: String? = nil) {
+        guard !prompt.isEmpty, developDetectingMask == nil, view == .develop, let asset = primary,
+              let source = developSource(for: asset) else { return }
+        developDetectingMask = .object
+        let id = asset.id
+        Task { [weak self] in
+            let lookup = await ThumbnailRepairQueue.run(.visible) {
+                ObjectSelection.lookup(prompt, url: source.url, isRaw: source.isRaw)
+            } ?? .unreadable
+            guard let self else { return }
+            self.developDetectingMask = nil
+            let result: SemanticMasks.Result
+            switch lookup {
+            case .found(let found): result = found
+            case .notFound:
+                self.push("这里没有找到物体", "info")
+                return
+            case .unreadable:
+                self.push("原件不可用", "warning")
+                return
+            }
+            if let maskId {
+                self.commitDevelopChange([id], undoName: L("修改物体蒙版")) { _, settings in
+                    guard let index = settings.masks.firstIndex(where: { $0.id == maskId }) else { return }
+                    settings.masks[index].prompt = prompt
+                    settings.masks[index].center = result.centroid
+                }
+                return
+            }
+            var mask = LocalAdjustment(kind: .object)
+            mask.prompt = prompt
+            mask.center = result.centroid
+            mask.exposure = 0.3   // a visible start, as with the other masks
+            self.developMaskCreation = nil
+            self.developSelectedMaskId = mask.id
+            self.commitDevelopChange([id], undoName: L("添加\(mask.title)")) { _, settings in
+                settings.masks.append(mask)
+            }
+        }
+    }
+
+    /// A click on the selected object mask: adds the place to the object, or with `include`
+    /// false leaves it out.
+    func addObjectPoint(_ point: CGPoint, include: Bool, maskId: String) {
+        guard let asset = primary,
+              let mask = developSettings[asset.id]?.masks.first(where: { $0.id == maskId && $0.kind == .object }) else { return }
+        selectObject(mask.prompt.adding(point, include: include), maskId: maskId)
+    }
+
     /// The mask found, or nil after saying why there's none.
     private func peopleMaskResult(_ lookup: SemanticMasks.Lookup, count: Int?) -> SemanticMasks.Result? {
         switch lookup {

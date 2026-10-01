@@ -1,5 +1,5 @@
 // ============================================================
-//  Local adjustments — Lightroom's masks: gradients, brush, subject, sky and people
+//  Local adjustments — Lightroom's masks: gradients, brush, subject, sky, people, objects and landscape
 // ============================================================
 import Foundation
 import CoreGraphics
@@ -9,15 +9,15 @@ import CoreGraphics
 /// and crop), so a mask stays on the same part of the picture when the framing changes.
 struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
     enum Kind: String, Codable, CaseIterable, Sendable {
-        case linear, radial, brush, subject, sky, person, colorRange, luminanceRange
+        case linear, radial, brush, subject, sky, person, colorRange, luminanceRange, object, landscape
 
         /// Masks drawn on the photo, masks found in it, and masks of a range of its colors or tones.
         static let drawn: [Kind] = [.linear, .radial, .brush]
         static let automatic: [Kind] = [.subject, .sky]
         static let ranges: [Kind] = [.colorRange, .luminanceRange]
 
-        /// Found in the photo itself: a subject, the sky or people.
-        var isAutomatic: Bool { Self.automatic.contains(self) || self == .person }
+        /// Found in the photo itself: a subject, the sky, people, an object or part of a landscape.
+        var isAutomatic: Bool { Self.automatic.contains(self) || [.person, .object, .landscape].contains(self) }
         /// The whole photo, narrowed to its range.
         var isRange: Bool { Self.ranges.contains(self) }
 
@@ -31,6 +31,8 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
             case .person: L("人物")
             case .colorRange: L("颜色范围")
             case .luminanceRange: L("明亮度范围")
+            case .object: L("物体")
+            case .landscape: L("景观")
             }
         }
 
@@ -44,6 +46,8 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
             case .person: "person.crop.circle"
             case .colorRange: "eyedropper.halffull"
             case .luminanceRange: "circle.lefthalf.striped.horizontal"
+            case .object: "lasso"
+            case .landscape: "mountain.2"
             }
         }
     }
@@ -73,6 +77,10 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
     /// or nil for everyone.
     var part: PersonPart = .person
     var person: Int?
+    /// Object: the box drawn around it and the places clicked in or out of it.
+    var prompt = ObjectPrompt()
+    /// Landscape: which part of the scene.
+    var landscape: LandscapeCategory = .water
 
     // adjustments, -100…100 unless noted
     var exposure = 0.0      // EV, -4…4
@@ -97,8 +105,14 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         }
     }
 
-    /// What the mask is called: its kind, or for people the part it selects.
-    var title: String { kind == .person ? part.title : kind.title }
+    /// What the mask is called: its kind, or for people and landscapes the part it selects.
+    var title: String {
+        switch kind {
+        case .person: part.title
+        case .landscape: landscape.title
+        default: kind.title
+        }
+    }
 
     /// Whether any adjustment is set; a mask without one changes nothing.
     var hasEffect: Bool {
@@ -114,6 +128,7 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         copy.center = center; copy.radiusX = radiusX; copy.radiusY = radiusY; copy.angle = angle
         copy.feather = feather; copy.strokes = strokes; copy.inverted = inverted; copy.range = range
         copy.part = part; copy.person = person
+        copy.prompt = prompt; copy.landscape = landscape
         return copy
     }
 
@@ -132,7 +147,7 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         case .linear: [start.x, start.y, end.x, end.y]
         case .radial: [center.x, center.y, radiusX, radiusY, angle, feather]
         case .brush: [Double(strokes.count), Double(BrushStroke.hash(strokes))]
-        case .subject, .sky, .person, .colorRange, .luminanceRange: []   // found in the photo itself
+        case .subject, .sky, .person, .colorRange, .luminanceRange, .object, .landscape: []   // found in the photo itself
         }
         let values = [exposure, contrast, highlights, shadows, whites, blacks, temperature, tint,
                       texture, clarity, dehaze, saturation]
@@ -142,6 +157,88 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
             + values.map { String(format: "%.2f", $0) }.joined(separator: ",") + refinement
             + (range.map { ":" + $0.fingerprintText } ?? "")
             + (kind == .person ? ":p\(part.rawValue),\(person ?? -1)" : "")
+            + (kind == .object ? ":o" + prompt.fingerprintText : "")
+            + (kind == .landscape ? ":l\(landscape.rawValue)" : "")
+    }
+}
+
+/// What picks out an object, as for Lightroom's Select Object: a box drawn around it and
+/// places clicked to add to it or leave out of it (source fractions, like every mask position).
+struct ObjectPrompt: Codable, Hashable, Sendable {
+    struct Point: Codable, Hashable, Sendable {
+        var point: CGPoint
+        /// False for a place to leave out.
+        var include = true
+    }
+
+    var box: CGRect?
+    var points: [Point] = []
+
+    /// The selection model takes 14 places in all, a box counting as two.
+    static let maxPoints = 12
+
+    init(box: CGRect? = nil, points: [Point] = []) {
+        self.box = box
+        self.points = points
+    }
+
+    var isEmpty: Bool { box == nil && points.isEmpty }
+
+    /// `point` added (the oldest click making way past the limit).
+    func adding(_ point: CGPoint, include: Bool) -> ObjectPrompt {
+        var next = self
+        next.points.append(Point(point: point, include: include))
+        if next.points.count > Self.maxPoints { next.points.removeFirst() }
+        return next
+    }
+
+    var fingerprintText: String {
+        (box.map { String(format: "b%.4f,%.4f,%.4f,%.4f;", $0.minX, $0.minY, $0.width, $0.height) } ?? "")
+            + points.map { ($0.include ? "+" : "-") + String(format: "%.4f,%.4f", $0.point.x, $0.point.y) }.joined(separator: ";")
+    }
+}
+
+extension ObjectPrompt {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        box = try c.decodeIfPresent(CGRect.self, forKey: .box)
+        points = try c.decodeIfPresent([Point].self, forKey: .points) ?? []
+    }
+}
+
+extension ObjectPrompt.Point {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        point = try c.decodeIfPresent(CGPoint.self, forKey: .point) ?? CGPoint(x: 0.5, y: 0.5)
+        include = try c.decodeIfPresent(Bool.self, forKey: .include) ?? true
+    }
+}
+
+/// The parts of a landscape a mask can select, as in Lightroom's Select Landscape (the sky has
+/// its own mask).
+enum LandscapeCategory: String, Codable, CaseIterable, Sendable {
+    case water, vegetation, mountains, architecture, naturalGround, artificialGround
+
+    var title: String {
+        switch self {
+        case .water: L("水面")
+        case .vegetation: L("植被")
+        case .mountains: L("山体")
+        case .architecture: L("建筑")
+        case .naturalGround: L("自然地面")
+        case .artificialGround: L("人造地面")
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .water: "water.waves"
+        case .vegetation: "leaf"
+        case .mountains: "mountain.2"
+        case .architecture: "building.2"
+        case .naturalGround: "square.stack.3d.down.forward"
+        case .artificialGround: "road.lanes"
+        }
     }
 }
 
@@ -222,6 +319,8 @@ extension LocalAdjustment {
         range = try c.decodeIfPresent(MaskRange.self, forKey: .range)
         part = try c.decodeIfPresent(PersonPart.self, forKey: .part) ?? .person
         person = try c.decodeIfPresent(Int.self, forKey: .person)
+        prompt = try c.decodeIfPresent(ObjectPrompt.self, forKey: .prompt) ?? ObjectPrompt()
+        landscape = try c.decodeIfPresent(LandscapeCategory.self, forKey: .landscape) ?? .water
         func value(_ key: CodingKeys) throws -> Double { try c.decodeIfPresent(Double.self, forKey: key) ?? 0 }
         exposure = try value(.exposure)
         contrast = try value(.contrast)

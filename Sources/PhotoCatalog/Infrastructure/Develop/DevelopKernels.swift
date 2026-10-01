@@ -555,8 +555,8 @@ enum DevelopKernels {
             return kernel.apply(extent: extent, arguments: [pixel(mask.center), u, v, mask.feather / 100, invert])
         case .brush:
             return BrushRaster.weight(mask, extent: extent)
-        case .subject, .sky, .person, .colorRange, .luminanceRange:
-            return nil   // found in the photo: see SemanticMasks, PeopleMasks and `rangeWeight`
+        case .subject, .sky, .person, .colorRange, .luminanceRange, .object, .landscape:
+            return nil   // found in the photo: see SemanticMasks, PeopleMasks, ObjectSelection, SceneSegmentation and `rangeWeight`
         }
     }
 

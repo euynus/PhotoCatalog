@@ -535,9 +535,12 @@ enum DevelopRenderer {
             base = CIImage(color: .white).cropped(to: extent)
         } else if mask.kind.isAutomatic {
             let lookup = photo.map { photo in
-                mask.kind == .person
-                    ? PeopleMasks.lookup(mask.part, person: mask.person, url: photo.url, isRaw: photo.isRaw)
-                    : SemanticMasks.lookup(mask.kind, url: photo.url, isRaw: photo.isRaw)
+                switch mask.kind {
+                case .person: PeopleMasks.lookup(mask.part, person: mask.person, url: photo.url, isRaw: photo.isRaw)
+                case .object: ObjectSelection.lookup(mask.prompt, url: photo.url, isRaw: photo.isRaw)
+                case .landscape: SceneSegmentation.lookup(mask.landscape, url: photo.url, isRaw: photo.isRaw)
+                default: SemanticMasks.lookup(mask.kind, url: photo.url, isRaw: photo.isRaw)
+                }
             }
             switch lookup {
             case .found(let result):

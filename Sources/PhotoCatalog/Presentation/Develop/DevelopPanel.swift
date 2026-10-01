@@ -598,6 +598,26 @@ struct DevelopPanel: View {
         }
         .controlSize(.small)
         HStack(spacing: 6) {
+            Toggle(isOn: Binding(get: { app.developMaskCreation == .object }, set: { _ in app.armMask(.object) })) {
+                Label("选择物体", systemImage: LocalAdjustment.Kind.object.symbol)
+            }
+            .toggleStyle(.button)
+            .disabled(app.developDetectingMask != nil)
+            .help(Self.maskHelp(.object))
+            Menu {
+                ForEach(LandscapeCategory.allCases, id: \.self) { category in
+                    Button { app.addLandscapeMask(category) } label: { Label(category.title, systemImage: category.symbol) }
+                }
+            } label: {
+                Label("选择景观", systemImage: LocalAdjustment.Kind.landscape.symbol)
+            }
+            .fixedSize()
+            .disabled(app.developDetectingMask != nil)
+            .help(Self.maskHelp(.landscape))
+            Spacer(minLength: 0)
+        }
+        .controlSize(.small)
+        HStack(spacing: 6) {
             ForEach(LocalAdjustment.Kind.ranges, id: \.self) { kind in
                 Button { app.addRangeMask(kind) } label: { Label(kind.title, systemImage: kind.symbol) }
                     .help(Self.maskHelp(kind))
@@ -632,6 +652,16 @@ struct DevelopPanel: View {
             .help("让调整作用于渐变之外")
             if mask.kind == .radial { slider(DevelopControl.localFeather(index), asset, settings) }
             if mask.kind == .person { peopleControls(mask, asset) }
+            if mask.kind == .landscape {
+                Picker("类别", selection: Binding(get: { mask.landscape }, set: { app.setLandscapeMask(mask.id, category: $0) })) {
+                    ForEach(LandscapeCategory.allCases, id: \.self) { category in Text(category.title).tag(category) }
+                }
+                .controlSize(.small)
+            }
+            if mask.kind == .object {
+                Text("点按补上物体漏选的部分，按住 ⌥ 点按去掉多选的部分，拖动重新框选；要选另一个物体，再点“选择物体”")
+                    .font(.system(size: 11)).foregroundStyle(Theme.text3)
+            }
             rangeControls(mask, asset)
             if mask.kind == .brush {
                 brushControls
@@ -704,6 +734,8 @@ struct DevelopPanel: View {
         case .person: L("找出照片中的人物，为整个人物或面部皮肤、眼睛、嘴唇等部位建立蒙版")
         case .colorRange: L("选中照片中某些颜色的部分，在照片上点按取样")
         case .luminanceRange: L("选中照片中某个明暗范围的部分")
+        case .object: L("在照片上框选或点按一个物体，为它建立蒙版")
+        case .landscape: L("找出照片中的水面、植被、山体、建筑或地面并建立蒙版")
         }
     }
 

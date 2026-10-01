@@ -9,6 +9,8 @@ from its authors' release, checks it against a SHA-256, converts it and writes t
 | `Denoise.mlpackage` | SCUNet `scunet_color_real_psnr` | https://github.com/cszn/SCUNet | Apache License 2.0 |
 | `Inpaint.mlpackage` | LaMa `big-lama` (the TorchScript export published by IOPaint, github.com/Sanster/models) | https://github.com/advimman/lama | Apache License 2.0 |
 | `Depth.mlpackage` | Depth Anything V2 Small, as converted to Core ML by Apple (`DepthAnythingV2SmallF16P8`, huggingface.co/apple/coreml-depth-anything-v2-small) | https://github.com/DepthAnything/Depth-Anything-V2 | Apache License 2.0 |
+| `Segmentation.mlpackage` | DETR ResNet-50 semantic segmentation, as converted to Core ML by Apple (`DETRResnet50SemanticSegmentationF16P8`, huggingface.co/apple/coreml-detr-semantic-segmentation) | https://github.com/facebookresearch/detr | Apache License 2.0 |
+| `ObjectEncoder.mlpackage`, `ObjectPrompt.mlpackage`, `ObjectDecoder.mlpackage` | SAM 2.1 Tiny's image encoder, prompt encoder and mask decoder, as converted to Core ML by Apple (`SAM2_1Tiny…FLOAT16`, huggingface.co/apple/coreml-sam2.1-tiny) | https://github.com/facebookresearch/sam2 | Apache License 2.0 |
 
 Changes made: both networks were traced at a fixed 256 × 256 tile and converted to Core ML with
 16-bit weights. SCUNet's network was re-implemented in plain tensor operations (no einops,
@@ -17,8 +19,12 @@ re-implementation gives the same output as the original. LaMa is converted at a 
 weights of its plain convolutions (between its local and global branches) are quantized to
 8 bits, the Fourier units and the first and last layers stay 16-bit.
 
-`Depth.mlpackage` is Apple's published package, unchanged apart from its name (16-bit
-activations, 8-bit palettized weights; it takes a 518 × 392 image and gives relative depth).
+`Depth.mlpackage`, `Segmentation.mlpackage` and the three `Object` packages are Apple's
+published packages, unchanged apart from their names. Depth: 16-bit activations, 8-bit
+palettized weights; it takes a 518 × 392 image and gives relative depth. Segmentation: 8-bit
+palettized weights; it takes a 448 × 448 image and labels each pixel with one of COCO's things
+and stuff. Object: 16-bit; the encoder takes a 1024 × 1024 image, the decoder gives masks for
+up to 14 prompt points.
 
 ## Real-ESRGAN — BSD 3-Clause License
 
@@ -474,6 +480,54 @@ Apache License 2.0, whose full text is given above under SCUNet.
 
 ```
 Copyright 2024 Depth Anything V2 authors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+## DETR — Apache License 2.0
+
+DETR: End-to-End Object Detection with Transformers (Nicolas Carion, Francisco Massa, Gabriel
+Synnaeve, Nicolas Usunier, Alexander Kirillov, Sergey Zagoruyko). The model and Apple's Core ML
+conversion of it are released under the Apache License 2.0, whose full text is given above under
+SCUNet.
+
+```
+Copyright 2020 - present, Facebook, Inc
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+## SAM 2.1 — Apache License 2.0
+
+SAM 2: Segment Anything in Images and Videos (Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu,
+Ronghang Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Roman Rädle, Chloe Rolland, Laura
+Gustafson, Eric Mintun, Junting Pan, Kalyan Vasudev Alwala, Nicolas Carion, Chao-Yuan Wu, Ross
+Girshick, Piotr Dollár, Christoph Feichtenhofer). The model checkpoints and Apple's Core ML
+conversion of them are released under the Apache License 2.0, whose full text is given above
+under SCUNet.
+
+```
+Copyright (c) Meta Platforms, Inc. and affiliates.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
