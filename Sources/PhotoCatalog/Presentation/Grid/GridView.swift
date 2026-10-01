@@ -27,56 +27,12 @@ struct GridView: View {
                                     count: metrics.columns)
                 ScrollView {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: metrics.spacing) {
-                        // Items are positions, not photo ids: after a sort or filter SwiftUI then
-                        // re-renders the visible cells instead of re-indexing 500k ids (~0.4 s).
+                        // Items are positions, not photo ids, and a position keeps its cell when it
+                        // comes to show another photo: after a sort or filter (or in another folder)
+                        // SwiftUI updates the visible cells instead of building new ones, and never
+                        // re-indexes 500k ids.
                         ForEach(0..<photos.count, id: \.self) { position in
-                            let asset = photos[position]
-                            let stack = app.stackInfo(for: asset)
-                            let pair = app.companions(of: asset)
-                            GridCell(asset: asset, size: metrics.cellSize,
-                                     selected: app.selectedIds.contains(asset.id),
-                                     isPrimary: asset.id == app.primaryId,
-                                     showInfo: app.showInfo,
-                                     stackCount: stack?.count,
-                                     stackCollapsed: stack?.collapsed == true,
-                                     pairLabel: Self.pairLabel(pair),
-                                     isEdited: app.developFingerprint(for: asset.id) != nil,
-                                     inQuickCollection: app.quickCollection.contains(asset.id),
-                                     xmpChanged: app.externallyChangedXMPIds.contains(asset.id),
-                                     onToggleStack: { app.toggleStack(containing: asset.id) })
-                                .equatable()
-                                // the first click selects at once; the second of a double-click opens
-                                .onTapGesture {
-                                    if ClickEvent.clickCount >= 2 {
-                                        app.openLoupe(asset.id)
-                                        return
-                                    }
-                                    TextEditing.end()
-                                    let f = ClickEvent.modifierFlags
-                                    app.selectCell(asset.id, shift: f.contains(.shift),
-                                                   meta: f.contains(.command))
-                                }
-                                // one element per photo: tap gestures alone are
-                                // invisible to VoiceOver, making the grid unusable
-                                .accessibilityElement(children: .ignore)
-                                .accessibilityLabel(Self.accessibilityLabel(asset, stack: stack, pair: pair))
-                                .accessibilityAddTraits(app.selectedIds.contains(asset.id)
-                                    ? [.isButton, .isSelected] : .isButton)
-                                .accessibilityAction {
-                                    TextEditing.end()
-                                    app.selectCell(asset.id, shift: false, meta: false)
-                                }
-                                .accessibilityAction(named: "打开放大视图") { app.openLoupe(asset.id) }
-                                .accessibilityAction(named: stack?.collapsed == true ? "展开堆栈" : "折叠堆栈") {
-                                    if stack != nil { app.toggleStack(containing: asset.id) }
-                                }
-                                // drag the original out to Finder, an editor, Mail…
-                                .onDrag { Self.dragProvider(for: asset) }
-                                .contextMenu { PhotoContextMenu(asset: asset, pairedJPEGPath: pair.first?.localPath) }
-                                // a position showing another photo starts fresh (no stale thumbnail); the
-                                // position is part of it, or a photo moving to another position would bring
-                                // back its old cell there, no longer updated (badges, selection)
-                                .id(PositionedPhoto(position: position, id: asset.id))
+                            tile(photos[position], size: metrics.cellSize)
                         }
                     }
                     .padding(Self.inset)
@@ -91,7 +47,27 @@ struct GridView: View {
 
     private static let inset: CGFloat = 16
 
-    private static func dragProvider(for asset: Asset) -> NSItemProvider {
+    private func tile(_ asset: Asset, size: CGFloat) -> some View {
+        let stack = app.stackInfo(for: asset)
+        let pair = app.companions(of: asset)
+        // only plain values go in: a tile whose values didn't change is skipped whole, gestures
+        // and all, when another photo is selected or rated
+        return GridTile(cell: GridCell(asset: asset, size: size,
+                                       selected: app.selectedIds.contains(asset.id),
+                                       isPrimary: asset.id == app.primaryId,
+                                       showInfo: app.showInfo,
+                                       stackCount: stack?.count,
+                                       stackCollapsed: stack?.collapsed == true,
+                                       pairLabel: Self.pairLabel(pair),
+                                       isEdited: app.developFingerprint(for: asset.id) != nil,
+                                       inQuickCollection: app.quickCollection.contains(asset.id),
+                                       xmpChanged: app.externallyChangedXMPIds.contains(asset.id),
+                                       onToggleStack: {}),
+                        pairedJPEGPath: pair.first?.localPath)
+            .equatable()
+    }
+
+    fileprivate static func dragProvider(for asset: Asset) -> NSItemProvider {
         guard asset.status == .ready, let path = asset.localPath,
               let provider = NSItemProvider(contentsOf: URL(fileURLWithPath: path)) else { return NSItemProvider() }
         provider.suggestedName = asset.filename
@@ -106,10 +82,10 @@ struct GridView: View {
     }
 
     /// Spoken summary matching the cell's visible badges.
-    private static func accessibilityLabel(_ asset: Asset, stack: (count: Int, collapsed: Bool)?,
-                                           pair: [Asset]) -> String {
+    fileprivate static func accessibilityLabel(_ asset: Asset, stack: (count: Int, collapsed: Bool)?,
+                                               pairLabel: String?) -> String {
         var parts = [asset.filename, asset.isRaw ? "\(asset.type) RAW" : asset.type]
-        if let label = pairLabel(pair) { parts.append(L("含 \(label)")) }
+        if let label = pairLabel { parts.append(L("含 \(label)")) }
         if let copyName = asset.copyName { parts.append(L("虚拟副本：\(copyName)")) }
         parts.append(asset.rating > 0 ? L("\(asset.rating) 星") : L("未评分"))
         switch asset.flag {
@@ -125,7 +101,55 @@ struct GridView: View {
     }
 }
 
-/// A grid or filmstrip cell's identity: the photo at a position.
+/// A grid cell with everything that happens to it (clicks, drag, context menu, VoiceOver)
+/// inside one equatable view: those modifiers carry closures, which never compare equal, so
+/// outside it every visible cell was rebuilt and laid out again on any selection or rating.
+private struct GridTile: View, Equatable {
+    @Environment(AppState.self) private var app
+    let cell: GridCell
+    let pairedJPEGPath: String?
+
+    nonisolated static func == (l: GridTile, r: GridTile) -> Bool {
+        l.cell == r.cell && l.pairedJPEGPath == r.pairedJPEGPath && l.cell.asset.type == r.cell.asset.type
+    }
+
+    var body: some View {
+        let asset = cell.asset
+        let stack = cell.stackCount.map { (count: $0, collapsed: cell.stackCollapsed) }
+        GridCell(asset: asset, size: cell.size, selected: cell.selected, isPrimary: cell.isPrimary, showInfo: cell.showInfo,
+                 stackCount: cell.stackCount, stackCollapsed: cell.stackCollapsed, pairLabel: cell.pairLabel,
+                 isEdited: cell.isEdited, inQuickCollection: cell.inQuickCollection, xmpChanged: cell.xmpChanged,
+                 onToggleStack: { app.toggleStack(containing: asset.id) })
+            // the first click selects at once; the second of a double-click opens
+            .onTapGesture {
+                if ClickEvent.clickCount >= 2 {
+                    app.openLoupe(asset.id)
+                    return
+                }
+                TextEditing.end()
+                let f = ClickEvent.modifierFlags
+                app.selectCell(asset.id, shift: f.contains(.shift), meta: f.contains(.command))
+            }
+            // one element per photo: tap gestures alone are invisible to VoiceOver, making the grid unusable
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(GridView.accessibilityLabel(asset, stack: stack, pairLabel: cell.pairLabel))
+            .accessibilityAddTraits(cell.selected ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction {
+                TextEditing.end()
+                app.selectCell(asset.id, shift: false, meta: false)
+            }
+            .accessibilityAction(named: "打开放大视图") { app.openLoupe(asset.id) }
+            .accessibilityAction(named: cell.stackCollapsed ? "展开堆栈" : "折叠堆栈") {
+                if stack != nil { app.toggleStack(containing: asset.id) }
+            }
+            // drag the original out to Finder, an editor, Mail…
+            .onDrag { GridView.dragProvider(for: asset) }
+            .contextMenu { PhotoContextMenu(asset: asset, pairedJPEGPath: pairedJPEGPath) }
+    }
+}
+
+
+/// A filmstrip cell's identity: the photo at a position.
 struct PositionedPhoto: Hashable {
     let position: Int
     let id: String
@@ -148,13 +172,22 @@ struct GridCell: View {
 
     private static let radius: CGFloat = 6
     private static let pad: CGFloat = 6
+    /// The file name row under the photo: its line, and the space below it.
+    private static let footLine: CGFloat = 22
+    private static let footBottom: CGFloat = 4
+
+    /// A cell's height: the square photo slot, and the file name row when shown. Given to the
+    /// layout up front, so measuring a cell (every visible one after a sort) stops at its frame.
+    static func height(size: CGFloat, showInfo: Bool) -> CGFloat {
+        size + (showInfo ? footLine + footBottom : 0)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             photo
             if showInfo { foot }
         }
-        .frame(width: size)
+        .frame(width: size, height: Self.height(size: size, showInfo: showInfo))
         .background(background, in: RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
         .overlay {
             if selected {
@@ -286,8 +319,8 @@ struct GridCell: View {
             }
         }
         .padding(.horizontal, Self.pad + 2)
-        .frame(height: 22)
-        .padding(.bottom, 4)
+        .frame(height: Self.footLine)
+        .padding(.bottom, Self.footBottom)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

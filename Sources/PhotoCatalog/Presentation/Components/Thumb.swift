@@ -94,6 +94,9 @@ final class ThumbLoader: ObservableObject {
     }()
     private var task: Task<Void, Never>?
     private(set) var loadedKey: String?
+    /// The photo the image is of: a view that comes to show another photo (a grid cell after a
+    /// sort) shows nothing of the last one while its own loads.
+    var owner: String?
 
     deinit {
         task?.cancel()
@@ -284,15 +287,25 @@ struct Thumb: View {
             + (app.developFingerprint(for: asset.id) ?? "")
     }
 
+    /// The loader's image when it's of this photo; for a view that has just come to show another
+    /// photo (a grid cell after a sort), its thumbnail straight from the cache when it's there and
+    /// unedited, so the cell changes from one photo to the next without a blank frame between.
+    private var shownImage: NSImage? {
+        if loader.owner == asset.id { return loader.image }
+        guard urlString == nil, app.developFingerprint(for: asset.id) == nil else { return nil }
+        return ThumbLoader.cachedImage(forKey: ThumbLoader.key(source, maxPixel: decodeMaxPixel,
+                                                               cacheGeneration: app.thumbnailCacheGeneration))
+    }
+
     var body: some View {
         ZStack {
-            if let img = loader.image {
+            if let img = shownImage {
                 Image(nsImage: img)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
             } else {
                 Theme.canvasSurface
-                if loader.failed {
+                if loader.failed, loader.owner == asset.id {
                     Icon("photos", size: 22).foregroundStyle(.white.opacity(0.35))
                 }
             }
@@ -304,6 +317,7 @@ struct Thumb: View {
             let cacheGeneration = app.thumbnailCacheGeneration
             let resolved = await app.visibleImageSource(for: asset, requestedSource: source, kind: cacheKind)
             guard !Task.isCancelled else { return }
+            loader.owner = asset.id
             loader.load(resolved, maxPixel: decodeMaxPixel, cacheGeneration: cacheGeneration)
         }
         .onDisappear { loader.cancelAndRelease() }
