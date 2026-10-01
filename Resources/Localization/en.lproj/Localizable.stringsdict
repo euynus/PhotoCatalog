@@ -1114,6 +1114,22 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
+	<key>已拍 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n1@ taken</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>已按拍摄时间叠放为 %lld 个堆栈</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -1615,6 +1631,22 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>Surveying %#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
+	<key>联机拍摄已结束：%lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Tethered capture ended: %#@n1@</string>
 		<key>n1</key>
 		<dict>
 			<key>NSStringFormatSpecTypeKey</key>

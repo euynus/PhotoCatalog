@@ -1656,6 +1656,41 @@
 "预览照片在其他色彩空间或打印出来的样子 (S)" = "See how the photo looks in another color space or in print (S)";
 "方法" = "Intent";
 
+/* Tethered capture */
+"联机拍摄" = "Tethered Capture";
+"联机拍摄…" = "Tethered Capture…";
+"联机拍摄 %@" = "Tethered %@";
+"拍摄" = "Capture";
+"结束" = "End";
+"结束联机拍摄" = "End Tethered Capture";
+"会话名称" = "Session Name";
+"会话名-序号" = "Session Name - Sequence";
+"保存到" = "Save To";
+"尚未选择" = "Not chosen";
+"监视文件夹" = "Watched Folder";
+"用逗号分隔" = "Comma separated";
+"已拍 %lld 张" = "%lld photos taken";
+"%lld 张失败" = "%lld failed";
+"预设：%@" = "Preset: %@";
+"预设：无" = "Preset: None";
+"之后拍下的照片使用的修图预设" = "The develop preset photos taken from now on get";
+"让相机拍一张 (F12)" = "Have the camera take a photo (F12)";
+"开始前已在文件夹中的照片不会导入" = "Photos already in the folder before the session starts aren't imported";
+"拍下的照片直接存入会话文件夹、导入目录库并立即显示。macOS 能控制的相机用数据线连接；其他相机可以让厂商的联机软件（如 EOS Utility）把照片存进一个文件夹，由这里监视导入。" = "Each photo you take goes straight into the session's folder, into the catalog and onto the screen. Connect a camera macOS can control with a cable; with other cameras, have the maker's tethering software (such as EOS Utility) save photos into a folder, and watch that folder here.";
+"照片保存在“%@”文件夹中，以引用方式编入目录库。" = "Photos are saved in the folder “%@” and cataloged where they are.";
+"选择保存联机拍摄会话的文件夹" = "Choose the folder to keep tethered sessions in";
+"选择联机软件保存照片的文件夹" = "Choose the folder the tethering software saves photos to";
+"请选择相机或要监视的文件夹" = "Choose a camera or a folder to watch";
+"会话文件夹不能在监视的文件夹里" = "The session's folder can't be inside the watched folder";
+"无法创建会话文件夹：%@" = "Couldn't create the session's folder: %@";
+"无法开始联机拍摄" = "Couldn't start tethered capture";
+"联机拍摄已在进行" = "A tethered session is already running";
+"联机拍摄已结束：%lld 张" = "Tethered capture ended: %lld photos";
+"联机拍摄的照片未能保存到目录库" = "The tethered photos couldn't be saved to the catalog";
+"未能导入 %@" = "Couldn't import %@";
+"监视的文件夹已不可用" = "The watched folder is no longer available";
+"相机已断开" = "The camera was disconnected";
+
 /* Select object and landscape */
 "物体" = "Object";
 "景观" = "Landscape";

@@ -90,6 +90,8 @@ struct MainView: View {
             AutoStackSheet(seconds: app.autoStackSeconds ?? 5)
         case "print":
             PrintSheet(settings: app.printSettings, items: app.printItems())
+        case "tether":
+            TetherSheet(settings: app.tetherSettings, cameras: app.cameraDevices.filter { !$0.isPhone })
         case "rename":
             RenameSheet(targets: app.renameSheetTargets, template: app.renameTemplate)
         case "photoMerge":
@@ -158,6 +160,7 @@ struct ContentColumn: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if app.tether != nil { TetherBar() }
             if app.filterOpen && !app.isDuplicates { FilterBar() }
             contentMain
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

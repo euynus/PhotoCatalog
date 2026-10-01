@@ -67,17 +67,21 @@ final class ImportCoordinator: @unchecked Sendable {
 
     /// Retry/import a known file list while preserving the original source folder identity.
     /// `preparer` turns each file into the one to catalog first — a card import's copy of it.
+    /// `sourceRootId` and `folderName` file the photos under a source folder that contains
+    /// `folder` rather than under `folder` itself.
     func importFiles(_ files: [URL], from folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
                      archiveRule: ManagedArchiveRule = .date, readSidecar: Bool = true,
                      previewMaxPixel: Int = 2048,
                      control: ImportControl? = nil,
                      knownAssetsById: [String: Asset] = [:],
+                     sourceRootId: String? = nil, folderName: String? = nil,
                      preparer: (any ImportFilePreparer)? = nil,
                      progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
         progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
         return process(files, folder: folder, mode: mode, autoTag: autoTag, archiveRule: archiveRule,
                        readSidecar: readSidecar, previewMaxPixel: previewMaxPixel, control: control,
-                       knownAssetsById: knownAssetsById, preparer: preparer, progress: progress)
+                       knownAssetsById: knownAssetsById, sourceRootId: sourceRootId, folderName: folderName,
+                       preparer: preparer, progress: progress)
     }
 
     /// Incremental: only files not already imported by path (for FSEvents rescans, §12.8).

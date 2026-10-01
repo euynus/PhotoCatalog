@@ -333,6 +333,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已折叠 %lld 张照片为堆栈</string>
 	</dict>
+	<key>已拍 %lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已拍 %lld 张</string>
+	</dict>
 	<key>已按拍摄时间叠放为 %lld 个堆栈</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -482,6 +487,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>筛选 %lld 张</string>
+	</dict>
+	<key>联机拍摄已结束：%lld 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>联机拍摄已结束：%lld 张</string>
 	</dict>
 	<key>让 %@ 看 %lld 张照片的预览图（缩小到 1024 像素），写出下面选中的内容。关键词添加到已有的之中；可以撤销。</key>
 	<dict>

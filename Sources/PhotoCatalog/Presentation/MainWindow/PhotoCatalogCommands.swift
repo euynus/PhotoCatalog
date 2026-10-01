@@ -40,6 +40,15 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil)
             Button("从存储卡导入…") { perform("目录库.从存储卡导入") { app.showCardImport() } }
                 .disabled(app.sheet != nil || !app.onboarded)
+            if app.tether == nil {
+                Button("联机拍摄…") { perform("目录库.联机拍摄") { app.showTether() } }
+                    .disabled(app.sheet != nil || !app.onboarded || app.importing)
+            } else {
+                Button("拍摄") { perform("目录库.拍摄") { app.captureTether() } }
+                    .keyboardShortcut(KeyEquivalent(Character(UnicodeScalar(UInt16(NSF12FunctionKey))!)), modifiers: [])
+                    .disabled(app.tether?.canCapture != true)
+                Button("结束联机拍摄") { perform("目录库.结束联机拍摄") { app.endTether() } }
+            }
             Divider()
             Button("设置…") { perform("目录库.设置") { app.showSettings() } }
                 .keyboardShortcut(",", modifiers: .command)

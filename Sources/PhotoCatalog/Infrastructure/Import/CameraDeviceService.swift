@@ -85,6 +85,9 @@ final class CameraDeviceBrowser: NSObject {
     /// Files of the listings handed out so far, by listed path.
     private var listed: [String: ICCameraFile] = [:]
     private var started = false
+    /// Tethered cameras, by device id: where each new shot goes, and what to do when the camera
+    /// goes away.
+    private var tethered: [String: (onShot: @MainActor (TetherShot) -> Void, onEnd: @MainActor () -> Void)] = [:]
 
     func start() {
         guard !started else { return }
@@ -150,9 +153,10 @@ final class CameraDeviceBrowser: NSObject {
         return sources
     }
 
-    /// Ends the session once an import is done (or the dialog closed without one).
+    /// Ends the session once an import is done (or the dialog closed without one); a camera
+    /// that's tethered keeps its session.
     func close(_ device: CameraDevice) {
-        guard let camera = cameras[device.id], camera.hasOpenSession else { return }
+        guard tethered[device.id] == nil, let camera = cameras[device.id], camera.hasOpenSession else { return }
         camera.requestCloseSession()
         listed = listed.filter { !$0.key.hasPrefix(CameraDevicePaths.root.appendingPathComponent(device.id).path) }
     }
@@ -160,6 +164,48 @@ final class CameraDeviceBrowser: NSObject {
     func eject(_ device: CameraDevice) {
         guard let camera = cameras[device.id], camera.isEjectable else { return }
         camera.requestEject()
+    }
+
+    // ---- tethering ----
+    /// Opens a session so each shot the camera takes is reported (since macOS 14 a camera that
+    /// takes pictures on command is tethered whenever a session is open); false when the camera
+    /// is gone. Shots made while it's still listing its card arrive too.
+    func beginTethering(_ device: CameraDevice, onShot: @escaping @MainActor (TetherShot) -> Void,
+                        onEnd: @escaping @MainActor () -> Void) -> Bool {
+        guard let camera = cameras[device.id] else { return false }
+        tethered[device.id] = (onShot, onEnd)
+        if !camera.hasOpenSession {
+            Task {
+                guard (try? await camera.requestOpenSession()) == nil, self.tethered[device.id] != nil else { return }
+                self.tethered.removeValue(forKey: device.id)?.onEnd()
+            }
+        }
+        return true
+    }
+
+    func endTethering(_ device: CameraDevice) {
+        guard tethered.removeValue(forKey: device.id) != nil, let camera = cameras[device.id], camera.hasOpenSession else { return }
+        camera.requestCloseSession()
+    }
+
+    /// Whether the camera takes a picture when asked.
+    func canCapture(_ device: CameraDevice) -> Bool {
+        cameras[device.id]?.capabilities.contains(ICDeviceCapability.cameraDeviceCanTakePicture.rawValue) == true
+    }
+
+    func capture(_ device: CameraDevice) {
+        guard canCapture(device) else { return }
+        cameras[device.id]?.requestTakePicture()
+    }
+
+    /// New photos on a tethered camera: those added after it listed its card are shots.
+    private func addedItems(_ items: [ICCameraItem], cameraId: String) {
+        guard let onShot = tethered[cameraId]?.onShot else { return }
+        for case let file as ICCameraFile in items where file.wasAddedAfterContentCatalogCompleted {
+            guard let type = file.uti.flatMap(UTType.init), type.conforms(to: .image) else { continue }
+            let download = CameraFileDownload(file: file)
+            onShot(TetherShot(originalName: file.name ?? "IMG.JPG") { try download.download(to: $0) })
+        }
     }
 
     private static func folders(of item: ICCameraItem) -> [String] {
@@ -181,6 +227,7 @@ final class CameraDeviceBrowser: NSObject {
 
     private func removed(_ device: ICDevice) {
         guard let id = device.uuidString else { return }
+        tethered.removeValue(forKey: id)?.onEnd()
         cameras[id] = nil
         catalogReady(id)
         publish()
@@ -235,7 +282,11 @@ extension CameraDeviceBrowser: ICDeviceBrowserDelegate, ICCameraDeviceDelegate {
     }
 
     nonisolated func cameraDeviceDidRemoveAccessRestriction(_ device: ICDevice) {}
-    nonisolated func cameraDevice(_ camera: ICCameraDevice, didAdd items: [ICCameraItem]) {}
+    nonisolated func cameraDevice(_ camera: ICCameraDevice, didAdd items: [ICCameraItem]) {
+        guard let id = camera.uuidString else { return }
+        let box = ItemsBox(items)
+        Task { @MainActor in self.addedItems(box.items, cameraId: id) }
+    }
     nonisolated func cameraDevice(_ camera: ICCameraDevice, didRemove items: [ICCameraItem]) {}
     nonisolated func cameraDevice(_ camera: ICCameraDevice, didReceiveThumbnail thumbnail: CGImage?,
                                   for item: ICCameraItem, error: Error?) {}
@@ -250,6 +301,12 @@ extension CameraDeviceBrowser: ICDeviceBrowserDelegate, ICCameraDeviceDelegate {
 private struct DeviceBox: @unchecked Sendable {
     let device: ICDevice
     init(_ device: ICDevice) { self.device = device }
+}
+
+/// Carries a camera's new items to the main actor.
+private struct ItemsBox: @unchecked Sendable {
+    let items: [ICCameraItem]
+    init(_ items: [ICCameraItem]) { self.items = items }
 }
 
 /// Downloads one camera file, blocking the import worker until the device delivers it.

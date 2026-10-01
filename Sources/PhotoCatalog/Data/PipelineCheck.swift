@@ -1505,6 +1505,8 @@ enum PipelineCheck {
         check(phoneFailures == 1, "a photo the device no longer offers fails on its own")
         try? fm.removeItem(at: staging)
 
+        MainActor.assumeIsolated { TetherCheck.run(check) }
+
         try? fm.removeItem(at: tmp)
         print(failures == 0 ? "--- pipeline OK ---" : "--- \(failures) FAILURE(S) ---")
         exit(failures == 0 ? 0 : 1)
