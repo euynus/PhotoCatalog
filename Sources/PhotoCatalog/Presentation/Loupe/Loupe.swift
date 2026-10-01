@@ -148,9 +148,17 @@ private struct LoupeZoomablePhoto: View {
     let asset: Asset
 
     var body: some View {
-        ZoomablePhoto(asset: asset, zoom: app.loupeZoom) { app.loupeZoom = $0 }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(app.loupeZoom == nil ? 12 : 0)
+        if asset.isVideo, asset.status == .ready, let path = asset.localPath {
+            // a video plays; Space plays or pauses it
+            LoupeVideo(url: URL(fileURLWithPath: path), toggle: app.videoPlaybackToggle)
+                .id(asset.id)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(12)
+        } else {
+            ZoomablePhoto(asset: asset, zoom: app.loupeZoom) { app.loupeZoom = $0 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(app.loupeZoom == nil ? 12 : 0)
+        }
     }
 }
 

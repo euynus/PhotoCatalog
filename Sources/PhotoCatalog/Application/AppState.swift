@@ -1283,6 +1283,9 @@ final class AppState {
         if softProofing, !softProofProfiles.contains(where: { $0.id == softProof.profile }) { softProof.profile = "sRGB" }
     }
 
+    /// Bumped by Space in the loupe: the playing video pauses, a paused one plays.
+    var videoPlaybackToggle = 0
+
     var canAutoTone: Bool { canTransformSelection }
 
     /// Automatic tone (⌘U) for the photo in Develop, or every selected photo elsewhere; each
@@ -2032,6 +2035,7 @@ final class AppState {
             openLoupe(primaryId)
             loupeZoom = .actualSize
         case .loupe:
+            guard primary?.isVideo != true else { return true }   // a video plays at its own size
             loupeZoom = loupeZoom == nil ? .actualSize : nil
         case .compare:
             compareZoom = compareZoom == nil ? .actualSize : nil
@@ -9165,6 +9169,11 @@ final class AppState {
         case "g":
             view = .grid
         case "e", " ":
+            // Space plays or pauses a video in the loupe
+            if key == " ", view == .loupe, let primary, primary.isVideo, primary.status == .ready {
+                videoPlaybackToggle &+= 1
+                return true
+            }
             view = (view == .loupe) ? .grid : .loupe
         case "c":
             enterCompare()

@@ -152,6 +152,20 @@ enum VideoCheck {
                && exportItems.filter(\.isVideo).count == 2 && app.externalEditJobs(imported).count == 1,
                "merging, printing and outside editors take the photo only; export takes everything")
 
+        // in the loupe, Space plays or pauses a video and zoom leaves it alone; a photo still goes back to the grid
+        app.view = .loupe
+        app.setPrimary(clip.id)
+        let before = app.videoPlaybackToggle
+        _ = app.handleKey(" ", hasCommand: false)
+        _ = app.toggleZoom()
+        assert(app.view == .loupe && app.videoPlaybackToggle == before + 1 && app.loupeZoom == nil,
+               "Space plays a video in the loupe, and zoom doesn't apply")
+        app.setPrimary(still.id)
+        _ = app.handleKey(" ", hasCommand: false)
+        assert(app.view == .grid && app.videoPlaybackToggle == before + 1, "on a photo Space still returns to the grid")
+        app.selectedIds = Set(imported.map(\.id))
+        app.primaryId = clip.id
+
         // export copies a video's original under the template's name
         let out = folder.appendingPathComponent("export")
         try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
