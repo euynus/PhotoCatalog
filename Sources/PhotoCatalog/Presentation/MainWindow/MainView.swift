@@ -205,8 +205,16 @@ struct ContentColumn: View {
             PeopleView()
         } else {
             switch app.view {
-            case .grid: GridView(assetRevision: assetRevision)
-            case .loupe: Loupe()
+            case .grid, .loupe:
+                // the grid stays built under the loupe, unseen and untouchable: going back to it
+                // (Esc, G) is then immediate and it's still scrolled where it was
+                ZStack {
+                    GridView(assetRevision: assetRevision)
+                        .opacity(app.view == .grid ? 1 : 0)
+                        .allowsHitTesting(app.view == .grid)
+                        .accessibilityHidden(app.view != .grid)
+                    if app.view == .loupe { Loupe() }
+                }
             case .compare: CompareView()
             case .survey: SurveyView()
             case .develop: DevelopView()
