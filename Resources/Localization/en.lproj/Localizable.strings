@@ -1656,6 +1656,31 @@
 "预览照片在其他色彩空间或打印出来的样子 (S)" = "See how the photo looks in another color space or in print (S)";
 "方法" = "Intent";
 
+/* Photo book */
+"画册" = "Book";
+"制作画册…" = "Make a Book…";
+"画册：%lld 张照片" = "Book: %lld photos";
+"页面" = "Pages";
+"20 × 20 厘米（方形）" = "20 × 20 cm (square)";
+"25 × 20 厘米（横向）" = "25 × 20 cm (landscape)";
+"20 × 25 厘米（纵向）" = "20 × 25 cm (portrait)";
+"A4 横向" = "A4 landscape";
+"每页两张" = "Two per page";
+"每页四张" = "Four per page";
+"自动：与页面同向的照片单独一页，另一方向的两张并排或上下排在一页" = "Auto: a photo shaped like the page gets a page to itself; two of the other shape share one, side by side or one above the other";
+"无（满版）" = "None (full bleed)";
+"窄" = "Narrow";
+"宽" = "Wide";
+"封面" = "Cover";
+"页码" = "Page Numbers";
+"页码印在下边距里；满版时没有边距可印" = "Page numbers go in the bottom margin; full bleed leaves none";
+"%@ · %lld 页" = "%@ · %lld pages";
+"封面，共 %lld 页" = "Cover, %lld pages in all";
+"正在存储画册…" = "Saving book…";
+"取消存储" = "Cancel Saving";
+"画册已存储：%@（%lld 页）" = "Book saved: %@ (%lld pages)";
+"画册未能存储" = "The book couldn't be saved";
+
 /* Web gallery */
 "网页画廊" = "Web Gallery";
 "导出网页画廊…" = "Export Web Gallery…";

@@ -72,7 +72,7 @@ NOUNS = {'photos': 'photo', 'files': 'file', 'originals': 'original', 'faces': '
          'people': 'person', 'days': 'day', 'stars': 'star', 'jobs': 'job', 'sidecars': 'sidecar',
          'conditions': 'condition', 'values': 'value', 'locations': 'location', 'previews': 'preview',
          'assets': 'asset', 'records': 'record', 'spots': 'spot', 'steps': 'step', 'copies': 'copy', 'presets': 'preset', 'colors': 'color', 'LUTs': 'LUT',
-         'stacks': 'stack', 'seconds': 'second', 'minutes': 'minute'}
+         'stacks': 'stack', 'seconds': 'second', 'minutes': 'minute', 'pages': 'page'}
 ADJECTIVES = r'(?:(?:duplicate|new|changed|failed|automatically|recognized|unnamed|XMP|disk|photo|virtual) )*'
 
 

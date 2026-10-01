@@ -92,6 +92,8 @@ struct MainView: View {
             PrintSheet(settings: app.printSettings, items: app.printItems())
         case "slideshow":
             SlideshowSheet(settings: app.slideshowSettings, count: app.presentationAssets().count)
+        case "book":
+            BookSheet(settings: app.bookSettings, items: app.bookItems(caption: app.bookSettings.caption))
         case "webGallery":
             WebGallerySheet(settings: app.webGallerySettings, count: app.presentationAssets().count,
                             defaultTitle: app.webGalleryDefaultTitle)

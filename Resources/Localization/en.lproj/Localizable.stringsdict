@@ -111,6 +111,22 @@
 			<string>%lld unnamed groups</string>
 		</dict>
 	</dict>
+	<key>%@ · %lld 页</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%@ · %#@n2@</string>
+		<key>n2</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld page</string>
+			<key>other</key>
+			<string>%lld pages</string>
+		</dict>
+	</dict>
 	<key>%lld 个 XMP sidecar 写入失败</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -493,6 +509,22 @@
 			<string>%lld photo</string>
 			<key>other</key>
 			<string>%lld photos</string>
+		</dict>
+	</dict>
+	<key>封面，共 %lld 页</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Cover, %#@n1@ in all</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld page</string>
+			<key>other</key>
+			<string>%lld pages</string>
 		</dict>
 	</dict>
 	<key>将 %lld 个磁盘原件移到废纸篓，并从目录库移除对应记录。</key>
@@ -1647,6 +1679,38 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>Processes %#@n1@ with AI models on this Mac. Each result is saved as a 16-bit TIFF beside its original (…-Enhanced.tif) and added to the catalog with the original's metadata and develop settings (except white balance).</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
+	<key>画册已存储：%@（%lld 页）</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Book saved: %@ (%#@n2@)</string>
+		<key>n2</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld page</string>
+			<key>other</key>
+			<string>%lld pages</string>
+		</dict>
+	</dict>
+	<key>画册：%lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Book: %#@n1@</string>
 		<key>n1</key>
 		<dict>
 			<key>NSStringFormatSpecTypeKey</key>

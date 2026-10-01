@@ -20,6 +20,7 @@ struct StatusBar: View {
             EnhanceProgressLabel()
             SlideshowExportLabel()
             WebGalleryProgressLabel()
+            BookProgressLabel()
             DescribeProgressLabel()
             OriginalsCheckLabel()
             MaintenanceLabels()

@@ -133,6 +133,7 @@ enum SelfCheck {
         PrintCheck.run()
         SlideshowCheck.run()
         WebGalleryCheck.run()
+        BookCheck.run()
         VideoCheck.run()
         KeywordCheck.run()
         LocationCheck.run()

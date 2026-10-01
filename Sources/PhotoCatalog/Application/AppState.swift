@@ -6474,6 +6474,81 @@ final class AppState {
 
     func cancelWebGallery() { webGalleryCancellation?.set() }
 
+    // ----- photo book (Lightroom's Book module) -----
+    var bookSettings: BookSettings = AppState.loadJSON(BookSettings.self, forKey: "pc_book") ?? BookSettings() {
+        didSet { AppState.store(bookSettings, forKey: "pc_book") }
+    }
+    /// How far a book's PDF has got, while one is being written.
+    var bookProgress: Double?
+    @ObservationIgnored private var bookCancellation: CancellationFlag?
+
+    var canMakeBook: Bool { onboarded && sheet == nil && bookProgress == nil && !list.isEmpty }
+
+    /// The book's photos: those of `presentationAssets` with a local original, as they render.
+    func bookItems(caption: BookSettings.Caption) -> [BookItem] {
+        presentationAssets().compactMap { asset in
+            guard let source = developSource(for: asset) else { return nil }
+            let text = switch caption {
+            case .none: ""
+            case .title: asset.title
+            case .caption: asset.caption
+            case .filename: asset.filename
+            }
+            return BookItem(item: PrintItem(sourcePath: source.url.path, isRaw: source.isRaw,
+                                            develop: developSettings[asset.id] ?? .neutral,
+                                            originalSize: CGSize(width: asset.width, height: asset.height),
+                                            filename: asset.filename, title: asset.title),
+                            caption: text)
+        }
+    }
+
+    func showBook() {
+        guard canMakeBook else { return }
+        guard !bookItems(caption: .none).isEmpty else {
+            push("这些照片没有可用的本地原件", "warning")
+            return
+        }
+        sheet = "book"
+    }
+
+    /// Asks where, then writes the book as a PDF there and shows it in the Finder.
+    func saveBookPDF(_ settings: BookSettings) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = (settings.title.isEmpty ? L("画册") : settings.title) + ".pdf"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        bookSettings = settings
+        writeBook(settings, to: url)
+    }
+
+    func writeBook(_ settings: BookSettings, to url: URL) {
+        let items = bookItems(caption: settings.caption)
+        guard !items.isEmpty, bookProgress == nil else { return }
+        sheet = nil
+        let renderer = BookRenderer(items: items, settings: settings)
+        let cancellation = CancellationFlag()
+        bookCancellation = cancellation
+        bookProgress = 0
+        Task { [weak self] in
+            let made = await Task.detached(priority: .userInitiated) {
+                renderer.writePDF(to: url, progress: { fraction in
+                    Task { @MainActor in if self?.bookProgress != nil { self?.bookProgress = fraction } }
+                }, cancelled: { cancellation.isSet })
+            }.value
+            guard let self else { return }
+            self.bookProgress = nil
+            self.bookCancellation = nil
+            if made {
+                self.push(verbatim: L("画册已存储：\(url.lastPathComponent)（\(renderer.pages.count) 页）"), "check")
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            } else if !cancellation.isSet {
+                self.push("画册未能存储", "warning")
+            }
+        }
+    }
+
+    func cancelBook() { bookCancellation?.set() }
+
     // ----- print: the selection on paper (Lightroom's Print module) -----
     var printSettings: PrintSettings = AppState.loadJSON(PrintSettings.self, forKey: "pc_printSettings") ?? PrintSettings() {
         didSet { AppState.store(printSettings, forKey: "pc_printSettings") }

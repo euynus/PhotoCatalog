@@ -183,6 +183,8 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.canExportPreviewSelection)
             Button("导出网页画廊…") { perform("照片.导出网页画廊") { app.showWebGallery() } }
                 .disabled(!app.canExportWebGallery)
+            Button("制作画册…") { perform("照片.制作画册") { app.showBook() } }
+                .disabled(!app.canMakeBook)
             Divider()
             Button("加入或移出快捷收藏") { perform("照片.快捷收藏") { app.toggleQuickCollection() } }
                 .disabled(app.sheet != nil || !app.hasSelection)
