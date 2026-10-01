@@ -18,9 +18,14 @@ enum FolderTreeService {
             guard let rootPath = normalizedDirectory(sourceRootPaths[source.id]) else { continue }
 
             var discovered: [String: Int] = [:]
+            // photos share folders: each folder's path is worked out once, not once per photo
+            var directories = Set<String>()
             for asset in live where asset.folderId == source.id {
                 guard let localPath = asset.localPath else { continue }
-                let assetDir = assetDirectoryPath(localPath)
+                directories.insert(PathString.directory(of: localPath))
+            }
+            for directory in directories {
+                let assetDir = normalizedPath(PathString.standardized(directory))
                 guard assetDir != rootPath, isDescendant(assetDir, of: rootPath) else { continue }
 
                 var current = rootPath
@@ -64,16 +69,23 @@ enum FolderTreeService {
             }
         }
 
+        // photos share folders: count them per source and folder first, then walk each folder's
+        // ancestors once rather than once per photo
+        struct Place: Hashable { let source: String; let directory: String }
+        var perPlace: [Place: Int] = [:]
         for asset in assets where !asset.deleted {
             for rootId in rootIdsBySource[asset.folderId] ?? [] {
                 counts[rootId, default: 0] += 1
             }
-            guard let localPath = asset.localPath,
-                  let directoryIds = directoryIdsBySource[asset.folderId] else { continue }
-            var current = assetDirectoryPath(localPath)
+            guard let localPath = asset.localPath, directoryIdsBySource[asset.folderId] != nil else { continue }
+            perPlace[Place(source: asset.folderId, directory: PathString.directory(of: localPath)), default: 0] += 1
+        }
+        for (place, number) in perPlace {
+            guard let directoryIds = directoryIdsBySource[place.source] else { continue }
+            var current = normalizedPath(PathString.standardized(place.directory))
             while true {
                 if let id = directoryIds[current] {
-                    counts[id, default: 0] += 1
+                    counts[id, default: 0] += number
                 }
                 let parent = (current as NSString).deletingLastPathComponent
                 if parent.isEmpty || parent == current { break }
