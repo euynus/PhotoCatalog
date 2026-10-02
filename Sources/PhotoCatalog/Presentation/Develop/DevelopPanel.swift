@@ -26,11 +26,13 @@ struct DevelopPanel: View {
 
     private func content(_ asset: Asset) -> some View {
         let settings = app.developSettings(for: asset.id)
-        return ScrollView {
+        return ScrollViewReader { proxy in ScrollView {
             // lazy: of some sixty sliders, only the sections on screen are built and laid out,
             // when Develop opens and on every slider move
             LazyVStack(alignment: .leading, spacing: 18) {
                 header(asset, settings: settings)
+                tools(asset, settings)
+                    .id("tools")
                 section(L("配置文件"), id: "profile") { DevelopProfilePicker(asset: asset, settings: settings) }
                 section(L("白平衡"), id: "whiteBalance", accessory: {
                     Button("自动") { app.autoWhiteBalance() }
@@ -146,9 +148,6 @@ struct DevelopPanel: View {
                     .fixedSize()
                     .help("导入或删除 LUT（.cube）")
                 }) { lut(asset, settings) }
-                section(L("裁剪与旋转"), id: "crop") { geometry(asset, settings) }
-                section(L("污点去除"), id: "spots") { spots(asset, settings) }
-                section(L("蒙版"), id: "masks") { masks(asset, settings) }
                 section(L("AI 调整"), id: "ai") { DevelopByTextField() }
                 section(L("软打样"), id: "softProof", accessory: {
                     Toggle("软打样", isOn: Binding(get: { app.softProofing }, set: { _ in app.toggleSoftProofing() }))
@@ -159,6 +158,11 @@ struct DevelopPanel: View {
                 }) { softProof() }
             }
             .padding(14)
+        }
+        // a tool opened (a mask added, R, Q) brings its controls into view, wherever the panel was
+        .onChange(of: app.developMasking || app.developCropping || app.developSpotting) { _, open in
+            if open { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("tools", anchor: .top) } }
+        }
         }
         // flush with the inspector's top, the scroll view runs on under the toolbar, and SwiftUI
         // then hit-tests its content the toolbar's height (52 points) above where it's drawn: the
@@ -285,14 +289,67 @@ struct DevelopPanel: View {
         .help("应用或存储修图预设")
     }
 
+    // ---- tools: Lightroom's tool strip under the histogram; the open tool's controls below it ----
+    @ViewBuilder
+    private func tools(_ asset: Asset, _ settings: DevelopSettings) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                tool(L("裁剪"), "crop", shortcut: "R", count: settings.crop != nil || settings.straighten != 0 ? 1 : 0,
+                     isOn: app.developCropping) { app.developCropping.toggle() }
+                tool(L("修复"), "bandage", shortcut: "Q", count: settings.spots.count, isOn: app.developSpotting) {
+                    app.toggleSpotTool()
+                }
+                tool(L("蒙版"), "circle.dashed.inset.filled", shortcut: "M", count: settings.masks.count,
+                     isOn: app.developMasking) { app.developMasking.toggle() }
+            }
+            if app.developCropping {
+                geometry(asset, settings)
+            } else if app.developSpotting {
+                spots(asset, settings)
+            } else if app.developMasking {
+                masks(asset, settings)
+            }
+        }
+        .padding(.bottom, 12)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+
+    /// One tool of the strip, with how many of its edits the photo has (masks, spots).
+    private func tool(_ title: String, _ symbol: String, shortcut: String, count: Int, isOn: Bool,
+                      action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: symbol).font(.system(size: 15))
+                Text(title).font(.system(size: 11))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .foregroundStyle(isOn ? Theme.onAccent : Theme.text)
+            .background(isOn ? AnyShapeStyle(Theme.accentFill) : AnyShapeStyle(Theme.surface),
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(isOn ? .clear : Theme.line))
+            .overlay(alignment: .topTrailing) {
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 9, weight: .bold)).monospacedDigit()
+                        .foregroundStyle(isOn ? Theme.accentFill : Theme.onAccent)
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(isOn ? AnyShapeStyle(Theme.onAccent) : AnyShapeStyle(Theme.accentFill), in: Capsule())
+                        .padding(4)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("\(title) (\(shortcut))")
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
     @ViewBuilder
     private func geometry(_ asset: Asset, _ settings: DevelopSettings) -> some View {
         HStack(spacing: 6) {
-            Toggle(isOn: Binding(get: { app.developCropping }, set: { app.developCropping = $0 })) {
-                Label("裁剪", systemImage: "crop")
-            }
-            .toggleStyle(.button)
-            .help("裁剪与拉直 (R)")
+            Text("旋转与翻转").font(.system(size: 12)).foregroundStyle(Theme.text2)
             Spacer(minLength: 0)
             Button { app.rotateSelection(clockwise: false) } label: { Image(systemName: "rotate.left") }
                 .help("向左旋转 (⌘[)")
@@ -349,11 +406,7 @@ struct DevelopPanel: View {
     @ViewBuilder
     private func spots(_ asset: Asset, _ settings: DevelopSettings) -> some View {
         HStack(spacing: 6) {
-            Toggle(isOn: Binding(get: { app.developSpotting }, set: { _ in app.toggleSpotTool() })) {
-                Label("污点去除", systemImage: "bandage")
-            }
-            .toggleStyle(.button)
-            .help("点按照片上的污点修复 (Q)")
+            Text("点按照片上的污点修复").font(.system(size: 12)).foregroundStyle(Theme.text2)
             Spacer(minLength: 0)
             if !settings.spots.isEmpty {
                 Text("\(settings.spots.count) 处").font(.system(size: 11)).foregroundStyle(Theme.text3)
@@ -930,7 +983,7 @@ struct DevelopPanel: View {
 /// The Develop sections, by the id their folded state is kept under, on each side.
 enum DevelopSections {
     static let panel = ["profile", "whiteBalance", "tone", "presence", "curve", "mixer", "grading", "detail", "lens",
-                        "transform", "effects", "lensBlur", "calibration", "lut", "crop", "spots", "masks", "ai", "softProof"]
+                        "transform", "effects", "lensBlur", "calibration", "lut", "ai", "softProof"]
     static let sidebar = ["presets", "snapshots", "history"]
     /// Sections folded shut, one id per line; the rarely used ones start folded.
     static let storageKey = "pc_collapsedDevelopSections"

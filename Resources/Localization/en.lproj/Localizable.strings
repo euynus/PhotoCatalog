@@ -709,7 +709,7 @@
 "在照片上涂抹扩大这个蒙版，按住 ⌥ 或选“擦除”从中去掉" = "Paint on the photo to extend this mask; hold ⌥ or choose Erase to take parts away";
 "清除修整" = "Clear Refinements";
 "清除蒙版修整" = "Clear Mask Refinements";
-"点按照片上的污点修复 (Q)" = "Click a spot on the photo to heal it (Q)";
+"点按照片上的污点修复" = "Click a spot on the photo to heal it";
 "%lld 处" = "%lld spots";
 "全部清除" = "Clear All";
 "清除污点去除" = "Clear Spot Removal";
