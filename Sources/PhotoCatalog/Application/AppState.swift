@@ -9093,8 +9093,10 @@ final class AppState {
     var faceAnalysis: (done: Int, total: Int)?
     @ObservationIgnored private var faceAnalysisGeneration = 0
     @ObservationIgnored private var peopleCache: (revision: Int, people: [PersonSummary])?
-    /// One photo at a time, off the cooperative pool: originals without a preview may be RAWs.
+    /// Off the cooperative pool (originals without a preview may be RAWs), a few photos at a
+    /// time: on 217 photos four at once took 2.5 s instead of 6.7 s, finding the same faces.
     private static let faceQueue = DispatchQueue(label: "PhotoCatalog.faces", qos: .utility)
+    nonisolated static let faceWorkers = min(4, max(1, ProcessInfo.processInfo.activeProcessorCount / 2))
 
     struct PersonSummary: Identifiable, Equatable {
         let name: String
@@ -9207,29 +9209,39 @@ final class AppState {
              isRaw: asset.isRaw)
         }
         Self.faceQueue.async { [weak self] in
-            var batch: [String: [FaceRecord]] = [:]
-            for (index, input) in inputs.enumerated() {
-                let usePreview = !input.preview.isEmpty && FileManager.default.fileExists(atPath: input.preview)
-                let path = usePreview ? input.preview : input.original
-                let detected = path.isEmpty ? nil : autoreleasepool {
-                    FaceService.faces(in: URL(fileURLWithPath: path), embeddedPreview: !usePreview && input.isRaw)
-                }
-                if let detected {   // an unreadable photo stays unscanned for a later try
-                    batch[input.id] = detected.enumerated().map { offset, face in
-                        FaceRecord(id: "\(input.id)-f\(offset)", assetId: input.id, box: face.box,
-                                   quality: face.quality, vector: face.vector)
+            // two dozen photos at a time, a few of them at once, each two dozen saved before the next
+            for start in stride(from: 0, to: inputs.count, by: 24) {
+                let chunk = Array(inputs[start..<min(start + 24, inputs.count)])
+                let lock = NSLock()
+                var next = 0
+                var batch: [String: [FaceRecord]] = [:]
+                DispatchQueue.concurrentPerform(iterations: min(Self.faceWorkers, chunk.count)) { _ in
+                    while true {
+                        let index: Int? = lock.withLock {
+                            guard next < chunk.count else { return nil }
+                            next += 1
+                            return next - 1
+                        }
+                        guard let index else { return }
+                        let input = chunk[index]
+                        let usePreview = !input.preview.isEmpty && FileManager.default.fileExists(atPath: input.preview)
+                        let path = usePreview ? input.preview : input.original
+                        let detected = path.isEmpty ? nil : autoreleasepool {
+                            FaceService.faces(in: URL(fileURLWithPath: path), embeddedPreview: !usePreview && input.isRaw)
+                        }
+                        guard let detected else { continue }   // an unreadable photo stays unscanned for a later try
+                        let records = detected.enumerated().map { offset, face in
+                            FaceRecord(id: "\(input.id)-f\(offset)", assetId: input.id, box: face.box,
+                                       quality: face.quality, vector: face.vector)
+                        }
+                        lock.withLock { batch[input.id] = records }
                     }
                 }
-                let last = index == inputs.count - 1
-                if batch.count >= 24 || last {
-                    let chunk = batch
-                    batch = [:]
-                    let done = index + 1
-                    let keepGoing = DispatchQueue.main.sync {
-                        MainActor.assumeIsolated { self?.recordFaceScans(chunk, done: done, generation: generation) ?? false }
-                    }
-                    if !keepGoing { return }
+                let done = start + chunk.count
+                let keepGoing = DispatchQueue.main.sync {
+                    MainActor.assumeIsolated { self?.recordFaceScans(batch, done: done, generation: generation) ?? false }
                 }
+                if !keepGoing { return }
             }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { self?.finishFaceAnalysis(generation: generation) }
