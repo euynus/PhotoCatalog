@@ -261,7 +261,10 @@ final class ThumbLoader: ObservableObject {
 // to exactly that one property — the old unobserved-environment workaround
 // (appStateRef) is no longer needed.
 struct Thumb: View {
-    @Environment(AppState.self) private var app
+    /// Optional: SwiftUI can still update a tile in a hosting view it has already taken out of
+    /// the window (the content column's, after a switch to Places while thumbnails were still
+    /// loading), where the app state is gone from the environment; such a tile draws nothing.
+    @Environment(AppState.self) private var app: AppState?
 
     let asset: Asset
     var urlString: String?
@@ -280,7 +283,7 @@ struct Thumb: View {
     private var decodeMaxPixel: Int {
         min(cacheKind.maxPixel, max(64, maxDecodePixel ?? cacheKind.maxPixel))
     }
-    private var loadKey: String {
+    private func loadKey(_ app: AppState) -> String {
         let previewConfiguration = cacheKind.isPreview ? app.previewMaxPixel : 0
         // the develop fingerprint reloads the tile when the photo's adjustments change
         return "\(asset.id)|\(source)|\(decodeMaxPixel)|\(previewConfiguration)|\(app.thumbnailCacheGeneration)|"
@@ -290,7 +293,7 @@ struct Thumb: View {
     /// The loader's image when it's of this photo; for a view that has just come to show another
     /// photo (a grid cell after a sort), its thumbnail straight from the cache when it's there and
     /// unedited, so the cell changes from one photo to the next without a blank frame between.
-    private var shownImage: NSImage? {
+    private func shownImage(_ app: AppState) -> NSImage? {
         if loader.owner == asset.id { return loader.image }
         guard urlString == nil, app.developFingerprint(for: asset.id) == nil else { return nil }
         return ThumbLoader.cachedImage(forKey: ThumbLoader.key(source, maxPixel: decodeMaxPixel,
@@ -298,8 +301,16 @@ struct Thumb: View {
     }
 
     var body: some View {
+        if let app {
+            tile(app)
+        } else {
+            Theme.canvasSurface.clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+        }
+    }
+
+    private func tile(_ app: AppState) -> some View {
         ZStack {
-            if let img = shownImage {
+            if let img = shownImage(app) {
                 Image(nsImage: img)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
@@ -313,7 +324,7 @@ struct Thumb: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .opacity(dim ? 0.4 : 1)
-        .task(id: loadKey) {
+        .task(id: loadKey(app)) {
             let cacheGeneration = app.thumbnailCacheGeneration
             let resolved = await app.visibleImageSource(for: asset, requestedSource: source, kind: cacheKind)
             guard !Task.isCancelled else { return }

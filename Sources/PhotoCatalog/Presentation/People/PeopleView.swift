@@ -363,7 +363,9 @@ private struct PeopleDetailView: View {
 
 /// A face cut from its photo's cached preview.
 struct FaceAvatar: View {
-    @Environment(AppState.self) private var app
+    /// Optional, as Thumb's: SwiftUI may update an avatar whose hosting view it has already taken
+    /// out of the window, where the app state is gone; the avatar then keeps its placeholder.
+    @Environment(AppState.self) private var app: AppState?
     let faceId: String
     let size: CGFloat
     let circle: Bool
@@ -381,7 +383,7 @@ struct FaceAvatar: View {
         .frame(width: size, height: size)
         .clipShape(circle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 8, style: .continuous)))
         .task(id: faceId) {
-            guard let face = app.face(faceId), let asset = app.asset(id: face.assetId) else { return }
+            guard let app, let face = app.face(faceId), let asset = app.asset(id: face.assetId) else { return }
             let hasPreview = !asset.preview.isEmpty && !asset.preview.hasPrefix("http")
                 && FileManager.default.fileExists(atPath: asset.preview)
             let source = hasPreview ? asset.preview : (asset.localPath ?? "")

@@ -6,7 +6,9 @@ import AppKit
 import ImageIO
 
 struct ZoomablePhoto: View {
-    @Environment(AppState.self) private var app
+    /// Optional, as Thumb's: a view SwiftUI updates after taking its hosting view out of the
+    /// window no longer finds the app state, and then draws the canvas alone.
+    @Environment(AppState.self) private var app: AppState?
     let asset: Asset
     let zoom: ImageZoom?
     let onZoomChange: (ImageZoom?) -> Void
@@ -17,7 +19,7 @@ struct ZoomablePhoto: View {
     /// The loader's image once it holds this photo; until then a decode already in the cache (a
     /// prefetched neighbor), so an arrow key shows the next photo in the same frame instead of
     /// after the load task has had its turn on a busy main thread.
-    private var previewImage: CGImage? {
+    private func previewImage(_ app: AppState) -> CGImage? {
         let maxPixel = ThumbnailService.Kind.preview2048.maxPixel
         if let source = app.verifiedImageSource(for: asset, requestedSource: asset.preview, kind: .preview2048) {
             let key = ThumbLoader.key(source, maxPixel: maxPixel, cacheGeneration: app.thumbnailCacheGeneration)
@@ -30,7 +32,7 @@ struct ZoomablePhoto: View {
 
     /// Adjusted photos render their edit at full size; unadjusted paired RAWs read the camera
     /// JPEG, which decodes an order of magnitude faster and shows the same focus.
-    private var fullRequest: FullResolutionLoader.Request? {
+    private func fullRequest(_ app: AppState) -> FullResolutionLoader.Request? {
         let settings = app.developSettings[asset.id]
         if let settings, !settings.isNeutral {
             guard asset.status == .ready, let path = asset.localPath else { return nil }
@@ -42,11 +44,11 @@ struct ZoomablePhoto: View {
         return .init(path: path, isRaw: asset.isRaw, settings: nil)
     }
 
-    private var fullImage: CGImage? { full.image(for: fullRequest) }
+    private func fullImage(_ app: AppState) -> CGImage? { full.image(for: fullRequest(app)) }
 
-    private var pixelSize: CGSize {
-        if let fullImage { return CGSize(width: fullImage.width, height: fullImage.height) }
-        let preview = previewImage
+    private func pixelSize(_ app: AppState) -> CGSize {
+        if let fullImage = fullImage(app) { return CGSize(width: fullImage.width, height: fullImage.height) }
+        let preview = previewImage(app)
         if let preview, app.developSettings[asset.id]?.hasGeometry == true, asset.width > 0, asset.height > 0 {
             // a rotated or cropped preview renders the whole photo at 2048 px on the long edge first
             let longEdge = CGFloat(max(asset.width, asset.height))
@@ -65,10 +67,18 @@ struct ZoomablePhoto: View {
     }
 
     var body: some View {
-        ZoomableImageView(image: fullImage ?? previewImage, pixelSize: pixelSize,
+        if let app {
+            photo(app)
+        } else {
+            Theme.canvas
+        }
+    }
+
+    private func photo(_ app: AppState) -> some View {
+        ZoomableImageView(image: fullImage(app) ?? previewImage(app), pixelSize: pixelSize(app),
                           zoom: zoom, onZoomChange: onZoomChange)
             .overlay(alignment: .topTrailing) {
-                if let zoom { zoomBadge(zoom) }
+                if let zoom { zoomBadge(zoom, app) }
             }
             .task(id: "\(asset.id)|\(asset.preview)|\(app.previewMaxPixel)|\(app.thumbnailCacheGeneration)|"
                   + (app.developFingerprint(for: asset.id) ?? "")) {
@@ -79,18 +89,18 @@ struct ZoomablePhoto: View {
                 preview.load(resolved, maxPixel: ThumbnailService.Kind.preview2048.maxPixel,
                              cacheGeneration: generation)
             }
-            .task(id: zoom == nil ? nil : fullRequest) {
+            .task(id: zoom == nil ? nil : fullRequest(app)) {
                 guard zoom != nil else { return }
-                await full.load(fullRequest)
+                await full.load(fullRequest(app))
             }
     }
 
-    private func zoomBadge(_ zoom: ImageZoom) -> some View {
+    private func zoomBadge(_ zoom: ImageZoom, _ app: AppState) -> some View {
         HStack(spacing: 6) {
-            if fullImage == nil && full.isLoading(fullRequest) {
+            if fullImage(app) == nil && full.isLoading(fullRequest(app)) {
                 ProgressView().controlSize(.mini)
                 Text("正在载入原图…")
-            } else if fullImage == nil {
+            } else if fullImage(app) == nil {
                 Image(systemName: "exclamationmark.triangle")
                 Text("原件不可用 · 显示预览")
             }
