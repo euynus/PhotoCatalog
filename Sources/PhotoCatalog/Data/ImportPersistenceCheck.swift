@@ -202,8 +202,7 @@ enum ImportPersistenceCheck {
         assert(!paused.waitIfPaused() && !paused.isPaused, "resume must not revive a cancelled import")
 
         let store = try catalog("cancellation", in: directory)
-        let files = [directory.appendingPathComponent("invalid-first.jpg"),
-                     directory.appendingPathComponent("invalid-second.jpg")]
+        let files = (0..<8).map { directory.appendingPathComponent("invalid-\($0).jpg") }
         for file in files { try Data("invalid image".utf8).write(to: file) }
         let control = ImportControl()
         var failures = 0
@@ -211,7 +210,9 @@ enum ImportPersistenceCheck {
             failures = $0.failed
             if $0.failed == 1 { control.cancel() }
         }
-        assert(imported.isEmpty && failures == 1, "cancelled import must not process the next file")
+        // files already being imported alongside finish; no file starts after the cancel
+        assert(imported.isEmpty && failures >= 1 && failures <= ImportCoordinator.parallelism,
+               "cancelled import must not start another file")
     }
 
     private static func block(_ store: CatalogStore, table: String, operation: String,

@@ -140,6 +140,16 @@ final class ImportCoordinator: @unchecked Sendable {
         }
     }
 
+    /// Files imported at once. Two thirds of a RAW's import was spent waiting for Quick Look,
+    /// which renders it in another process and takes more than one request at a time: on 217
+    /// RAWs and JPEGs two at once took 13 s instead of 30 s; four or six were no faster.
+    static let parallelism = min(3, max(1, ProcessInfo.processInfo.activeProcessorCount / 2))
+
+    private enum Outcome {
+        case imported(Asset)
+        case failed(ImportFailure)
+    }
+
     private func process(_ files: [URL], folder: URL, mode: ImportMode, autoTag: Bool,
                          archiveRule: ManagedArchiveRule = .date, readSidecar: Bool = true,
                          previewMaxPixel: Int, control: ImportControl?,
@@ -149,60 +159,82 @@ final class ImportCoordinator: @unchecked Sendable {
                          progress: ((ImportProgress) -> Void)?) -> [Asset] {
         let folderId = sourceRootId ?? sourceId(forFolder: folder)
         let folderName = folderName ?? folder.lastPathComponent
-        var assets: [Asset] = []
+        // copying into Originals/ picks a free name, and a preparer may share staging space:
+        // both one file at a time
+        let copying = NSLock()
+        func importOne(_ url: URL) -> Outcome {
+            guard preparer?.isAvailable(url) ?? FileManager.default.fileExists(atPath: url.path) else {
+                return .failed(ImportFailure(url: url, reason: L("文件不存在或不可访问")))
+            }
+            // Reuse cataloged referenced files; downstream dedup still counts them as skipped.
+            if mode == .referenced, let known = knownAssetsById[assetId(forPath: url.path)] {
+                return .imported(known)
+            }
+            do {
+                let target = try copying.withLock { try preparer?.prepare(url) ?? url }
+                if let asset = try makeAsset(source: target, folderId: folderId, folderName: folderName,
+                                            mode: mode, autoTag: autoTag, archiveRule: archiveRule,
+                                            readSidecar: readSidecar, previewMaxPixel: previewMaxPixel,
+                                            copying: copying) {
+                    return .imported(asset)
+                }
+                return .failed(ImportFailure(url: url, reason: L("无法读取图片元数据或像素尺寸")))
+            } catch {
+                return .failed(ImportFailure(url: url, reason: L("复制原件失败：\(error.localizedDescription)")))
+            }
+        }
+
+        let state = NSLock()
+        var next = 0
+        var stopped = false
+        var results = [Asset?](repeating: nil, count: files.count)
         var prog = ImportProgress(total: files.count, processed: 0, failed: 0)
-        for url in files {
-            guard control?.waitIfPaused() != false else { break }
-            // A detached import can run for hours; drain Foundation/ImageIO temporaries
-            // per file, before reporting progress or blocking at the next pause point.
-            autoreleasepool {
-                guard preparer?.isAvailable(url) ?? FileManager.default.fileExists(atPath: url.path) else {
-                    prog.failed += 1
-                    prog.latestAsset = nil
-                    prog.latestFailure = ImportFailure(url: url, reason: L("文件不存在或不可访问"))
+        let workers = min(Self.parallelism, files.count)
+        DispatchQueue.concurrentPerform(iterations: max(1, workers)) { _ in
+            while true {
+                let index: Int? = state.withLock {
+                    guard !stopped, next < files.count else { return nil }
+                    next += 1
+                    return next - 1
+                }
+                guard let index else { return }
+                guard control?.waitIfPaused() != false else {
+                    state.withLock { stopped = true }
                     return
                 }
-                // Reuse cataloged referenced files; downstream dedup still counts them as skipped.
-                if mode == .referenced, let known = knownAssetsById[assetId(forPath: url.path)] {
-                    assets.append(known)
-                    prog.processed += 1
-                    prog.latestAsset = known
-                    prog.latestFailure = nil
-                    return
-                }
-                do {
-                    let target = try preparer?.prepare(url) ?? url
-                    if let asset = try makeAsset(source: target, folderId: folderId, folderName: folderName,
-                                                mode: mode, autoTag: autoTag, archiveRule: archiveRule,
-                                                readSidecar: readSidecar, previewMaxPixel: previewMaxPixel) {
-                        assets.append(asset)
+                // A detached import can run for hours; drain Foundation/ImageIO temporaries
+                // per file, before reporting progress or blocking at the next pause point.
+                let outcome = autoreleasepool { importOne(files[index]) }
+                // counted and reported in one place, so the progress only ever moves forward
+                state.withLock {
+                    switch outcome {
+                    case .imported(let asset):
+                        results[index] = asset
                         prog.processed += 1
                         prog.latestAsset = asset
                         prog.latestFailure = nil
-                    } else {
+                    case .failed(let failure):
                         prog.failed += 1
                         prog.latestAsset = nil
-                        prog.latestFailure = ImportFailure(url: url, reason: L("无法读取图片元数据或像素尺寸"))
+                        prog.latestFailure = failure
                     }
-                } catch {
-                    prog.failed += 1
-                    prog.latestAsset = nil
-                    prog.latestFailure = ImportFailure(url: url, reason: L("复制原件失败：\(error.localizedDescription)"))
+                    progress?(prog)
                 }
             }
-            progress?(prog)
         }
-        return assets
+        return results.compactMap { $0 }
     }
 
     private func makeAsset(source url: URL, folderId: String, folderName: String,
                            mode: ImportMode, autoTag: Bool, archiveRule: ManagedArchiveRule = .date,
-                           readSidecar: Bool = true, previewMaxPixel: Int) throws -> Asset? {
+                           readSidecar: Bool = true, previewMaxPixel: Int, copying: NSLock) throws -> Asset? {
         let meta = MetadataReader.read(url)
         guard meta.width > 0, meta.height > 0 else { return nil }
         let finalURL: URL
         if mode == .managed {
-            finalURL = try copyToOriginals(url, date: meta.captureDate, camera: meta.camera, rule: archiveRule)
+            finalURL = try copying.withLock {
+                try copyToOriginals(url, date: meta.captureDate, camera: meta.camera, rule: archiveRule)
+            }
         } else {
             finalURL = url
         }
