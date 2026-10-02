@@ -203,6 +203,11 @@ struct DevelopPanel: View {
             }
             .padding(14)
         }
+        // flush with the inspector's top, the scroll view runs on under the toolbar, and SwiftUI
+        // then hit-tests its content the toolbar's height (52 points) above where it's drawn: the
+        // pointer on one preset hovered and applied the one two rows down. A point lower, it
+        // stays below the toolbar, as the info inspector's does under its header.
+        .padding(.top, 1)
     }
 
     private func header(_ asset: Asset, settings: DevelopSettings) -> some View {
