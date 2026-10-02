@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        UndoSteps.trackEvents()
         // decoded photos are drawn for the screen the window is on (see DisplayBitmap)
         DisplayBitmap.use(NSScreen.main)
         for name in [NSApplication.didChangeScreenParametersNotification, NSWindow.didChangeScreenNotification] {

@@ -226,10 +226,12 @@ final class AppState {
     /// Records how to put `before` back. Undoing registers the reverse, which is what redo replays.
     private func registerUndo(restoring before: [Asset], actionName: String?) {
         guard let actionName, let undoManager, !before.isEmpty else { return }
-        undoManager.registerUndo(withTarget: self) { app in
-            MainActor.assumeIsolated { app.restoreSnapshot(before, actionName: actionName) }
+        UndoSteps.register(on: undoManager) {
+            undoManager.registerUndo(withTarget: self) { app in
+                MainActor.assumeIsolated { app.restoreSnapshot(before, actionName: actionName) }
+            }
+            undoManager.setActionName(actionName)
         }
-        undoManager.setActionName(actionName)
     }
 
     private func restoreSnapshot(_ snapshot: [Asset], actionName: String) {
@@ -2043,12 +2045,14 @@ final class AppState {
         for (id, value) in settings { developSettings[id] = value.isNeutral ? nil : value }
         recordDevelopHistory(settings.filter { before[$0.key] != $0.value }, name: undoName, change: change)
         guard let undoManager else { return }
-        undoManager.registerUndo(withTarget: self) { app in
-            MainActor.assumeIsolated {
-                app.commitDevelop(before, undoName: undoName, history: change == .append ? .revert : .append)
+        UndoSteps.register(on: undoManager) {
+            undoManager.registerUndo(withTarget: self) { app in
+                MainActor.assumeIsolated {
+                    app.commitDevelop(before, undoName: undoName, history: change == .append ? .revert : .append)
+                }
             }
+            undoManager.setActionName(undoName)
         }
-        undoManager.setActionName(undoName)
     }
 
     /// Saves a change background work made (a spot's source found, a subject masked, auto tone
@@ -5292,13 +5296,15 @@ final class AppState {
         selectedIds = Set(copyIds)
         setPrimary(copyIds[0])
         if let undoManager {
-            undoManager.registerUndo(withTarget: self) { app in
-                MainActor.assumeIsolated {
-                    _ = app.mutate(Set(copyIds), undoName: L("创建虚拟副本")) { $0.deleted = true }
-                    app.ensurePrimaryValid()
+            UndoSteps.register(on: undoManager) {
+                undoManager.registerUndo(withTarget: self) { app in
+                    MainActor.assumeIsolated {
+                        _ = app.mutate(Set(copyIds), undoName: L("创建虚拟副本")) { $0.deleted = true }
+                        app.ensurePrimaryValid()
+                    }
                 }
+                undoManager.setActionName(L("创建虚拟副本"))
             }
-            undoManager.setActionName(L("创建虚拟副本"))
         }
         push(copies.count == 1 ? "已创建\(copies[0].copyName ?? "")" : "已创建 \(copies.count) 个虚拟副本", "copy")
     }
@@ -7548,10 +7554,14 @@ final class AppState {
         }
         collapsedStackIds.formIntersection(Set(photoStacks.map(\.id)))
         normalizeSelectionToVisibleList()
-        undoManager?.registerUndo(withTarget: self) { app in
-            MainActor.assumeIsolated { app.setAutoStack(seconds: previous) }
+        if let undoManager {
+            UndoSteps.register(on: undoManager) {
+                undoManager.registerUndo(withTarget: self) { app in
+                    MainActor.assumeIsolated { app.setAutoStack(seconds: previous) }
+                }
+                undoManager.setActionName(L("自动叠放"))
+            }
         }
-        undoManager?.setActionName(L("自动叠放"))
     }
 
     /// Folds every stack shut, or opens every one.
@@ -8547,10 +8557,12 @@ final class AppState {
             }
         }
         guard let undoManager else { return }
-        undoManager.registerUndo(withTarget: self) { app in
-            MainActor.assumeIsolated { app.setQuickCollection(before, undoName: undoName) }
+        UndoSteps.register(on: undoManager) {
+            undoManager.registerUndo(withTarget: self) { app in
+                MainActor.assumeIsolated { app.setQuickCollection(before, undoName: undoName) }
+            }
+            undoManager.setActionName(undoName)
         }
-        undoManager.setActionName(undoName)
     }
 
     func createAlbumFromSelection(in setId: String? = nil) {
@@ -9333,13 +9345,15 @@ final class AppState {
         facesRevision &+= 1
         syncPersonKeywords(for: touchedAssets, names: names)
         guard let undoName, let undoManager else { return }
-        undoManager.registerUndo(withTarget: self) { app in
-            MainActor.assumeIsolated {
-                app.setFaceStates(before, undoName: undoName)
-                app.refreshFaceClusters()
+        UndoSteps.register(on: undoManager) {
+            undoManager.registerUndo(withTarget: self) { app in
+                MainActor.assumeIsolated {
+                    app.setFaceStates(before, undoName: undoName)
+                    app.refreshFaceClusters()
+                }
             }
+            undoManager.setActionName(undoName)
         }
-        undoManager.setActionName(undoName)
     }
 
     /// Makes the `人物/名字` keywords of `names` match the confirmed faces on each photo (and
@@ -10076,3 +10090,4 @@ struct GridMetrics: Equatable {
         cellSize = max(1, ((width - spacing * CGFloat(columns - 1)) / CGFloat(columns)).rounded(.down))
     }
 }
+
