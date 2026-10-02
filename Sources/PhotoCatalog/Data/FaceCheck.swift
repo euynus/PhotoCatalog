@@ -98,11 +98,12 @@ enum FaceCheck {
         guard let store = try? CatalogStore(packageURL: directory.appendingPathComponent("Faces.photolibrary")) else {
             preconditionFailure("could not create a scratch catalog")
         }
-        let photos = DemoData.assets.prefix(4).enumerated().map { index, base -> Asset in
+        let photos = DemoData.assets.prefix(5).enumerated().map { index, base -> Asset in
             var asset = base
             asset.localPath = "/tmp/pc-faces/\(index).jpg"
             asset.isDemo = false
             asset.keywords = []
+            asset.faces = 0   // no Vision tagging at import: only the People analysis knows
             return asset
         }
         try? store.upsert(photos)
@@ -128,6 +129,12 @@ enum FaceCheck {
         while app.faceClusters.count < 2, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
         assert(app.faceClusters.map(\.faceIds.count) == [3, 2] && app.faceScannedCount == 4 && app.faceOutdatedCount == 0,
                "saved faces load and group into people-sized clusters")
+        app.select(Selection(type: .lib, id: "people", name: "人物"))
+        assert(Set(app.list.map(\.id)) == Set(ids.prefix(4)) && app.libraryCounts.people == 4,
+               "the 人物 collection lists the photos the analysis found faces in")
+        app.openLoupe(ids[2])
+        assert(app.view == .loupe && app.list.contains { $0.id == ids[2] }, "opening a face's photo shows it in the loupe")
+        app.view = .grid
 
         let undo = UndoManager()
         undo.groupsByEvent = false

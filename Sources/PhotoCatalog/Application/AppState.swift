@@ -7411,8 +7411,9 @@ final class AppState {
         _ = recentImportDays    // its didSet clears this cache without bumping the version
         _ = isLoadingCatalog
         _ = loadingCatalogTotalCount
+        _ = facesRevision       // the people count follows face analysis
         if let cache = libraryCountsCache { return cache }
-        var counts = Self.libraryCounts(assets, pairing: assetPairing, recentCutoff: recentCutoff)
+        var counts = Self.libraryCounts(assets, pairing: assetPairing, recentCutoff: recentCutoff, withFaces: faceAssetIds)
         if isLoadingCatalog, let loadingCatalogTotalCount {
             counts.all = loadingCatalogTotalCount
         }
@@ -7420,7 +7421,8 @@ final class AppState {
         return counts
     }
 
-    nonisolated static func libraryCounts(_ assets: [Asset], pairing: AssetPairing, recentCutoff cutoff: Date) -> LibraryCounts {
+    nonisolated static func libraryCounts(_ assets: [Asset], pairing: AssetPairing, recentCutoff cutoff: Date,
+                                          withFaces: Set<String> = []) -> LibraryCounts {
         var counts = LibraryCounts()
         for a in assets where !a.deleted {
             if a.status == .missing || a.status == .offline { counts.missingOffline += 1 }
@@ -7431,7 +7433,7 @@ final class AppState {
             if a.flag == .pick { counts.picks += 1 }
             if a.flag == .reject { counts.rejected += 1 }
             if a.hasGPS { counts.places += 1 }
-            if a.faces > 0 { counts.people += 1 }
+            if a.faces > 0 || withFaces.contains(a.id) { counts.people += 1 }
         }
         return counts
     }
@@ -7833,7 +7835,9 @@ final class AppState {
             case "places":
                 belongs = { $0.hasGPS }
             case "people":
-                belongs = { $0.faces > 0 }
+                // faces found by the People analysis, or by Vision tagging at import
+                let withFaces = faceAssetIds
+                belongs = { $0.faces > 0 || withFaces.contains($0.id) }
             default:
                 return assets.filter(live)
             }
@@ -9062,6 +9066,14 @@ final class AppState {
     @ObservationIgnored private var faceScannedAssetIds: Set<String> = []
     /// Photos analysed before faces were told apart by SFace, waiting to be analysed again.
     @ObservationIgnored private var faceOutdatedAssetIds: Set<String> = []
+    /// Photos the analysis found a face in: the 人物 collection's photos.
+    @ObservationIgnored private var faceAssetIds: Set<String> = [] {
+        didSet {
+            guard faceAssetIds != oldValue else { return }
+            libraryCountsCache = nil
+            if isPeople { listInputsVersion &+= 1 }
+        }
+    }
     var facesRevision = 0
     /// Unnamed faces in likely-one-person groups, largest first.
     var faceClusters: [FaceCluster] = []
@@ -9085,6 +9097,7 @@ final class AppState {
     func loadFaces(from store: CatalogStore) {
         let loaded = (try? store.loadFaces()) ?? []
         faces = Dictionary(loaded.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        faceAssetIds = Set(loaded.map(\.assetId))
         // photos whose faces an earlier method read count as not analysed, so the next analysis
         // reads them again (keeping their names)
         faceOutdatedAssetIds = Set(loaded.filter { !$0.vector.isEmpty && !FaceClustering.isComparable($0) }.map(\.assetId))
@@ -9098,6 +9111,7 @@ final class AppState {
         faceAnalysisGeneration &+= 1
         faceAnalysis = nil
         faces = [:]
+        faceAssetIds = []
         faceScannedAssetIds = []
         faceOutdatedAssetIds = []
         faceClusters = []
@@ -9234,11 +9248,14 @@ final class AppState {
             return false
         }
         for face in earlier.values.joined() { faces[face.id] = nil }
+        var withFaces = faceAssetIds
         for (assetId, found) in scans {
             faceScannedAssetIds.insert(assetId)
             faceOutdatedAssetIds.remove(assetId)
             for face in found { faces[face.id] = face }
+            if found.isEmpty { withFaces.remove(assetId) } else { withFaces.insert(assetId) }
         }
+        faceAssetIds = withFaces
         faceAnalysis?.done = done
         facesRevision &+= 1
         // groups fill in as the analysis goes, not only at the end
