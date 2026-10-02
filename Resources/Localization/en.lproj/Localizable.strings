@@ -1870,3 +1870,7 @@
 "视频 %@" = "Video %@";
 "视频不能修图" = "Videos Can't Be Developed";
 "视频创建时间" = "Video creation time";
+"全部展开" = "Expand All";
+"全部折叠" = "Collapse All";
+"只展开“%@”" = "Expand Only “%@”";
+"点按折叠或展开 · ⌥ 点按只展开这一项" = "Click to collapse or expand · Option-click to expand only this one";
