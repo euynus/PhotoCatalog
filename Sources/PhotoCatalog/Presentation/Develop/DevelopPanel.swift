@@ -9,13 +9,6 @@ struct DevelopPanel: View {
     let asset: Asset?
     @State private var mixerProperty: ColorMixer.Property = .hue
     @State private var gradingRegion: ColorGrading.Region = .shadows
-    @State private var renamingSnapshot: String?
-    @State private var snapshotName = ""
-    /// Typing a snapshot name must reach the field, not the photo shortcuts.
-    @FocusState private var snapshotNameFocused: Bool
-    @State private var showsFullHistory = false
-    /// Sections folded shut, one id per line; the rarely used ones start folded.
-    @AppStorage("pc_collapsedDevelopSections") private var collapsedSections = "calibration\nlut\nsoftProof"
 
     var body: some View {
         Group {
@@ -164,45 +157,6 @@ struct DevelopPanel: View {
                         .labelsHidden()
                         .help("用输出色彩空间或打印机配置文件预览照片 (S)")
                 }) { softProof() }
-                section(L("预设"), id: "presets", accessory: {
-                    HStack(spacing: 8) {
-                        Menu {
-                            Button("导入预设…") { app.chooseAndImportDevelopPresets() }
-                            Button("导出我的预设…") { app.exportDevelopPresets(app.developPresets.map(\.id)) }
-                                .disabled(app.developPresets.isEmpty)
-                        } label: { Image(systemName: "ellipsis.circle") }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
-                        .help("导入或导出预设（.xmp，可与 Lightroom 互通）")
-                        Button { app.showDevelopTransfer(.preset) } label: { Image(systemName: "plus") }
-                            .buttonStyle(.borderless)
-                            .help("以当前设置存储为预设")
-                            .accessibilityLabel("存储为预设…")
-                    }
-                }) {
-                    if let applied = app.developPresetAmount(for: asset.id) {
-                        let amount = app.developPresetAmountDraft ?? applied.amount
-                        DevelopSlider(title: L("强度 · \(applied.presetName)"), value: amount * 100, range: 0...200, step: 1,
-                                      format: { String(format: "%.0f%%", $0) }, isNeutral: amount == 1,
-                                      onChange: { app.setDevelopPresetAmount($0 / 100) },
-                                      onReset: { app.commitDevelopPresetAmount(1) },
-                                      onCommit: { app.commitDevelopPresetAmount() })
-                    }
-                    DevelopPresetList(asset: asset)
-                }
-                section(L("快照"), id: "snapshots", accessory: {
-                    Button { app.createDevelopSnapshot(for: asset.id) } label: { Image(systemName: "plus") }
-                        .buttonStyle(.borderless)
-                        .help("以当前设置新建快照")
-                        .accessibilityLabel("新建快照")
-                }) { snapshots(asset) }
-                section(L("历史记录"), id: "history", accessory: {
-                    Button("清除") { app.confirmClearDevelopHistory(for: asset.id) }
-                        .controlSize(.small)
-                        .disabled(app.developHistory(for: asset.id).isEmpty)
-                        .help("清除这张照片的历史记录（不改变当前设置）")
-                }) { history(asset, settings) }
             }
             .padding(14)
         }
@@ -389,87 +343,6 @@ struct DevelopPanel: View {
             .disabled(settings.crop == nil && settings.straighten == 0)
         }
         .controlSize(.small)
-    }
-
-    // ---- snapshots and history ----
-    @ViewBuilder
-    private func snapshots(_ asset: Asset) -> some View {
-        let snapshots = app.developSnapshots(for: asset.id)
-        if snapshots.isEmpty {
-            Text("快照保存照片此刻的修图设置，之后随时可以回到这个状态")
-                .font(.system(size: 11)).foregroundStyle(Theme.text3)
-        }
-        ForEach(snapshots) { snapshot in
-            if renamingSnapshot == snapshot.id {
-                TextField("快照名称", text: $snapshotName)
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.small)
-                    .focused($snapshotNameFocused)
-                    .onAppear { snapshotNameFocused = true }
-                    .onSubmit {
-                        app.renameDevelopSnapshot(snapshot.id, to: snapshotName, for: asset.id)
-                        renamingSnapshot = nil
-                    }
-                    .onExitCommand { renamingSnapshot = nil }
-            } else {
-                recordRow(snapshot.name, detail: Self.recordTime(snapshot.date),
-                          current: snapshot.settings == app.developSettings(for: asset.id)) {
-                    app.applyDevelopSnapshot(snapshot, to: asset.id)
-                }
-                .contextMenu {
-                    Button("重命名…") { snapshotName = snapshot.name; renamingSnapshot = snapshot.id }
-                    Button("用当前设置更新") { app.updateDevelopSnapshot(snapshot.id, for: asset.id) }
-                    Divider()
-                    Button("删除快照", role: .destructive) { app.deleteDevelopSnapshot(snapshot.id, for: asset.id) }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func history(_ asset: Asset, _ settings: DevelopSettings) -> some View {
-        let steps = app.developHistory(for: asset.id).reversed()
-        let shown = showsFullHistory ? Array(steps) : Array(steps.prefix(12))
-        // the newest step that matches the photo now is where it stands (compared as stored text)
-        let current = DevelopHistoryStep.json(settings)
-        let currentSeq = steps.first { $0.json == current }?.seq
-        ForEach(shown) { step in
-            recordRow(step.name, detail: Self.recordTime(step.date), current: step.seq == currentSeq) {
-                app.applyDevelopHistoryStep(step, to: asset.id)
-            }
-        }
-        if steps.count > shown.count || showsFullHistory && steps.count > 12 {
-            Button(showsFullHistory ? L("只显示最近的步骤") : L("显示全部 \(steps.count) 步")) { showsFullHistory.toggle() }
-                .buttonStyle(.link)
-                .controlSize(.small)
-        }
-        recordRow(L("原照设置"), detail: "", current: settings.isNeutral && currentSeq == nil) {
-            app.commitDevelop([asset.id: .neutral], undoName: L("历史记录：原照设置"))
-        }
-    }
-
-    private func recordRow(_ title: String, detail: String, current: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Text(title).lineLimit(1).truncationMode(.tail)
-                Spacer(minLength: 4)
-                Text(detail).font(.system(size: 11)).monospacedDigit().foregroundStyle(Theme.text3)
-            }
-            .font(.system(size: 12))
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(current ? Theme.accentFill.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 5))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(current ? .isSelected : [])
-    }
-
-    /// Time of day for today's records, the date for older ones.
-    private static func recordTime(_ date: Date) -> String {
-        Calendar.current.isDateInToday(date)
-            ? date.formatted(date: .omitted, time: .shortened)
-            : date.formatted(date: .numeric, time: .omitted)
     }
 
     // ---- spot removal: specks healed or cloned over ----
@@ -1021,62 +894,13 @@ struct DevelopPanel: View {
                       onCommit: { commitDraft(asset, control.title) })
     }
 
-    private func section<Content: View>(_ title: String, id: String, @ViewBuilder content: () -> Content) -> some View {
-        section(title, id: id, accessory: { EmptyView() }, content: content)
+    private func section<Content: View>(_ title: String, id: String, @ViewBuilder content: @escaping () -> Content) -> some View {
+        DevelopSection(title, id: id, group: DevelopSections.panel, accessory: { EmptyView() }, content: content)
     }
 
-    /// Every section, top to bottom, by the id its folded state is saved under.
-    static let sectionIds = ["profile", "whiteBalance", "tone", "presence", "curve", "mixer", "grading", "detail", "lens",
-                             "transform", "effects", "lensBlur", "calibration", "lut", "crop", "spots", "masks", "ai",
-                             "softProof", "presets", "snapshots", "history"]
-
-    private var folded: Set<String> { Set(collapsedSections.split(separator: "\n").map(String.init)) }
-
-    private func setFolded(_ ids: Set<String>) {
-        collapsedSections = ids.sorted().joined(separator: "\n")
-    }
-
-    /// A panel section that folds shut at its title, as Lightroom's do; ⌥-click (or the title's
-    /// menu) opens it alone. `accessory` sits at the end of the title row, as Lightroom's Auto does.
-    private func section<Accessory: View, Content: View>(_ title: String, id: String, @ViewBuilder accessory: () -> Accessory,
-                                                         @ViewBuilder content: () -> Content) -> some View {
-        let isFolded = folded.contains(id)
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Button {
-                    if NSEvent.modifierFlags.contains(.option) {
-                        setFolded(Set(Self.sectionIds).subtracting([id]))
-                    } else {
-                        setFolded(isFolded ? folded.subtracting([id]) : folded.union([id]))
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .rotationEffect(.degrees(isFolded ? 0 : 90))
-                            .frame(width: 10)
-                        Text(title).font(.system(size: 12, weight: .semibold))
-                    }
-                    .foregroundStyle(Theme.text2)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("点按折叠或展开 · ⌥ 点按只展开这一项")
-                .accessibilityLabel(title)
-                .accessibilityValue(isFolded ? L("已折叠") : L("已展开"))
-                .accessibilityAddTraits(.isHeader)
-                .contextMenu {
-                    Button("只展开“\(title)”") { setFolded(Set(Self.sectionIds).subtracting([id])) }
-                    Button("全部展开") { setFolded([]) }
-                    Button("全部折叠") { setFolded(Set(Self.sectionIds)) }
-                }
-                Spacer(minLength: 0)
-                accessory()
-            }
-            if !isFolded { content() }
-        }
-        .padding(.bottom, isFolded ? 6 : 12)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+    private func section<Accessory: View, Content: View>(_ title: String, id: String, @ViewBuilder accessory: @escaping () -> Accessory,
+                                                         @ViewBuilder content: @escaping () -> Content) -> some View {
+        DevelopSection(title, id: id, group: DevelopSections.panel, accessory: accessory, content: content)
     }
 
     // ---- editing: drafts drive the live preview, a release saves one undoable step ----
@@ -1103,6 +927,84 @@ struct DevelopPanel: View {
 }
 
 /// Label + value + slider. Double-clicking the label resets to neutral, as in Lightroom.
+/// The Develop sections, by the id their folded state is kept under, on each side.
+enum DevelopSections {
+    static let panel = ["profile", "whiteBalance", "tone", "presence", "curve", "mixer", "grading", "detail", "lens",
+                        "transform", "effects", "lensBlur", "calibration", "lut", "crop", "spots", "masks", "ai", "softProof"]
+    static let sidebar = ["presets", "snapshots", "history"]
+    /// Sections folded shut, one id per line; the rarely used ones start folded.
+    static let storageKey = "pc_collapsedDevelopSections"
+    static let initiallyFolded = "calibration\nlut\nsoftProof"
+}
+
+/// A Develop section that folds shut at its title, as Lightroom's do; ⌥-click (or the title's
+/// menu) opens it alone among its `group`. `accessory` sits at the end of the title row, as
+/// Lightroom's Auto does. A folded section doesn't build its content.
+struct DevelopSection<Accessory: View, Content: View>: View {
+    let title: String
+    let id: String
+    let group: [String]
+    let accessory: () -> Accessory
+    let content: () -> Content
+    @AppStorage(DevelopSections.storageKey) private var collapsed = DevelopSections.initiallyFolded
+
+    init(_ title: String, id: String, group: [String], @ViewBuilder accessory: @escaping () -> Accessory,
+         @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.id = id
+        self.group = group
+        self.accessory = accessory
+        self.content = content
+    }
+
+    private var folded: Set<String> { Set(collapsed.split(separator: "\n").map(String.init)) }
+
+    private func setFolded(_ ids: Set<String>) { collapsed = ids.sorted().joined(separator: "\n") }
+
+    /// Folds every section of the group but this one, leaving the other side's alone.
+    private func openAlone() { setFolded(folded.union(group).subtracting([id])) }
+
+    var body: some View {
+        let isFolded = folded.contains(id)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Button {
+                    if NSEvent.modifierFlags.contains(.option) {
+                        openAlone()
+                    } else {
+                        setFolded(isFolded ? folded.subtracting([id]) : folded.union([id]))
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .rotationEffect(.degrees(isFolded ? 0 : 90))
+                            .frame(width: 10)
+                        Text(title).font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(Theme.text2)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("点按折叠或展开 · ⌥ 点按只展开这一项")
+                .accessibilityLabel(title)
+                .accessibilityValue(isFolded ? L("已折叠") : L("已展开"))
+                .accessibilityAddTraits(.isHeader)
+                .contextMenu {
+                    Button("只展开“\(title)”") { openAlone() }
+                    Button("全部展开") { setFolded(folded.subtracting(group)) }
+                    Button("全部折叠") { setFolded(folded.union(group)) }
+                }
+                Spacer(minLength: 0)
+                accessory()
+            }
+            if !isFolded { content() }
+        }
+        .padding(.bottom, isFolded ? 6 : 12)
+        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+}
+
 struct DevelopSlider: View {
     let title: String
     let value: Double

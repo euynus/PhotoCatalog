@@ -16,7 +16,7 @@ struct MainView: View {
         NavigationSplitView(columnVisibility: Binding(
             get: { app.sidebarVisible ? .all : .detailOnly },
             set: { app.sidebarVisible = $0 != .detailOnly })) {
-            Sidebar(assetRevision: assetRevision)
+            SidebarColumn(assetRevision: assetRevision)
                 .navigationSplitViewColumnWidth(min: Theme.sidebarMinW, ideal: Theme.sidebarW,
                                                 max: Theme.sidebarMaxW)
         } detail: {
@@ -121,6 +121,21 @@ struct MainView: View {
 
 extension AppState {
     var inspectorAvailable: Bool { !isDuplicates && view != .analysis }
+}
+
+/// The library sidebar, or in Develop the photo's presets, snapshots and history, as Lightroom
+/// has them; it reads the view mode itself, so switching views doesn't re-evaluate MainView.
+private struct SidebarColumn: View {
+    @Environment(AppState.self) private var app
+    let assetRevision: Int
+
+    var body: some View {
+        if app.view == .develop {
+            DevelopSidebar()
+        } else {
+            Sidebar(assetRevision: assetRevision)
+        }
+    }
 }
 
 /// Reads the photo it shows in its own body: read inside MainView's inspector closure, the
