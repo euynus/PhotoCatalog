@@ -27,6 +27,19 @@ struct RenderedExportItem: Sendable {
     var isVideo = false
 }
 
+/// The file names one export has taken, shared by the photos it writes at once, so two photos
+/// never land on one file.
+final class ExportNames: @unchecked Sendable {
+    private let lock = NSLock()
+    private var reserved = Set<String>()
+
+    func destination(in folder: URL, name: String, ext: String, collision: ExportSettings.Collision) -> URL? {
+        lock.withLock {
+            RenderedExportService.destinationURL(in: folder, name: name, ext: ext, collision: collision, reserved: &reserved)
+        }
+    }
+}
+
 /// A flag the export queue checks between photos.
 final class ExportCancellation: @unchecked Sendable {
     private let lock = NSLock()
@@ -97,10 +110,10 @@ enum RenderedExportService {
     /// A video's original copied in under the template's name (its own extension), through a
     /// partial file so a cancelled copy never leaves half a movie.
     private static func copyVideo(_ item: RenderedExportItem, named name: String, settings: ExportSettings,
-                                  to folder: URL, reserved: inout Set<String>) -> Outcome {
+                                  to folder: URL, names: ExportNames) -> Outcome {
         let source = URL(fileURLWithPath: item.sourcePath)
-        guard let destination = destinationURL(in: folder, name: name, ext: source.pathExtension,
-                                               collision: settings.collision, reserved: &reserved) else {
+        guard let destination = names.destination(in: folder, name: name, ext: source.pathExtension,
+                                                  collision: settings.collision) else {
             return .skipped
         }
         let partial = folder.appendingPathComponent(".\(UUID().uuidString).partial")
@@ -137,15 +150,14 @@ enum RenderedExportService {
                        provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
 
-    /// Renders and writes one photo into `folder`. `reserved` holds lowercased names already
-    /// taken by this export, so two photos never land on one file.
+    /// Renders and writes one photo into `folder`, under a name `names` hasn't given out.
     static func export(_ item: RenderedExportItem, sequence: Int, settings: ExportSettings, to folder: URL,
-                       reserved: inout Set<String>) -> Outcome {
+                       names: ExportNames) -> Outcome {
         let name = settings.fileName(original: item.baseName, sequence: sequence, date: item.date,
                                      camera: item.camera, title: item.title, rating: item.rating)
-        if item.isVideo { return copyVideo(item, named: name, settings: settings, to: folder, reserved: &reserved) }
-        guard let destination = destinationURL(in: folder, name: name, ext: settings.format.fileExtension,
-                                               collision: settings.collision, reserved: &reserved) else {
+        if item.isVideo { return copyVideo(item, named: name, settings: settings, to: folder, names: names) }
+        guard let destination = names.destination(in: folder, name: name, ext: settings.format.fileExtension,
+                                                  collision: settings.collision) else {
             return .skipped
         }
         let rendered = autoreleasepool { render(item, settings: settings) }

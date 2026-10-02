@@ -171,10 +171,10 @@ enum VideoCheck {
         try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
         var settings = ExportSettings()
         settings.fileNameTemplate = "{original}-{seq}"
-        var reserved = Set<String>()
+        let reserved = ExportNames()
         guard let item = exportItems.first(where: { $0.assetId == clip.id }),
               case .written(let written) = RenderedExportService.export(item, sequence: 3, settings: settings, to: out,
-                                                                        reserved: &reserved) else {
+                                                                        names: reserved) else {
             assertionFailure("a video exports")
             return
         }

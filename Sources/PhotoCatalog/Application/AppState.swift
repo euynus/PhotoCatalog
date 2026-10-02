@@ -4615,9 +4615,8 @@ final class AppState {
         settings.metadata = .all
         settings.collision = .uniqueName
         return jobs.compactMap { job in
-            var reserved = Set<String>()
             guard case .written(let url) = RenderedExportService.export(job.item, sequence: 1, settings: settings,
-                                                                        to: job.folder, reserved: &reserved)
+                                                                        to: job.folder, names: ExportNames())
             else { return nil }
             let imported = coordinator.importFiles([url], from: job.folder, readSidecar: false,
                                                    previewMaxPixel: previewMaxPixel).first
@@ -6704,7 +6703,7 @@ final class AppState {
         }
     }
 
-    /// Stops the running export after the photo in progress and drops the queued ones.
+    /// Stops the running export after the photos in progress and drops the queued ones.
     func cancelRenderedExport() {
         guard !renderedExportJobs.isEmpty else { return }
         renderedExportJobs.removeSubrange(1...)
@@ -6722,7 +6721,7 @@ final class AppState {
         let cancellation = renderedExportCancellation
         cancellation.reset()
         Self.renderedExportQueue.async { [weak self] in
-            var reserved = Set<String>()
+            let names = ExportNames()
             var written: [URL] = [], skipped = 0, failures: [String] = []
             var folderReady = true
             do {
@@ -6731,16 +6730,35 @@ final class AppState {
                 failures.append(L("无法创建导出文件夹：\(error.localizedDescription)"))
                 folderReady = false
             }
-            for (index, item) in job.items.enumerated() where folderReady {
-                if cancellation.isCancelled { break }
-                switch RenderedExportService.export(item, sequence: job.settings.sequenceStart + index,
-                                                    settings: job.settings, to: job.folder, reserved: &reserved) {
-                case .written(let url): written.append(url)
-                case .skipped: skipped += 1
-                case .failed(let reason): failures.append(reason)
-                }
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated { self?.renderedExportProgress?.done = index + 1 }
+            // two photos at once: one renders on the GPU while the other is encoded
+            let lock = NSLock()
+            var next = 0, done = 0
+            DispatchQueue.concurrentPerform(iterations: folderReady ? min(2, job.items.count) : 0) { _ in
+                while true {
+                    let index: Int? = lock.withLock {
+                        guard next < job.items.count, !cancellation.isCancelled else { return nil }
+                        next += 1
+                        return next - 1
+                    }
+                    guard let index else { return }
+                    let outcome = RenderedExportService.export(job.items[index], sequence: job.settings.sequenceStart + index,
+                                                               settings: job.settings, to: job.folder, names: names)
+                    let finished: Int = lock.withLock {
+                        switch outcome {
+                        case .written(let url): written.append(url)
+                        case .skipped: skipped += 1
+                        case .failed(let reason): failures.append(reason)
+                        }
+                        done += 1
+                        return done
+                    }
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            if let progress = self?.renderedExportProgress, progress.done < finished {
+                                self?.renderedExportProgress?.done = finished
+                            }
+                        }
+                    }
                 }
             }
             let cancelled = cancellation.isCancelled

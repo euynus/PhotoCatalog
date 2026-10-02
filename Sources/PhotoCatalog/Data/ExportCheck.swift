@@ -155,9 +155,9 @@ enum ExportCheck {
         s.resize = .longEdge
         s.edge = 200
         s.removeLocation = true
-        var reserved = Set<String>()
+        let reserved = ExportNames()
         guard case .written(let jpeg) = RenderedExportService.export(item(source.path), sequence: 1, settings: s,
-                                                                     to: out, reserved: &reserved) else {
+                                                                     to: out, names: reserved) else {
             preconditionFailure("JPEG export failed")
         }
         let p = properties(jpeg)
@@ -176,7 +176,7 @@ enum ExportCheck {
         s.removeLocation = false
         s.fileNameTemplate = "bare"
         guard case .written(let bare) = RenderedExportService.export(item(source.path), sequence: 1, settings: s,
-                                                                     to: out, reserved: &reserved) else {
+                                                                     to: out, names: reserved) else {
             preconditionFailure("metadata-free export failed")
         }
         let bareProperties = properties(bare)
@@ -188,7 +188,7 @@ enum ExportCheck {
         tiff.sixteenBit = true
         tiff.colorSpace = .adobeRGB
         guard case .written(let tif) = RenderedExportService.export(item(source.path), sequence: 1, settings: tiff,
-                                                                    to: out, reserved: &reserved) else {
+                                                                    to: out, names: reserved) else {
             preconditionFailure("TIFF export failed")
         }
         let tifProperties = properties(tif)
@@ -199,7 +199,7 @@ enum ExportCheck {
         var heic = ExportSettings()
         heic.format = .heic
         guard case .written(let heif) = RenderedExportService.export(item(source.path), sequence: 1, settings: heic,
-                                                                     to: out, reserved: &reserved) else {
+                                                                     to: out, names: reserved) else {
             preconditionFailure("HEIC export failed")
         }
         let type = CGImageSourceCreateWithURL(heif as CFURL, nil).flatMap(CGImageSourceGetType) as String?
