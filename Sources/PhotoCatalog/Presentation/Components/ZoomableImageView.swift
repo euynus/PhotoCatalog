@@ -122,8 +122,15 @@ final class ZoomScrollView: NSScrollView {
         isApplying = true
         defer { isApplying = false }
         let fit = fitMagnification
-        minMagnification = fit
-        maxMagnification = max(4, fit)
+        // AppKit throws whenever the minimum passes the maximum, even for a moment: a photo
+        // smaller than a quarter of the view fits above the usual 4× limit
+        if fit > maxMagnification {
+            maxMagnification = fit
+            minMagnification = fit
+        } else {
+            minMagnification = fit
+            maxMagnification = max(4, fit)
+        }
         guard let zoom = requestedZoom else {
             if abs(magnification - fit) > 0.001 { magnification = fit }
             return
