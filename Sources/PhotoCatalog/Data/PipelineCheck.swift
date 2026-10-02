@@ -1506,6 +1506,7 @@ enum PipelineCheck {
         try? fm.removeItem(at: staging)
 
         MainActor.assumeIsolated { TetherCheck.run(check) }
+        MainActor.assumeIsolated { CacheCheck.run(check) }
 
         try? fm.removeItem(at: tmp)
         print(failures == 0 ? "--- pipeline OK ---" : "--- \(failures) FAILURE(S) ---")

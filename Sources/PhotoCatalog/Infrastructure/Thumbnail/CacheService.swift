@@ -22,7 +22,10 @@ enum CacheService {
         var current = before
         var removed = 0
         let fm = FileManager.default
-        for file in files.sorted(by: { $0.modifiedAt < $1.modifiedAt }) where current > maxBytes {
+        // previews go first and thumbnails last: the grid needs a thumbnail for every photo,
+        // while a preview is only wanted when one photo is opened, and is remade then
+        for file in files.sorted(by: { ($0.evictionRank, $0.modifiedAt) < ($1.evictionRank, $1.modifiedAt) })
+        where current > maxBytes {
             do {
                 try fm.removeItem(at: file.url)
                 current -= file.size
@@ -39,13 +42,17 @@ enum CacheService {
         guard let enumerator = FileManager.default.enumerator(at: cacheURL, includingPropertiesForKeys: keys) else {
             return []
         }
+        // the enumerator hands back resolved paths (/tmp → /private/tmp)
+        let root = cacheURL.resolvingSymlinksInPath().path
         return enumerator.compactMap { item -> CacheFile? in
             guard let url = item as? URL,
                   let values = try? url.resourceValues(forKeys: Set(keys)),
                   values.isRegularFile == true else { return nil }
+            let relative = url.path.hasPrefix(root) ? url.path.dropFirst(root.count) : Substring(url.path)
             return CacheFile(url: url,
                              size: Int64(values.fileSize ?? 0),
-                             modifiedAt: values.contentModificationDate ?? .distantPast)
+                             modifiedAt: values.contentModificationDate ?? .distantPast,
+                             evictionRank: relative.contains("/Thumbnails/") ? 2 : relative.hasPrefix("/Edited/") ? 1 : 0)
         }
     }
 }
@@ -54,4 +61,7 @@ private struct CacheFile {
     let url: URL
     let size: Int64
     let modifiedAt: Date
+    /// Which files a prune removes first: previews (and anything else), then developed
+    /// previews, then thumbnails, plain or developed.
+    let evictionRank: Int
 }

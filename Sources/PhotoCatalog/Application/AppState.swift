@@ -5837,7 +5837,7 @@ final class AppState {
 
     @ObservationIgnored private var attemptedCacheRepairs = Set<String>()
     @ObservationIgnored private var verifiedCacheSources = Set<String>()
-    @ObservationIgnored private var isBackfilling = false
+    @ObservationIgnored private(set) var isBackfilling = false
     @ObservationIgnored private var backfillTask: Task<Void, Never>?
     @ObservationIgnored private var backfillGeneration = 0
 
@@ -5856,11 +5856,18 @@ final class AppState {
     /// Low-priority background pass that fills in any missing/stale thumbnails for
     /// imported photos (visible-first generation is handled per-cell). PRD §6.6 THM-003.
     ///
+    /// Every thumbnail first (the grid needs them), while the thumbnails alone fit under the
+    /// cache limit — a prune takes previews first to make room for them — then previews,
+    /// newest photos first, while everything fits. Previews past the limit would be pruned
+    /// when the pass ends and made again at the next launch, which kept a 14,000-photo
+    /// library (6.7 GB of cache against the 2 GB default) decoding RAWs for the best part of
+    /// an hour on every launch.
+    ///
     /// Processed in small chunks so the pass stays cooperative: it yields between
     /// chunks, honors cancellation, and re-checks Low Power Mode mid-run rather than
     /// only once at the start.
     func backfillThumbnails() {
-        guard runsBackgroundMaintenance, let coordinator, !isBackfilling else { return }
+        guard runsBackgroundMaintenance, let coordinator, let store, !isBackfilling else { return }
         // battery saver: skip background work under Low Power Mode (§17.5)
         if reduceBackgroundOnLowPower, ProcessInfo.processInfo.isLowPowerModeEnabled { return }
         let real = thumbnailMaintenanceAssets
@@ -5870,35 +5877,54 @@ final class AppState {
         let generation = backfillGeneration
         let previewSize = previewMaxPixel
         let lowPowerSensitive = reduceBackgroundOnLowPower
-        backfillTask = Task { [weak self, coordinator, real, previewSize] in
+        // stopping a twentieth short of the limit leaves the end-of-pass prune nothing to take
+        // back, so the next launch finds the cache full and makes nothing
+        let budget = cacheLimitBytes - cacheLimitBytes / 20
+        let cacheURL = store.cacheURL, thumbnailsURL = store.thumb512URL.deletingLastPathComponent()
+        let thumbnails: [(Asset, ThumbnailService.Kind)] = real.map { ($0, .thumb512) }
+        let previews: [(Asset, ThumbnailService.Kind)] = real.sorted { $0.date > $1.date }.map {
+            ($0, ThumbnailService.previewKind(forCachePath: $0.preview, fallbackMaxPixel: previewSize))
+        }
+        backfillTask = Task { [weak self, coordinator, thumbnails, previews] in
             // Let the initial window and visible thumbnails settle before
             // maintenance starts competing for disk and Image I/O.
             do { try await Task.sleep(for: .milliseconds(750)) } catch { return }
+            let measured = await ThumbnailRepairQueue.run(.background) {
+                (CatalogHealth.directorySize(cacheURL), CatalogHealth.directorySize(thumbnailsURL))
+            }
+            var (used, thumbnailsUsed) = measured ?? (0, 0)
             let chunkSize = 8
-            var index = 0
-            while index < real.count {
-                if Task.isCancelled { break }
-                // re-check Low Power Mode between chunks — it can be toggled mid-run
-                if lowPowerSensitive, ProcessInfo.processInfo.isLowPowerModeEnabled { break }
-                let chunk = Array(real[index..<min(index + chunkSize, real.count)])
-                // off the cooperative pool, one at a time at background QoS, so a large
-                // backfill never competes with visible repairs or the UI
-                _ = await ThumbnailRepairQueue.run(.background) {
-                    for a in chunk {
-                        guard let path = a.localPath,
-                              FileManager.default.fileExists(atPath: path) else { continue }
-                        let original = URL(fileURLWithPath: path)
-                        _ = coordinator.thumbnails.ensureCached(
-                            from: original, fallbackPreview: nil,
-                            catalogModificationDate: a.fileModifiedAt, assetId: a.id, kind: .thumb512)
-                        _ = coordinator.thumbnails.ensureCached(
-                            from: original, fallbackPreview: nil,
-                            catalogModificationDate: a.fileModifiedAt, assetId: a.id,
-                            kind: ThumbnailService.previewKind(forCachePath: a.preview, fallbackMaxPixel: previewSize))
-                    }
+            passes: for (work, isThumbnail) in [(thumbnails, true), (previews, false)] {
+                var index = 0
+                while index < work.count, (isThumbnail ? thumbnailsUsed : used) < budget {
+                    if Task.isCancelled { break passes }
+                    // re-check Low Power Mode between chunks — it can be toggled mid-run
+                    if lowPowerSensitive, ProcessInfo.processInfo.isLowPowerModeEnabled { break passes }
+                    let chunk = Array(work[index..<min(index + chunkSize, work.count)])
+                    let room = budget - (isThumbnail ? thumbnailsUsed : used)
+                    // off the cooperative pool, one at a time at background QoS, so a large
+                    // backfill never competes with visible repairs or the UI
+                    let added = await ThumbnailRepairQueue.run(.background) { () -> Int64 in
+                        var added: Int64 = 0
+                        for (a, kind) in chunk where added < room {
+                            guard let path = a.localPath,
+                                  FileManager.default.fileExists(atPath: path) else { continue }
+                            let cached = coordinator.thumbnails.cachePath(assetId: a.id, kind: kind)
+                            let existed = FileManager.default.fileExists(atPath: cached.path)
+                            let made = coordinator.thumbnails.ensureCached(
+                                from: URL(fileURLWithPath: path), fallbackPreview: nil,
+                                catalogModificationDate: a.fileModifiedAt, assetId: a.id, kind: kind)
+                            if !existed, let made {
+                                added += Int64((try? made.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+                            }
+                        }
+                        return added
+                    } ?? 0
+                    used += added
+                    if isThumbnail { thumbnailsUsed += added }
+                    index += chunkSize
+                    do { try await Task.sleep(for: .milliseconds(10)) } catch { break passes }
                 }
-                index += chunkSize
-                do { try await Task.sleep(for: .milliseconds(10)) } catch { break }
             }
             // only reset shared state if we're still the current run — a cancel or a newer
             // backfill may have superseded us and must not have its state clobbered.
