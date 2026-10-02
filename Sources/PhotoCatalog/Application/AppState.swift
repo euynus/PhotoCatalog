@@ -9034,6 +9034,8 @@ final class AppState {
     /// Faces by id, loaded with the catalog; views observe `facesRevision`.
     @ObservationIgnored private(set) var faces: [String: FaceRecord] = [:]
     @ObservationIgnored private var faceScannedAssetIds: Set<String> = []
+    /// Photos analysed before faces were told apart by SFace, waiting to be analysed again.
+    @ObservationIgnored private var faceOutdatedAssetIds: Set<String> = []
     var facesRevision = 0
     /// Unnamed faces in likely-one-person groups, largest first.
     var faceClusters: [FaceCluster] = []
@@ -9057,7 +9059,10 @@ final class AppState {
     func loadFaces(from store: CatalogStore) {
         let loaded = (try? store.loadFaces()) ?? []
         faces = Dictionary(loaded.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        faceScannedAssetIds = (try? store.loadFaceScannedAssetIds()) ?? []
+        // photos whose faces an earlier method read count as not analysed, so the next analysis
+        // reads them again (keeping their names)
+        faceOutdatedAssetIds = Set(loaded.filter { !$0.vector.isEmpty && !FaceClustering.isComparable($0) }.map(\.assetId))
+        faceScannedAssetIds = ((try? store.loadFaceScannedAssetIds()) ?? []).subtracting(faceOutdatedAssetIds)
         faceClusters = []
         facesRevision &+= 1
         refreshFaceClusters()
@@ -9068,6 +9073,7 @@ final class AppState {
         faceAnalysis = nil
         faces = [:]
         faceScannedAssetIds = []
+        faceOutdatedAssetIds = []
         faceClusters = []
         facesRevision &+= 1
     }
@@ -9100,6 +9106,13 @@ final class AppState {
     var faceScannedCount: Int {
         _ = facesRevision
         return faceScannedAssetIds.count
+    }
+
+    /// Photos among the unanalysed whose faces an earlier, less accurate method read.
+    var faceOutdatedCount: Int {
+        _ = facesRevision
+        guard !faceOutdatedAssetIds.isEmpty else { return 0 }
+        return presentedAssets().filter { !$0.isVirtualCopy && faceOutdatedAssetIds.contains($0.id) }.count
     }
 
     func face(_ id: String) -> FaceRecord? { faces[id] }
@@ -9178,8 +9191,15 @@ final class AppState {
     }
 
     /// Saves a batch of scans; false stops the worker (cancelled or the catalog changed).
-    private func recordFaceScans(_ scans: [String: [FaceRecord]], done: Int, generation: Int) -> Bool {
+    private func recordFaceScans(_ found: [String: [FaceRecord]], done: Int, generation: Int) -> Bool {
         guard generation == faceAnalysisGeneration, let store else { return false }
+        // a photo analysed again replaces its faces, keeping their names
+        var scans = found
+        let again = Set(found.keys).intersection(faceOutdatedAssetIds)
+        let earlier = again.isEmpty ? [:] : Dictionary(grouping: faces.values.filter { again.contains($0.assetId) }, by: \.assetId)
+        for assetId in again {
+            scans[assetId] = FaceClustering.carryNames(from: earlier[assetId] ?? [], to: found[assetId] ?? [])
+        }
         do {
             try store.saveFaceScans(scans)
         } catch {
@@ -9187,8 +9207,10 @@ final class AppState {
             faceAnalysis = nil
             return false
         }
+        for face in earlier.values.joined() { faces[face.id] = nil }
         for (assetId, found) in scans {
             faceScannedAssetIds.insert(assetId)
+            faceOutdatedAssetIds.remove(assetId)
             for face in found { faces[face.id] = face }
         }
         faceAnalysis?.done = done

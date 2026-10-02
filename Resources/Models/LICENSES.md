@@ -11,6 +11,7 @@ from its authors' release, checks it against a SHA-256, converts it and writes t
 | `Depth.mlpackage` | Depth Anything V2 Small, as converted to Core ML by Apple (`DepthAnythingV2SmallF16P8`, huggingface.co/apple/coreml-depth-anything-v2-small) | https://github.com/DepthAnything/Depth-Anything-V2 | Apache License 2.0 |
 | `Segmentation.mlpackage` | DETR ResNet-50 semantic segmentation, as converted to Core ML by Apple (`DETRResnet50SemanticSegmentationF16P8`, huggingface.co/apple/coreml-detr-semantic-segmentation) | https://github.com/facebookresearch/detr | Apache License 2.0 |
 | `ObjectEncoder.mlpackage`, `ObjectPrompt.mlpackage`, `ObjectDecoder.mlpackage` | SAM 2.1 Tiny's image encoder, prompt encoder and mask decoder, as converted to Core ML by Apple (`SAM2_1Tiny…FLOAT16`, huggingface.co/apple/coreml-sam2.1-tiny) | https://github.com/facebookresearch/sam2 | Apache License 2.0 |
+| `FaceRecognition.mlpackage` | SFace `face_recognition_sface_2021dec` (a MobileFaceNet trained with the SFace loss), the ONNX file OpenCV Zoo publishes | https://github.com/opencv/opencv_zoo/tree/main/models/face_recognition_sface (network: https://github.com/zhongyy/SFace) | Apache License 2.0 |
 
 Changes made: both networks were traced at a fixed 256 × 256 tile and converted to Core ML with
 16-bit weights. SCUNet's network was re-implemented in plain tensor operations (no einops,
@@ -18,6 +19,9 @@ einsum or boolean masks) so Core ML can convert it; its weights are used unchang
 re-implementation gives the same output as the original. LaMa is converted at a fixed 512 × 512 square; the
 weights of its plain convolutions (between its local and global branches) are quantized to
 8 bits, the Fourier units and the first and last layers stay 16-bit.
+SFace's ONNX graph is run step by step in PyTorch (the same output as onnxruntime to within
+5 × 10⁻⁶) and converted to Core ML with 16-bit weights; its weights are used unchanged. It takes
+a 112 × 112 RGB face aligned to the ArcFace five-point template and gives 128 numbers.
 
 `Depth.mlpackage`, `Segmentation.mlpackage` and the three `Object` packages are Apple's
 published packages, unchanged apart from their names. Depth: 16-bit activations, 8-bit
@@ -529,6 +533,28 @@ under SCUNet.
 ```
 Copyright (c) Meta Platforms, Inc. and affiliates.
 
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+## SFace — Apache License 2.0
+
+SFace: Sigmoid-Constrained Hypersphere Loss for Robust Face Recognition (Yaoyao Zhong, Weihong
+Deng, Jiani Hu, Dongyue Zhao, Xian Li, Dongchao Wen). The model file, as published in OpenCV
+Zoo's `face_recognition_sface` directory (converted to ONNX by Chengrui Wang), is released under
+the Apache License 2.0, whose full text is given above under SCUNet; that directory's license
+names no copyright holder.
+
+```
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at

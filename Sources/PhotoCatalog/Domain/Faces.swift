@@ -13,7 +13,8 @@ struct FaceRecord: Identifiable, Equatable, Sendable {
     let box: CGRect
     /// Vision's capture quality, 0…1: sharp, frontal, well-lit faces score high.
     let quality: Float
-    /// Vision feature print of the face crop; nearby prints are likely the same person.
+    /// What tells this face's person apart (FaceService: SFace's numbers for the aligned face,
+    /// length 1); nearby vectors are likely the same person. Empty when none could be made.
     let vector: [Float]
     /// The person's name, once named.
     var person: String?
@@ -29,18 +30,27 @@ struct FaceCluster: Identifiable, Equatable, Sendable {
 }
 
 enum FaceClustering {
-    /// Faces closer than this to a group's centre join it. Tuned on a 2,600-face library:
-    /// stricter splits one person by pose and light, looser mixes look-alike people. Vision's
-    /// feature print describes appearance, not identity, so groups are suggestions to review.
-    static let clusterThreshold: Float = 0.52
+    /// How many numbers a face's vector has. Faces stored with another count were read by an
+    /// earlier method (Vision's general feature print, which described looks, not identity);
+    /// they are left out until analysed again.
+    static let vectorLength = 128
+
+    /// Faces closer than this to a group's centre join it (the vectors have length 1, so 0.9 is
+    /// a cosine of 0.6). Measured on LFW, 13,233 news photos of 5,749 people: 0.3% of the faces
+    /// land in someone else's group, nearly all of them LFW's own mislabelled photos, and
+    /// 94% of a person's faces are grouped together. Looser starts mixing look-alikes, sisters
+    /// first; stricter splits a person by pose and light.
+    static let clusterThreshold: Float = 0.9
     /// A face also has to stay this close to the group's first (clearest) face, which stops
     /// a large group's centre from drifting onto someone else.
-    static let seedLimit: Float = 0.65
-    /// Blurry, tiny or turned-away faces print unreliably and bridge different people; they
-    /// are left out of grouping and matching.
-    static let minimumQuality: Float = 0.3
-    /// An unnamed face this close to a face the user named is suggested as that person.
-    static let matchThreshold: Float = 0.45
+    static let seedLimit: Float = 1.0
+    /// Very blurry or turned-away faces are left out of grouping and matching. On LFW faces
+    /// down to 0.1 matched strangers no more often than sharp ones, only their own person less.
+    static let minimumQuality: Float = 0.1
+    /// An unnamed face this close to a face the user named is suggested as that person. On
+    /// LFW, with half of each named person's faces named: 93% of the rest suggested rightly,
+    /// and 4 of 9,106 strangers' faces suggested as someone.
+    static let matchThreshold: Float = 0.9
     /// Naming a person tags their photos with this keyword, as Lightroom does.
     static let keywordRoot = "人物"
 
@@ -66,10 +76,13 @@ enum FaceClustering {
         return squared.squareRoot()
     }
 
+    /// A face read by the current method, so comparable with others.
+    static func isComparable(_ face: FaceRecord) -> Bool { face.vector.count == vectorLength }
+
     /// Groups faces around running centres, best faces first so each group is seeded by a
     /// clear face. Largest groups first.
     static func clusters(_ faces: [FaceRecord]) -> [FaceCluster] {
-        let order = faces.filter { $0.quality >= minimumQuality && !$0.vector.isEmpty }
+        let order = faces.filter { $0.quality >= minimumQuality && isComparable($0) }
             .sorted { ($0.quality, $1.id) > ($1.quality, $0.id) }
         var members: [[String]] = []
         var centres: [[Float]] = []
@@ -101,10 +114,10 @@ enum FaceClustering {
     /// Names for unnamed faces that sit close to a face the user named. Nearest neighbour, not
     /// a person average, because one person spans several poses.
     static func matches(for unnamed: [FaceRecord], named: [FaceRecord]) -> [String: String] {
-        let references = named.filter { $0.confirmed && $0.person != nil && !$0.vector.isEmpty }
+        let references = named.filter { $0.confirmed && $0.person != nil && isComparable($0) }
         guard !references.isEmpty else { return [:] }
         var result: [String: String] = [:]
-        for face in unnamed where face.person == nil && !face.vector.isEmpty && face.quality >= minimumQuality {
+        for face in unnamed where face.person == nil && isComparable(face) && face.quality >= minimumQuality {
             var best = (distance: Float.infinity, person: "")
             for reference in references {
                 let d = distance(face.vector, reference.vector)
@@ -113,5 +126,35 @@ enum FaceClustering {
             if best.distance < matchThreshold { result[face.id] = best.person }
         }
         return result
+    }
+
+    /// A photo analysed again keeps its names: each new face takes the name of the earlier face
+    /// it overlaps most (each earlier face lends its name once). A named earlier face that no
+    /// new face overlaps is kept as it was, without a vector, so the person keeps the photo.
+    static func carryNames(from earlier: [FaceRecord], to found: [FaceRecord]) -> [FaceRecord] {
+        var result = found
+        var unused = earlier.filter { $0.person != nil }
+        for index in result.indices {
+            guard let best = unused.indices.max(by: { overlap(unused[$0].box, result[index].box) < overlap(unused[$1].box, result[index].box) }),
+                  overlap(unused[best].box, result[index].box) >= 0.3 else { continue }
+            result[index].person = unused[best].person
+            result[index].confirmed = unused[best].confirmed
+            unused.remove(at: best)
+        }
+        let taken = Set(result.map(\.id))
+        for face in unused {
+            result.append(FaceRecord(id: taken.contains(face.id) ? face.id + "-earlier" : face.id, assetId: face.assetId,
+                                     box: face.box, quality: face.quality, vector: [],
+                                     person: face.person, confirmed: face.confirmed))
+        }
+        return result
+    }
+
+    /// Intersection over union of two boxes.
+    static func overlap(_ a: CGRect, _ b: CGRect) -> CGFloat {
+        let common = a.intersection(b)
+        guard !common.isNull, common.width > 0, common.height > 0 else { return 0 }
+        let shared = common.width * common.height
+        return shared / (a.width * a.height + b.width * b.height - shared)
     }
 }

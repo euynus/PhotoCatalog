@@ -1151,7 +1151,10 @@
 "正在分析人脸 %@ / %@" = "Analyzing faces %@ / %@";
 "没有找到人脸" = "No Faces Found";
 "点按勾选或取消 · 双击打开照片" = "Click to check or uncheck · Double-click to open the photo";
-"用 Vision 在本机识别人脸并按人分组，照片不会上传，原件不会改动。" = "Faces are detected and grouped by person on this Mac with Vision. Photos aren't uploaded and originals aren't changed.";
+"在本机识别人脸并按人分组，照片不会上传，原件不会改动。" = "Faces are recognized and grouped by person on this Mac. Photos aren't uploaded and originals aren't changed.";
+"人物识别已改进：%@ 张照片需要重新分析" = "People recognition has improved: %@ photos need to be analyzed again";
+"人物识别已改进：%@ 张照片需要重新分析，另有 %@ 张尚未分析" = "People recognition has improved: %@ photos need to be analyzed again, and %@ more haven't been analyzed yet";
+"重新分析后分组会准确得多，已命名的人物会保留。照片不会上传，原件不会改动。" = "Analyzing them again makes the groups much more accurate, and people you've named stay named. Photos aren't uploaded and originals aren't changed.";
 "确认 %lld 张自动识别" = "Confirm %lld Recognized";
 "确认是%@" = "Confirm as %@";
 "自动识别，尚未确认" = "Recognized automatically, not yet confirmed";

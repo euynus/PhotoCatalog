@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Converts the AI models PhotoCatalog bundles to Core ML (development tool; nothing here ships).
 
-    uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python torch==2.7.0 coremltools numpy pillow
+    uv venv --python 3.11 .venv && uv pip install --python .venv/bin/python torch==2.7.0 coremltools numpy pillow onnx
     .venv/bin/python script/models/convert.py <model> [--weights DIR]
 
 Each model's weights are downloaded from its authors' release, checked against the SHA-256 below,
@@ -212,6 +212,80 @@ def inpaint(weights, _):
     return torch.jit.load(path, map_location="cpu").eval(), 512, "Inpaint"
 
 
+# ---- people: SFace (Apache-2.0, opencv/opencv_zoo's face_recognition_sface) ----
+class SFace(nn.Module):
+    """SFace's MobileFaceNet, run step by step from its ONNX graph, which is a plain chain:
+    pixels scaled to ±1, convolutions each with a batch norm and PReLU, then a fully connected
+    layer and batch norm to 128 numbers. Its weights are used unchanged."""
+
+    def __init__(self, path):
+        super().__init__()
+        import onnx
+        from onnx import numpy_helper
+        graph = onnx.load(path).graph
+        tensors = {t.name: torch.from_numpy(numpy_helper.to_array(t).copy()) for t in graph.initializer}
+        self.steps = []
+        for index, node in enumerate(graph.node):
+            for k, name in enumerate(node.input[1:]):
+                self.register_buffer(f"t{index}_{k}", tensors[name])
+            attributes = {a.name: onnx.helper.get_attribute_value(a) for a in node.attribute}
+            self.steps.append((node.op_type, attributes, len(node.input) - 1))
+
+    def forward(self, x):
+        for index, (op, attributes, count) in enumerate(self.steps):
+            t = [getattr(self, f"t{index}_{k}") for k in range(count)]
+            if op == "Sub":
+                x = x - t[0]
+            elif op == "Mul":
+                x = x * t[0]
+            elif op == "Conv":
+                x = F.conv2d(x, t[0], t[1] if count > 1 else None, attributes["strides"],
+                             attributes["pads"][:2], 1, attributes["group"])
+            elif op == "BatchNormalization":
+                x = F.batch_norm(x, t[2], t[3], t[0], t[1], False, 0.0, attributes["epsilon"])
+            elif op == "PRelu":
+                x = F.prelu(x, t[0].flatten())
+            elif op == "Flatten":
+                x = torch.flatten(x, 1)
+            elif op == "Gemm":
+                x = F.linear(x, t[0], t[1])
+            elif op != "Dropout":
+                raise ValueError(f"SFace: unexpected {op}")
+        return x
+
+
+def faces(weights, _):
+    """A face, aligned to the 112-pixel ArcFace template, in; 128 numbers out, which sit close
+    together for one person's faces."""
+    path = fetch("https://github.com/opencv/opencv_zoo/raw/47534e27c9851bb1128ccc0102f1145e27f23f98/"
+                 "models/face_recognition_sface/face_recognition_sface_2021dec.onnx",
+                 "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79", weights)
+    return SFace(path).eval(), 112, "FaceRecognition"
+
+
+def convert_faces(model, tile, out):
+    """An RGB image in (0…255, as OpenCV feeds SFace), the 128 numbers out as 32-bit floats."""
+    import coremltools as ct
+    from PIL import Image
+    pixels = np.random.default_rng(0).integers(0, 256, (tile, tile, 3), dtype=np.uint8)
+    example = torch.from_numpy(pixels).permute(2, 0, 1)[None].float()
+    traced = torch.jit.trace(model, example)
+    mlmodel = ct.convert(traced, inputs=[ct.ImageType(name="image", shape=example.shape, color_layout=ct.colorlayout.RGB)],
+                         outputs=[ct.TensorType(name="embedding", dtype=np.float32)], convert_to="mlprogram",
+                         compute_precision=ct.precision.FLOAT16, minimum_deployment_target=ct.target.macOS14)
+    with torch.no_grad():
+        expected = model(example).numpy().ravel()
+    got = mlmodel.predict({"image": Image.fromarray(pixels)})["embedding"].ravel()
+    # what matters is the direction: faces are compared by angle
+    cosine = float(got @ expected / np.linalg.norm(got) / np.linalg.norm(expected))
+    print(f"FaceRecognition: cosine to PyTorch {cosine:.5f}")
+    if cosine < 0.999:
+        sys.exit("the converted model doesn't match")
+    os.makedirs(out, exist_ok=True)
+    mlmodel.short_description = "SFace face recognition (112x112 aligned faces)"
+    mlmodel.save(os.path.join(out, "FaceRecognition.mlpackage"))
+
+
 def quantize_inpaint(mlmodel):
     """8-bit weights for the plain convolutions between LaMa's local and global branches (three
     quarters of it); the Fourier units and the first and last layers stay 16-bit, since
@@ -225,7 +299,7 @@ def quantize_inpaint(mlmodel):
     return cto.linear_quantize_weights(mlmodel, config)
 
 
-MODELS = {"superresolution": super_resolution, "denoise": denoise, "inpaint": inpaint}
+MODELS = {"superresolution": super_resolution, "denoise": denoise, "inpaint": inpaint, "faces": faces}
 
 # ---- used as Apple converted and published them in Core ML (all Apache-2.0) ----
 HF = "https://huggingface.co/apple/"
@@ -282,6 +356,8 @@ def fetch_published(name, out):
 def convert(name, weights, denoise, out):
     import coremltools as ct
     model, tile, output_name = MODELS[name](weights, denoise)
+    if name == "faces":
+        return convert_faces(model, tile, out)
     if name == "inpaint":
         # a smooth image with a rectangular hole: random noise has no structure to fill from
         ramp = torch.linspace(0, 1, tile)

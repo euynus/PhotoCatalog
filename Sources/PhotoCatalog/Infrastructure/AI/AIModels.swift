@@ -20,15 +20,18 @@ enum AIModels {
         case objectEncoder = "ObjectEncoder"
         case objectPrompt = "ObjectPrompt"
         case objectDecoder = "ObjectDecoder"
+        /// Telling people apart: an aligned face in, 128 numbers out (see FaceService).
+        case faceRecognition = "FaceRecognition"
 
         /// Where the model runs fastest (measured on Apple silicon): the convolutional super
         /// resolution on the Neural Engine, the attention in the denoiser and LaMa's Fourier
         /// convolutions on the GPU (the Neural Engine is slower and, for LaMa, less precise).
         /// The segmentation and object models run once per photo, where loading for the Neural
-        /// Engine costs seconds more than it saves.
+        /// Engine costs seconds more than it saves; the face model runs for every face in the
+        /// library, where it pays.
         var computeUnits: MLComputeUnits {
             switch self {
-            case .superResolution, .depth: .all
+            case .superResolution, .depth, .faceRecognition: .all
             case .denoise, .inpaint, .segmentation, .objectEncoder, .objectPrompt, .objectDecoder: .cpuAndGPU
             }
         }
