@@ -27,7 +27,6 @@ struct AutoStackSheet: View {
             HStack {
                 Text("按拍摄时间自动叠放").font(.system(size: 15, weight: .semibold))
                 Spacer()
-                sheetClose { app.sheet = nil }
             }
             Text("同一台相机在这段时间内接连拍下的照片（连拍、包围曝光）叠放为一组，之后导入的照片也一样。")
                 .font(.system(size: 12)).foregroundStyle(Theme.text3)

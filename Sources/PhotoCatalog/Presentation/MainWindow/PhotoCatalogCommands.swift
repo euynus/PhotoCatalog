@@ -50,8 +50,6 @@ struct PhotoCatalogCommands: Commands {
                 Button("结束联机拍摄") { perform("目录库.结束联机拍摄") { app.endTether() } }
             }
             Divider()
-            Button("设置…") { perform("目录库.设置") { app.showSettings() } }
-                .keyboardShortcut(",", modifiers: .command)
                 .disabled(app.sheet != nil || !app.onboarded)
         }
 

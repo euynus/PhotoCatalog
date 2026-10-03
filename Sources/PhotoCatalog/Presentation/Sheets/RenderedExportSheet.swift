@@ -30,7 +30,6 @@ struct RenderedExportSheet: View {
                     Text("导出 \(count) 张照片").font(.system(size: 17, weight: .semibold))
                 }
                 Spacer()
-                sheetClose { app.sheet = nil }
             }
             .padding(.horizontal, 18).padding(.vertical, 10)
             .background(Theme.surface)

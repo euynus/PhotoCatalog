@@ -24,7 +24,6 @@ struct TetherSheet: View {
             HStack {
                 Text("联机拍摄").font(.system(size: 15, weight: .semibold))
                 Spacer()
-                sheetClose { app.sheet = nil }
             }
             Text("拍下的照片直接存入会话文件夹、导入目录库并立即显示。macOS 能控制的相机用数据线连接；其他相机可以让厂商的联机软件（如 EOS Utility）把照片存进一个文件夹，由这里监视导入。")
                 .font(.system(size: 12)).foregroundStyle(Theme.text3)

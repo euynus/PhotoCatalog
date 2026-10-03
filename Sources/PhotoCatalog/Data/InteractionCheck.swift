@@ -212,7 +212,7 @@ enum InteractionCheck {
                "a list patched after a review edit matches a full recompute")
 
         app.view = .grid
-        app.sheet = "settings"
+        app.sheet = "rename"
         assert(!app.canChangeVisibleSelection && !app.selectAllVisible() && !app.invertVisibleSelection()
                && app.selectedIds == compared, "overlay sheets also block direct selection commands")
 

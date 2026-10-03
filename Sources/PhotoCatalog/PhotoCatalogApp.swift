@@ -81,5 +81,10 @@ struct PhotoCatalogApp: App {
         .commands {
             PhotoCatalogCommands(app: app)
         }
+
+        Settings {
+            SettingsSheet()
+                .environment(app)
+        }
     }
 }

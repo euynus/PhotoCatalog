@@ -28,7 +28,6 @@ struct SlideshowSheet: View {
             HStack {
                 Text("幻灯片").font(.system(size: 15, weight: .semibold))
                 Spacer()
-                sheetClose { app.sheet = nil }
             }
             Text("放映 \(count) 张照片（选中多张时为所选照片，否则为当前列表），共 \(Self.duration(slide * Double(count)))")
                 .font(.system(size: 12)).foregroundStyle(Theme.text3)

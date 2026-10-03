@@ -21,7 +21,6 @@ struct WebGallerySheet: View {
             HStack {
                 Text("网页画廊").font(.system(size: 15, weight: .semibold))
                 Spacer()
-                sheetClose { app.sheet = nil }
             }
             Text("把 \(count) 张照片（选中多张时为所选照片，否则为当前列表）连同一个网页存进一个文件夹：点开缩略图看大图，可用方向键或滑动翻看。文件夹可直接放到任何网站空间。")
                 .font(.system(size: 12)).foregroundStyle(Theme.text3)

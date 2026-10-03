@@ -43,7 +43,6 @@ struct ImportSheet: View {
                     .font(.system(size: 17, weight: .semibold))
             }
             Spacer()
-            sheetClose { app.sheet = nil }
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
         .background(Theme.surface)
@@ -151,7 +150,6 @@ struct ImportSheet: View {
                     .font(.system(size: 17, weight: .semibold))
             }
             Spacer()
-            sheetClose { app.sheet = nil }
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
         .background(Theme.surface)
@@ -381,31 +379,10 @@ struct ImportSheet: View {
 
 // shared sheet helpers
 @MainActor
-func sheetClose(_ action: @escaping () -> Void) -> some View {
-    SheetCloseButton(action: action)
-}
-
-@MainActor
 func ghostButton(_ icon: String?, _ label: String, danger: Bool = false, small: Bool = false,
                  disabled: Bool = false,
                  action: @escaping () -> Void) -> some View {
     GhostButton(icon: icon, label: label, danger: danger, small: small, disabled: disabled, action: action)
-}
-
-private struct SheetCloseButton: View {
-    let action: () -> Void
-    @State private var hover = false
-
-    var body: some View {
-        Button(action: action) {
-            Icon("close", size: 15).foregroundStyle(hover ? Theme.text : Theme.text2)
-                .frame(width: 28, height: 28)
-                .background(hover ? Theme.surfaceHi : Theme.bgSidebar)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.rSm))
-        }.buttonStyle(.plain).onHover { hover = $0 }
-            .help("关闭")
-            .accessibilityLabel("关闭")
-    }
 }
 
 private struct GhostButton: View {

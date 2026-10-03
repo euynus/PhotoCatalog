@@ -1402,7 +1402,6 @@
 "缩略图与缓存" = "Thumbnails & Cache";
 "自动备份" = "Automatic Backup";
 "设为该时间" = "Set to This Time";
-"设置" = "Settings";
 "评分 / 关键词 / 标题等改动会写入同名 .xmp，不改动原图。" = "Changes to ratings, keywords, titles and more are written to a .xmp file with the same name; the original isn't touched.";
 "语言" = "Language";
 "重建缩略图" = "Rebuild Thumbnails";

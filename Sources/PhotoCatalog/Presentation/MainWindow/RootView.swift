@@ -6,6 +6,7 @@ import AppKit
 
 struct RootView: View {
     @Environment(AppState.self) var app
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         ZStack {
@@ -41,6 +42,7 @@ struct RootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bgDesktop.ignoresSafeArea())
         .background(KeyCatcher(app: app))
+        .onChange(of: app.settingsRequest) { openSettings() }
     }
 }
 

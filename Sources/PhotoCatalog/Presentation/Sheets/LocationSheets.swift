@@ -32,7 +32,6 @@ struct LocationSheet: View {
                 Image(systemName: "mappin.and.ellipse").foregroundStyle(Theme.accent)
                 Text("设置位置 · \(ids.count) 张照片").font(.system(size: 17, weight: .semibold))
                 Spacer()
-                sheetClose { app.sheet = nil }
             }
             .padding(.horizontal, 18).padding(.vertical, 10)
             .background(Theme.surface)
@@ -190,7 +189,6 @@ struct GPXMatchSheet: View {
                 Image(systemName: "point.topleft.down.to.point.bottomright.curvepath").foregroundStyle(Theme.accent)
                 Text("按 GPX 轨迹匹配位置").font(.system(size: 17, weight: .semibold))
                 Spacer()
-                sheetClose { app.sheet = nil }
             }
             .padding(.horizontal, 18).padding(.vertical, 10)
             .background(Theme.surface)

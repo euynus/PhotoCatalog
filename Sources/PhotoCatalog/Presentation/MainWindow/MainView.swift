@@ -71,8 +71,6 @@ struct MainView: View {
             SmartAlbumBuilder(album: app.smartAlbumEditingID.flatMap { id in
                 app.smartAlbums.first { $0.id == id }
             })
-        case "settings":
-            SettingsSheet()
         case "location":
             LocationSheet(ids: app.locationTargetIds, current: app.locationEditorStart)
         case "gpx":

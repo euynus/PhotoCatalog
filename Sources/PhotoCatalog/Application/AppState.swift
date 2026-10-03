@@ -2246,15 +2246,18 @@ final class AppState {
     var searchFocusToken = 0
     func focusSearch() { searchFocusToken += 1 }
 
-    func showSettings() { sheet = "settings" }
+    /// Bumped to bring up the settings window, which RootView opens: a window of its own.
+    var settingsRequest = 0
 
-    /// The settings category to open at, taken once by the settings sheet.
+    func showSettings() { settingsRequest &+= 1 }
+
+    /// The settings category to open at, taken once by the settings window.
     @ObservationIgnored var settingsStartCategory: String?
 
-    /// Settings, opened at `category` (as the sheet names them, e.g. "ai").
+    /// Settings, opened at `category` (as the window names them, e.g. "ai").
     func openSettings(category: String) {
         settingsStartCategory = category
-        sheet = "settings"
+        settingsRequest &+= 1
     }
 
     func showNewSmartAlbumBuilder() {

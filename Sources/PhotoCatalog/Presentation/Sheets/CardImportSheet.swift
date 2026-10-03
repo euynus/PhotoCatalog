@@ -92,7 +92,6 @@ struct CardImportSheet: View {
             }
             .fixedSize()
             Spacer()
-            sheetClose { app.sheet = nil }
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
         .background(Theme.surface)

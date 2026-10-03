@@ -45,38 +45,25 @@ struct SettingsSheet: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            head
-            HStack(spacing: 0) {
-                navigation
-                ScrollView { body_ }
-                    .id(category)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
-            foot
+        HStack(spacing: 0) {
+            navigation
+            ScrollView { body_ }
+                .id(category)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(width: 780, height: 560)
-        .onAppear {
-            if let start = app.settingsStartCategory.flatMap(Category.init(rawValue:)) { category = start }
-            app.settingsStartCategory = nil
-        }
+        .navigationTitle(category.title)
+        .onAppear(perform: takeStartCategory)
+        // asked for again while open, e.g. at the AI category from a feature that needs it
+        .onChange(of: app.settingsRequest) { takeStartCategory() }
         .font(.system(size: 13))
         .foregroundStyle(Theme.text)
         .background(Theme.bgPanel)
     }
 
-    private var head: some View {
-        HStack {
-            HStack(spacing: 9) {
-                Icon("gear", size: 17).foregroundStyle(Theme.accent)
-                Text("设置").font(.system(size: 17, weight: .semibold))
-            }
-            Spacer()
-            sheetClose { app.sheet = nil }
-        }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(Theme.surface)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+    private func takeStartCategory() {
+        if let start = app.settingsStartCategory.flatMap(Category.init(rawValue:)) { category = start }
+        app.settingsStartCategory = nil
     }
 
     private var navigation: some View {
@@ -122,14 +109,14 @@ struct SettingsSheet: View {
                 }
                 Toggle(isOn: $app.openLastCatalogOnLaunch) {
                     Text("启动时打开上次目录库").font(.system(size: 13)).foregroundStyle(Theme.text)
-                }.toggleStyle(.switch).tint(Theme.accent)
+                }.toggleStyle(TrailingSwitch())
                 Toggle(isOn: $app.autoCheckForUpdates) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("自动检查更新").font(.system(size: 13)).foregroundStyle(Theme.text)
                         Text("每天最多联网查看一次 GitHub 上的新版本，有新版本时询问是否安装")
                             .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                     }
-                }.toggleStyle(.switch).tint(Theme.accent)
+                }.toggleStyle(TrailingSwitch())
                 HStack(spacing: 12) {
                     Stepper(value: $app.recentImportDays, in: 1...365) {
                         Text("「最近导入」窗口 \(app.recentImportDays) 天")
@@ -147,7 +134,7 @@ struct SettingsSheet: View {
                             .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                }.toggleStyle(.switch).tint(Theme.accent)
+                }.toggleStyle(TrailingSwitch())
                 row(L("导入模式")) {
                     Segmented(options: [
                         SegOption(value: "referenced", label: L("引用式")),
@@ -212,7 +199,7 @@ struct SettingsSheet: View {
                         Text("导入时 Vision 分析（场景标签 + 人脸）").font(.system(size: 13)).foregroundStyle(Theme.text)
                         Text("完全在本机进行，照片不会离开设备。").font(.system(size: 11)).foregroundStyle(Theme.text3)
                     }
-                }.toggleStyle(.switch).tint(Theme.accent)
+                }.toggleStyle(TrailingSwitch())
             }
 
             section(L("RAW 默认设置"), category: .develop) {
@@ -248,7 +235,7 @@ struct SettingsSheet: View {
                 }
                 Toggle(isOn: $app.exportWritesXMP) {
                     Text("导出时写入 XMP sidecar").font(.system(size: 13)).foregroundStyle(Theme.text)
-                }.toggleStyle(.switch).tint(Theme.accent)
+                }.toggleStyle(TrailingSwitch())
                 HStack(spacing: 9) {
                     TextField("预设名", text: $exportPresetName)
                         .textFieldStyle(.plain).font(.system(size: 13))
@@ -289,21 +276,21 @@ struct SettingsSheet: View {
             section(L("元数据"), category: .metadata) {
                 Toggle(isOn: $app.readXMPSidecar) {
                     Text("导入时读取 XMP sidecar").font(.system(size: 13)).foregroundStyle(Theme.text)
-                }.toggleStyle(.switch).tint(Theme.accent)
+                }.toggleStyle(TrailingSwitch())
                 Toggle(isOn: $app.autoWriteXMPSidecar) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("编辑时自动写入 XMP sidecar").font(.system(size: 13)).foregroundStyle(Theme.text)
                         Text("评分 / 关键词 / 标题等改动会写入同名 .xmp，不改动原图。")
                             .font(.system(size: 11)).foregroundStyle(Theme.text3)
                     }
-                }.toggleStyle(.switch).tint(Theme.accent)
+                }.toggleStyle(TrailingSwitch())
                 Toggle(isOn: $app.autoReadChangedXMP) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("自动读取外部修改的 XMP").font(.system(size: 13)).foregroundStyle(Theme.text)
                         Text("其他应用改动 .xmp 后，直接用文件里的元数据更新目录库；关闭时只标出这些照片，可在「照片」菜单中读取。")
                             .font(.system(size: 11)).foregroundStyle(Theme.text3)
                     }
-                }.toggleStyle(.switch).tint(Theme.accent)
+                }.toggleStyle(TrailingSwitch())
             }
 
             section(L("缩略图与缓存"), category: .cache) {
@@ -332,7 +319,7 @@ struct SettingsSheet: View {
                         Text("开启「低电量模式」时暂停后台缩略图补齐，节省电量。")
                             .font(.system(size: 11)).foregroundStyle(Theme.text3)
                     }
-                }.toggleStyle(.switch).tint(Theme.accent)
+                }.toggleStyle(TrailingSwitch())
             }
 
             section(L("维护"), category: .catalog) {
@@ -485,19 +472,19 @@ struct SettingsSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .frame(width: 220)
     }
+}
 
-    private var foot: some View {
-        HStack {
-            Spacer()
-            Button { app.sheet = nil } label: {
-                Text("完成").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
-                    .padding(.horizontal, 17).padding(.vertical, 8)
-                    .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
-            }.buttonStyle(.plain)
-                .keyboardShortcut(.defaultAction)
+/// A setting's switch at the trailing edge, its label filling the row: the switches line up
+/// in one column instead of each following its own label.
+private struct TrailingSwitch: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            configuration.label
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Toggle("", isOn: configuration.$isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(Theme.accent)
         }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(Theme.bgSidebar)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
     }
 }

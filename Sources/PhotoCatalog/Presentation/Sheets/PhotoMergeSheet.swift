@@ -19,7 +19,6 @@ struct PhotoMergeSheet: View {
             HStack {
                 Text(app.photoMergeKind == .hdr ? L("HDR 合并") : L("全景合并")).font(.system(size: 17, weight: .semibold))
                 Spacer()
-                sheetClose { app.sheet = nil }
             }
             .padding(.horizontal, 18).padding(.vertical, 10)
             .background(Theme.surface)

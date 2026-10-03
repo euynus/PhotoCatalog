@@ -49,7 +49,6 @@ struct SmartAlbumBuilder: View {
                     .font(.system(size: 17, weight: .semibold))
             }
             Spacer()
-            sheetClose { app.dismissSmartAlbumBuilder() }
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
         .background(Theme.surface)
