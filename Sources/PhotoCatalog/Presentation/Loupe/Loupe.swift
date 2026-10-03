@@ -249,24 +249,13 @@ private struct FilmstripCell: View, Equatable {
     var body: some View {
         Hover { hover in
             Button(action: select) {
-                VStack(spacing: 4) {
-                    Thumb(asset: asset, radius: 2, contentMode: .fit, maxDecodePixel: 216)
-                        .frame(width: 108, height: 72)
-                        .background(Theme.canvas)
-                    HStack(spacing: 5) {
-                        if asset.rating > 0 {
-                            StarsView(value: asset.rating, size: 8, dim: true, filledOnly: true)
-                        }
-                        Spacer(minLength: 0)
-                        FlagPill(flag: asset.flag, size: 10)
-                    }
-                    .frame(height: 12)
-                    .background(Theme.canvasSurface)
-                }
-                .padding(4)
-                .frame(width: 116, height: 96)
-                .background(isPrimary || hover ? Theme.canvasSurfaceHi : Theme.canvas)
-                .clipShape(RoundedRectangle(cornerRadius: 2))
+                Thumb(asset: asset, radius: 2, contentMode: .fit, maxDecodePixel: 264)
+                    .frame(width: 124, height: 88)
+                    .overlay(alignment: .bottom) { badges }
+                    .padding(4)
+                    .frame(width: 132, height: 96)
+                    .background(isPrimary || hover ? Theme.canvasSurfaceHi : Theme.canvas)
+                    .clipShape(RoundedRectangle(cornerRadius: 2))
             }
             .buttonStyle(.plain)
             .overlay(RoundedRectangle(cornerRadius: 2)
@@ -274,6 +263,22 @@ private struct FilmstripCell: View, Equatable {
             .help(asset.filename)
             .accessibilityLabel(asset.filename)
             .accessibilityAddTraits(isPrimary ? .isSelected : [])
+        }
+    }
+
+    /// Rating and flag over the photo's foot, only when it has them: a strip kept under every
+    /// thumbnail for them was empty on most photos, and took the height from the photo.
+    @ViewBuilder private var badges: some View {
+        if asset.rating > 0 || asset.flag != .none {
+            HStack(spacing: 5) {
+                if asset.rating > 0 {
+                    StarsView(value: asset.rating, size: 8, filledOnly: true)
+                }
+                Spacer(minLength: 0)
+                if asset.flag != .none { FlagPill(flag: asset.flag, size: 10) }
+            }
+            .padding(.horizontal, 4).padding(.top, 6).padding(.bottom, 3)
+            .background(LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom))
         }
     }
 }
