@@ -60,6 +60,7 @@ final class AppState {
                 stackByAssetCache = nil
                 stackInputsVersion &+= 1
                 keywordCountsCache = nil
+                gearCountsCache = nil
                 captureDateGroupsCache = nil
                 folderTreeCache = nil
                 folderTreeCountCache = nil
@@ -147,6 +148,7 @@ final class AppState {
     @ObservationIgnored private var editGroupsCache: (version: Int, groups: [DuplicateGroup])?
     @ObservationIgnored private var stackByAssetCache: [String: PhotoStack]?
     @ObservationIgnored private var keywordListCache: [KeywordCount]?
+    @ObservationIgnored private var gearCountsCache: (cameras: [KeywordCount], lenses: [KeywordCount])?
     /// Every keyword's photo count, in first-seen order; metadata edits patch it in place.
     @ObservationIgnored private var keywordCountsCache: (order: [String], counts: [String: Int])?
     @ObservationIgnored private var keywordSuggestionPoolCache: [String]?
@@ -7475,6 +7477,15 @@ final class AppState {
             if a.faces > 0 || withFaces.contains(a.id) { counts.people += 1 }
         }
         return counts
+    }
+
+    /// The library's cameras and lenses, most used first: what the filter bar offers.
+    var gearCounts: (cameras: [KeywordCount], lenses: [KeywordCount]) {
+        _ = listInputsVersion   // register the dependency even on a cache hit
+        if let cache = gearCountsCache { return cache }
+        let result = (cameras: countMetadataValues(\.camera), lenses: countMetadataValues(\.lens))
+        gearCountsCache = result
+        return result
     }
 
     private func countMetadataValues(_ keyPath: KeyPath<Asset, String>) -> [KeywordCount] {

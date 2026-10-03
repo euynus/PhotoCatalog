@@ -978,20 +978,22 @@
 "适合" = "Fit";
 
 /* Presentation/MainWindow/FilterBar.swift */
+"只看精选" = "Picks Only";
+"只看被拒绝" = "Rejects Only";
+"更多" = "More";
+"更多筛选条件" = "More Filters";
+"文件类型、拍摄日期、GPS 与文件状态" = "File type, capture date, GPS and file status";
 "%lld 星及以上" = "%lld stars and up";
 "%lld 项条件" = "%lld conditions";
 "不限" = "Any";
-"全部" = "All";
 "全部日期" = "All Dates";
 "全部状态" = "All Statuses";
 "全部相机" = "All Cameras";
 "全部类型" = "All Types";
 "全部镜头" = "All Lenses";
-"全部颜色" = "All Colors";
 "包括起止两天；时间以目录记录的拍摄时间为准。" = "Both days are included; times follow the capture times recorded in the catalog.";
 "收起筛选" = "Hide Filters";
 "无位置" = "Without Location";
-"最低评分" = "Minimum Rating";
 "有位置" = "With Location";
 "正常" = "Online";
 "清除筛选" = "Clear Filters";
