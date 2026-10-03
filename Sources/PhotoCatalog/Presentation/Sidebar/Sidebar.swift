@@ -29,6 +29,8 @@ struct Sidebar: View {
     @AppStorage("pc_sidebarFoldersExpanded") private var foldersExpanded = true
     @AppStorage("pc_sidebarTagsExpanded") private var tagsExpanded = false
     @AppStorage("pc_sidebarMaintenanceExpanded") private var maintenanceExpanded = true
+    /// The duplicates page's similarity, so the count here is of the groups it shows.
+    @AppStorage("pc_similarMinScore") private var similarMinScore = 0.9
 
     var body: some View {
         let _ = assetRevision
@@ -139,7 +141,7 @@ struct Sidebar: View {
             tint: c.missingOffline > 0 ? Theme.yellow : nil,
             badge: pendingBadge ?? Text(c.missingOffline.formatted()))
         row("copy", L("重复文件"), .lib, "duplicates",
-            badge: pendingBadge ?? Text("\(app.duplicateGroups.count.formatted()) 组"))
+            badge: pendingBadge ?? Text("\(shownDuplicateGroups(app.duplicateGroups, similarMinScore: similarMinScore).count.formatted()) 组"))
         if !app.externallyChangedXMPIds.isEmpty {
             row("arrow.down.doc", L("元数据已在外部更改"), .lib, "xmpChanged", tint: Theme.yellow,
                 badge: Text(app.externallyChangedXMPIds.count.formatted()))

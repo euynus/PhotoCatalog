@@ -138,6 +138,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>全部 %lld 项</string>
 	</dict>
+	<key>完全相同 · %lld 组</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>完全相同 · %lld 组</string>
+	</dict>
 	<key>导入失败 %lld 个文件</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -512,6 +517,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>画册：%lld 张照片</string>
+	</dict>
+	<key>相似 · %lld 组</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>相似 · %lld 组</string>
 	</dict>
 	<key>筛选 %lld 张</key>
 	<dict>

@@ -9637,6 +9637,20 @@ final class AppState {
     }
 
     // ---------- compare ----------
+    /// A duplicate group in Compare, among all photos: similar frames told apart at full size.
+    func compareDuplicateGroup(_ group: DuplicateGroup) {
+        let ids = group.items.map(\.id)
+        select(Selection(type: .lib, id: "all", name: L("全部照片")))
+        // a filter that hides some of the group would compare other photos in their place
+        if listPositions(of: Set(ids)).count < ids.count {
+            setSearch("")
+            setFilters(Filters())
+        }
+        selectedIds = Set(ids)
+        primaryId = ids.first
+        enterCompare()
+    }
+
     func enterCompare() {
         // order by display position so the chosen subset is deterministic
         let positions = listPositions(of: selectedIds)

@@ -1207,19 +1207,28 @@
 "预设名称" = "Preset name";
 
 /* Presentation/Sheets/DuplicatesView.swift */
+"最低相似度" = "Minimum Similarity";
+"疑似副本" = "Likely Copy";
+"内容完全相同的文件会分组显示在这里。" = "Files with identical content are grouped here.";
+"在比较视图中并排查看这一组" = "View this group side by side in Compare";
+"完全相同" = "Identical";
+"完全相同 · %lld 组" = "Identical · %lld groups";
+"没有完全相同的文件" = "No Identical Files";
+"没有相似的照片" = "No Similar Photos";
+"相似 · %lld 组" = "Similar · %lld groups";
+"相似度 %lld%%" = "%lld%% similar";
+"相似的照片可能是连拍中不同的帧，不一定是副本；处理前请逐组确认。" = "Similar photos may be different frames of a burst rather than copies; check each group before removing any.";
+"看起来几乎一样的照片会分组显示在这里。" = "Photos that look nearly the same are grouped here.";
+"重复类型" = "Duplicate Type";
 "个文件" = "files";
 "保留 1 张，其余：" = "Keep 1, and for the rest:";
 "保留这张" = "Keep This One";
 "保留这张：%@" = "Keep this one: %@";
-"内容完全相同或疑似重复的照片会分组显示在这里。" = "Photos with identical content, or that look like duplicates, are grouped here.";
 "可释放 ≈" = "Reclaimable ≈";
 "已保留" = "Kept";
 "已保留：%@" = "Kept: %@";
 "已处理" = "Handled";
-"没有重复文件" = "No Duplicates";
-"疑似重复 · 相似度 %lld%%" = "Suspected duplicate · %lld%% similar";
 "目录库较大，感知相似分析未自动运行；当前显示精确重复与疑似重复。" = "The catalog is large, so similarity analysis didn't run automatically. Showing exact and suspected duplicates.";
-"精确重复 · 内容哈希一致" = "Exact duplicate · identical content hash";
 "组" = "groups";
 
 /* Presentation/Sheets/ImportSheet.swift */
