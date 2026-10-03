@@ -1675,6 +1675,22 @@
 			<string>%lld failed files</string>
 		</dict>
 	</dict>
+	<key>比较 %lld 张 · 最多 4 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Comparing %#@n1@ · up to 4</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>用于 %lld 张照片，下级关键词一并更新。输入已有的关键词即合并。</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

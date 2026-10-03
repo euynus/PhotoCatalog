@@ -498,6 +498,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>正在重试 %lld 个失败文件…</string>
 	</dict>
+	<key>比较 %lld 张 · 最多 4 张</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>比较 %lld 张 · 最多 4 张</string>
+	</dict>
 	<key>用于 %lld 张照片，下级关键词一并更新。输入已有的关键词即合并。</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

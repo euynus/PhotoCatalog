@@ -21,10 +21,12 @@ struct CompareView: View {
 
     private var toolbar: some View {
         HStack(spacing: 10) {
-            Text("\(assets.count) / 4 张")
+            // what's shown, and how many more fit: "2 / 4" read like a page number
+            Text("比较 \(assets.count) 张 · 最多 4 张")
                 .font(.system(size: 11)).monospacedDigit()
                 .foregroundStyle(Theme.canvasText2)
                 .fixedSize()
+                .help("最多并排比较 4 张照片；用 + 添加")
             if let winner = assets.first(where: { $0.id == app.winner }) {
                 Rectangle().fill(Theme.canvasLine).frame(width: 1, height: 14)
                 Label("最佳 · \(winner.filename)", systemImage: "checkmark.circle.fill")

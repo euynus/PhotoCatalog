@@ -608,7 +608,8 @@
 "缺少拍摄日期，目录改用文件创建或修改日期的照片数。" = "Photos without a capture date, for which the catalog uses the file's creation or modification date.";
 
 /* Presentation/Compare/CompareView.swift */
-"%lld / 4 张" = "%lld of 4";
+"比较 %lld 张 · 最多 4 张" = "Comparing %lld photos · up to 4";
+"最多并排比较 4 张照片；用 + 添加" = "Compare up to 4 photos side by side; add them with +";
 "已选为最佳" = "Chosen as Best";
 "所有照片联动放大到 1:1 (Z，或双击任一照片)" = "Zoom all photos together to 1:1 (Z, or double-click any photo)";
 "收起待选照片" = "Hide Candidates";
