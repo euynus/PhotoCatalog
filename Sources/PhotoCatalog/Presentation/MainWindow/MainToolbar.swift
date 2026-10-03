@@ -11,7 +11,8 @@ func inspectorToggleLabel(isVisible: Bool) -> String {
 /// the whole toolbar on every photo selection re-ran the segmented control's AppKit update.
 struct MainToolbar: ToolbarContent {
     var body: some ToolbarContent {
-        ToolbarItem { ViewModePicker() }
+        ToolbarItem { ModulePicker() }
+        ToolbarItem { ViewMenu() }
         ToolbarItem { FilterToggle() }
         ToolbarItem { SortMenu() }
         ToolbarItem { ImportButton() }
@@ -25,22 +26,86 @@ private extension AppState {
     var canFilterOrSort: Bool { !isDuplicates && view != .analysis }
 }
 
-private struct ViewModePicker: View {
+/// Library and Develop, named, as Lightroom's modules: where nearly all the work happens.
+/// Back from Develop, the library opens in the view it was left in.
+private struct ModulePicker: View {
     @Environment(AppState.self) private var app
 
     var body: some View {
-        Picker("视图", selection: Binding(get: { app.view }, set: { app.switchView($0) })) {
-            Label("网格 (G)", systemImage: "square.grid.2x2").tag(ViewMode.grid)
-            Label("单张 (E)", systemImage: "photo").tag(ViewMode.loupe)
-            Label("比较 (C)", systemImage: "rectangle.split.2x1").tag(ViewMode.compare)
-            Label("筛选 (N)", systemImage: "square.grid.3x2").tag(ViewMode.survey)
-            Label("修图 (D)", systemImage: "slider.horizontal.3").tag(ViewMode.develop)
-            Label("拍摄参数分析 (A)", systemImage: "chart.bar.xaxis").tag(ViewMode.analysis)
+        Picker("模块", selection: Binding(get: { app.view == .develop },
+                                         set: { $0 ? app.switchView(.develop) : app.returnToLibrary() })) {
+            Text("图库").tag(false)
+            Text("修图").tag(true)
         }
         .pickerStyle(.segmented)
-        .labelStyle(.iconOnly)
+        .fixedSize()
         .disabled(app.isDuplicates)
-        .help("视图：网格 G · 单张 E · 比较 C · 筛选 N · 修图 D · 分析 A")
+        .help("图库 (G) · 修图 (D)")
+    }
+}
+
+extension ViewMode {
+    /// The library's ways of showing photos, as the view menu lists them.
+    static let library: [ViewMode] = [.grid, .loupe, .compare, .survey, .analysis]
+
+    var title: String {
+        switch self {
+        case .grid: L("网格")
+        case .loupe: L("单张")
+        case .compare: L("比较")
+        case .survey: L("筛选视图")
+        case .develop: L("修图")
+        case .analysis: L("拍摄参数分析")
+        }
+    }
+
+    var key: String {
+        switch self {
+        case .grid: "G"
+        case .loupe: "E"
+        case .compare: "C"
+        case .survey: "N"
+        case .develop: "D"
+        case .analysis: "A"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .grid: "square.grid.2x2"
+        case .loupe: "photo"
+        case .compare: "rectangle.split.2x1"
+        case .survey: "square.grid.3x2"
+        case .develop: "slider.horizontal.3"
+        case .analysis: "chart.bar.xaxis"
+        }
+    }
+}
+
+/// The library's views behind one button that names the current one, in place of six
+/// look-alike icons; the keys still switch directly.
+private struct ViewMenu: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let current = app.view == .develop ? app.lastLibraryView : app.view
+        Menu {
+            Picker("视图", selection: Binding(get: { app.view }, set: { app.switchView($0) })) {
+                ForEach(ViewMode.library, id: \.self) { mode in
+                    Label("\(mode.title) (\(mode.key))", systemImage: mode.symbol).tag(mode)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            // one text run: a toolbar menu sizes an icon-and-title label a glyph short in Chinese
+            Text("\(Image(systemName: current.symbol)) \(current.title)")
+        }
+        .fixedSize()
+        .disabled(app.isDuplicates)
+        .help("视图：网格 G · 单张 E · 比较 C · 筛选 N · 分析 A")
+        .accessibilityLabel("视图")
+        .accessibilityValue(current.title)
     }
 }
 
@@ -110,20 +175,12 @@ private struct ExportButton: View {
     @Environment(AppState.self) private var app
 
     var body: some View {
-        Menu {
-            Button("导出…") { app.showRenderedExport() }
-                .disabled(!app.canRenderedExport)
-            Button("导出选中原件…") { app.exportSelection() }
-                .disabled(!app.canExportOriginalSelection)
-            Button("导出选中预览图…") { app.exportSelectionPreviews() }
-                .disabled(!app.canExportPreviewSelection)
-        } label: {
+        // one control without a second arrow: originals and previews are in the 照片 menu
+        Button { app.showRenderedExport() } label: {
             Label("导出", systemImage: "square.and.arrow.up")
-        } primaryAction: {
-            app.showRenderedExport()
         }
-        .disabled(!app.canRenderedExport && !app.canExportOriginalSelection)
-        .help("导出 (⇧⌘E) · 按住查看更多导出方式")
+        .disabled(!app.canRenderedExport)
+        .help("导出 (⇧⌘E) · 导出原件或预览图在“照片”菜单")
     }
 }
 

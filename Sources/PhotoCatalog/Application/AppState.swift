@@ -636,9 +636,12 @@ final class AppState {
     }
     /// Bumped on every selection change; keys the selection summary.
     @ObservationIgnored private var selectionVersion = 0
+    /// The library view last shown, where the toolbar's 图库 returns from Develop.
+    @ObservationIgnored private(set) var lastLibraryView: ViewMode = .grid
     var view: ViewMode = .grid {
         didSet {
             if view != .develop {
+                lastLibraryView = view
                 developCropping = false; developPickingWhiteBalance = false; developMasking = false; developSpotting = false
                 developComparing = false; developPickingFocus = false; developShowsDepth = false
             }
@@ -9670,6 +9673,13 @@ final class AppState {
         }
         primaryId = compareIds.first
         anchorId = primaryId
+    }
+
+    /// Back to the library from Develop, in the view it was left in; compare and survey were
+    /// of a selection that may have changed since, so they come back as the loupe.
+    func returnToLibrary() {
+        let last = lastLibraryView
+        switchView([.compare, .survey].contains(last) ? .loupe : last)
     }
 
     func switchView(_ v: ViewMode) {
