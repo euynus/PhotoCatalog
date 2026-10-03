@@ -7631,8 +7631,8 @@ final class AppState {
 
     func managementDisplayText(for asset: Asset) -> String {
         switch managementMode(for: asset) {
-        case .managed: return L("托管式 (Managed)")
-        case .referenced: return L("引用式 (Referenced)")
+        case .managed: return L("托管式")
+        case .referenced: return L("引用式")
         }
     }
 

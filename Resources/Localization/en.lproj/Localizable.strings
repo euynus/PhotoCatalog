@@ -181,7 +181,6 @@
 "已隐藏筛选栏" = "Filter bar hidden";
 "已隐藏缩略图信息" = "Thumbnail info hidden";
 "应用预设“%@”" = "Apply Preset “%@”";
-"引用式 (Referenced)" = "Referenced";
 "引用式管理 · 原件只读" = "Referenced · originals read-only";
 "当前没有可重新扫描的源" = "Nothing here to rescan";
 "当前目录库数据库会被所选备份替换。应用会先尝试创建一次当前状态备份。" = "The catalog database will be replaced by the selected backup. PhotoCatalog first tries to back up its current state.";
@@ -197,7 +196,6 @@
 "打开" = "Open";
 "打开目录库失败" = "Couldn't open the catalog";
 "打开轨迹" = "Open Track";
-"托管式 (Managed)" = "Managed";
 "托管式管理 · 原件在目录库" = "Managed · originals in the catalog";
 "找到 %lld 张可能是已命名人物的人脸，请在“人物”中确认" = "Found %lld faces that may be people you've named · confirm them in People";
 "新建智能相册" = "New Smart Album";
@@ -922,8 +920,10 @@
 "位置" = "Location";
 "信息" = "Info";
 "内容哈希" = "Content Hash";
+"技术信息" = "Technical Details";
+"快速哈希" = "Quick Hash";
+"用于判断重复与原件是否改动的指纹" = "Fingerprints that tell duplicates apart and show whether an original changed";
 "厂商信息" = "Maker Notes";
-"历史" = "History";
 "原件修改" = "Original Modified";
 "原件创建" = "Original Created";
 "原件路径" = "Original Path";
@@ -946,7 +946,6 @@
 "管理方式" = "Management";
 "类型" = "Type";
 "编辑将批量应用" = "Edits apply to all selected photos";
-"记录" = "Record";
 "配对文件" = "Paired File";
 
 /* Presentation/Inspector/OrganizeTab.swift */

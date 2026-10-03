@@ -226,21 +226,27 @@ struct InspectorView: View {
         }
     }
 
-    // ---------- History ----------
+    // ---------- File: where the original came from; the hashes folded away ----------
     private func histTab(_ a: Asset) -> some View {
-        InsGroup([
-            .init(L("导入时间"), DateFmt.long(a.importedAt)),
-            .init(L("管理方式"), app.managementDisplayText(for: a)),
-            .init(L("内容哈希"),
-                  a.contentHash.map { "sha256:\($0.prefix(12))…" } ?? L("未计算"),
-                  mono: true),
-            .init("Quick Hash",
-                  a.quickHash.map { "\($0.prefix(10))…" } ?? L("未计算"),
-                  mono: true),
-            .init(L("原件修改"), a.fileModifiedAt.map { DateFmt.short($0) } ?? "—"),
-            .init(L("原件创建"), a.fileCreatedAt.map { DateFmt.short($0) } ?? "—"),
-            .init(L("目录库备份"), app.statusBackupText),
-        ], title: L("记录"))
+        VStack(alignment: .leading, spacing: 12) {
+            InsGroup([
+                .init(L("导入时间"), DateFmt.long(a.importedAt)),
+                .init(L("管理方式"), app.managementDisplayText(for: a)),
+                .init(L("原件修改"), a.fileModifiedAt.map { DateFmt.short($0) } ?? "—"),
+                .init(L("原件创建"), a.fileCreatedAt.map { DateFmt.short($0) } ?? "—"),
+                .init(L("目录库备份"), app.statusBackupText),
+            ], title: L("文件"))
+            DisclosureGroup {
+                InsGroup([
+                    .init(L("内容哈希"), a.contentHash.map { "sha256:\($0.prefix(12))…" } ?? L("未计算"), mono: true),
+                    .init(L("快速哈希"), a.quickHash.map { "\($0.prefix(10))…" } ?? L("未计算"), mono: true),
+                ], title: "")
+                .padding(.top, 4)
+            } label: {
+                Text("技术信息").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text2)
+            }
+            .help("用于判断重复与原件是否改动的指纹")
+        }
     }
 
 }
@@ -297,7 +303,7 @@ func formatGPSLabel(_ gps: (Double, Double), altitude: Double?, isPresent: Bool?
 /// Its own view so a new selection doesn't re-run the segmented control's AppKit update.
 private struct InspectorTabPicker: View {
     @Environment(AppState.self) private var app
-    private static let tabs = [("info", L("信息")), ("meta", L("元数据")), ("org", L("整理")), ("hist", L("历史"))]
+    private static let tabs = [("info", L("信息")), ("meta", L("元数据")), ("org", L("整理")), ("hist", L("文件"))]
 
     var body: some View {
         @Bindable var app = app
