@@ -13,12 +13,20 @@ struct SmartAlbumBuilder: View {
 
     init(album: SmartAlbum? = nil) {
         self.album = album
-        _name = State(initialValue: album?.name ?? L("五星精选 · 旅行"))
+        // a new album starts blank: no name, and one condition to fill in
+        _name = State(initialValue: album?.name ?? "")
         _match = State(initialValue: album?.rule.match ?? "all")
         _conditions = State(initialValue: album?.rule.conditions ?? [
-            SmartCondition(field: "rating", op: ">=", value: "4"),
-            SmartCondition(field: "keywords", op: "包含", value: L("旅行")),
+            SmartCondition(field: "keywords", op: "包含", value: ""),
         ])
+    }
+
+    /// A name, and a value in every text condition: an empty one would match nothing.
+    private var canSave: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !conditions.isEmpty
+            && !conditions.contains {
+                SmartFields.field($0.field).input == .text && $0.value.trimmingCharacters(in: .whitespaces).isEmpty
+            }
     }
 
     private var rule: SmartRule { SmartRule(match: match, conditions: conditions) }
@@ -226,7 +234,8 @@ struct SmartAlbumBuilder: View {
                     .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
             }.buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
-                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || conditions.isEmpty)
+                .disabled(!canSave)
+                .opacity(canSave ? 1 : 0.5)
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
         .background(Theme.bgSidebar)

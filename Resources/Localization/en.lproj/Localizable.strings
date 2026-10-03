@@ -1426,14 +1426,12 @@
 /* Presentation/Sheets/SmartAlbumBuilder.swift */
 "%lld 张照片符合规则" = "%lld photos match the rules";
 "%lld 星" = "%lld stars";
-"五星精选 · 旅行" = "5-Star Picks · Travel";
 "满足任一条件" = "Match Any";
 "保存更改" = "Save Changes";
 "满足全部条件" = "Match All";
 "创建智能相册" = "Create Smart Album";
 "可访问" = "Accessible";
 "名称" = "Name";
-"旅行" = "Travel";
 "无 GPS" = "No GPS";
 "智能相册" = "Smart Album";
 "有 GPS" = "With GPS";
