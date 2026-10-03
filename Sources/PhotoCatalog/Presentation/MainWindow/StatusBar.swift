@@ -12,8 +12,6 @@ struct StatusBar: View {
         HStack(spacing: 10) {
             CatalogStatusLabel()
             SelectionCountLabel()
-            StatusSeparator()
-            ManagementModeLabel()
             Spacer(minLength: 8)
             ImportProgressLabel()
             ExportProgressLabel()
@@ -55,13 +53,10 @@ private struct CatalogStatusLabel: View {
             }
             .fixedSize()
         } else {
-            HStack(spacing: 5) {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.green)
-                Text("\(app.statusAssetCount.formatted()) 张照片")
-            }
-            .help("目录库就绪")
-            .accessibilityElement(children: .combine)
-            .fixedSize()
+            // how the catalog keeps its originals, and its cache, are details: on hover
+            Text("\(app.statusAssetCount.formatted()) 张照片")
+                .help(L("目录库就绪 · \(app.catalogManagementText) · \(app.statusCacheText)"))
+                .fixedSize()
         }
     }
 }
@@ -76,15 +71,6 @@ private struct SelectionCountLabel: View {
                 .foregroundStyle(Theme.accent)
                 .fixedSize()
         }
-    }
-}
-
-private struct ManagementModeLabel: View {
-    @Environment(AppState.self) private var app
-
-    var body: some View {
-        Text(app.catalogManagementText).foregroundStyle(Theme.text3)
-            .truncationMode(.middle)
     }
 }
 
@@ -214,12 +200,15 @@ private struct MaintenanceLabels: View {
 
     var body: some View {
         Button { app.runBackup() } label: {
-            Label(app.statusBackupText, systemImage: "clock.arrow.circlepath")
+            Image(systemName: "clock.arrow.circlepath")
                 .foregroundStyle(Theme.text3)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain).disabled(!app.canRunCatalogMaintenance).help("立即备份目录库 (⌘B)")
-        .fixedSize()
-        Text(app.statusCacheText).foregroundStyle(Theme.text3).fixedSize()
+        .buttonStyle(.plain).disabled(!app.canRunCatalogMaintenance)
+        .help(L("\(app.statusBackupText) · 立即备份目录库 (⌘B)"))
+        .accessibilityLabel("立即备份目录库")
+        .accessibilityValue(app.statusBackupText)
     }
 }
 
