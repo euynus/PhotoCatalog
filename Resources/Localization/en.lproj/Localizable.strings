@@ -1107,6 +1107,10 @@
 "正在打开 %@…" = "Opening %@…";
 
 /* Presentation/MainWindow/StatusBar.swift */
+"显示两侧面板 (Tab)" = "Show Side Panels (Tab)";
+"隐藏两侧面板 (Tab)" = "Hide Side Panels (Tab)";
+"显示两侧面板" = "Show Side Panels";
+"隐藏两侧面板" = "Hide Side Panels";
 " · 队列 %lld" = " · %lld queued";
 "%@ 张照片" = "%@ photos";
 "取消导出" = "Cancel Export";

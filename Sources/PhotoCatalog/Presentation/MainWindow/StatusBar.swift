@@ -26,6 +26,8 @@ struct StatusBar: View {
                 StatusSeparator()
                 GridControls()
             }
+            StatusSeparator()
+            PanelsToggle()
         }
         .font(.system(size: 11))
         .labelStyle(StatusLabelStyle())
@@ -35,6 +37,26 @@ struct StatusBar: View {
         .frame(height: Theme.statusbarH)
         .background(Theme.bgTitlebar)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+}
+
+/// Tab's both-panels toggle where it can be seen: until now only the key, and a menu item, knew it.
+private struct PanelsToggle: View {
+    @Environment(AppState.self) private var app
+
+    var body: some View {
+        let hidden = app.panelsHidden
+        Button { app.togglePanels() } label: {
+            Image(systemName: hidden ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 11))
+                .foregroundStyle(hidden ? Theme.accent : Theme.text3)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(hidden ? "显示两侧面板 (Tab)" : "隐藏两侧面板 (Tab)")
+        .accessibilityLabel(hidden ? "显示两侧面板" : "隐藏两侧面板")
+        .fixedSize()
     }
 }
 

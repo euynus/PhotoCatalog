@@ -457,6 +457,9 @@ final class AppState {
     /// Sidebar column visibility; Tab hides it together with the inspector for culling.
     var sidebarVisible = true
 
+    /// Both side panels out of the way (Tab), the photo given the window's width.
+    var panelsHidden: Bool { !sidebarVisible && !(showInspector && inspectorAvailable) }
+
     func togglePanels() {
         let anyVisible = sidebarVisible || (showInspector && inspectorAvailable)
         sidebarVisible = !anyVisible
