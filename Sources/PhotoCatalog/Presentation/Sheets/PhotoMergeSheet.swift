@@ -38,10 +38,16 @@ struct PhotoMergeSheet: View {
                         Text(failure ?? L("无法生成预览")).font(.system(size: 12)).foregroundStyle(Theme.canvasText2)
                             .multilineTextAlignment(.center).padding()
                     } else {
-                        ProgressView().controlSize(.small)
+                        VStack(spacing: 10) {
+                            ProgressView().controlSize(.small)
+                            Text(app.photoMergeKind == .hdr ? "正在合成预览…" : "正在拼接预览…")
+                                .font(.system(size: 12)).foregroundStyle(Theme.canvasText2)
+                        }
                     }
                 }
                 .frame(height: 280)
+                // the canvas is dark in either appearance: a light-mode spinner on it couldn't be seen
+                .environment(\.colorScheme, .dark)
                 if app.photoMergeKind == .hdr {
                     if exposuresAlike {
                         Label("这些照片的曝光相近，HDR 合并的效果有限；请选用一组不同曝光的照片",

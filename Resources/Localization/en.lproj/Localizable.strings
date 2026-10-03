@@ -842,6 +842,8 @@
 "请选择至少两张有原件的照片" = "Select at least two photos with originals";
 "这些照片的曝光相近，HDR 合并的效果有限；请选用一组不同曝光的照片" = "These photos have similar exposures, so an HDR merge will do little; choose a set taken at different exposures";
 "HDR 合并" = "HDR Merge";
+"正在合成预览…" = "Merging a preview…";
+"正在拼接预览…" = "Stitching a preview…";
 "全景…" = "Panorama…";
 "全景合并" = "Panorama Merge";
 "全景合并失败：有照片无法读取" = "Panorama merge failed: a photo couldn’t be read";
