@@ -311,9 +311,13 @@ struct Thumb: View {
     private func tile(_ app: AppState) -> some View {
         ZStack {
             if let img = shownImage(app) {
-                Image(nsImage: img)
-                    .resizable()
-                    .aspectRatio(contentMode: contentMode)
+                // in an overlay: a filling photo is larger than the tile, and as the stack's own
+                // content it made the tile that large, out past its frame and its clip
+                Color.clear.overlay {
+                    Image(nsImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: contentMode)
+                }
             } else {
                 Theme.canvasSurface
                 if loader.failed, loader.owner == asset.id {

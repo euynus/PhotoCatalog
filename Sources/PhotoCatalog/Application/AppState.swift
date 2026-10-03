@@ -650,7 +650,14 @@ final class AppState {
     }
     var thumbSize: CGFloat = 168
     var showInspector = true
-    var showInfo = true
+    /// The file name row under each grid photo (I); remembered across launches.
+    var showInfo = UserDefaults.standard.object(forKey: "pc_gridShowInfo") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showInfo, forKey: "pc_gridShowInfo") }
+    }
+    /// Grid photos cropped to fill their squares, without the letterbox around portraits.
+    var gridFill = UserDefaults.standard.bool(forKey: "pc_gridFill") {
+        didSet { UserDefaults.standard.set(gridFill, forKey: "pc_gridFill") }
+    }
     var insTab = "org"
     private var pinnedSidebarItems = AppState.loadPinnedSidebarItems() {
         didSet { pinnedSidebarFavoritesCache = nil }
@@ -2261,6 +2268,11 @@ final class AppState {
     func toggleGridInfo() {
         showInfo.toggle()
         push(showInfo ? "已显示缩略图信息" : "已隐藏缩略图信息", showInfo ? "info" : "eye")
+    }
+
+    func toggleGridFill() {
+        gridFill.toggle()
+        push(gridFill ? "缩略图填满方格" : "缩略图显示完整画面", "grid")
     }
 
     func adjustThumbnailSize(by delta: CGFloat) {

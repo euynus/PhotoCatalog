@@ -97,6 +97,10 @@ private struct ViewMenu: View {
             }
             .pickerStyle(.inline)
             .labelsHidden()
+            Section("网格") {
+                Toggle("显示文件名 (I)", isOn: Binding(get: { app.showInfo }, set: { _ in app.toggleGridInfo() }))
+                Toggle("缩略图填满方格", isOn: Binding(get: { app.gridFill }, set: { _ in app.toggleGridFill() }))
+            }
         } label: {
             // one text run: a toolbar menu sizes an icon-and-title label a glyph short in Chinese
             Text("\(Image(systemName: current.symbol)) \(current.title)")

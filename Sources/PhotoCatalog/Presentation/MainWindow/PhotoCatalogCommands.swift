@@ -248,6 +248,9 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.onboarded || app.view == .analysis)
             Button("显示/隐藏缩略图信息") { perform("视图.显示隐藏缩略图信息") { app.toggleGridInfo() } }
                 .disabled(app.sheet != nil || !app.onboarded)
+            Toggle("缩略图填满方格", isOn: Binding(get: { app.gridFill },
+                                              set: { _ in perform("视图.缩略图填满方格") { app.toggleGridFill() } }))
+                .disabled(app.sheet != nil || !app.onboarded)
             Divider()
             Button("放大缩略图") { perform("视图.放大缩略图") { app.adjustThumbnailSize(by: 16) } }
                 .keyboardShortcut("=", modifiers: .command)

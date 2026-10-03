@@ -56,6 +56,7 @@ struct GridView: View {
                                        selected: app.selectedIds.contains(asset.id),
                                        isPrimary: asset.id == app.primaryId,
                                        showInfo: app.showInfo,
+                                       fill: app.gridFill,
                                        stackCount: stack?.count,
                                        stackCollapsed: stack?.collapsed == true,
                                        pairLabel: Self.pairLabel(pair),
@@ -116,7 +117,8 @@ private struct GridTile: View, Equatable {
     var body: some View {
         let asset = cell.asset
         let stack = cell.stackCount.map { (count: $0, collapsed: cell.stackCollapsed) }
-        GridCell(asset: asset, size: cell.size, selected: cell.selected, isPrimary: cell.isPrimary, showInfo: cell.showInfo,
+        GridCell(asset: asset, size: cell.size, selected: cell.selected, isPrimary: cell.isPrimary,
+                 showInfo: cell.showInfo, fill: cell.fill,
                  stackCount: cell.stackCount, stackCollapsed: cell.stackCollapsed, pairLabel: cell.pairLabel,
                  isEdited: cell.isEdited, inQuickCollection: cell.inQuickCollection, xmpChanged: cell.xmpChanged,
                  onToggleStack: { app.toggleStack(containing: asset.id) })
@@ -161,6 +163,8 @@ struct GridCell: View {
     let selected: Bool
     let isPrimary: Bool
     let showInfo: Bool
+    /// The photo cropped to fill its square instead of shown whole.
+    var fill = false
     let stackCount: Int?
     let stackCollapsed: Bool
     let pairLabel: String?
@@ -207,10 +211,11 @@ struct GridCell: View {
 
     // The photo keeps its own aspect inside a square slot; the canvas shows
     // through the letterbox instead of a card, so the image reads as the tile.
+    // Filling, it covers the square, and its long side is decoded past the slot.
     private var photo: some View {
         let side = size - 2 * Self.pad
-        return Thumb(asset: asset, radius: 3, contentMode: .fit, dim: asset.status == .missing,
-                     maxDecodePixel: Int((side * 2).rounded(.up)))
+        return Thumb(asset: asset, radius: 3, contentMode: fill ? .fill : .fit, dim: asset.status == .missing,
+                     maxDecodePixel: Int((side * (fill ? 3 : 2)).rounded(.up)))
             .frame(width: side, height: side)
             .padding(Self.pad)
             .overlay(alignment: .topLeading) {
@@ -396,6 +401,7 @@ extension GridCell: Equatable {
         l.isPrimary == r.isPrimary &&
         l.inQuickCollection == r.inQuickCollection &&
         l.showInfo == r.showInfo &&
+        l.fill == r.fill &&
         l.stackCount == r.stackCount &&
         l.stackCollapsed == r.stackCollapsed &&
         l.pairLabel == r.pairLabel &&
