@@ -72,6 +72,7 @@ struct SettingsSheet: View {
                 Button { category = item } label: {
                     Label(item.title, systemImage: item.symbol)
                         .font(.system(size: 13, weight: category == item ? .semibold : .regular))
+                        .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10).padding(.vertical, 9)
                         .foregroundStyle(category == item ? Theme.accent : Theme.text2)
@@ -85,7 +86,7 @@ struct SettingsSheet: View {
             Spacer(minLength: 0)
         }
         .padding(10)
-        .frame(width: 156)
+        .frame(width: 208)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.bgSidebar)
         .overlay(alignment: .trailing) { Rectangle().fill(Theme.line).frame(width: 1) }
