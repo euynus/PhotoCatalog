@@ -35,8 +35,12 @@ struct Sidebar: View {
     var body: some View {
         let _ = assetRevision
         List(selection: selection) {
-            Section("资料库", isExpanded: $libraryExpanded) { librarySection }
-            Section("筛选", isExpanded: $reviewExpanded) { reviewSection }
+            Section(isExpanded: $libraryExpanded) { librarySection } header: {
+                FoldableHeader(title: Text("资料库"), expanded: $libraryExpanded)
+            }
+            Section(isExpanded: $reviewExpanded) { reviewSection } header: {
+                FoldableHeader(title: Text("筛选"), expanded: $reviewExpanded)
+            }
             if !app.cardVolumes.isEmpty || !app.cameraDevices.isEmpty {
                 Section("设备") { deviceSection }
             }
@@ -47,24 +51,33 @@ struct Sidebar: View {
                     collectionHeader
                 }
                 if !app.captureDateGroups.isEmpty {
-                    Section("拍摄日期", isExpanded: $datesExpanded) {
+                    Section(isExpanded: $datesExpanded) {
                         OutlineGroup(app.captureDateGroups, children: \.childBuckets) { bucket in
                             dateRow(bucket)
                         }
+                    } header: {
+                        FoldableHeader(title: Text("拍摄日期"), expanded: $datesExpanded)
                     }
                 }
                 if !app.folderTree.isEmpty {
-                    Section("文件夹", isExpanded: $foldersExpanded) {
+                    Section(isExpanded: $foldersExpanded) {
                         OutlineGroup(FolderNode.build(app.folderTree), children: \.children) { node in
                             folderRow(node.item)
                         }
+                    } header: {
+                        FoldableHeader(title: Text("文件夹"), expanded: $foldersExpanded)
                     }
                 }
                 if hasTags {
-                    Section("标签", isExpanded: $tagsExpanded) { tagSection }
+                    Section(isExpanded: $tagsExpanded) { tagSection } header: {
+                        FoldableHeader(title: Text("标签"), expanded: $tagsExpanded, summary: Text("关键词、项目与客户"))
+                    }
                 }
             }
-            Section("管理", isExpanded: $maintenanceExpanded) { maintenanceSection }
+            Section(isExpanded: $maintenanceExpanded) { maintenanceSection } header: {
+                FoldableHeader(title: Text("管理"), expanded: $maintenanceExpanded, summary: maintenanceSummary,
+                               tint: app.libraryCounts.missingOffline > 0 ? Theme.yellow : nil)
+            }
         }
         .listStyle(.sidebar)
     }
@@ -132,6 +145,14 @@ struct Sidebar: View {
                     .accessibilityLabel("推出 \(card.name)")
             }
         }
+    }
+
+    /// What 管理 holds, while folded: missing originals first, then duplicates.
+    private var maintenanceSummary: Text {
+        let missing = app.libraryCounts.missingOffline
+        if missing > 0 { return Text("缺失 \(missing.formatted())") }
+        let groups = shownDuplicateGroups(app.duplicateGroups, similarMinScore: similarMinScore).count
+        return groups > 0 ? Text("重复 \(groups) 组") : Text("缺失与重复文件")
     }
 
     @ViewBuilder
@@ -418,5 +439,36 @@ struct CollectionNode: Identifiable {
             top.append(CollectionNode(item: .set(set), children: nodes(in: set.id)))
         }
         return top
+    }
+}
+
+/// A section's header that shows it can open while folded. The sidebar shows a section's arrow
+/// only under the pointer, so a folded one read as an empty title, and what it held (duplicates,
+/// missing files) went unseen.
+private struct FoldableHeader: View {
+    let title: Text
+    @Binding var expanded: Bool
+    var summary: Text?
+    var tint: Color?
+
+    var body: some View {
+        HStack(spacing: 5) {
+            title
+            if !expanded {
+                Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold))
+                if let summary {
+                    summary
+                        .font(.system(size: 10.5, weight: .regular))
+                        .foregroundStyle(tint ?? Theme.text3)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { expanded.toggle() } }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(expanded ? Text("收起") : Text("展开"))
     }
 }

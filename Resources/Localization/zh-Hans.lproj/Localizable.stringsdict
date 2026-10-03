@@ -553,6 +553,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>重命名 %lld 张</string>
 	</dict>
+	<key>重复 %lld 组</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>重复 %lld 组</string>
+	</dict>
 	<key>预计约 %lld 分钟</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

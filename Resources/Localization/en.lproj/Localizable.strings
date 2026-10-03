@@ -1450,6 +1450,11 @@
 "还没有最近目录库" = "No recent catalogs yet";
 
 /* Presentation/Sidebar/Sidebar.swift */
+"关键词、项目与客户" = "Keywords, projects and clients";
+"展开" = "Show More";
+"缺失 %@" = "%@ missing";
+"缺失与重复文件" = "Missing and duplicate files";
+"重复 %lld 组" = "%lld duplicate groups";
 "%@ 组" = "%@ groups";
 "%lld 张照片" = "%lld photos";
 "从「%@」导入照片" = "Import photos from “%@”";
