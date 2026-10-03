@@ -66,8 +66,8 @@ struct ImportSheet: View {
                 Text("导入模式").foregroundStyle(Theme.text2)
                 Spacer()
                 Segmented(options: [
-                    SegOption(value: "referenced", label: L("引用式")),
-                    SegOption(value: "managed", label: L("托管式")),
+                    SegOption(value: "referenced", label: L("原位添加")),
+                    SegOption(value: "managed", label: L("复制到目录库")),
                 ], value: app.importMode.rawValue,
                    onChange: { app.importMode = ImportMode(rawValue: $0) ?? .referenced })
             }
@@ -112,8 +112,8 @@ struct ImportSheet: View {
             }
             .help("导入的照片都套用这个预设，之后仍可随时修改")
             HStack(spacing: 24) {
-                Toggle("读取 XMP sidecar", isOn: $app.readXMPSidecar)
-                Toggle("Vision 分析", isOn: $app.visionEnabled)
+                Toggle("读取 XMP 附属文件", isOn: $app.readXMPSidecar)
+                Toggle("分析场景与人脸", isOn: $app.visionEnabled)
                 Spacer(minLength: 0)
             }
             .toggleStyle(.checkbox)

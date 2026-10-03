@@ -71,8 +71,8 @@ struct SmartAlbumBuilder: View {
                 Text("规则").font(.system(size: 15, weight: .semibold))
                 Spacer()
                 Segmented(options: [
-                    SegOption(value: "all", label: L("全部 (AND)")),
-                    SegOption(value: "any", label: L("任一 (OR)")),
+                    SegOption(value: "all", label: L("满足全部条件")),
+                    SegOption(value: "any", label: L("满足任一条件")),
                 ], value: match, onChange: { match = $0 })
                 Button { conditions.append(SmartCondition(field: "camera", op: "包含", value: "")) } label: {
                     Label("添加条件", systemImage: "plus")
@@ -135,7 +135,7 @@ struct SmartAlbumBuilder: View {
                      options: SmartFields.all.map { ($0.key, $0.label) }, width: 110) { newField in
                 updateField(i, newField)
             }
-            SASelect(value: conditions[i].op, options: field.ops.map { ($0, SmartField.opLabel($0)) }, width: 78) {
+            SASelect(value: conditions[i].op, options: field.ops.map { ($0, SmartField.opLabel($0, field: field.key)) }, width: 96) {
                 conditions[i].op = $0
             }
             valueControl(i, field)

@@ -2445,11 +2445,11 @@ final class AppState {
         }
         let text: String
         if !hasReal {
-            text = mode == .managed ? L("托管式管理 · 原件在目录库") : L("引用式管理 · 原件只读")
+            text = mode == .managed ? L("原件已复制到目录库") : L("原位添加 · 原件只读")
         } else if hasManaged {
-            text = hasReferenced ? L("混合管理 · 原件只读") : L("托管式管理 · 原件在目录库")
+            text = hasReferenced ? L("混合管理 · 原件只读") : L("原件已复制到目录库")
         } else {
-            text = L("引用式管理 · 原件只读")
+            text = L("原位添加 · 原件只读")
         }
         catalogManagementTextCache = (version, modes, mode, text)
         return text
@@ -3105,8 +3105,8 @@ final class AppState {
         panel.allowsMultipleSelection = false
         panel.prompt = L("导入")
         let mode = importMode
-        panel.message = mode == .managed ? L("选择文件夹（托管式：复制原件到目录库）")
-                                         : L("选择文件夹（引用式：原件保持不动）")
+        panel.message = mode == .managed ? L("选择要复制到目录库的文件夹")
+                                         : L("选择要原位添加的文件夹（原件保持不动）")
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         importFolder(folder)
     }
@@ -4381,7 +4381,7 @@ final class AppState {
         if failures > 0 {
             push("已写入 \(count) 个 · \(failures) 失败", "warning")
         } else {
-            push("已写入 \(count) 个 XMP sidecar", "check")
+            push("已写入 \(count) 个 XMP 附属文件", "check")
         }
     }
 
@@ -4530,7 +4530,7 @@ final class AppState {
             return (id, path, sidecar)
         }
         guard !targets.isEmpty else {
-            if ids == nil { push("所选照片旁没有 XMP sidecar", "info") }
+            if ids == nil { push("所选照片旁没有 XMP 附属文件", "info") }
             return 0
         }
         let byId = Dictionary(uniqueKeysWithValues: targets.map { ($0.id, $0.sidecar) })
@@ -4540,7 +4540,7 @@ final class AppState {
         var times: [String: Double] = [:]
         for target in targets { times[target.id] = XMPSidecar.modificationTime(forOriginal: target.path) }
         recordXMPSync(times)
-        push("已从 \(targets.count) 个 XMP sidecar 读取元数据", "refresh")
+        push("已从 \(targets.count) 个 XMP 附属文件读取元数据", "refresh")
         return targets.count
     }
 
@@ -7269,7 +7269,7 @@ final class AppState {
                 self.externallyChangedXMPIds.formUnion(result.changedElsewhere)
             }
             guard result.failures > 0 else { return }
-            self?.push("\(result.failures) 个 XMP sidecar 写入失败", "warning")
+            self?.push("\(result.failures) 个 XMP 附属文件写入失败", "warning")
         }
     }
 
@@ -7657,8 +7657,8 @@ final class AppState {
 
     func managementDisplayText(for asset: Asset) -> String {
         switch managementMode(for: asset) {
-        case .managed: return L("托管式")
-        case .referenced: return L("引用式")
+        case .managed: return L("复制到目录库")
+        case .referenced: return L("原位添加")
         }
     }
 

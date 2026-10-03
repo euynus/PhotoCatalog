@@ -137,14 +137,14 @@ struct SettingsSheet: View {
                 }.toggleStyle(TrailingSwitch())
                 row(L("导入模式")) {
                     Segmented(options: [
-                        SegOption(value: "referenced", label: L("引用式")),
-                        SegOption(value: "managed", label: L("托管式")),
+                        SegOption(value: "referenced", label: L("原位添加")),
+                        SegOption(value: "managed", label: L("复制到目录库")),
                     ], value: app.importMode.rawValue,
                        onChange: { app.importMode = ImportMode(rawValue: $0) ?? .referenced }, size: "sm")
                 }
-                Text(app.importMode == .referenced ? L("引用式：只索引，原件保留在原位置（推荐）。")
-                     : app.managedArchiveRule == .camera ? L("托管式：导入时复制原件到目录库 Originals/<相机>/YYYY/MM。")
-                     : L("托管式：导入时复制原件到目录库 Originals/YYYY/MM/DD。"))
+                Text(app.importMode == .referenced ? L("原位添加：只建立索引，原件留在原位置（推荐）。")
+                     : app.managedArchiveRule == .camera ? L("复制到目录库：导入时把原件复制到目录库的 Originals/<相机>/YYYY/MM。")
+                     : L("复制到目录库：导入时把原件复制到目录库的 Originals/YYYY/MM/DD。"))
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 if app.importMode == .managed {
                     row(L("归档规则")) {
@@ -196,7 +196,7 @@ struct SettingsSheet: View {
                 }
                 Toggle(isOn: $app.visionEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("导入时 Vision 分析（场景标签 + 人脸）").font(.system(size: 13)).foregroundStyle(Theme.text)
+                        Text("导入时分析场景与人脸（自动标签与人物）").font(.system(size: 13)).foregroundStyle(Theme.text)
                         Text("完全在本机进行，照片不会离开设备。").font(.system(size: 11)).foregroundStyle(Theme.text3)
                     }
                 }.toggleStyle(TrailingSwitch())
@@ -234,7 +234,7 @@ struct SettingsSheet: View {
                     }, size: "sm")
                 }
                 Toggle(isOn: $app.exportWritesXMP) {
-                    Text("导出时写入 XMP sidecar").font(.system(size: 13)).foregroundStyle(Theme.text)
+                    Text("导出时写入 XMP 附属文件").font(.system(size: 13)).foregroundStyle(Theme.text)
                 }.toggleStyle(TrailingSwitch())
                 HStack(spacing: 9) {
                     TextField("预设名", text: $exportPresetName)
@@ -275,11 +275,11 @@ struct SettingsSheet: View {
 
             section(L("元数据"), category: .metadata) {
                 Toggle(isOn: $app.readXMPSidecar) {
-                    Text("导入时读取 XMP sidecar").font(.system(size: 13)).foregroundStyle(Theme.text)
+                    Text("导入时读取 XMP 附属文件").font(.system(size: 13)).foregroundStyle(Theme.text)
                 }.toggleStyle(TrailingSwitch())
                 Toggle(isOn: $app.autoWriteXMPSidecar) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("编辑时自动写入 XMP sidecar").font(.system(size: 13)).foregroundStyle(Theme.text)
+                        Text("编辑时自动写入 XMP 附属文件").font(.system(size: 13)).foregroundStyle(Theme.text)
                         Text("评分 / 关键词 / 标题等改动会写入同名 .xmp，不改动原图。")
                             .font(.system(size: 11)).foregroundStyle(Theme.text3)
                     }

@@ -57,7 +57,7 @@ private struct CatalogStatusLabel: View {
         } else {
             HStack(spacing: 5) {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.green)
-                Text("\(app.statusAssetCount.formatted()) 张资产")
+                Text("\(app.statusAssetCount.formatted()) 张照片")
             }
             .help("目录库就绪")
             .accessibilityElement(children: .combine)

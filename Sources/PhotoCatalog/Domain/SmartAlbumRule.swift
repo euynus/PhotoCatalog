@@ -32,11 +32,16 @@ struct SmartField {
     let input: Input
 
     /// An operator as the rule builder shows it; rules store the operator itself.
-    static func opLabel(_ op: String) -> String {
+    /// An operator in words: "at least" for a rating, "on or after" for a date.
+    static func opLabel(_ op: String, field: String) -> String {
+        let dated = field == "captureYear" || field == "captureDate"
         switch op {
         case "包含": return L("包含")
         case "不包含": return L("不包含", table: "Context")
-        default: return op   // =, >=, <=
+        case ">=": return dated ? L("不早于") : L("至少")
+        case "<=": return dated ? L("不晚于") : L("至多")
+        case "=": return field == "rating" ? L("等于") : L("是")
+        default: return op
         }
     }
 }

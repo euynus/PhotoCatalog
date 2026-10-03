@@ -33,7 +33,7 @@
 " · 已回滚 %lld 个原件" = " · %lld originals rolled back";
 " · 已回滚 %lld 张照片" = " · %lld photos rolled back";
 " · 目录库保存失败" = " · catalog not saved";
-"%lld 个 XMP sidecar 写入失败" = "Couldn't write %lld XMP sidecars";
+"%lld 个 XMP 附属文件写入失败" = "Couldn't write %lld XMP sidecars";
 "%lld 张照片已写入，但源目录或导入状态未保存" = "%lld photos were written, but the source folder or import state wasn't saved";
 "PhotoCatalog 导出" = "PhotoCatalog Export";
 "「%@」里没有带时间的轨迹点" = "“%@” has no timestamped track points";
@@ -121,7 +121,7 @@
 "已保存导出预设「%@」" = "Saved export preset “%@”";
 "已全选当前列表" = "All photos in view selected";
 "已关闭目录库" = "Catalog closed";
-"已写入 %lld 个 XMP sidecar" = "Wrote %lld XMP sidecars";
+"已写入 %lld 个 XMP 附属文件" = "Wrote %lld XMP sidecars";
 "已写入 %lld 个 · %lld 失败" = "Wrote %lld · %lld failed";
 "已创建智能相册「%@」" = "Created smart album “%@”";
 "已创建目录库 · %@" = "Created catalog · %@";
@@ -183,7 +183,7 @@
 "已隐藏筛选栏" = "Filter bar hidden";
 "已隐藏缩略图信息" = "Thumbnail info hidden";
 "应用预设“%@”" = "Apply Preset “%@”";
-"引用式管理 · 原件只读" = "Referenced · originals read-only";
+"原位添加 · 原件只读" = "Added in place · originals read-only";
 "当前没有可重新扫描的源" = "Nothing here to rescan";
 "当前目录库数据库会被所选备份替换。应用会先尝试创建一次当前状态备份。" = "The catalog database will be replaced by the selected backup. PhotoCatalog first tries to back up its current state.";
 "当前目录库的源文件夹下次访问时需要重新授权。" = "This catalog's source folders will need to be authorized again the next time they're used.";
@@ -198,7 +198,7 @@
 "打开" = "Open";
 "打开目录库失败" = "Couldn't open the catalog";
 "打开轨迹" = "Open Track";
-"托管式管理 · 原件在目录库" = "Managed · originals in the catalog";
+"原件已复制到目录库" = "Originals copied into the catalog";
 "找到 %lld 张可能是已命名人物的人脸，请在“人物”中确认" = "Found %lld faces that may be people you've named · confirm them in People";
 "新建智能相册" = "New Smart Album";
 "新建相册" = "New Album";
@@ -306,8 +306,8 @@
 "选中的照片没有可用的本地原件" = "The selected photos have no local originals";
 "选择 .photolibrary 目录库" = "Choose a .photolibrary catalog";
 "选择一个目录库 SQLite 备份文件" = "Choose a catalog SQLite backup file";
-"选择文件夹（引用式：原件保持不动）" = "Choose a folder (Referenced: originals stay where they are)";
-"选择文件夹（托管式：复制原件到目录库）" = "Choose a folder (Managed: originals are copied into the catalog)";
+"选择要原位添加的文件夹（原件保持不动）" = "Choose a folder to add in place (originals stay where they are)";
+"选择要复制到目录库的文件夹" = "Choose a folder to copy into the catalog";
 "选择源文件夹以恢复访问权限" = "Choose the source folder to restore access";
 "选择移动后的原件文件，或选择包含该原件的新文件夹。" = "Choose the moved original, or the new folder that contains it.";
 "重命名" = "Rename";
@@ -358,9 +358,9 @@
 "%lld 张照片所在的文件夹是只读的，无法在原件旁生成 TIFF" = "No TIFF can be made beside %lld photos in read-only folders";
 "%lld 张照片所在的文件夹是只读的，无法重命名" = "Can't rename %lld photos in read-only folders";
 "已在外部编辑器中打开 %lld 张" = "Opened %lld photos in the external editor";
-"所选照片旁没有 XMP sidecar" = "The selected photos have no XMP sidecar";
+"所选照片旁没有 XMP 附属文件" = "The selected photos have no XMP sidecar";
 "从文件读取元数据" = "Read Metadata from Files";
-"已从 %lld 个 XMP sidecar 读取元数据" = "Read metadata from %lld XMP sidecars";
+"已从 %lld 个 XMP 附属文件读取元数据" = "Read metadata from %lld XMP sidecars";
 
 /* Application/ImportCoordinator.swift */
 "复制原件失败：%@" = "Couldn't copy the original: %@";
@@ -513,6 +513,12 @@
 "跟随系统" = "System";
 
 /* Domain/SmartAlbumRule.swift */
+"至少" = "at least";
+"至多" = "at most";
+"等于" = "equals";
+"是" = "is";
+"不早于" = "on or after";
+"不晚于" = "on or before";
 "全文搜索" = "Full-Text Search";
 "关键词" = "Keywords";
 "包含" = "contains";
@@ -526,7 +532,7 @@
 "仿制" = "Clone";
 
 /* Infrastructure/Catalog/CatalogHealth.swift */
-" · %lld 张资产 · 缺失原件 %lld · 缺失缩略图 %lld · 缺失预览 %lld" = " · %lld assets · missing originals %lld · missing thumbnails %lld · missing previews %lld";
+" · %lld 张照片 · 缺失原件 %lld · 缺失缩略图 %lld · 缺失预览 %lld" = " · %lld photos · missing originals %lld · missing thumbnails %lld · missing previews %lld";
 " · 源异常 %lld · 任务 %lld/%lld · 缓存 %@ · 备份 %lld" = " · source problems %lld · jobs %lld/%lld · cache %@ · backups %lld";
 "数据库完好" = "Database OK";
 "数据库异常" = "Database damaged";
@@ -1100,7 +1106,7 @@
 
 /* Presentation/MainWindow/StatusBar.swift */
 " · 队列 %lld" = " · %lld queued";
-"%@ 张资产" = "%@ assets";
+"%@ 张照片" = "%@ photos";
 "取消导出" = "Cancel Export";
 "导入 %lld%%" = "Importing %lld%%";
 "导出 %lld/%lld" = "Exporting %lld/%lld";
@@ -1238,7 +1244,7 @@
 
 /* Presentation/Sheets/ImportSheet.swift */
 "%lld 个文件失败 · 可稍后重试" = "%lld files failed · you can retry later";
-"Vision 分析" = "Vision analysis";
+"分析场景与人脸" = "Analyze Scenes and Faces";
 "保留" = "Keep";
 "元数据模板" = "Metadata Template";
 "关闭" = "Close";
@@ -1257,11 +1263,11 @@
 "已导入 %@ 张 · %@ 张跳过 · %@ 张失败" = "Imported %@ · %@ skipped · %@ failed";
 "已扫描" = "Scanned";
 "已暂停在 %@ / %@ 个文件" = "Paused at %@ of %@ files";
-"引用式" = "Referenced";
+"原位添加" = "Add in Place";
 "归档规则" = "Filing";
 "待处理" = "Pending";
 "成功" = "Imported";
-"托管式" = "Managed";
+"复制到目录库" = "Copy to Catalog";
 "暂停" = "Pause";
 "来源" = "Source";
 "正在处理 %@ / %@ 个文件" = "Processing %@ of %@ files";
@@ -1272,7 +1278,7 @@
 "版权，如 © {year} 名字" = "Copyright, e.g. © {year} Name";
 "继续" = "Resume";
 "缩略图将在导入时逐步出现…" = "Thumbnails appear as photos are imported…";
-"读取 XMP sidecar" = "Read XMP sidecars";
+"读取 XMP 附属文件" = "Read XMP sidecars";
 "跳过（重复）" = "Skipped (duplicates)";
 "重复处理" = "Duplicates";
 "重试失败" = "Retry Failed";
@@ -1360,10 +1366,10 @@
 "导入后关键词" = "Keywords After Import";
 "导入后相册" = "Album After Import";
 "导入后颜色" = "Color After Import";
-"导入时 Vision 分析（场景标签 + 人脸）" = "Vision analysis on import (scene tags + faces)";
+"导入时分析场景与人脸（自动标签与人物）" = "Analyze scenes and faces on import (auto tags and people)";
 "导入时写入，留空则不改" = "Written on import; leave empty to keep the file's value";
-"导入时读取 XMP sidecar" = "Read XMP sidecars on import";
-"导出时写入 XMP sidecar" = "Write XMP sidecars on export";
+"导入时读取 XMP 附属文件" = "Read XMP sidecars on import";
+"导出时写入 XMP 附属文件" = "Write XMP sidecars on export";
 "导出选中预览图" = "Export Selected Previews";
 "常规" = "General";
 "平移选中" = "Shift Selected";
@@ -1371,12 +1377,12 @@
 "应用上限" = "Apply Limit";
 "应用预设" = "Apply Preset";
 "开启「低电量模式」时暂停后台缩略图补齐，节省电量。" = "Pauses background thumbnail generation while Low Power Mode is on, to save power.";
-"引用式：只索引，原件保留在原位置（推荐）。" = "Referenced: photos are indexed and originals stay where they are (recommended).";
+"原位添加：只建立索引，原件留在原位置（推荐）。" = "Add in Place: photos are indexed and originals stay where they are (recommended).";
 "性能" = "Performance";
 "恢复备份" = "Restore Backup";
 "打开目录库" = "Open Catalog";
-"托管式：导入时复制原件到目录库 Originals/<相机>/YYYY/MM。" = "Managed: originals are copied into the catalog's Originals/<Camera>/YYYY/MM on import.";
-"托管式：导入时复制原件到目录库 Originals/YYYY/MM/DD。" = "Managed: originals are copied into the catalog's Originals/YYYY/MM/DD on import.";
+"复制到目录库：导入时把原件复制到目录库的 Originals/<相机>/YYYY/MM。" = "Copy to Catalog: originals are copied into the catalog's Originals/<Camera>/YYYY/MM on import.";
+"复制到目录库：导入时把原件复制到目录库的 Originals/YYYY/MM/DD。" = "Copy to Catalog: originals are copied into the catalog's Originals/YYYY/MM/DD on import.";
 "批量调整拍摄时间" = "Shift Capture Times";
 "批量重命名" = "Batch Rename";
 "文件操作" = "Files";
@@ -1398,7 +1404,7 @@
 "立即备份" = "Back Up Now";
 "缓存上限 %lld MB" = "Cache limit %lld MB";
 "缓存与性能" = "Cache & Performance";
-"编辑时自动写入 XMP sidecar" = "Write XMP sidecars automatically when editing";
+"编辑时自动写入 XMP 附属文件" = "Write XMP sidecars automatically when editing";
 "缩略图与缓存" = "Thumbnails & Cache";
 "自动备份" = "Automatic Backup";
 "设为该时间" = "Set to This Time";
@@ -1419,9 +1425,9 @@
 "%lld 张照片符合规则" = "%lld photos match the rules";
 "%lld 星" = "%lld stars";
 "五星精选 · 旅行" = "5-Star Picks · Travel";
-"任一 (OR)" = "Any (OR)";
+"满足任一条件" = "Match Any";
 "保存更改" = "Save Changes";
-"全部 (AND)" = "All (AND)";
+"满足全部条件" = "Match All";
 "创建智能相册" = "Create Smart Album";
 "可访问" = "Accessible";
 "名称" = "Name";
@@ -1550,7 +1556,7 @@
 "已取消，已描述 %lld 张照片" = "Canceled; %lld photos described";
 "已描述 %lld 张照片，%lld 张没有得到结果" = "%lld photos described; %lld got no result";
 "请选择已导入的照片" = "Select imported photos";
-"让 %@ 看 %lld 张照片的预览图（缩小到 1024 像素），写出下面选中的内容。关键词添加到已有的之中；可以撤销。" = "%1$@ looks at previews of %2$lld photos (reduced to 1024 pixels) and writes what's checked below. Keywords are added to the ones there; it can be undone.";
+"让 AI 看 %lld 张照片的预览图（缩小到 1024 像素），写出下面选中的内容。关键词添加到已有的之中；可以撤销。" = "AI looks at previews of %lld photos (reduced to 1024 pixels) and writes what's checked below. Keywords are added to the ones there; it can be undone.";
 "替换已有的标题和说明" = "Replace existing titles and captions";
 "还没有设置 AI 服务" = "No AI service is set up yet";
 "打开设置" = "Open Settings";

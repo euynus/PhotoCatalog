@@ -27,7 +27,7 @@ struct HealthReport: Sendable {
     var summary: String {
         let cacheText = ByteCountFormatter.string(fromByteCount: cacheBytes, countStyle: .file)
         return (dbIntegrityOK ? L("数据库完好") : L("数据库异常"))
-            + L(" · \(assetCount) 张资产 · 缺失原件 \(missingOriginals) · 缺失缩略图 \(missingThumbnails) · 缺失预览 \(missingPreviews)")
+            + L(" · \(assetCount) 张照片 · 缺失原件 \(missingOriginals) · 缺失缩略图 \(missingThumbnails) · 缺失预览 \(missingPreviews)")
             + L(" · 源异常 \(unavailableSourceRoots) · 任务 \(activeJobs)/\(failedJobs) · 缓存 \(cacheText) · 备份 \(backupCount)")
     }
 }

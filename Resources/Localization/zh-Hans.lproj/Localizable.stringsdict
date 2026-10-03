@@ -3,10 +3,10 @@
 <!-- Chinese has no plural forms: each entry keeps its source text, so the English table is never used -->
 <plist version="1.0">
 <dict>
-	<key> · %lld 张资产 · 缺失原件 %lld · 缺失缩略图 %lld · 缺失预览 %lld</key>
+	<key> · %lld 张照片 · 缺失原件 %lld · 缺失缩略图 %lld · 缺失预览 %lld</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
-		<string> · %lld 张资产 · 缺失原件 %lld · 缺失缩略图 %lld · 缺失预览 %lld</string>
+		<string> · %lld 张照片 · 缺失原件 %lld · 缺失缩略图 %lld · 缺失预览 %lld</string>
 	</dict>
 	<key> · 已回滚 %lld 个原件</key>
 	<dict>
@@ -28,10 +28,10 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>%@ · %lld 页</string>
 	</dict>
-	<key>%lld 个 XMP sidecar 写入失败</key>
+	<key>%lld 个 XMP 附属文件写入失败</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
-		<string>%lld 个 XMP sidecar 写入失败</string>
+		<string>%lld 个 XMP 附属文件写入失败</string>
 	</dict>
 	<key>%lld 个文件失败 · 可稍后重试</key>
 	<dict>
@@ -208,10 +208,10 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已为 %lld 张照片设置位置</string>
 	</dict>
-	<key>已从 %lld 个 XMP sidecar 读取元数据</key>
+	<key>已从 %lld 个 XMP 附属文件读取元数据</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
-		<string>已从 %lld 个 XMP sidecar 读取元数据</string>
+		<string>已从 %lld 个 XMP 附属文件读取元数据</string>
 	</dict>
 	<key>已从 %lld 张照片中删除关键词「%@」</key>
 	<dict>
@@ -238,10 +238,10 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已从目录库移除 %lld 张（原件保留）</string>
 	</dict>
-	<key>已写入 %lld 个 XMP sidecar</key>
+	<key>已写入 %lld 个 XMP 附属文件</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
-		<string>已写入 %lld 个 XMP sidecar</string>
+		<string>已写入 %lld 个 XMP 附属文件</string>
 	</dict>
 	<key>已创建 %lld 个虚拟副本</key>
 	<dict>
@@ -533,10 +533,10 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>联机拍摄已结束：%lld 张</string>
 	</dict>
-	<key>让 %@ 看 %lld 张照片的预览图（缩小到 1024 像素），写出下面选中的内容。关键词添加到已有的之中；可以撤销。</key>
+	<key>让 AI 看 %lld 张照片的预览图（缩小到 1024 像素），写出下面选中的内容。关键词添加到已有的之中；可以撤销。</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
-		<string>让 %@ 看 %lld 张照片的预览图（缩小到 1024 像素），写出下面选中的内容。关键词添加到已有的之中；可以撤销。</string>
+		<string>让 AI 看 %lld 张照片的预览图（缩小到 1024 像素），写出下面选中的内容。关键词添加到已有的之中；可以撤销。</string>
 	</dict>
 	<key>设置位置 · %lld 张照片</key>
 	<dict>

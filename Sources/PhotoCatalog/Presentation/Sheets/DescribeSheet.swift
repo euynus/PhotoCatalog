@@ -19,8 +19,9 @@ struct DescribeSheet: View {
             .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
 
             VStack(alignment: .leading, spacing: 12) {
-                Text(L("让 \(serviceName) 看 \(targets.count) 张照片的预览图（缩小到 1024 像素），写出下面选中的内容。关键词添加到已有的之中；可以撤销。"))
+                Text(L("让 AI 看 \(targets.count) 张照片的预览图（缩小到 1024 像素），写出下面选中的内容。关键词添加到已有的之中；可以撤销。"))
                     .font(.system(size: 12)).foregroundStyle(Theme.text3)
+                    .help(serviceName)
                     .fixedSize(horizontal: false, vertical: true)
                 Toggle("关键词", isOn: $app.describeOptions.keywords)
                 Toggle("标题", isOn: $app.describeOptions.title)
