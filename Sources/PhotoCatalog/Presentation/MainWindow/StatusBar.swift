@@ -24,7 +24,7 @@ struct StatusBar: View {
             DescribeProgressLabel()
             OriginalsCheckLabel()
             MaintenanceLabels()
-            if app.view == .grid && !app.isDuplicates && !app.isPlaces {
+            if app.view == .grid && !app.isDuplicates && !app.isPlaces && !app.isPeople {
                 StatusSeparator()
                 GridControls()
             }

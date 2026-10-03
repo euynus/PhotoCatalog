@@ -42,18 +42,23 @@ struct CardImportSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             head
-            HStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    gridBar
-                    Rectangle().fill(Theme.line).frame(height: 1)
-                    grid
+            if sourceKey == nil {
+                // nothing to import from yet: no photo grid or import options to fill in
+                grid
+            } else {
+                HStack(spacing: 0) {
+                    VStack(spacing: 0) {
+                        gridBar
+                        Rectangle().fill(Theme.line).frame(height: 1)
+                        grid
+                    }
+                    Rectangle().fill(Theme.line).frame(width: 1)
+                    optionsForm.frame(width: 330)
                 }
-                Rectangle().fill(Theme.line).frame(width: 1)
-                optionsForm.frame(width: 330)
             }
             footer
         }
-        .frame(width: 1060, height: 720)
+        .frame(width: sourceKey == nil ? 620 : 1060, height: sourceKey == nil ? 420 : 720)
         .font(.system(size: 13))
         .foregroundStyle(Theme.text)
         .background(Theme.bgPanel)
@@ -319,34 +324,40 @@ struct CardImportSheet: View {
         let bytes = chosen.reduce(Int64(0)) { $0 + $1.size }
         let ready = !chosen.isEmpty && (!options.backupEnabled || options.backup != nil)
         return HStack(spacing: 9) {
-            Text(L("已选 \(chosen.count) / \(files.count) 张 · ")
-                 + ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))
-                .font(.system(size: 12)).foregroundStyle(Theme.text3)
+            if sourceKey != nil {
+                Text(L("已选 \(chosen.count) / \(files.count) 张 · ")
+                     + ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))
+                    .font(.system(size: 12)).foregroundStyle(Theme.text3)
+            }
             Spacer()
             ghostButton(nil, L("取消")) { app.sheet = nil }
-            Button {
-                importStarted = true
-                app.sheet = nil
-                if let device {
-                    app.importFromDevice(device, files: chosen, options: options)
-                } else {
-                    app.importFromCard(customSource == nil ? card : nil, files: chosen, options: options)
-                }
-            } label: {
-                Label("导入 \(chosen.count) 张", systemImage: "square.and.arrow.down")
-                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
-                    .fixedSize()
-                    .padding(.horizontal, 17).padding(.vertical, 8)
-                    .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.defaultAction)
-            .disabled(!ready)
-            .opacity(ready ? 1 : 0.5)
+            if sourceKey != nil { importButton(chosen, ready: ready) }
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
         .background(Theme.bgSidebar)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+
+    private func importButton(_ chosen: [CardFile], ready: Bool) -> some View {
+        Button {
+            importStarted = true
+            app.sheet = nil
+            if let device {
+                app.importFromDevice(device, files: chosen, options: options)
+            } else {
+                app.importFromCard(customSource == nil ? card : nil, files: chosen, options: options)
+            }
+        } label: {
+            Label("导入 \(chosen.count) 张", systemImage: "square.and.arrow.down")
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
+                .fixedSize()
+                .padding(.horizontal, 17).padding(.vertical, 8)
+                .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.defaultAction)
+        .disabled(!ready)
+        .opacity(ready ? 1 : 0.5)
     }
 
     private func chooseFolder(prompt: String, start: URL?) -> URL? {

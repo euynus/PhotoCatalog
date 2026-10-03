@@ -118,7 +118,12 @@ struct MainView: View {
 }
 
 extension AppState {
-    var inspectorAvailable: Bool { !isDuplicates && view != .analysis }
+    /// Analysis, duplicate review, and the people and places overviews have no photo of their
+    /// own to inspect: the inspector there showed an unrelated photo, or nothing.
+    var inspectorAvailable: Bool {
+        !isDuplicates && view != .analysis
+            && !(view == .grid && (isPlaces || (isPeople && hasOpenCatalog)))
+    }
 }
 
 /// The library sidebar, or in Develop the photo's presets, snapshots and history, as Lightroom
