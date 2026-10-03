@@ -290,6 +290,13 @@ struct KeywordEditor: View {
     @State private var input = ""
     @FocusState private var focused: Bool
 
+    /// The keywords as chips: a person (人物/名字) by name, and the bare 人物 parent left out
+    /// while it only holds people. The photo's keywords themselves stay as they are.
+    private var shown: [String] {
+        let hasPerson = keywords.contains { FaceClustering.person(fromKeyword: $0) != nil }
+        return keywords.filter { !(hasPerson && $0 == FaceClustering.keywordRoot) }
+    }
+
     private var filteredSuggestions: [String] {
         KeywordService.suggestions(for: input, pool: suggestions, excluding: keywords)
     }
@@ -307,9 +314,14 @@ struct KeywordEditor: View {
                 Text("尚无关键词").font(.system(size: 13)).foregroundStyle(Theme.text3)
             } else {
                 FlowRow(spacing: 6) {
-                    ForEach(keywords, id: \.self) { k in
+                    ForEach(shown, id: \.self) { k in
+                        let person = FaceClustering.person(fromKeyword: k)
                         HStack(spacing: 5) {
-                            Text(k).font(.system(size: 13)).foregroundStyle(Theme.text2)
+                            if person != nil {
+                                Image(systemName: "person.crop.circle").font(.system(size: 12)).foregroundStyle(Theme.text3)
+                                    .accessibilityHidden(true)
+                            }
+                            Text(person ?? k).font(.system(size: 13)).foregroundStyle(Theme.text2)
                                 .lineLimit(1).truncationMode(.middle)
                                 // ponytail: cap tags at the minimum panel width until FlowLayout constrains ideal sizes.
                                 .frame(maxWidth: Theme.inspectorMinW - 63)
