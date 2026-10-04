@@ -26,6 +26,12 @@ if CommandLine.arguments.contains("--task-center-check") {
     exit(0)
 }
 
+if CommandLine.arguments.contains("--description-review-check") {
+    DescriptionReviewCheck.run()
+    DescriptionReviewRequestCheck.run()
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--selfcheck") {
     SelfCheck.run()
     Task { @MainActor in

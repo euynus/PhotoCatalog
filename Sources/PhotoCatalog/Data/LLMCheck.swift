@@ -131,7 +131,7 @@ extension LLMCheck {
         // the request: the image, the language, and what the catalog knows
         let image = Data([0xFF, 0xD8, 0x42])
         let chinese = PhotoDescriber.request(image: image, details: PhotoDescriber.Details(camera: "Canon EOS R6m2", place: "成都",
-                                                                                          keywords: ["夜景"]), chinese: true)
+                                                                                          keywords: ["夜景"]), chinese: true, includeMetadata: true)
         assert(chinese.images == [image] && chinese.system.contains("Simplified Chinese") && chinese.prompt.contains("成都")
                && chinese.prompt.contains("夜景") && chinese.prompt.contains("Canon"),
                "a describe request shows the photo, asks for the app's language and passes on what's known")

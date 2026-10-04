@@ -62,6 +62,8 @@ STR_HINT = re.compile(r'(formatted\(|name|Name|lastPathComponent|title|Title|lab
 SPEC_OVERRIDES = {
     'version': '%lld',
     'error': '%@', 'frames': '%lld',
+    'destination.provider': '%@', 'destination.model': '%@', 'outcome.changed': '%lld',
+    'successes': '%lld', 'generated': '%lld', 'cancelled': '%lld',
     'reason': '%@',
     'unfinished': '%lld',
     'missingOriginals': '%lld', 'missingThumbnails': '%lld', 'missingPreviews': '%lld',

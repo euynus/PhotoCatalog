@@ -1008,6 +1008,22 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
+	<key>已取消，保留 %lld 张照片的待审阅结果</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Cancelled. Kept results for %#@n1@ to review.</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>已取消，已描述 %lld 张照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -1286,6 +1302,22 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
+	<key>已应用 %lld 张照片的 AI 描述</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Applied AI descriptions to %#@n1@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+	</dict>
 	<key>已折叠 %lld 张照片为堆栈</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -1423,6 +1455,33 @@
 			<string>%lld file</string>
 			<key>other</key>
 			<string>%lld files</string>
+		</dict>
+	</dict>
+	<key>已生成 %lld 张照片的描述，%lld 张可重试</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Generated descriptions for %#@n1@; retry available for %#@n2@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
+		</dict>
+		<key>n2</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld</string>
+			<key>other</key>
+			<string>%lld</string>
 		</dict>
 	</dict>
 	<key>已移到废纸篓 %lld 张</key>
@@ -2037,6 +2096,22 @@
 			<string>%lld duplicate group</string>
 			<key>other</key>
 			<string>%lld duplicate groups</string>
+		</dict>
+	</dict>
+	<key>重新发送 %lld 张照片？</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Send %#@n1@ again?</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld photo</string>
+			<key>other</key>
+			<string>%lld photos</string>
 		</dict>
 	</dict>
 	<key>预计约 %lld 分钟</key>

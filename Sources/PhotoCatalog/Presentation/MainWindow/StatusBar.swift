@@ -14,7 +14,6 @@ struct StatusBar: View {
             SelectionCountLabel()
             Spacer(minLength: 8)
             TaskCenterStatusButton()
-            DescribeProgressLabel()
             OriginalsCheckLabel()
             MaintenanceLabels()
             if app.view == .grid && !app.isDuplicates && !app.isPlaces && !app.isPeople {
@@ -113,30 +112,6 @@ private struct TaskCenterStatusButton: View {
         .help("任务中心")
         .accessibilityLabel("任务中心")
         .accessibilityValue(active > 0 ? L("\(active) 个进行中") : attention ? L("有任务需要关注") : L("没有进行中的任务"))
-    }
-}
-
-private struct DescribeProgressLabel: View {
-    @Environment(AppState.self) private var app
-
-    var body: some View {
-        if let progress = app.describeProgress {
-            HStack(spacing: 5) {
-                ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
-                    .tint(Theme.accent)
-                    .frame(width: 54)
-                Text(L("AI 描述 \(progress.done)/\(progress.total)")).monospacedDigit()
-                Button { app.cancelDescribePhotos() } label: {
-                    Image(systemName: "xmark.circle.fill")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.text3)
-                .help("取消 AI 描述")
-                .accessibilityLabel("取消 AI 描述")
-            }
-            .foregroundStyle(Theme.accent)
-            .fixedSize()
-        }
     }
 }
 

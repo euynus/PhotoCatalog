@@ -2,6 +2,7 @@
 //  Photo describer — titles, captions and keywords from a model that reads images
 // ============================================================
 import CoreGraphics
+import Darwin
 import Foundation
 import ImageIO
 
@@ -14,7 +15,7 @@ enum PhotoDescriber {
         var keywords: [String]
     }
 
-    /// What the catalog already knows, as hints.
+    /// Catalog hints, sent only when the user explicitly includes metadata.
     struct Details: Sendable {
         var date: Date?
         var camera = ""
@@ -22,12 +23,53 @@ enum PhotoDescriber {
         var keywords: [String] = []
     }
 
+    /// Safe to display in consent and review, without URL credentials or query tokens.
+    struct Destination: Equatable, Sendable {
+        let provider: String
+        let model: String
+        let endpoint: String?
+        let isLoopback: Bool
+
+        init(configuration: LLMConfiguration) {
+            let url = configuration.endpoint
+            let preset = configuration.kind == .openAICompatible ? LLMConfiguration.presets.first {
+                guard let candidate = URL(string: $0.baseURL), let url else { return false }
+                return candidate.host?.lowercased() == url.host?.lowercased() && candidate.port == url.port
+            } : nil
+            provider = preset?.name ?? configuration.kind.title
+            model = configuration.model.trimmingCharacters(in: .whitespacesAndNewlines)
+            var components = url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
+            components?.user = nil
+            components?.password = nil
+            components?.query = nil
+            components?.fragment = nil
+            endpoint = components?.url?.absoluteString
+            isLoopback = Self.isLoopbackHost(url?.host)
+        }
+
+        private static func isLoopbackHost(_ host: String?) -> Bool {
+            guard var host = host?.lowercased() else { return false }
+            if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+            if host == "localhost" || host == "localhost." { return true }
+            var ipv4 = in_addr()
+            if inet_pton(AF_INET, host, &ipv4) == 1 { return UInt32(bigEndian: ipv4.s_addr) >> 24 == 127 }
+            var ipv6 = in6_addr()
+            guard inet_pton(AF_INET6, host, &ipv6) == 1 else { return false }
+            return withUnsafeBytes(of: ipv6) { bytes in
+                let loopback = bytes.prefix(15).allSatisfy { $0 == 0 } && bytes[15] == 1
+                let mappedLoopback = bytes.prefix(10).allSatisfy { $0 == 0 }
+                    && bytes[10] == 255 && bytes[11] == 255 && bytes[12] == 127
+                return loopback || mappedLoopback
+            }
+        }
+    }
+
     /// Whether answers should be in Chinese: the language the app is showing.
     static var answersInChinese: Bool {
         (Bundle.main.preferredLocalizations.first ?? "zh-Hans").hasPrefix("zh")
     }
 
-    static func request(image: Data, details: Details, chinese: Bool) -> LLMRequest {
+    static func request(image: Data, details: Details, chinese: Bool, includeMetadata: Bool = false) -> LLMRequest {
         let language = chinese ? "Simplified Chinese" : "English"
         let system = """
         You write catalog metadata for photographs. Look at the photo and reply with only a JSON object:
@@ -39,10 +81,12 @@ enum PhotoDescriber {
         Don't mention the camera, the lens or camera settings. Don't guess who people are. Write everything in \(language).
         """
         var hints: [String] = []
-        if let date = details.date { hints.append("taken: \(date.formatted(.iso8601.year().month().day()))") }
-        if !details.camera.isEmpty { hints.append("camera: \(details.camera)") }
-        if !details.place.isEmpty { hints.append("place: \(details.place)") }
-        if !details.keywords.isEmpty { hints.append("existing keywords: \(details.keywords.joined(separator: ", "))") }
+        if includeMetadata {
+            if let date = details.date { hints.append("taken: \(date.formatted(.iso8601.year().month().day()))") }
+            if !details.camera.isEmpty { hints.append("camera: \(details.camera)") }
+            if !details.place.isEmpty { hints.append("place: \(details.place)") }
+            if !details.keywords.isEmpty { hints.append("existing keywords: \(details.keywords.joined(separator: ", "))") }
+        }
         let prompt = hints.isEmpty ? "Describe this photo." : "Describe this photo. What the catalog knows:\n" + hints.joined(separator: "\n")
         return LLMRequest(system: system, prompt: prompt, images: [image], maxTokens: 600)
     }

@@ -129,6 +129,8 @@ enum SelfCheck {
         MergeCheck.run()
         EnhanceCheck.run()
         LLMCheck.run()
+        DescriptionReviewCheck.run()
+        DescriptionReviewRequestCheck.run()
         ExportCheck.run()
         PrintCheck.run()
         SlideshowCheck.run()

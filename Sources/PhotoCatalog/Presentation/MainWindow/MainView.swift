@@ -111,6 +111,16 @@ struct MainView: View {
             EnhanceSheet(targets: app.enhanceTargets)
         case "describe":
             DescribeSheet(targets: app.describeTargets)
+        case "descriptionReview":
+            if let review = app.descriptionReview, let context = app.descriptionReviewContext {
+                DescriptionReviewSheet(review: Binding(
+                    get: { app.descriptionReview ?? review },
+                    set: { if app.descriptionReviewContext?.id == context.id { app.descriptionReview = $0 } }),
+                    configuration: context.configuration, isRetrying: app.describeProgress != nil,
+                    onApply: { _ = app.applyReviewedDescriptions($0) },
+                    onClose: { app.sheet = nil }, onDiscard: app.discardDescriptionReview,
+                    onRetry: app.retryDescriptionFailures)
+            }
         case "naturalSearch":
             NaturalSearchSheet()
         case "developTransfer":
