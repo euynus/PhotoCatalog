@@ -38,6 +38,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>%lld 个文件失败 · 可稍后重试</string>
 	</dict>
+	<key>%lld 个资产 · %lld 份原片 · %lld 份 XMP</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 个资产 · %lld 份原片 · %lld 份 XMP</string>
+	</dict>
 	<key>%lld 分钟</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -302,6 +307,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已增强 %lld 张照片</string>
+	</dict>
+	<key>已处理 %lld / %lld 个文件</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已处理 %lld / %lld 个文件</string>
 	</dict>
 	<key>已复制 %lld 个原件</key>
 	<dict>

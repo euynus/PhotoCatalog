@@ -67,6 +67,8 @@ struct MainView: View {
         switch app.sheet {
         case "import":
             ImportSheet()
+        case "fullBackup":
+            FullBackupSheet()
         case "smart":
             SmartAlbumBuilder(album: app.smartAlbumEditingID.flatMap { id in
                 app.smartAlbums.first { $0.id == id }

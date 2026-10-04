@@ -262,13 +262,16 @@ struct PhotoCatalogCommands: Commands {
         }
 
         CommandMenu("维护") {
+            Button("完整备份与恢复…") { perform("维护.完整备份与恢复") { app.openFullBackup() } }
+                .disabled(app.sheet != nil)
+            Divider()
             Button("重新扫描当前源") { perform("维护.重新扫描当前源") { app.rescanCurrentSource() } }
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(app.sheet != nil || !app.canRunCatalogMaintenance)
-            Button("立即备份目录库") { perform("维护.立即备份目录库") { app.runBackup() } }
+            Button("创建目录库快照") { perform("维护.立即备份目录库") { app.runBackup() } }
                 .keyboardShortcut("b", modifiers: .command)
                 .disabled(app.sheet != nil || !app.canRunCatalogMaintenance)
-            Button("恢复备份…") { perform("维护.恢复备份") { app.restoreBackup() } }
+            Button("恢复目录库快照…") { perform("维护.恢复备份") { app.restoreBackup() } }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
                 .disabled(app.sheet != nil || !app.canRunCatalogMaintenance)
             Button("运行健康检查") { perform("维护.运行健康检查") { app.runHealthCheck() } }

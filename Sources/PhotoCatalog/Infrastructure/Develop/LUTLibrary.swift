@@ -2,6 +2,7 @@
 //  LUT library — 3D color lookup tables (.cube) for creative looks
 // ============================================================
 import CoreImage
+import Darwin
 import Foundation
 
 /// A LUT the user imported, kept in the app's own folder so every catalog has it.
@@ -33,12 +34,21 @@ enum LUTLibrary {
         return cache
     }()
 
-    /// The LUT `id` from the library, parsed once; nil when it's gone or unreadable.
-    static func cube(id: String) -> Cube? {
-        if let cached = cache.object(forKey: id as NSString) { return cached.cube }
-        guard let text = try? String(contentsOf: url(for: id), encoding: .utf8), let cube = parse(text) else { return nil }
-        cache.setObject(Box(cube), forKey: id as NSString)
+    /// Restored photos use their library's LUT, without replacing an app-wide LUT of the same id.
+    static func cube(id: String, originalURL: URL? = nil) -> Cube? {
+        let source = originalURL.flatMap { FullBackupService.packagedLUTURL(for: id, originalURL: $0) } ?? url(for: id)
+        guard let key = cacheKey(source) else { return nil }
+        if let cached = cache.object(forKey: key) { return cached.cube }
+        guard let text = try? String(contentsOf: source, encoding: .utf8), let cube = parse(text),
+              cacheKey(source) == key else { return nil }
+        cache.setObject(Box(cube), forKey: key)
         return cube
+    }
+
+    private static func cacheKey(_ url: URL) -> NSString? {
+        var info = stat()
+        guard stat(url.path, &info) == 0 else { return nil }
+        return "\(url.standardizedFileURL.path)|\(info.st_dev):\(info.st_ino):\(info.st_size)|\(info.st_mtimespec.tv_sec):\(info.st_mtimespec.tv_nsec)|\(info.st_ctimespec.tv_sec):\(info.st_ctimespec.tv_nsec)" as NSString
     }
 
     /// Copies a `.cube` file into the library under `id`; false when it isn't a 3D LUT.
@@ -49,8 +59,8 @@ enum LUTLibrary {
     }
 
     static func remove(id: String) {
+        if let key = cacheKey(url(for: id)) { cache.removeObject(forKey: key) }
         try? FileManager.default.removeItem(at: url(for: id))
-        cache.removeObject(forKey: id as NSString)
     }
 
     /// The title a `.cube` file gives itself, if any.

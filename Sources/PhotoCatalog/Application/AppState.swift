@@ -588,7 +588,8 @@ final class AppState {
         UserDefaults.standard.stringArray(forKey: "pc_recentCatalogs") ?? []
 
     // ----- catalog (real persistence / scanning) -----
-    private var store: CatalogStore?
+    private(set) var store: CatalogStore?
+    let fullBackup = FullBackupState()
     private var coordinator: ImportCoordinator?
     private(set) var isLoadingCatalog = false
     private(set) var hasCatalogPreview = false

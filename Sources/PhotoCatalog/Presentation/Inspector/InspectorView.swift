@@ -234,7 +234,7 @@ struct InspectorView: View {
                 .init(L("管理方式"), app.managementDisplayText(for: a)),
                 .init(L("原件修改"), a.fileModifiedAt.map { DateFmt.short($0) } ?? "—"),
                 .init(L("原件创建"), a.fileCreatedAt.map { DateFmt.short($0) } ?? "—"),
-                .init(L("目录库备份"), app.statusBackupText),
+                .init(L("目录库快照"), app.statusBackupText),
             ], title: L("文件"))
             DisclosureGroup {
                 InsGroup([

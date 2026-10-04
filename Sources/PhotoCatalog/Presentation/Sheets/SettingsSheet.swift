@@ -324,7 +324,7 @@ struct SettingsSheet: View {
             }
 
             section(L("维护"), category: .catalog) {
-                row(L("自动备份")) {
+                row(L("自动目录库快照")) {
                     Segmented(options: [
                         SegOption(value: "off", label: L("关闭", table: "Context")),
                         SegOption(value: "daily", label: L("每天")),
@@ -333,13 +333,15 @@ struct SettingsSheet: View {
                        onChange: { app.automaticBackupFrequency = $0 }, size: "sm")
                 }
                 HStack(spacing: 9) {
-                    ghostButton("check", L("立即备份"), small: true,
+                    ghostButton("check", L("创建快照"), small: true,
                                 disabled: !app.canRunCatalogMaintenance) { app.runBackup() }
-                    ghostButton("refresh", L("恢复备份"), small: true,
+                    ghostButton("refresh", L("恢复快照"), small: true,
                                 disabled: !app.canRunCatalogMaintenance) { app.restoreBackup() }
                     ghostButton("info", L("运行健康检查"), small: true,
                                 disabled: !app.canRunCatalogMaintenance) { app.runHealthCheck() }
                 }
+                Text("目录库快照仅包含数据库，不包含照片原件。")
+                    .font(.system(size: 11)).foregroundStyle(Theme.text3)
                 if let r = app.healthReport {
                     Text(r.summary).font(.system(size: 11.5, design: .monospaced))
                         .foregroundStyle(r.isHealthy ? Theme.text2 : Theme.redSoft)

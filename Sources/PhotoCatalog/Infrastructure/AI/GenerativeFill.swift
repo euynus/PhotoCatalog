@@ -5,6 +5,7 @@ import CoreGraphics
 import CoreImage
 import CoreML
 import CryptoKit
+import Darwin
 import Foundation
 import ImageIO
 
@@ -52,26 +53,61 @@ enum GenerativeFill {
     static func fill(for index: Int, settings: DevelopSettings, url: URL, isRaw: Bool, make: Bool = true) -> Fill? {
         guard settings.spots.indices.contains(index), settings.spots[index].mode == .remove else { return nil }
         let key = key(index: index, settings: settings, url: url)
-        if let box = cache.object(forKey: key as NSString) { return box.fill }
-        if let stored = read(key) {
-            cache.setObject(Box(stored), forKey: key as NSString)
-            return stored
+        let sourceIdentity = fileIdentity(url) ?? url.standardizedFileURL.path
+        if let packaged = FullBackupService.packagedFillURL(for: index, settings: settings, originalURL: url) {
+            return cachedFill(at: packaged, sourceIdentity: sourceIdentity)
         }
+        let memoryKey = "computed|\(sourceIdentity)|\(key)" as NSString
+        func storedFill() -> Fill? {
+            if let cached = cache.object(forKey: memoryKey) { return cached.fill }
+            return cachedFill(at: self.url(key), sourceIdentity: sourceIdentity)
+        }
+        if let stored = storedFill() { return stored }
         guard make else { return nil }
         return lock.withLock {
-            if let box = cache.object(forKey: key as NSString) { return box.fill }
+            if let stored = storedFill() { return stored }
             guard let made = compute(index: index, settings: settings, url: url, isRaw: isRaw) else { return nil }
-            cache.setObject(Box(made), forKey: key as NSString)
-            write(made, key: key)
+            // A read-only/full cache disk must not turn each render into another model run.
+            if write(made, key: key), let identity = fileIdentity(self.url(key)) {
+                cache.setObject(Box(made), forKey: "\(sourceIdentity)|\(identity)" as NSString)
+            } else {
+                cache.setObject(Box(made), forKey: memoryKey)
+            }
             return made
         }
     }
 
-    /// Forgets the fill for `settings.spots[index]`, in memory and on disk.
-    static func forget(index: Int, settings: DevelopSettings, url: URL) {
+    /// Removes this photo's generated resource too, so a restored library can regenerate it.
+    /// The backup and resources in other restored libraries are never modified.
+    @discardableResult
+    static func forget(index: Int, settings: DevelopSettings, url: URL) -> Bool {
         let key = key(index: index, settings: settings, url: url)
-        cache.removeObject(forKey: key as NSString)
-        try? FileManager.default.removeItem(at: self.url(key))
+        let sourceIdentity = fileIdentity(url) ?? url.standardizedFileURL.path
+        cache.removeObject(forKey: "computed|\(sourceIdentity)|\(key)" as NSString)
+        let files = [FullBackupService.packagedFillURL(for: index, settings: settings, originalURL: url), self.url(key)]
+            .compactMap { $0 }
+        var removed = true
+        for file in files {
+            guard let identity = fileIdentity(file) else { continue }
+            cache.removeObject(forKey: "\(sourceIdentity)|\(identity)" as NSString)
+            do { try FileManager.default.removeItem(at: file) } catch { removed = false }
+        }
+        return removed
+    }
+
+    private static func cachedFill(at url: URL, sourceIdentity: String) -> Fill? {
+        guard let identity = fileIdentity(url) else { return nil }
+        let key = "\(sourceIdentity)|\(identity)" as NSString
+        if let cached = cache.object(forKey: key) { return cached.fill }
+        guard let fill = read(url), fileIdentity(url) == identity else { return nil }
+        cache.setObject(Box(fill), forKey: key)
+        return fill
+    }
+
+    private static func fileIdentity(_ url: URL) -> String? {
+        var info = stat()
+        guard stat(url.path, &info) == 0 else { return nil }
+        return "\(url.standardizedFileURL.path)|\(info.st_dev):\(info.st_ino):\(info.st_size)|\(info.st_mtimespec.tv_sec):\(info.st_mtimespec.tv_nsec)|\(info.st_ctimespec.tv_sec):\(info.st_ctimespec.tv_nsec)"
     }
 
     // ---- making it ----
@@ -207,25 +243,28 @@ enum GenerativeFill {
     // ---- on disk ----
     private static func url(_ key: String) -> URL { folder.appendingPathComponent("\(key).png") }
 
-    private static func write(_ fill: Fill, key: String) {
+    private static func write(_ fill: Fill, key: String) -> Bool {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        guard let destination = CGImageDestinationCreateWithURL(url(key) as CFURL, "public.png" as CFString, 1, nil) else { return }
+        guard let destination = CGImageDestinationCreateWithURL(url(key) as CFURL, "public.png" as CFString, 1, nil) else { return false }
         let region = [fill.region.minX, fill.region.minY, fill.region.width, fill.region.height]
             .map { String(format: "%.8f", Double($0)) }.joined(separator: ",")
         CGImageDestinationAddImage(destination, fill.image, [
             kCGImagePropertyPNGDictionary: [kCGImagePropertyPNGDescription: region],
         ] as CFDictionary)
-        CGImageDestinationFinalize(destination)
+        return CGImageDestinationFinalize(destination)
     }
 
-    private static func read(_ key: String) -> Fill? {
-        guard let source = CGImageSourceCreateWithURL(url(key) as CFURL, nil),
+    private static func read(_ url: URL) -> Fill? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              image.width == side, image.height == side,
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let text = (properties[kCGImagePropertyPNGDictionary] as? [CFString: Any])?[kCGImagePropertyPNGDescription] as? String
         else { return nil }
         let numbers = text.split(separator: ",").compactMap { Double($0) }
-        guard numbers.count == 4 else { return nil }
+        guard numbers.count == 4, numbers.allSatisfy(\.isFinite),
+              numbers[0] >= 0, numbers[1] >= 0, numbers[2] > 0, numbers[3] > 0,
+              numbers[0] + numbers[2] <= 1.000001, numbers[1] + numbers[3] <= 1.000001 else { return nil }
         return Fill(image: image, region: CGRect(x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3]))
     }
 }

@@ -95,7 +95,7 @@ enum DevelopRenderer {
             let calibrated = DevelopRenderer.applyCalibration(healed, settings)
             let toned = DevelopRenderer.applyTone(DevelopRenderer.applyProfile(calibrated, settings), settings)
             let colored = DevelopRenderer.applyLUT(
-                DevelopRenderer.applyMixer(DevelopRenderer.applyCurve(toned, settings), settings), settings)
+                DevelopRenderer.applyMixer(DevelopRenderer.applyCurve(toned, settings), settings), settings, originalURL: url)
             let present = DevelopRenderer.applyPresence(colored, settings)
             let photo = (url: url, isRaw: isRaw)
             let masked = DevelopRenderer.applyMasks(present, settings, photo: photo)
@@ -477,8 +477,8 @@ enum DevelopRenderer {
 
     /// The LUT's look, in sRGB as LUTs are made, mixed in at its amount. A LUT no longer in
     /// the library leaves the photo as it is.
-    static func applyLUT(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
-        guard let id = s.lutId, s.lutAmount > 0, let cube = LUTLibrary.cube(id: id) else { return input }
+    static func applyLUT(_ input: CIImage, _ s: DevelopSettings, originalURL: URL? = nil) -> CIImage {
+        guard let id = s.lutId, s.lutAmount > 0, let cube = LUTLibrary.cube(id: id, originalURL: originalURL) else { return input }
         let looked = input.applyingFilter("CIColorCubeWithColorSpace", parameters: [
             "inputCubeDimension": cube.size, "inputCubeData": cube.data,
             "inputColorSpace": CGColorSpace(name: CGColorSpace.sRGB)!,

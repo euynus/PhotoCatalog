@@ -159,6 +159,44 @@
 			<string>%lld files</string>
 		</dict>
 	</dict>
+	<key>%lld 个资产 · %lld 份原片 · %lld 份 XMP</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n1@ · %#@n2@ · %#@n3@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld asset</string>
+			<key>other</key>
+			<string>%lld assets</string>
+		</dict>
+		<key>n2</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld original</string>
+			<key>other</key>
+			<string>%lld originals</string>
+		</dict>
+		<key>n3</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld XMP sidecar</string>
+			<key>other</key>
+			<string>%lld XMP sidecars</string>
+		</dict>
+	</dict>
 	<key>%lld 分钟</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -1016,6 +1054,33 @@
 			<string>%lld photo</string>
 			<key>other</key>
 			<string>%lld photos</string>
+		</dict>
+	</dict>
+	<key>已处理 %lld / %lld 个文件</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Processed %#@n1@ / %#@n2@</string>
+		<key>n1</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld</string>
+			<key>other</key>
+			<string>%lld</string>
+		</dict>
+		<key>n2</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld file</string>
+			<key>other</key>
+			<string>%lld files</string>
 		</dict>
 	</dict>
 	<key>已复制 %lld 个原件</key>

@@ -15,6 +15,11 @@ if let index = CommandLine.arguments.firstIndex(of: "--scale") {
     exit(MainActor.assumeIsolated { ScaleCheck.run(arguments: arguments) })
 }
 
+if CommandLine.arguments.contains("--full-backup-check") {
+    FullBackupCheck.run()
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--selfcheck") {
     SelfCheck.run()
     Task { @MainActor in

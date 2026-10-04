@@ -228,8 +228,8 @@ private struct MaintenanceLabels: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain).disabled(!app.canRunCatalogMaintenance)
-        .help(L("\(app.statusBackupText) · 立即备份目录库 (⌘B)"))
-        .accessibilityLabel("立即备份目录库")
+        .help(L("\(app.statusBackupText) · 创建目录库快照（不含原件）(⌘B)"))
+        .accessibilityLabel("创建目录库快照")
         .accessibilityValue(app.statusBackupText)
     }
 }
