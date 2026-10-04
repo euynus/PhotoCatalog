@@ -136,6 +136,15 @@ final class SlideshowModel {
 
     func showControls() { controlsUntil = Date().addingTimeInterval(2) }
 
+    func controlsVisible(at date: Date, voiceOverEnabled: Bool) -> Bool {
+        voiceOverEnabled || paused || date < controlsUntil
+    }
+
+    func motion(index: Int, progress: Double, reduceMotion: Bool) -> (scale: Double, offset: CGVector) {
+        settings.panAndZoom && !reduceMotion
+            ? SlideshowTimeline.panAndZoom(index: index, progress: progress) : (scale: 1, offset: .zero)
+    }
+
     /// Loads the photos showing and coming up, and lets go of the ones gone by.
     func prefetch(around index: Int, app: AppState) async {
         let wanted = Set([index, (index + 1) % max(assets.count, 1), (index + 2) % max(assets.count, 1)])
@@ -171,6 +180,8 @@ final class SlideshowModel {
 
 struct SlideshowView: View {
     @Environment(AppState.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     let model: SlideshowModel
     let close: () -> Void
 
@@ -184,7 +195,9 @@ struct SlideshowView: View {
                     if let next = frame.next {
                         slide(next, progress: 0, alpha: frame.blend, captionAlpha: frame.nextCaptionAlpha, size: proxy.size)
                     }
-                    if context.date < model.controlsUntil || model.paused { controls(frame.index, height: proxy.size.height) }
+                    if model.controlsVisible(at: context.date, voiceOverEnabled: voiceOverEnabled) {
+                        controls(frame.index, height: proxy.size.height)
+                    }
                 }
             }
             .task(id: frame.index) { await model.prefetch(around: frame.index, app: app) }
@@ -197,8 +210,7 @@ struct SlideshowView: View {
     @ViewBuilder
     private func slide(_ index: Int, progress: Double, alpha: Double, captionAlpha: Double, size: CGSize) -> some View {
         if let image = model.images[index] {
-            let motion = model.settings.panAndZoom
-                ? SlideshowTimeline.panAndZoom(index: index, progress: progress) : (scale: 1, offset: .zero)
+            let motion = model.motion(index: index, progress: progress, reduceMotion: reduceMotion)
             let rect = SlideshowLayout.rect(imageSize: CGSize(width: image.width, height: image.height), in: size,
                                             scale: motion.scale, offset: motion.offset)
             Image(decorative: image, scale: 1)
@@ -224,16 +236,17 @@ struct SlideshowView: View {
         VStack {
             Spacer()
             HStack(spacing: 18) {
-                Button { model.step(-1); model.showControls() } label: { Image(systemName: "backward.fill") }
-                Button { model.togglePause(); model.showControls() } label: {
-                    Image(systemName: model.paused ? "play.fill" : "pause.fill")
+                Button("上一张", systemImage: "backward.fill") { model.step(-1); model.showControls() }
+                Button(model.paused ? L("播放") : L("暂停"), systemImage: model.paused ? "play.fill" : "pause.fill") {
+                    model.togglePause(); model.showControls()
                 }
-                Button { model.step(1); model.showControls() } label: { Image(systemName: "forward.fill") }
+                Button("下一张", systemImage: "forward.fill") { model.step(1); model.showControls() }
                 Text("\(index + 1) / \(model.assets.count)").monospacedDigit()
-                Button { close() } label: { Image(systemName: "xmark") }
+                Button("结束放映 (Esc)", systemImage: "xmark", action: close)
                     .help("结束放映 (Esc)")
             }
             .buttonStyle(.plain)
+            .labelStyle(.iconOnly)
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(.white)
             .padding(.horizontal, 18).padding(.vertical, 10)

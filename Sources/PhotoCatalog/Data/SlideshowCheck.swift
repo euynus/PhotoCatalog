@@ -11,6 +11,7 @@ enum SlideshowCheck {
     static func run() {
         checkTimeline()
         checkSettings()
+        MainActor.assumeIsolated { checkAccessibility() }
         checkVideo()
         print("--- slideshow assertions passed ---")
     }
@@ -65,6 +66,49 @@ enum SlideshowCheck {
         let stored = try! JSONDecoder().decode(SlideshowSettings.self, from: JSONEncoder().encode(settings))
         let empty = try! JSONDecoder().decode(SlideshowSettings.self, from: Data("{}".utf8))
         assert(stored == settings && empty == SlideshowSettings(), "settings persist, and missing ones take their defaults")
+    }
+
+    @MainActor
+    private static func checkAccessibility() {
+        let assets = Array(DemoData.assets.prefix(3))
+        for panAndZoom in [false, true] {
+            var settings = SlideshowSettings()
+            settings.panAndZoom = panAndZoom
+            let model = SlideshowModel(assets: assets, settings: settings, slideSeconds: settings.slideSeconds)
+            let timeline = model.timeline
+            for reduceMotion in [false, true] {
+                for progress in [0.0, 0.5, 1.0] {
+                    let motion = model.motion(index: 1, progress: progress, reduceMotion: reduceMotion)
+                    let expected = panAndZoom && !reduceMotion
+                        ? SlideshowTimeline.panAndZoom(index: 1, progress: progress) : (scale: 1, offset: CGVector.zero)
+                    assert(motion.scale == expected.scale && motion.offset == expected.offset,
+                           "live playback suppresses pan and zoom only for reduced motion or the existing setting")
+                }
+            }
+            assert(model.settings == settings && model.timeline == timeline,
+                   "live accessibility preferences must not change saved settings or fade timing")
+        }
+
+        let model = SlideshowModel(assets: assets, settings: SlideshowSettings(), slideSeconds: 4)
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        assert(!model.controlsVisible(at: start, voiceOverEnabled: false)
+               && model.controlsVisible(at: start, voiceOverEnabled: true),
+               "VoiceOver can access controls from launch without mouse or keyboard activity")
+        model.showControls()
+        let expiry = model.controlsUntil
+        assert(model.controlsVisible(at: expiry.addingTimeInterval(-1), voiceOverEnabled: false)
+               && !model.controlsVisible(at: expiry, voiceOverEnabled: false),
+               "pointer controls keep their existing visibility deadline")
+        let later = expiry.addingTimeInterval(60)
+        assert(model.controlsVisible(at: later, voiceOverEnabled: true)
+               && !model.controlsVisible(at: later, voiceOverEnabled: false),
+               "VoiceOver retains controls past timeout without extending the pointer deadline")
+        model.togglePause()
+        assert(model.controlsVisible(at: later, voiceOverEnabled: false), "paused playback retains its controls")
+        model.togglePause()
+        assert(!model.controlsVisible(at: later, voiceOverEnabled: false)
+               && model.controlsVisible(at: later, voiceOverEnabled: true),
+               "resuming playback preserves VoiceOver access while normal auto-hide still works")
     }
 
     private static func solid(_ url: URL, _ color: (Double, Double, Double)) {
