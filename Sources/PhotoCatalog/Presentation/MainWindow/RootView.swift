@@ -143,9 +143,10 @@ struct KeyCatcher: NSViewRepresentable {
         }
     }
 
-    nonisolated static func routeEvent(_ event: NSEvent, isMenuTracking: Bool, isEditingText: Bool,
+    nonisolated static func routeEvent(_ event: NSEvent, hostWindow: NSWindow?, isMenuTracking: Bool, isEditingText: Bool,
                                       handle: (String, Bool, Bool) -> Bool) -> NSEvent? {
-        guard !isMenuTracking, !isEditingText,
+        guard let hostWindow, event.window === hostWindow,
+              !isMenuTracking, !isEditingText,
               !shouldPassThroughGlobalShortcut(event.modifierFlags) else { return event }
         let command = event.modifierFlags.contains(.command)
         let key = keyString(keyCode: event.keyCode,
@@ -156,8 +157,9 @@ struct KeyCatcher: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(app: app) }
     func makeNSView(context: Context) -> NSView {
-        context.coordinator.install()
-        return NSView()
+        let view = NSView()
+        context.coordinator.install(in: view)
+        return view
     }
     func updateNSView(_ nsView: NSView, context: Context) {}
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
@@ -171,7 +173,7 @@ struct KeyCatcher: NSViewRepresentable {
         private var menuTrackingDepth = 0
         init(app: AppState) { self.app = app }
 
-        func install() {
+        func install(in view: NSView) {
             remove()
             // Native menus can leave the main window's responder unchanged.
             menuObservers = [
@@ -185,9 +187,9 @@ struct KeyCatcher: NSViewRepresentable {
                     self.menuTrackingDepth = max(0, self.menuTrackingDepth - 1)
                 },
             ]
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak view] event in
                 guard let self else { return event }
-                return self.handle(event)
+                return self.handle(event, hostView: view)
             }
         }
         func remove() {
@@ -198,13 +200,16 @@ struct KeyCatcher: NSViewRepresentable {
             menuTrackingDepth = 0
         }
 
-        private func handle(_ event: NSEvent) -> NSEvent? {
+        private func handle(_ event: NSEvent, hostView: NSView?) -> NSEvent? {
             // the slideshow takes its own keys
             if event.window is SlideshowWindow { return event }
             let app = app
             let handled = MainActor.assumeIsolated {
-                if event.modifierFlags.contains(.command) { KeyCatcher.refreshMenuItems() }
-                return KeyCatcher.routeEvent(event, isMenuTracking: menuTrackingDepth > 0,
+                let hostWindow = hostView?.window
+                if let hostWindow, event.window === hostWindow, event.modifierFlags.contains(.command) {
+                    KeyCatcher.refreshMenuItems()
+                }
+                return KeyCatcher.routeEvent(event, hostWindow: hostWindow, isMenuTracking: menuTrackingDepth > 0,
                                              isEditingText: KeyCatcher.isEditingText()) { key, command, shift in
                     app.handleKey(key, hasCommand: command, hasShift: shift)
                 } == nil

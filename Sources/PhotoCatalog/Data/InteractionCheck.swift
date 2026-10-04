@@ -120,13 +120,58 @@ enum InteractionCheck {
                "fixture must reach real keyboard handling without opening a catalog")
         assert(app.assets.allSatisfy(\.isDemo), "rating checks must never write XMP sidecars")
 
+        // Unshown windows give synthetic events real window identities without opening UI.
+        _ = NSApplication.shared
+        let frame = NSRect(x: 0, y: 0, width: 1, height: 1)
+        let hostWindow = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+        let otherWindow = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+        hostWindow.isReleasedWhenClosed = false
+        otherWindow.isReleasedWhenClosed = false
+        defer { hostWindow.close(); otherWindow.close() }
+        let hostView = NSView()
+        hostWindow.contentView?.addSubview(hostView)
+        assert(hostView.window === hostWindow && !hostWindow.isVisible && !otherWindow.isVisible,
+               "window routing fixtures must be attached but never visible")
+
+        func event(_ characters: String, keyCode: UInt16, modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
+            Self.event(characters, keyCode: keyCode, modifiers: modifiers, windowNumber: hostWindow.windowNumber)
+        }
         var calls = 0
         func route(_ event: NSEvent, menu: Bool = false, editing: Bool = false) -> NSEvent? {
-            KeyCatcher.routeEvent(event, isMenuTracking: menu, isEditingText: editing) { key, command, shift in
+            KeyCatcher.routeEvent(event, hostWindow: hostView.window,
+                                  isMenuTracking: menu, isEditingText: editing) { key, command, shift in
                 calls += 1
                 return app.handleKey(key, hasCommand: command, hasShift: shift)
             }
         }
+
+        for (characters, keyCode) in [("\t", UInt16(48)), (" ", 49), ("p", 35), ("5", 23), ("\u{f703}", 124)] {
+            let foreign = Self.event(characters, keyCode: keyCode, windowNumber: otherWindow.windowNumber)
+            assert(foreign.window === otherWindow && route(foreign) === foreign && calls == 0,
+                   "Settings or another window keeps its keys without calling the library handler")
+        }
+        let foreignCommand = Self.event("a", keyCode: 0, modifiers: [.command, .shift], windowNumber: otherWindow.windowNumber)
+        assert(route(foreignCommand) === foreignCommand && calls == 0,
+               "another window also keeps library command shortcuts")
+
+        let windowless = Self.event("p", keyCode: 35, windowNumber: 0)
+        assert(windowless.window == nil && route(windowless) === windowless && calls == 0,
+               "an event without a window passes through an attached host")
+        let hostEvent = event("p", keyCode: 35)
+        assert(hostEvent.window === hostWindow, "library events must resolve to the actual host window")
+        hostView.removeFromSuperview()
+        assert(hostView.window == nil && route(hostEvent) === hostEvent && route(windowless) === windowless && calls == 0,
+               "a detached or missing host never handles events, including windowless ones")
+
+        otherWindow.contentView?.addSubview(hostView)
+        assert(hostView.window === otherWindow && route(hostEvent) === hostEvent && calls == 0,
+               "after reparenting, the old host no longer owns library shortcuts")
+        let movedEvent = Self.event("q", keyCode: 12, windowNumber: otherWindow.windowNumber)
+        assert(route(movedEvent) === movedEvent && calls == 1,
+               "the current host reaches the handler exactly once, preserving an unhandled event")
+        hostView.removeFromSuperview()
+        hostWindow.contentView?.addSubview(hostView)
+        calls = 0
 
         let all = Set(app.list.map(\.id))
         let selected = app.selectedIds
@@ -234,9 +279,9 @@ enum InteractionCheck {
     }
 
     private static func event(_ characters: String, keyCode: UInt16,
-                              modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
+                              modifiers: NSEvent.ModifierFlags = [], windowNumber: Int) -> NSEvent {
         guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
-                                          timestamp: 0, windowNumber: 0, context: nil,
+                                          timestamp: 0, windowNumber: windowNumber, context: nil,
                                           characters: characters, charactersIgnoringModifiers: characters,
                                           isARepeat: false, keyCode: keyCode) else {
             preconditionFailure("Could not create the interaction-check event")
