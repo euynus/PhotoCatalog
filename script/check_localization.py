@@ -60,6 +60,7 @@ STR_HINT = re.compile(r'(formatted\(|name|Name|lastPathComponent|title|Title|lab
                       r'lens|verb|join|\bid\b|\.id\b|person|message|album|card|url|display|type|format|symbol|'
                       r'[vV]ersion|String\()')
 SPEC_OVERRIDES = {
+    'unfinished': '%lld',
     'missingOriginals': '%lld', 'missingThumbnails': '%lld', 'missingPreviews': '%lld',
     'unavailableSourceRoots': '%lld', 'activeJobs': '%lld', 'failedJobs': '%lld',
     'DateFmt.shortCapture(last)': '%@', 'DateFmt.shortCapture(first)': '%@',

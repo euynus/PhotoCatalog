@@ -191,8 +191,8 @@ struct ImportSheet: View {
     private func stats(_ run: ImportRun) -> some View {
         HStack(spacing: 8) {
             stat(run.scanned.formatted(), L("已扫描"), nil)
-            stat(run.pending.formatted(), L("待处理"), nil)
-            stat(run.imported.formatted(), L("成功"), Theme.green)
+            stat(run.processed.formatted(), L("已处理"), nil)
+            stat(run.saved.formatted(), L("已保存"), Theme.green)
             stat(run.skipped.formatted(), L("跳过（重复）"), Theme.yellow)
             stat(run.failed.formatted(), L("失败"), Theme.redSoft)
         }
@@ -304,6 +304,9 @@ struct ImportSheet: View {
                 .font(.system(size: 13))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 9) {
+                    if run.saved > 0 {
+                        ghostButton("photos", L("浏览已保存照片")) { app.showImportedPhotos() }
+                    }
                     Spacer()
                     ghostButton(run.phase == .paused ? "play" : "pause",
                                 run.phase == .paused ? L("继续") : L("暂停")) {
@@ -342,9 +345,8 @@ struct ImportSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 9) {
                     Spacer()
-                    if !run.failures.isEmpty {
-                        ghostButton("refresh", L("重试失败"), small: true) { app.retryFailedImport() }
-                    }
+                    ghostButton("refresh", L("继续未完成导入"), small: true,
+                                disabled: app.importing) { app.retryFailedImport() }
                     ghostButton(nil, L("关闭")) { app.sheet = nil }
                 }
             }

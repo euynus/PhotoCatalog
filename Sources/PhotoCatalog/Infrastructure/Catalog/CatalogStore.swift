@@ -50,10 +50,11 @@ struct ImportJobPayload: Codable, Equatable, Sendable {
     let archiveRule: String?
     let readSidecar: Bool?
     let previewMaxPixel: Int?
+    let options: ImportOptionsSnapshot?
 
     init(kind: String = "importFolder", sessionId: String, sourcePath: String,
          mode: String, autoTag: Bool, archiveRule: String? = nil,
-         readSidecar: Bool? = nil, previewMaxPixel: Int? = nil) {
+         readSidecar: Bool? = nil, previewMaxPixel: Int? = nil, options: ImportOptionsSnapshot? = nil) {
         self.kind = kind
         self.sessionId = sessionId
         self.sourcePath = sourcePath
@@ -62,6 +63,7 @@ struct ImportJobPayload: Codable, Equatable, Sendable {
         self.archiveRule = archiveRule
         self.readSidecar = readSidecar
         self.previewMaxPixel = previewMaxPixel
+        self.options = options
     }
 }
 
@@ -105,7 +107,7 @@ struct AssetPage: Sendable {
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
-    static let latestSchemaVersion = 24
+    static let latestSchemaVersion = 25
     let packageURL: URL
     let db: Database
 
@@ -347,6 +349,21 @@ final class CatalogStore: @unchecked Sendable {
             if !existing.contains("duration") { try db.run("ALTER TABLE assets ADD COLUMN duration REAL;") }
             try recordMigration(24)
         }
+        if current < 25 {
+            try db.execChecked("""
+            CREATE TABLE IF NOT EXISTS import_files (
+              session_id TEXT NOT NULL REFERENCES import_sessions(id) ON DELETE CASCADE,
+              source_path TEXT NOT NULL,
+              file_size INTEGER,
+              modified_at REAL,
+              asset_id TEXT,
+              outcome TEXT NOT NULL,
+              reason TEXT,
+              PRIMARY KEY (session_id, source_path)
+            );
+            """)
+            try recordMigration(25)
+        }
     }
 
     private func recordMigration(_ version: Int) throws {
@@ -478,6 +495,10 @@ final class CatalogStore: @unchecked Sendable {
     """
 
     func upsert(_ assets: [Asset]) throws {
+        try db.transaction { try upsertRows(assets) }
+    }
+
+    private func upsertRows(_ assets: [Asset]) throws {
         let cols = Self.columns.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         let placeholders = Array(repeating: "?", count: cols.count).joined(separator: ",")
         // True in-place upsert. INSERT OR REPLACE would DELETE the conflicting row before
@@ -486,19 +507,17 @@ final class CatalogStore: @unchecked Sendable {
         // ON CONFLICT…DO UPDATE form updates the row in place, leaving FK children intact.
         let assignments = cols.filter { $0 != "id" }.map { "\($0)=excluded.\($0)" }.joined(separator: ",")
         let sql = "INSERT INTO assets(\(Self.columns)) VALUES(\(placeholders)) ON CONFLICT(id) DO UPDATE SET \(assignments);"
-        try db.transaction {
-            for a in assets {
-                try db.run(sql, Self.params(a))
-                // keep the FTS index in sync; its rows share the asset's rowid (schema v20)
-                guard let rowid = try db.queryMap("SELECT rowid AS r FROM assets WHERE id=?;", [.text(a.id)],
-                                                  transform: { $0.int("r") }).first else { continue }
-                try db.run("DELETE FROM asset_search WHERE rowid=?;", [.int(rowid)])
-                try db.run("INSERT INTO asset_search(rowid, asset_id, content) VALUES(?,?,?);", [
-                    .int(rowid),
-                    .text(a.id),
-                    .text(Self.searchContent(a)),
-                ])
-            }
+        for a in assets {
+            try db.run(sql, Self.params(a))
+            // keep the FTS index in sync; its rows share the asset's rowid (schema v20)
+            guard let rowid = try db.queryMap("SELECT rowid AS r FROM assets WHERE id=?;", [.text(a.id)],
+                                              transform: { $0.int("r") }).first else { continue }
+            try db.run("DELETE FROM asset_search WHERE rowid=?;", [.int(rowid)])
+            try db.run("INSERT INTO asset_search(rowid, asset_id, content) VALUES(?,?,?);", [
+                .int(rowid),
+                .text(a.id),
+                .text(Self.searchContent(a)),
+            ])
         }
     }
 
@@ -1438,7 +1457,7 @@ final class CatalogStore: @unchecked Sendable {
                              finishedAt: Date? = nil, errorMessage: String? = nil) throws {
         let updated = try db.query("""
         UPDATE import_sessions
-        SET root_id=?, state=?, total_count=?, imported_count=?, skipped_count=?, failed_count=?,
+        SET root_id=COALESCE(?,root_id), state=?, total_count=?, imported_count=?, skipped_count=?, failed_count=?,
             finished_at=?, error_message=?
         WHERE id=? RETURNING id;
         """, [
@@ -1460,15 +1479,81 @@ final class CatalogStore: @unchecked Sendable {
         """).compactMap(Self.importSession(from:))
     }
 
+    func loadImportCheckpoints(sessionId: String) throws -> [ImportFileCheckpoint] {
+        try db.query("SELECT * FROM import_files WHERE session_id=?;", [.text(sessionId)]).compactMap { row in
+            guard let path = row.text("source_path"), let raw = row.text("outcome"),
+                  let outcome = ImportFileCheckpoint.Outcome(rawValue: raw) else { return nil }
+            return ImportFileCheckpoint(source: ImportSourceFile(path: path, byteCount: row.int("file_size"),
+                                                                 modifiedAt: row.double("modified_at")),
+                                        assetId: row.text("asset_id"), outcome: outcome, reason: row.text("reason"))
+        }
+    }
+
+    /// A checkpoint only becomes resumable together with its assets and initial edits.
+    func saveImportBatch(_ assets: [Asset], checkpoints: [ImportFileCheckpoint], run: ImportRun,
+                         source: SourceRootRecord?, options: ImportOptionsSnapshot) throws {
+        try db.transaction {
+            try upsertRows(assets)
+            if let source {
+                try addSourceRoot(id: source.id, displayName: source.displayName, path: source.pathHint,
+                                  bookmark: source.bookmarkData, mode: run.mode,
+                                  volumeIdentifier: source.volumeIdentifier)
+            }
+            let now = Self.iso(.now)
+            for asset in assets {
+                let steps = options.developSteps(for: asset)
+                if let settings = steps.last?.settings, !settings.isNeutral {
+                    try db.run("INSERT INTO develop_settings(asset_id, settings, updated_at) VALUES(?,?,?);",
+                               [.text(asset.id), .text(DevelopHistoryStep.json(settings)), .text(now)])
+                }
+                for (index, step) in steps.enumerated() {
+                    try db.run("INSERT INTO develop_history(asset_id,seq,name,created_at,settings) VALUES(?,?,?,?,?);",
+                               [.text(asset.id), .int(index + 1), .text(step.name), .text(now),
+                                .text(DevelopHistoryStep.json(step.settings))])
+                }
+            }
+            if let albumId = options.albumId, !assets.isEmpty {
+                try db.run("""
+                INSERT INTO albums(id,type,name,sort_order,created_at,updated_at)
+                VALUES(?,'album',?,(SELECT COALESCE(MAX(sort_order),0)+1 FROM albums),?,?)
+                ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at;
+                """, [.text(albumId), .text(options.albumName), .text(now), .text(now)])
+                let position = try db.query("SELECT COALESCE(MAX(position),-1)+1 AS n FROM album_assets WHERE album_id=?;",
+                                            [.text(albumId)]).first?.int("n") ?? 0
+                for (offset, asset) in assets.enumerated() {
+                    try db.run("INSERT OR IGNORE INTO album_assets(album_id,asset_id,position,added_at) VALUES(?,?,?,?);",
+                               [.text(albumId), .text(asset.id), .int(position + offset), .text(now)])
+                }
+            }
+            for checkpoint in checkpoints {
+                try db.run("""
+                INSERT INTO import_files(session_id,source_path,file_size,modified_at,asset_id,outcome,reason)
+                VALUES(?,?,?,?,?,?,?)
+                ON CONFLICT(session_id,source_path) DO UPDATE SET
+                  file_size=excluded.file_size,modified_at=excluded.modified_at,asset_id=excluded.asset_id,
+                  outcome=excluded.outcome,reason=excluded.reason;
+                """, [.text(run.id.uuidString), .text(checkpoint.source.path),
+                      checkpoint.source.byteCount.map(SQLValue.int) ?? .null,
+                      checkpoint.source.modifiedAt.map(SQLValue.double) ?? .null,
+                      checkpoint.assetId.map(SQLValue.text) ?? .null, .text(checkpoint.outcome.rawValue),
+                      checkpoint.reason.map(SQLValue.text) ?? .null])
+            }
+            try updateImportSession(id: run.id.uuidString, rootId: source?.id,
+                                    state: run.phase == .paused ? "paused" : "running", totalCount: run.total,
+                                    importedCount: run.saved, skippedCount: run.skipped, failedCount: run.failed)
+        }
+    }
+
     // ---------- jobs (§10.2 / §13) ----------
     func startImportJob(id: String, sessionId: String, sourcePath: String, mode: ImportMode,
                         autoTag: Bool, archiveRule: ManagedArchiveRule? = nil,
                         readSidecar: Bool? = nil, previewMaxPixel: Int? = nil,
+                        options: ImportOptionsSnapshot? = nil,
                         priority: Int = 10, createdAt: Date = .now) throws {
         let payload = Self.importJobPayload(sessionId: sessionId, sourcePath: sourcePath,
                                             mode: mode, autoTag: autoTag,
                                             archiveRule: archiveRule, readSidecar: readSidecar,
-                                            previewMaxPixel: previewMaxPixel)
+                                            previewMaxPixel: previewMaxPixel, options: options)
         let now = Self.iso(createdAt)
         try db.run("""
         INSERT OR REPLACE INTO jobs(
@@ -1576,12 +1661,13 @@ final class CatalogStore: @unchecked Sendable {
     private static func importJobPayload(sessionId: String, sourcePath: String,
                                          mode: ImportMode, autoTag: Bool,
                                          archiveRule: ManagedArchiveRule?,
-                                         readSidecar: Bool?, previewMaxPixel: Int?) -> String {
+                                         readSidecar: Bool?, previewMaxPixel: Int?,
+                                         options: ImportOptionsSnapshot?) -> String {
         let payload = ImportJobPayload(sessionId: sessionId, sourcePath: sourcePath,
                                        mode: mode.rawValue, autoTag: autoTag,
                                        archiveRule: archiveRule?.rawValue,
                                        readSidecar: readSidecar,
-                                       previewMaxPixel: previewMaxPixel)
+                                       previewMaxPixel: previewMaxPixel, options: options)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let data = (try? encoder.encode(payload)) ?? Data()

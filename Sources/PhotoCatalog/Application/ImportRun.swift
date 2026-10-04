@@ -21,9 +21,11 @@ struct ImportRun: Identifiable, Equatable, Sendable {
     let sourceName: String
     let mode: ImportMode
     let startedAt: Date
+    var sourceId: String?
     var phase: ImportPhase
     var total: Int
     var processed: Int
+    var saved: Int
     var failed: Int
     var skipped: Int
     var recentAssets: [Asset]
@@ -40,6 +42,7 @@ struct ImportRun: Identifiable, Equatable, Sendable {
         phase = .scanning
         total = 0
         processed = 0
+        saved = 0
         failed = 0
         skipped = 0
         recentAssets = []
@@ -53,7 +56,7 @@ struct ImportRun: Identifiable, Equatable, Sendable {
     }
 
     var imported: Int {
-        max(0, processed - skipped)
+        saved
     }
 
     var pending: Int {

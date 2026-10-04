@@ -1904,3 +1904,14 @@
 "模块" = "Module";
 "图库 (G) · 修图 (D)" = "Library (G) · Develop (D)";
 "视图：网格 G · 单张 E · 比较 C · 筛选 N · 分析 A" = "View: Grid G · Loupe E · Compare C · Survey N · Analysis A";
+
+/* Durable import batches */
+"已保存" = "Saved";
+"浏览已保存照片" = "Browse Saved Photos";
+"%lld 张照片已写入，但导入状态未保存" = "%lld photos were saved, but the import status could not be saved";
+"已保存 %lld 张照片，仍可浏览和编辑" = "%lld photos are saved and remain available to browse and edit";
+"还有 %lld 个源文件未处理；已保存的照片可以继续使用。请重新连接来源后再次导入。" = "%lld files remain unprocessed. Saved photos are still available. Reconnect the source and import again.";
+
+"无法读取原导入设置" = "The original import settings could not be read";
+"无法继续导入：%@" = "Import could not resume: %@";
+"继续未完成导入" = "Resume Unfinished Import";

@@ -34,6 +34,7 @@ struct ImportProgress: Sendable {
     var failed = 0
     var latestAsset: Asset?
     var latestFailure: ImportFailure?
+    var latestSource: ImportSourceFile?
 }
 
 // @unchecked Sendable: holds only Sendable services; runs the scan/metadata/
@@ -57,12 +58,13 @@ final class ImportCoordinator: @unchecked Sendable {
                       previewMaxPixel: Int = 2048,
                       control: ImportControl? = nil,
                       knownAssetsById: [String: Asset] = [:],
+                      checkpoints: [String: ImportFileCheckpoint] = [:],
                       progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
         let files = FileScanner.scan(folder)
         progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
         return process(files, folder: folder, mode: mode, autoTag: autoTag, archiveRule: archiveRule,
                        readSidecar: readSidecar, previewMaxPixel: previewMaxPixel, control: control,
-                       knownAssetsById: knownAssetsById, progress: progress)
+                       knownAssetsById: knownAssetsById, checkpoints: checkpoints, progress: progress)
     }
 
     /// Retry/import a known file list while preserving the original source folder identity.
@@ -74,13 +76,15 @@ final class ImportCoordinator: @unchecked Sendable {
                      previewMaxPixel: Int = 2048,
                      control: ImportControl? = nil,
                      knownAssetsById: [String: Asset] = [:],
+                     checkpoints: [String: ImportFileCheckpoint] = [:],
                      sourceRootId: String? = nil, folderName: String? = nil,
                      preparer: (any ImportFilePreparer)? = nil,
                      progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
         progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
         return process(files, folder: folder, mode: mode, autoTag: autoTag, archiveRule: archiveRule,
                        readSidecar: readSidecar, previewMaxPixel: previewMaxPixel, control: control,
-                       knownAssetsById: knownAssetsById, sourceRootId: sourceRootId, folderName: folderName,
+                       knownAssetsById: knownAssetsById, checkpoints: checkpoints,
+                       sourceRootId: sourceRootId, folderName: folderName,
                        preparer: preparer, progress: progress)
     }
 
@@ -148,12 +152,14 @@ final class ImportCoordinator: @unchecked Sendable {
     private enum Outcome {
         case imported(Asset)
         case failed(ImportFailure)
+        case skipped
     }
 
     private func process(_ files: [URL], folder: URL, mode: ImportMode, autoTag: Bool,
                          archiveRule: ManagedArchiveRule = .date, readSidecar: Bool = true,
                          previewMaxPixel: Int, control: ImportControl?,
                          knownAssetsById: [String: Asset] = [:],
+                         checkpoints: [String: ImportFileCheckpoint] = [:],
                          sourceRootId: String? = nil, folderName: String? = nil,
                          preparer: (any ImportFilePreparer)? = nil,
                          progress: ((ImportProgress) -> Void)?) -> [Asset] {
@@ -163,6 +169,14 @@ final class ImportCoordinator: @unchecked Sendable {
         // both one file at a time
         let copying = NSLock()
         func importOne(_ url: URL) -> Outcome {
+            if let checkpoint = checkpoints[url.path], checkpoint.matches(url) {
+                if checkpoint.outcome == .skipped { return .skipped }
+                if checkpoint.outcome == .saved, let id = checkpoint.assetId,
+                   let known = knownAssetsById[id], let path = known.localPath,
+                   FileManager.default.fileExists(atPath: path) {
+                    return .imported(known)
+                }
+            }
             guard preparer?.isAvailable(url) ?? FileManager.default.fileExists(atPath: url.path) else {
                 return .failed(ImportFailure(url: url, reason: L("文件不存在或不可访问")))
             }
@@ -207,16 +221,25 @@ final class ImportCoordinator: @unchecked Sendable {
                 let outcome = autoreleasepool { importOne(files[index]) }
                 // counted and reported in one place, so the progress only ever moves forward
                 state.withLock {
+                    prog.latestSource = ImportSourceFile(url: files[index])
                     switch outcome {
                     case .imported(let asset):
                         results[index] = asset
                         prog.processed += 1
                         prog.latestAsset = asset
                         prog.latestFailure = nil
+                        if preparer != nil, let path = asset.localPath {
+                            // Card/device recovery scans the destination, not the removable source.
+                            prog.latestSource = ImportSourceFile(url: URL(fileURLWithPath: path))
+                        }
                     case .failed(let failure):
                         prog.failed += 1
                         prog.latestAsset = nil
                         prog.latestFailure = failure
+                    case .skipped:
+                        prog.processed += 1
+                        prog.latestAsset = nil
+                        prog.latestFailure = nil
                     }
                     progress?(prog)
                 }

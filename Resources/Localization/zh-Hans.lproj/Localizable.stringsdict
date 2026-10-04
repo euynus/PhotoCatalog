@@ -78,6 +78,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>%lld 张照片 — 点按放大</string>
 	</dict>
+	<key>%lld 张照片已写入，但导入状态未保存</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld 张照片已写入，但导入状态未保存</string>
+	</dict>
 	<key>%lld 张照片已写入，但源目录或导入状态未保存</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -237,6 +242,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已从目录库移除 %lld 张（原件保留）</string>
+	</dict>
+	<key>已保存 %lld 张照片，仍可浏览和编辑</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已保存 %lld 张照片，仍可浏览和编辑</string>
 	</dict>
 	<key>已写入 %lld 个 XMP 附属文件</key>
 	<dict>
@@ -552,6 +562,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>评分 %lld 星</string>
+	</dict>
+	<key>还有 %lld 个源文件未处理；已保存的照片可以继续使用。请重新连接来源后再次导入。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>还有 %lld 个源文件未处理；已保存的照片可以继续使用。请重新连接来源后再次导入。</string>
 	</dict>
 	<key>重命名 %lld 张</key>
 	<dict>
