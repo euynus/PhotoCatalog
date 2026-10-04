@@ -20,6 +20,12 @@ if CommandLine.arguments.contains("--full-backup-check") {
     exit(0)
 }
 
+if CommandLine.arguments.contains("--task-center-check") {
+    TaskCenterCheck.run()
+    TaskCenterWorkflowCheck.run()
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--selfcheck") {
     SelfCheck.run()
     Task { @MainActor in

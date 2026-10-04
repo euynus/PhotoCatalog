@@ -13,12 +13,7 @@ struct StatusBar: View {
             CatalogStatusLabel()
             SelectionCountLabel()
             Spacer(minLength: 8)
-            ImportProgressLabel()
-            ExportProgressLabel()
-            EnhanceProgressLabel()
-            SlideshowExportLabel()
-            WebGalleryProgressLabel()
-            BookProgressLabel()
+            TaskCenterStatusButton()
             DescribeProgressLabel()
             OriginalsCheckLabel()
             MaintenanceLabels()
@@ -96,84 +91,28 @@ private struct SelectionCountLabel: View {
     }
 }
 
-private struct ImportProgressLabel: View {
+private struct TaskCenterStatusButton: View {
     @Environment(AppState.self) private var app
 
     var body: some View {
-        if let run = app.importRun, run.phase.isActive {
-            Button { app.sheet = "import" } label: {
-                HStack(spacing: 5) {
-                    if run.total > 0 {
-                        ProgressView(value: Double(run.processed + run.failed), total: Double(run.total))
-                            .tint(Theme.accent)
-                            .frame(width: 54)
-                    } else {
-                        ProgressView().controlSize(.mini).tint(Theme.accent)
-                    }
-                    Text(statusText(run))
+        let active = app.backgroundTasks.filter { $0.state.isActive }.count
+        let attention = app.taskHistoryError != nil || app.backgroundTasks.contains { $0.needsAttention }
+        Button(action: app.showTaskCenter) {
+            HStack(spacing: 4) {
+                Image(systemName: "list.bullet.rectangle")
+                if active > 0 {
+                    Text(active > 99 ? "99+" : String(active)).monospacedDigit()
                 }
-                .foregroundStyle(Theme.accent)
             }
-            .buttonStyle(.plain)
-            .fixedSize()
+            .frame(width: 44, height: 20)
+            .contentShape(Rectangle())
+            .foregroundStyle(attention ? Theme.yellow : active > 0 ? Theme.accent : Theme.text3)
         }
-    }
-
-    private func statusText(_ run: ImportRun) -> String {
-        if run.phase == .paused {
-            return run.total > 0 ? L("已暂停 \(run.percent)%") : L("已暂停")
-        }
-        return run.total > 0 ? L("导入 \(run.percent)%") : L("正在扫描…")
-    }
-}
-
-private struct ExportProgressLabel: View {
-    @Environment(AppState.self) private var app
-
-    var body: some View {
-        if let progress = app.renderedExportProgress {
-            HStack(spacing: 5) {
-                ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
-                    .tint(Theme.accent)
-                    .frame(width: 54)
-                Text(L("导出 \(progress.done)/\(progress.total)") + (progress.queued > 0 ? L(" · 队列 \(progress.queued)") : ""))
-                    .monospacedDigit()
-                Button { app.cancelRenderedExport() } label: {
-                    Image(systemName: "xmark.circle.fill")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.text3)
-                .help("取消导出")
-                .accessibilityLabel("取消导出")
-            }
-            .foregroundStyle(Theme.accent)
-            .fixedSize()
-        }
-    }
-}
-
-private struct EnhanceProgressLabel: View {
-    @Environment(AppState.self) private var app
-
-    var body: some View {
-        if let progress = app.enhanceProgress {
-            HStack(spacing: 5) {
-                ProgressView(value: (Double(progress.done) + progress.fraction) / Double(max(progress.total, 1)))
-                    .tint(Theme.accent)
-                    .frame(width: 54)
-                Text(progress.total > 1 ? L("增强 \(progress.done + 1)/\(progress.total)") : L("正在增强…"))
-                    .monospacedDigit()
-                Button { app.cancelEnhance() } label: {
-                    Image(systemName: "xmark.circle.fill")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.text3)
-                .help("取消增强")
-                .accessibilityLabel("取消增强")
-            }
-            .foregroundStyle(Theme.accent)
-            .fixedSize()
-        }
+        .buttonStyle(.plain)
+        .disabled(app.store == nil || app.sheet != nil)
+        .help("任务中心")
+        .accessibilityLabel("任务中心")
+        .accessibilityValue(active > 0 ? L("\(active) 个进行中") : attention ? L("有任务需要关注") : L("没有进行中的任务"))
     }
 }
 

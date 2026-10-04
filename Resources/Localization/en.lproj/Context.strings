@@ -27,3 +27,7 @@
 
 /* Presentation/Sidebar/Sidebar.swift */
 "精选" = "Picks";
+
+/* Presentation/Sheets/TaskCenterSheet.swift */
+"成功" = "Succeeded";
+"跳过" = "Skipped";

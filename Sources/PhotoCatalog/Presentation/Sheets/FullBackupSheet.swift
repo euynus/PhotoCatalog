@@ -87,7 +87,7 @@ struct FullBackupSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("备份范围").font(.headline)
             scopeRow(L("包含内容"), value: L("目录库、当前及历史编辑、在库原片、XMP、目录库 Config、引用的 LUT 与生成式填充输出"))
-            scopeRow(L("排除内容"), value: L("已删除及演示原片、缩略图与预览缓存、全局偏好与预设列表、登录凭据、未提交的编辑草稿"))
+            scopeRow(L("排除内容"), value: L("已删除及演示原片、缩略图与预览缓存、任务历史、全局偏好与预设列表、登录凭据、未提交的编辑草稿"))
             if state.operation == .backup {
                 scopeRow(L("目录库快照"), value: L("原有 SQLite 快照仅保存目录库；完整备份另含原片与必要编辑资源"))
             } else if state.operation == .verify {

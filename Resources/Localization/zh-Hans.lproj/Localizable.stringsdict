@@ -148,6 +148,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>全部 %lld 项</string>
 	</dict>
+	<key>共 %lld 个任务</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>共 %lld 个任务</string>
+	</dict>
 	<key>完全相同 · %lld 组</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -312,6 +317,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已处理 %lld / %lld 个文件</string>
+	</dict>
+	<key>已处理 %lld 个文件 · 已保存 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>已处理 %lld 个文件 · 已保存 %lld 张照片</string>
 	</dict>
 	<key>已复制 %lld 个原件</key>
 	<dict>

@@ -262,6 +262,8 @@ struct PhotoCatalogCommands: Commands {
         }
 
         CommandMenu("维护") {
+            Button("任务中心…") { perform("维护.任务中心") { app.showTaskCenter() } }
+                .disabled(app.sheet != nil || app.store == nil)
             Button("完整备份与恢复…") { perform("维护.完整备份与恢复") { app.openFullBackup() } }
                 .disabled(app.sheet != nil)
             Divider()

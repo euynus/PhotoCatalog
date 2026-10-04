@@ -246,7 +246,10 @@ enum ExportCheck {
             return copy
         }
         let a = local(base[0], "A.jpg"), b = local(base[1], "B.jpg")
-        let app = AppState.selfCheckFixture()
+        guard let store = try? CatalogStore(packageURL: directory.appendingPathComponent("export.photolibrary")) else {
+            fatalError("Cannot create export check catalog")
+        }
+        let app = AppState.selfCheckFixture(store: store)
         app.assets = [a, b, base[2]]
         app.duplicateGroupsCache = []
         app.select(Selection(type: .lib, id: "all", name: "Export check"))
@@ -281,5 +284,25 @@ enum ExportCheck {
         assert(app.renderedExportProgress == nil && written == [2, 2], "queued exports run one after another")
         assert(app.renderedExportFolder == folder.path && app.renderedExportSettings.subfolder == "第二批",
                "the dialog remembers the last export")
+        let finished = app.backgroundTasks.filter { $0.kind == .exportPhotos }
+        assert(finished.count == 2 && finished.allSatisfy { $0.state == .completed && $0.succeededCount == 2 },
+               "both actual export outcomes are recorded in their catalog history")
+
+        s.subfolder = "cancel-running"
+        app.startRenderedExport(settings: s, folder: folder)
+        s.subfolder = "cancel-queued"
+        app.startRenderedExport(settings: s, folder: folder)
+        let queued = app.backgroundTasks.first { $0.state == .queued && $0.kind == .exportPhotos }!
+        let cancelQueue = app.taskCenterActions(queued).cancel
+        assert(cancelQueue != nil, "task center exposes the export engine's queue cancellation")
+        cancelQueue?()
+        let cancelDeadline = Date().addingTimeInterval(30)
+        while app.renderedExportProgress != nil, Date() < cancelDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        assert(app.renderedExportProgress == nil && app.backgroundTasks.first { $0.id == queued.id }?.state == .cancelled,
+               "queued export cancellation is recorded without running that output job")
+        assert(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("cancel-queued").path),
+               "cancelled queued export does not create its destination")
     }
 }

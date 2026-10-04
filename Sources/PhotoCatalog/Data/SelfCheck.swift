@@ -143,6 +143,8 @@ enum SelfCheck {
         ZoomCheck.run()
         ImportPersistenceCheck.run()
         FullBackupCheck.run()
+        TaskCenterCheck.run()
+        TaskCenterWorkflowCheck.run()
         CaptureAnalysisCheck.run()
         assert(CompareView.stageColumnCount(itemCount: 4, size: CGSize(width: 785, height: 1200)) == 2
                && CompareView.stageColumnCount(itemCount: 4, size: CGSize(width: 2064, height: 1200)) == 4

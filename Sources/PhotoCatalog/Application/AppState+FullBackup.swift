@@ -168,6 +168,11 @@ extension AppState {
         let sourceStore = operation == .backup ? store : nil
         guard let source = sourceStore?.packageURL ?? state.backupURL else { return }
         let destination = state.targetURL
+        let originHistory = taskHistory
+        state.onChange = { [weak self, originHistory] state in
+            guard let self, let originHistory else { return }
+            self.recordFullBackupTask(state, originHistory: originHistory)
+        }
         let (runID, cancellation) = state.begin(source: source, destination: destination)
         var accessURLs = [source]
         do {

@@ -60,6 +60,8 @@ STR_HINT = re.compile(r'(formatted\(|name|Name|lastPathComponent|title|Title|lab
                       r'lens|verb|join|\bid\b|\.id\b|person|message|album|card|url|display|type|format|symbol|'
                       r'[vV]ersion|String\()')
 SPEC_OVERRIDES = {
+    'version': '%lld',
+    'error': '%@', 'frames': '%lld',
     'reason': '%@',
     'unfinished': '%lld',
     'missingOriginals': '%lld', 'missingThumbnails': '%lld', 'missingPreviews': '%lld',
@@ -74,7 +76,7 @@ NOUNS = {'photos': 'photo', 'files': 'file', 'originals': 'original', 'faces': '
          'people': 'person', 'days': 'day', 'stars': 'star', 'jobs': 'job', 'sidecars': 'sidecar',
          'conditions': 'condition', 'values': 'value', 'locations': 'location', 'previews': 'preview',
          'assets': 'asset', 'records': 'record', 'spots': 'spot', 'steps': 'step', 'copies': 'copy', 'presets': 'preset', 'colors': 'color', 'LUTs': 'LUT',
-         'stacks': 'stack', 'seconds': 'second', 'minutes': 'minute', 'pages': 'page'}
+         'stacks': 'stack', 'seconds': 'second', 'minutes': 'minute', 'pages': 'page', 'tasks': 'task'}
 ADJECTIVES = r'(?:(?:duplicate|new|changed|failed|automatically|recognized|unnamed|XMP|disk|photo|virtual) )*'
 
 

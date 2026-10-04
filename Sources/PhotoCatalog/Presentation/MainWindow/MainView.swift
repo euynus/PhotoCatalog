@@ -69,6 +69,10 @@ struct MainView: View {
             ImportSheet()
         case "fullBackup":
             FullBackupSheet()
+        case "taskCenter":
+            TaskCenterSheet(tasks: app.backgroundTasks, persistenceError: app.taskHistoryError,
+                            actions: app.taskCenterActions, onClearFinished: app.clearFinishedTasks,
+                            onClose: { app.sheet = nil })
         case "smart":
             SmartAlbumBuilder(album: app.smartAlbumEditingID.flatMap { id in
                 app.smartAlbums.first { $0.id == id }

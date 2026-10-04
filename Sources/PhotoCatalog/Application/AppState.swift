@@ -120,7 +120,9 @@ final class AppState {
         }
     }
     var importing = false
-    var importRun: ImportRun?
+    var importRun: ImportRun? {
+        didSet { if let run = importRun { recordImportTask(run) } }
+    }
     var duplicateGroupsCache: [DuplicateGroup] = DemoData.duplicateGroups {
         didSet {
             photoStacksCache = nil
@@ -588,8 +590,17 @@ final class AppState {
         UserDefaults.standard.stringArray(forKey: "pc_recentCatalogs") ?? []
 
     // ----- catalog (real persistence / scanning) -----
-    private(set) var store: CatalogStore?
+    private(set) var store: CatalogStore? {
+        didSet { configureTaskHistory() }
+    }
     let fullBackup = FullBackupState()
+    var backgroundTasks: [BackgroundTask] = []
+    var taskHistoryError: String?
+    @ObservationIgnored var taskHistory: BackgroundTaskHistory?
+    @ObservationIgnored var taskActions: [UUID: BackgroundTask.Actions] = [:]
+    // Live worker identities survive catalog switches; unsaved final snapshots stay here
+    // until their original history can be flushed. Neither case starts work on recovery.
+    @ObservationIgnored var workerTaskHistories: [UUID: BackgroundTaskHistory] = [:]
     private var coordinator: ImportCoordinator?
     private(set) var isLoadingCatalog = false
     private(set) var hasCatalogPreview = false
@@ -4795,9 +4806,11 @@ final class AppState {
 
     /// Adds the rendered copies to the catalog beside their originals (and to album `albumId`)
     /// and opens them in `editor` (nil: only adds them).
+    @discardableResult
     func finishExternalEdit(_ made: [(url: URL, source: Asset, asset: Asset?)], editor: URL?, expected: Int,
-                            albumId: String? = nil) {
+                            albumId: String? = nil) -> (importedIDs: Set<String>, errorMessage: String?) {
         var fresh: [Asset] = []
+        var importError: String?
         for result in made {
             guard let imported = result.asset else { continue }
             // folder watching may have seen the new file first: the copy is that entry
@@ -4822,11 +4835,16 @@ final class AppState {
             fresh.append(copy)
         }
         if !fresh.isEmpty {
+            guard let store else {
+                let message = L("目录库已关闭，副本未加入目录库")
+                push(verbatim: message, "warning")
+                return ([], message)
+            }
             do {
-                try store?.upsert(fresh)
+                try store.upsert(fresh)
             } catch {
                 push("外部编辑的副本未能加入目录库", "warning")
-                return
+                return ([], L("副本未能加入目录库：\(error.localizedDescription)"))
             }
             var updated = assets
             for copy in fresh {
@@ -4838,22 +4856,28 @@ final class AppState {
                 var album = albums[index]
                 let members = Set(album.assetIds)
                 album.assetIds.append(contentsOf: fresh.map(\.id).filter { !members.contains($0) })
-                if saveManualAlbum(album, sortOrder: index) { albums[index] = album }
+                if saveManualAlbum(album, sortOrder: index) {
+                    albums[index] = album
+                } else {
+                    importError = L("副本已加入目录库，但相册未能保存")
+                }
             }
             selectedIds = Set(fresh.map(\.id))
             setPrimary(fresh[0].id)
             recomputeDuplicates()
         }
+        let result = (importedIDs: Set(fresh.map(\.id)), errorMessage: importError)
         let urls = made.map(\.url)
         guard !urls.isEmpty else {
             push("无法生成用于外部编辑的 TIFF", "warning")
-            return
+            return (result.importedIDs, L("无法生成用于外部编辑的 TIFF"))
         }
-        guard let editor else { return }
+        guard let editor else { return result }
         NSWorkspace.shared.open(urls, withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration())
         if urls.count < expected {
             push(verbatim: L("已在外部编辑器中打开 \(urls.count) 张") + L(" · \(expected - urls.count) 失败"), "warning")
         }
+        return result
     }
 
     var canEditInExternalEditor: Bool { canOperateOnSelectedOriginals && onboarded && sheet == nil }
@@ -5334,16 +5358,33 @@ final class AppState {
         let targets = enhanceTargets, options = enhanceOptions
         guard !targets.isEmpty, !options.isEmpty, enhanceProgress == nil, let coordinator, let store else { return }
         let sources = targets.map { developSource(for: $0) }
-        let catalogURL = store.packageURL
         let previewSize = previewMaxPixel
         let albumId = selection.type == .album ? selection.id : nil
         let cancellation = CancellationFlag()
         enhanceCancellation = cancellation
         enhanceProgress = (0, targets.count, 0)
-        Task { [weak self, targets, coordinator] in
+        let originHistory = taskHistory
+        let outputFolders = Set(sources.compactMap { $0?.url.deletingLastPathComponent() })
+        let initial = BackgroundTask(kind: .enhance, title: L("增强照片"), state: .running,
+                                     totalCount: targets.count,
+                                     destination: outputFolders.count == 1 ? outputFolders.first : nil)
+        if let originHistory {
+            recordBackgroundTask(initial, originHistory: originHistory,
+                                 actions: .init(cancel: { cancellation.set() }))
+        }
+        Task { [weak self, targets, coordinator, store, originHistory, initial] in
+            var task = initial
             var made: [(url: URL, source: Asset, asset: Asset?)] = []
             var unreadable = 0, readOnly = 0
-            for (index, target) in targets.enumerated() {
+            var failedIDs = Set<String>()
+            func fail(_ target: Asset, _ reason: String, path: String? = nil) {
+                guard failedIDs.insert(target.id).inserted else { return }
+                task.failedCount += 1
+                task.failures.append(.init(item: target.filename, message: reason, assetID: target.id,
+                                           path: path ?? target.localPath))
+                task.failures = Array(task.failures.suffix(BackgroundTaskHistory.failureDetailLimit))
+            }
+            work: for (index, target) in targets.enumerated() {
                 guard !cancellation.isSet else { break }
                 let source = sources[index]
                 let outcome: EnhanceOutcome = await withCheckedContinuation { continuation in
@@ -5356,7 +5397,10 @@ final class AppState {
                             return continuation.resume(returning: .readOnly)
                         }
                         let planes = Enhance.enhance(image, options: options, progress: { fraction in
-                            Task { @MainActor in self?.enhanceProgress = (index, targets.count, fraction) }
+                            Task { @MainActor [weak self] in
+                                guard let self, self.enhanceCancellation === cancellation else { return }
+                                self.enhanceProgress = (index, targets.count, fraction)
+                            }
                         }, cancelled: { cancellation.isSet })
                         guard let planes, let result = Enhance.image(planes) else {
                             return continuation.resume(returning: cancellation.isSet ? .cancelled : .unreadable)
@@ -5372,34 +5416,77 @@ final class AppState {
                     }
                 }
                 switch outcome {
-                case .made(let url, let asset): made.append((url, target, asset))
-                case .unreadable: unreadable += 1
-                case .readOnly: readOnly += 1
-                case .cancelled: break
+                case .made(let url, let asset):
+                    made.append((url, target, asset))
+                    if asset == nil { fail(target, L("增强文件已生成，但无法读取结果以加入目录库"), path: url.path) }
+                case .unreadable:
+                    unreadable += 1
+                    fail(target, L("无法读取照片或生成增强结果"))
+                case .readOnly:
+                    readOnly += 1
+                    fail(target, L("原件所在文件夹不可写入"))
+                case .cancelled: break work
                 }
+                task.completedCount += 1
+                task.detail = L("已生成 \(made.count) 个增强文件")
+                if let originHistory { self?.recordBackgroundTask(task, originHistory: originHistory) }
             }
             guard let self else { return }
-            self.enhanceProgress = nil
-            self.enhanceCancellation = nil
-            guard self.store?.packageURL == catalogURL else { return }
-            if !made.isEmpty {
-                self.finishExternalEdit(made, editor: nil, expected: made.count, albumId: albumId)
+            if self.enhanceCancellation === cancellation {
+                self.enhanceProgress = nil
+                self.enhanceCancellation = nil
+            }
+            var importedIDs = Set<String>()
+            if self.store === store, !made.isEmpty {
+                let imported = self.finishExternalEdit(made, editor: nil, expected: made.count, albumId: albumId)
+                importedIDs = imported.importedIDs
+                task.errorMessage = imported.errorMessage
+                for result in made {
+                    guard let asset = result.asset else { continue }
+                    if !importedIDs.contains(asset.id) {
+                        fail(result.source, imported.errorMessage ?? L("增强文件未加入目录库"), path: result.url.path)
+                    } else if let message = imported.errorMessage {
+                        fail(result.source, message, path: result.url.path)
+                    }
+                }
                 // the new photos keep the look their originals were given
                 var carried: [String: DevelopSettings] = [:]
                 for result in made {
-                    guard let asset = result.asset, let settings = self.developSettings[result.source.id] else { continue }
+                    guard let asset = result.asset, importedIDs.contains(asset.id),
+                          let settings = self.developSettings[result.source.id] else { continue }
                     carried[asset.id] = settings.withoutWhiteBalance
                 }
-                if !carried.isEmpty { self.commitDevelop(carried, undoName: L("增强")) }
+                if !carried.isEmpty {
+                    self.commitDevelop(carried, undoName: L("增强"))
+                    for result in made {
+                        guard let asset = result.asset, let settings = carried[asset.id],
+                              (self.developSettings[asset.id] ?? .neutral) != settings else { continue }
+                        fail(result.source, L("增强文件已入库，但修图设置未能保存"), path: result.url.path)
+                    }
+                }
+            } else if !made.isEmpty {
+                let message = L("原目录库已关闭或重新打开，增强结果未加入当前目录库")
+                task.errorMessage = message
+                for result in made { fail(result.source, message, path: result.url.path) }
             }
+            task.succeededCount = made.filter {
+                guard let asset = $0.asset else { return false }
+                return importedIDs.contains(asset.id) && !failedIDs.contains($0.source.id)
+            }.count
+            task.detail = L("已生成 \(made.count) 个增强文件 · 已加入目录库 \(importedIDs.count) 张照片")
+            task.state = cancellation.isSet ? .cancelled : (task.failedCount > 0 ? .failed : .completed)
+            if let originHistory { self.recordBackgroundTask(task, originHistory: originHistory, actions: .init()) }
+            guard self.store === store else { return }
             if cancellation.isSet {
                 self.push(made.isEmpty ? "已取消增强" : "已取消增强，已完成 \(made.count) 张", "info")
-            } else if unreadable + readOnly == 0 {
+            } else if task.failedCount == 0 {
                 self.push(made.count == 1 ? "已增强照片" : "已增强 \(made.count) 张照片", "wand.and.stars")
             } else if readOnly > 0 {
                 self.push("有 \(readOnly) 张照片所在的文件夹是只读的，无法保存增强结果", "warning")
-            } else {
+            } else if unreadable > 0 {
                 self.push("有 \(unreadable) 张照片无法读取，未能增强", "warning")
+            } else {
+                self.push("已生成 \(made.count) 个增强文件，\(task.failedCount) 张未完成入库或修图设置保存", "warning")
             }
         }
     }
@@ -6014,6 +6101,7 @@ final class AppState {
     @ObservationIgnored private(set) var isBackfilling = false
     @ObservationIgnored private var backfillTask: Task<Void, Never>?
     @ObservationIgnored private var backfillGeneration = 0
+    @ObservationIgnored private var backfillCancellation: CancellationFlag?
 
     /// Stop any in-flight thumbnail backfill (e.g. when a fresh import is about to
     /// generate its own thumbnails, or the catalog is closing) so the two passes
@@ -6021,8 +6109,10 @@ final class AppState {
     /// backfillThumbnails() isn't blocked by the cancelled run's lingering flag, and
     /// bumps the generation so the orphaned task's cleanup can't clobber a newer run.
     func cancelBackfill() {
+        backfillCancellation?.set()
         backfillTask?.cancel()
         backfillTask = nil
+        backfillCancellation = nil
         isBackfilling = false
         backfillGeneration &+= 1
     }
@@ -6059,53 +6149,118 @@ final class AppState {
         let previews: [(Asset, ThumbnailService.Kind)] = real.sorted { $0.date > $1.date }.map {
             ($0, ThumbnailService.previewKind(forCachePath: $0.preview, fallbackMaxPixel: previewSize))
         }
-        backfillTask = Task { [weak self, coordinator, thumbnails, previews] in
+        let cancellation = CancellationFlag()
+        backfillCancellation = cancellation
+        let originHistory = taskHistory
+        let initial = BackgroundTask(kind: .preview, title: L("生成缩略图和预览"), state: .queued,
+                                     totalCount: thumbnails.count + previews.count, destination: cacheURL)
+        if let originHistory {
+            recordBackgroundTask(initial, originHistory: originHistory, actions: .init(cancel: { [weak self] in
+                guard let self, self.backfillGeneration == generation,
+                      self.backfillCancellation === cancellation else { return }
+                self.cancelBackfill()
+            }))
+        }
+        backfillTask = Task { [weak self, coordinator, thumbnails, previews, originHistory, initial] in
+            var task = initial
+            defer {
+                if cancellation.isSet || Task.isCancelled {
+                    task.state = .cancelled
+                    task.detail = L("预览生成已取消")
+                    task.errorMessage = nil
+                } else if task.state.isActive {
+                    task.state = task.failedCount > 0 ? .failed : .completed
+                    task.detail = L("缓存检查与生成已结束")
+                }
+                if let originHistory {
+                    self?.recordBackgroundTask(task, originHistory: originHistory, actions: .init())
+                }
+                // Terminal history belongs to this worker even if a newer generation now
+                // owns the shared UI flags. Never let the old cleanup clear the new run.
+                if let self, self.backfillGeneration == generation {
+                    self.isBackfilling = false
+                    self.backfillTask = nil
+                    self.backfillCancellation = nil
+                    self.enforceCacheLimitIfNeeded()
+                }
+            }
             // Let the initial window and visible thumbnails settle before
             // maintenance starts competing for disk and Image I/O.
             do { try await Task.sleep(for: .milliseconds(750)) } catch { return }
+            guard !cancellation.isSet, !Task.isCancelled else { return }
+            task.state = .running
+            if let originHistory { self?.recordBackgroundTask(task, originHistory: originHistory) }
             let measured = await ThumbnailRepairQueue.run(.background) {
                 (CatalogHealth.directorySize(cacheURL), CatalogHealth.directorySize(thumbnailsURL))
             }
-            var (used, thumbnailsUsed) = measured ?? (0, 0)
+            guard var (used, thumbnailsUsed) = measured else {
+                task.state = .interrupted
+                task.errorMessage = L("预览任务未能开始")
+                return
+            }
             let chunkSize = 8
             passes: for (work, isThumbnail) in [(thumbnails, true), (previews, false)] {
+                task.detail = isThumbnail ? L("正在生成缩略图") : L("正在生成预览")
                 var index = 0
                 while index < work.count, (isThumbnail ? thumbnailsUsed : used) < budget {
-                    if Task.isCancelled { break passes }
+                    if cancellation.isSet || Task.isCancelled { break passes }
                     // re-check Low Power Mode between chunks — it can be toggled mid-run
-                    if lowPowerSensitive, ProcessInfo.processInfo.isLowPowerModeEnabled { break passes }
+                    if lowPowerSensitive, ProcessInfo.processInfo.isLowPowerModeEnabled {
+                        task.state = .interrupted
+                        task.detail = L("低电量模式已停止预览生成")
+                        break passes
+                    }
                     let chunk = Array(work[index..<min(index + chunkSize, work.count)])
                     let room = budget - (isThumbnail ? thumbnailsUsed : used)
                     // off the cooperative pool, one at a time at background QoS, so a large
                     // backfill never competes with visible repairs or the UI
-                    let added = await ThumbnailRepairQueue.run(.background) { () -> Int64 in
+                    let outcome = await ThumbnailRepairQueue.run(.background) {
+                        () -> (bytes: Int64, processed: Int, ready: Int, failures: [BackgroundTask.Failure]) in
                         var added: Int64 = 0
+                        var processed = 0, ready = 0
+                        var failures: [BackgroundTask.Failure] = []
                         for (a, kind) in chunk where added < room {
+                            guard !cancellation.isSet else { break }
+                            processed += 1
                             guard let path = a.localPath,
-                                  FileManager.default.fileExists(atPath: path) else { continue }
+                                  FileManager.default.fileExists(atPath: path) else {
+                                failures.append(.init(item: a.filename, message: L("原件不可访问"),
+                                                      assetID: a.id, path: a.localPath))
+                                continue
+                            }
                             let cached = coordinator.thumbnails.cachePath(assetId: a.id, kind: kind)
                             let existed = FileManager.default.fileExists(atPath: cached.path)
                             let made = coordinator.thumbnails.ensureCached(
                                 from: URL(fileURLWithPath: path), fallbackPreview: nil,
                                 catalogModificationDate: a.fileModifiedAt, assetId: a.id, kind: kind)
+                            if made != nil {
+                                ready += 1
+                            } else {
+                                failures.append(.init(item: a.filename, message: L("无法生成缓存图像"),
+                                                      assetID: a.id, path: path))
+                            }
                             if !existed, let made {
                                 added += Int64((try? made.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
                             }
                         }
-                        return added
-                    } ?? 0
-                    used += added
-                    if isThumbnail { thumbnailsUsed += added }
-                    index += chunkSize
+                        return (added, processed, ready, failures)
+                    }
+                    guard let outcome else { break passes }
+                    used += outcome.bytes
+                    if isThumbnail { thumbnailsUsed += outcome.bytes }
+                    index += outcome.processed
+                    task.completedCount += outcome.processed
+                    task.succeededCount += outcome.ready
+                    task.failedCount += outcome.failures.count
+                    task.failures = Array((task.failures + outcome.failures).suffix(BackgroundTaskHistory.failureDetailLimit))
+                    if let originHistory { self?.recordBackgroundTask(task, originHistory: originHistory) }
                     do { try await Task.sleep(for: .milliseconds(10)) } catch { break passes }
                 }
             }
-            // only reset shared state if we're still the current run — a cancel or a newer
-            // backfill may have superseded us and must not have its state clobbered.
-            guard let self, self.backfillGeneration == generation else { return }
-            self.isBackfilling = false
-            self.backfillTask = nil
-            self.enforceCacheLimitIfNeeded()
+            if task.state.isActive, task.completedCount < (task.totalCount ?? 0) {
+                task.state = .interrupted
+                task.detail = L("达到缓存预算，预览生成已停止")
+            }
         }
     }
 
@@ -6453,9 +6608,12 @@ final class AppState {
     var allRenderedExportPresets: [RenderedExportPreset] { RenderedExportPreset.builtIns + renderedExportPresets }
 
     struct RenderedExportJob: Sendable {
+        let id = UUID()
+        let createdAt = Date.now
         let items: [RenderedExportItem]
         let settings: ExportSettings
         let folder: URL
+        let history: BackgroundTaskHistory?
     }
     struct RenderedExportProgress: Equatable {
         var done: Int
@@ -6569,13 +6727,35 @@ final class AppState {
         let cancellation = CancellationFlag()
         slideshowCancellation = cancellation
         slideshowExportProgress = 0
-        Task { [weak self] in
+        let originHistory = taskHistory
+        let timeline = SlideshowTimeline(count: slides.count, slide: seconds, fade: settings.fadeSeconds, repeats: false)
+        let frames = Int((timeline.duration * Double(SlideshowVideo.framesPerSecond)).rounded())
+        var initial = BackgroundTask(kind: .exportPhotos, title: L("导出幻灯片视频"), state: .running,
+                                     totalCount: frames, destination: url)
+        initial.detail = L("照片 \(slides.count) 张 · 视频帧 \(frames)")
+        if let originHistory {
+            recordBackgroundTask(initial, originHistory: originHistory, actions: .init(cancel: { cancellation.set() }))
+        }
+        Task { [weak self, originHistory, initial] in
+            let owner = self
             let made = await Task.detached(priority: .userInitiated) {
                 SlideshowVideo.export(slides, settings: settings, slideSeconds: seconds, music: music, to: url, progress: { fraction in
-                    Task { @MainActor in if self?.slideshowExportProgress != nil { self?.slideshowExportProgress = fraction } }
+                    Task { @MainActor in
+                        guard let self = owner, self.slideshowCancellation === cancellation, fraction.isFinite,
+                              fraction >= (self.slideshowExportProgress ?? 0) else { return }
+                        self.slideshowExportProgress = min(1, max(0, fraction))
+                        if let originHistory {
+                            self.recordArtifactExportProgress(initial, originHistory: originHistory, fraction: fraction)
+                        }
+                    }
                 }, cancelled: { cancellation.isSet })
             }.value
             guard let self else { return }
+            if let originHistory {
+                self.finishArtifactExportTask(initial, originHistory: originHistory, output: made ? url : nil,
+                                              cancelled: cancellation.isSet, failureMessage: L("幻灯片视频未能导出"))
+            }
+            guard self.slideshowCancellation === cancellation else { return }
             self.slideshowExportProgress = nil
             self.slideshowCancellation = nil
             if made {
@@ -6654,13 +6834,33 @@ final class AppState {
         let cancellation = CancellationFlag()
         webGalleryCancellation = cancellation
         webGalleryProgress = 0
-        Task { [weak self] in
+        let originHistory = taskHistory
+        var initial = BackgroundTask(kind: .exportPhotos, title: L("导出网页画廊"), state: .running,
+                                     totalCount: photos.count, destination: parent)
+        initial.detail = L("输入照片 \(photos.count) 张")
+        if let originHistory {
+            recordBackgroundTask(initial, originHistory: originHistory, actions: .init(cancel: { cancellation.set() }))
+        }
+        Task { [weak self, originHistory, initial] in
+            let owner = self
             let page = await Task.detached(priority: .userInitiated) {
                 WebGalleryExporter.export(photos, settings: settings, name: name, in: parent, progress: { fraction in
-                    Task { @MainActor in if self?.webGalleryProgress != nil { self?.webGalleryProgress = fraction } }
+                    Task { @MainActor in
+                        guard let self = owner, self.webGalleryCancellation === cancellation, fraction.isFinite,
+                              fraction >= (self.webGalleryProgress ?? 0) else { return }
+                        self.webGalleryProgress = min(1, max(0, fraction))
+                        if let originHistory {
+                            self.recordArtifactExportProgress(initial, originHistory: originHistory, fraction: fraction)
+                        }
+                    }
                 }, cancelled: { cancellation.isSet })
             }.value
             guard let self else { return }
+            if let originHistory {
+                self.finishArtifactExportTask(initial, originHistory: originHistory, output: page,
+                                              cancelled: cancellation.isSet, failureMessage: L("网页画廊未能导出"))
+            }
+            guard self.webGalleryCancellation === cancellation else { return }
             self.webGalleryProgress = nil
             self.webGalleryCancellation = nil
             if let page {
@@ -6729,13 +6929,33 @@ final class AppState {
         let cancellation = CancellationFlag()
         bookCancellation = cancellation
         bookProgress = 0
-        Task { [weak self] in
+        let originHistory = taskHistory
+        var initial = BackgroundTask(kind: .exportPhotos, title: L("导出画册 PDF"), state: .running,
+                                     totalCount: renderer.pages.count, destination: url)
+        initial.detail = L("画册页数 \(renderer.pages.count)")
+        if let originHistory {
+            recordBackgroundTask(initial, originHistory: originHistory, actions: .init(cancel: { cancellation.set() }))
+        }
+        Task { [weak self, originHistory, initial] in
+            let owner = self
             let made = await Task.detached(priority: .userInitiated) {
                 renderer.writePDF(to: url, progress: { fraction in
-                    Task { @MainActor in if self?.bookProgress != nil { self?.bookProgress = fraction } }
+                    Task { @MainActor in
+                        guard let self = owner, self.bookCancellation === cancellation, fraction.isFinite,
+                              fraction >= (self.bookProgress ?? 0) else { return }
+                        self.bookProgress = min(1, max(0, fraction))
+                        if let originHistory {
+                            self.recordArtifactExportProgress(initial, originHistory: originHistory, fraction: fraction)
+                        }
+                    }
                 }, cancelled: { cancellation.isSet })
             }.value
             guard let self else { return }
+            if let originHistory {
+                self.finishArtifactExportTask(initial, originHistory: originHistory, output: made ? url : nil,
+                                              cancelled: cancellation.isSet, failureMessage: L("画册未能存储"))
+            }
+            guard self.bookCancellation === cancellation else { return }
             self.bookProgress = nil
             self.bookCancellation = nil
             if made {
@@ -6863,7 +7083,9 @@ final class AppState {
         let subfolder = settings.subfolder.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "/", with: "-")
         let destination = subfolder.isEmpty ? folder : folder.appendingPathComponent(subfolder, isDirectory: true)
-        renderedExportJobs.append(RenderedExportJob(items: items, settings: settings, folder: destination))
+        let job = RenderedExportJob(items: items, settings: settings, folder: destination, history: taskHistory)
+        renderedExportJobs.append(job)
+        recordRenderedExportTask(job, state: .queued)
         if renderedExportJobs.count == 1 {
             runNextRenderedExport()
         } else {
@@ -6875,6 +7097,7 @@ final class AppState {
     /// Stops the running export after the photos in progress and drops the queued ones.
     func cancelRenderedExport() {
         guard !renderedExportJobs.isEmpty else { return }
+        for job in renderedExportJobs.dropFirst() { recordRenderedExportTask(job, state: .cancelled) }
         renderedExportJobs.removeSubrange(1...)
         renderedExportProgress?.queued = 0
         renderedExportCancellation.cancel()
@@ -6887,16 +7110,21 @@ final class AppState {
         }
         renderedExportProgress = RenderedExportProgress(done: 0, total: job.items.count,
                                                         queued: renderedExportJobs.count - 1)
+        recordRenderedExportTask(job, state: .running)
         let cancellation = renderedExportCancellation
         cancellation.reset()
         Self.renderedExportQueue.async { [weak self] in
             let names = ExportNames()
-            var written: [URL] = [], skipped = 0, failures: [String] = []
+            var written: [URL] = [], skipped = 0, failedCount = 0
+            var failures: [BackgroundTask.Failure] = []
             var folderReady = true
             do {
                 try FileManager.default.createDirectory(at: job.folder, withIntermediateDirectories: true)
             } catch {
-                failures.append(L("无法创建导出文件夹：\(error.localizedDescription)"))
+                failures.append(.init(item: job.folder.lastPathComponent,
+                                      message: L("无法创建导出文件夹：\(error.localizedDescription)"),
+                                      path: job.folder.path))
+                failedCount = 1
                 folderReady = false
             }
             // two photos at once: one renders on the GPU while the other is encoded
@@ -6912,20 +7140,29 @@ final class AppState {
                     guard let index else { return }
                     let outcome = RenderedExportService.export(job.items[index], sequence: job.settings.sequenceStart + index,
                                                                settings: job.settings, to: job.folder, names: names)
-                    let finished: Int = lock.withLock {
+                    let snapshot = lock.withLock {
                         switch outcome {
                         case .written(let url): written.append(url)
                         case .skipped: skipped += 1
-                        case .failed(let reason): failures.append(reason)
+                        case .failed(let reason):
+                            failedCount += 1
+                            if failures.count == BackgroundTaskHistory.failureDetailLimit { failures.removeFirst() }
+                            let item = job.items[index]
+                            failures.append(.init(item: item.baseName, message: reason,
+                                                  assetID: item.assetId, path: item.sourcePath))
                         }
                         done += 1
-                        return done
+                        return (done: done, written: written.count, skipped: skipped,
+                                failed: failedCount, failures: failures)
                     }
                     DispatchQueue.main.async {
                         MainActor.assumeIsolated {
-                            if let progress = self?.renderedExportProgress, progress.done < finished {
-                                self?.renderedExportProgress?.done = finished
-                            }
+                            guard let self, self.renderedExportJobs.first?.id == job.id,
+                                  let progress = self.renderedExportProgress, progress.done <= snapshot.done else { return }
+                            self.renderedExportProgress?.done = snapshot.done
+                            self.recordRenderedExportTask(job, state: .running, done: snapshot.done,
+                                written: snapshot.written, skipped: snapshot.skipped,
+                                failedCount: snapshot.failed, failures: snapshot.failures)
                         }
                     }
                 }
@@ -6933,19 +7170,23 @@ final class AppState {
             let cancelled = cancellation.isCancelled
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    self?.finishRenderedExport(job, written: written, skipped: skipped, failures: failures,
-                                               cancelled: cancelled)
+                    self?.finishRenderedExport(job, done: done, written: written, skipped: skipped,
+                                               failedCount: failedCount, failures: failures, cancelled: cancelled)
                 }
             }
         }
     }
 
-    private func finishRenderedExport(_ job: RenderedExportJob, written: [URL], skipped: Int, failures: [String],
-                                      cancelled: Bool) {
-        if !renderedExportJobs.isEmpty { renderedExportJobs.removeFirst() }
+    private func finishRenderedExport(_ job: RenderedExportJob, done: Int, written: [URL], skipped: Int,
+                                      failedCount: Int, failures: [BackgroundTask.Failure], cancelled: Bool) {
+        let state: BackgroundTask.State = cancelled ? .cancelled : (failedCount > 0 ? .failed : .completed)
+        recordRenderedExportTask(job, state: state, done: done, written: written.count,
+                                 skipped: skipped, failedCount: failedCount, failures: failures)
+        guard renderedExportJobs.first?.id == job.id else { return }
+        renderedExportJobs.removeFirst()
         var message = cancelled ? L("导出已取消 · 已写入 \(written.count) 张") : L("已导出 \(written.count) 张照片")
         if skipped > 0 { message += L(" · \(skipped) 张已存在而跳过") }
-        if let first = failures.first { message += L(" · \(failures.count) 张失败（\(first)）") }
+        if let first = failures.first { message += L(" · \(failedCount) 项失败（\(first.message)）") }
         push(verbatim: message, failures.isEmpty ? "export" : "warning")
         if job.settings.revealInFinder, !written.isEmpty, !cancelled {
             // selecting thousands of files is slow in Finder; open the folder instead
@@ -6956,6 +7197,26 @@ final class AppState {
             }
         }
         runNextRenderedExport()
+    }
+
+    private func recordRenderedExportTask(_ job: RenderedExportJob, state: BackgroundTask.State,
+                                          done: Int = 0, written: Int = 0, skipped: Int = 0,
+                                          failedCount: Int = 0, failures: [BackgroundTask.Failure] = []) {
+        guard let history = job.history else { return }
+        var task = BackgroundTask(id: job.id, kind: .exportPhotos, title: L("导出照片"), state: state,
+                                  createdAt: job.createdAt, totalCount: job.items.count, destination: job.folder)
+        task.completedCount = done
+        task.succeededCount = written
+        task.skippedCount = skipped
+        task.failedCount = failedCount
+        task.failures = failures
+        task.errorMessage = failures.first?.message
+        let jobID = job.id
+        let actions = BackgroundTask.Actions(cancel: { [weak self] in
+            guard let self, self.renderedExportJobs.contains(where: { $0.id == jobID }) else { return }
+            self.cancelRenderedExport()
+        }, cancelTitle: L("取消整个导出队列"))
+        recordBackgroundTask(task, originHistory: history, actions: actions)
     }
 
     func saveRenderedExportPreset(name: String, settings: ExportSettings) {
@@ -7085,20 +7346,35 @@ final class AppState {
         guard !importing else { push("导入中无法备份目录库", "warning"); return }
         guard let store else { push("无目录库可备份", "warning"); return }
         let packageURL = store.packageURL
-        Task { [weak self, store, packageURL] in
-            let url = await Task.detached(priority: .utility) { () -> URL? in
+        let originHistory = taskHistory
+        let initial = BackgroundTask(kind: .backup, title: L("目录库快照（不含原件）"), state: .running,
+                                     totalCount: 1, destination: store.backupsURL)
+        if let originHistory { recordBackgroundTask(initial, originHistory: originHistory) }
+        Task { [weak self, store, packageURL, originHistory, initial] in
+            let result = await Task.detached(priority: .utility) { () -> (url: URL?, error: String?) in
                 do {
-                    return try BackupService.backup(store)
+                    return (try BackupService.backup(store), nil)
                 } catch {
-                    return nil
+                    return (nil, error.localizedDescription)
                 }
             }.value
-            guard let self, self.store?.packageURL == packageURL else { return }
-            if let url {
+            guard let self else { return }
+            var task = initial
+            task.state = result.url == nil ? .failed : .completed
+            task.completedCount = 1
+            task.succeededCount = result.url == nil ? 0 : 1
+            task.destination = result.url ?? initial.destination
+            task.errorMessage = result.error
+            if let error = result.error {
+                task.failures = [.init(item: packageURL.lastPathComponent, message: error, path: packageURL.path)]
+            }
+            if let originHistory { self.recordBackgroundTask(task, originHistory: originHistory) }
+            guard self.store === store else { return }
+            if let url = result.url {
                 self.refreshStatusMetrics()
                 self.push("已备份目录库 · \(url.lastPathComponent)", "check")
             } else {
-                self.push("备份失败", "warning")
+                self.push("备份失败：\(result.error ?? L("未知错误"))", "warning")
             }
         }
     }
@@ -7122,21 +7398,36 @@ final class AppState {
         }
 
         let packageURL = store.packageURL
-        Task { [weak self, store, packageURL, backupKey, now] in
-            let url = await Task.detached(priority: .utility) { () -> URL? in
+        let originHistory = taskHistory
+        let initial = BackgroundTask(kind: .backup, title: L("自动目录库快照（不含原件）"), state: .running,
+                                     totalCount: 1, destination: store.backupsURL)
+        if let originHistory { recordBackgroundTask(initial, originHistory: originHistory) }
+        Task { [weak self, store, packageURL, backupKey, now, originHistory, initial] in
+            let result = await Task.detached(priority: .utility) { () -> (url: URL?, error: String?) in
                 do {
-                    return try BackupService.backup(store, at: now)
+                    return (try BackupService.backup(store, at: now), nil)
                 } catch {
-                    return nil
+                    return (nil, error.localizedDescription)
                 }
             }.value
-            guard let self, self.store?.packageURL == packageURL else { return }
-            if let url {
-                UserDefaults.standard.set(now, forKey: backupKey)
+            guard let self else { return }
+            var task = initial
+            task.state = result.url == nil ? .failed : .completed
+            task.completedCount = 1
+            task.succeededCount = result.url == nil ? 0 : 1
+            task.destination = result.url ?? initial.destination
+            task.errorMessage = result.error
+            if let error = result.error {
+                task.failures = [.init(item: packageURL.lastPathComponent, message: error, path: packageURL.path)]
+            }
+            if let originHistory { self.recordBackgroundTask(task, originHistory: originHistory) }
+            if result.url != nil { UserDefaults.standard.set(now, forKey: backupKey) }
+            guard self.store === store else { return }
+            if let url = result.url {
                 self.refreshStatusMetrics()
                 self.push("已自动备份目录库 · \(url.lastPathComponent)", "check")
             } else {
-                self.push("自动备份失败", "warning")
+                self.push("自动备份失败：\(result.error ?? L("未知错误"))", "warning")
             }
         }
     }
