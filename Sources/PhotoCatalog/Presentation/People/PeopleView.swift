@@ -369,12 +369,28 @@ struct FaceAvatar: View {
     let faceId: String
     let size: CGFloat
     let circle: Bool
-    @State private var image: CGImage?
+    @State private var imageState = ImageState()
+
+    struct ImageState {
+        private var loaded: (faceId: String, image: CGImage)?
+
+        func image(for faceId: String) -> CGImage? {
+            loaded?.faceId == faceId ? loaded?.image : nil
+        }
+
+        mutating func clear() { loaded = nil }
+
+        mutating func accept(_ image: CGImage?, for faceId: String) {
+            // A crop already running on the repair queue can finish after cancellation.
+            guard !Task.isCancelled else { return }
+            loaded = image.map { (faceId, $0) }
+        }
+    }
 
     var body: some View {
         ZStack {
             Theme.canvasSurface
-            if let image {
+            if let image = imageState.image(for: faceId) {
                 Image(decorative: image, scale: 1).resizable().scaledToFill()
             } else {
                 Image(systemName: "person.fill").font(.system(size: size * 0.35)).foregroundStyle(Theme.text4)
@@ -383,13 +399,16 @@ struct FaceAvatar: View {
         .frame(width: size, height: size)
         .clipShape(circle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 8, style: .continuous)))
         .task(id: faceId) {
+            guard !Task.isCancelled else { return }
+            imageState.clear()
             guard let app, let face = app.face(faceId), let asset = app.asset(id: face.assetId) else { return }
             let hasPreview = !asset.preview.isEmpty && !asset.preview.hasPrefix("http")
                 && FileManager.default.fileExists(atPath: asset.preview)
             let source = hasPreview ? asset.preview : (asset.localPath ?? "")
             // without a cached preview, a RAW's embedded JPEG is what the face was found in
-            image = await FaceCropLoader.shared.crop(faceId: faceId, box: face.box, source: source,
-                                                     embeddedPreview: !hasPreview && asset.isRaw)
+            let image = await FaceCropLoader.shared.crop(faceId: faceId, box: face.box, source: source,
+                                                        embeddedPreview: !hasPreview && asset.isRaw)
+            imageState.accept(image, for: faceId)
         }
     }
 }

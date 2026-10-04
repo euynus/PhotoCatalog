@@ -143,6 +143,7 @@ enum SelfCheck {
         ImportSafetyCheck.run()
         DiagnosticsCheck.run()
         ZoomCheck.run()
+        ImagePresentationCheck.run()
         ImportPersistenceCheck.run()
         FullBackupCheck.run()
         TaskCenterCheck.run()

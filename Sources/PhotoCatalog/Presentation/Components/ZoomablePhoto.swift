@@ -21,13 +21,30 @@ struct ZoomablePhoto: View {
     /// after the load task has had its turn on a busy main thread.
     private func previewImage(_ app: AppState) -> CGImage? {
         let maxPixel = ThumbnailService.Kind.preview2048.maxPixel
-        if let source = app.verifiedImageSource(for: asset, requestedSource: asset.preview, kind: .preview2048) {
-            let key = ThumbLoader.key(source, maxPixel: maxPixel, cacheGeneration: app.thumbnailCacheGeneration)
-            if preview.loadedKey != key, let cached = ThumbLoader.cachedImage(forKey: key) {
-                return cached.cgImage(forProposedRect: nil, context: nil, hints: nil)
-            }
+        let key = app.verifiedImageSource(for: asset, requestedSource: asset.preview, kind: .preview2048).map {
+            ThumbLoader.key($0, maxPixel: maxPixel, cacheGeneration: app.thumbnailCacheGeneration)
         }
-        return preview.image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        return Self.previewImage(for: asset.id, verifiedKey: key, loader: preview)?
+            .cgImage(forProposedRect: nil, context: nil, hints: nil)
+    }
+
+    @MainActor
+    static func previewImage(for assetId: String, verifiedKey: String?, loader: ThumbLoader) -> NSImage? {
+        if let verifiedKey {
+            if loader.loadedKey == verifiedKey, let image = loader.image { return image }
+            return ThumbLoader.cachedImage(forKey: verifiedKey)
+        }
+        return loader.owner == assetId ? loader.image : nil
+    }
+
+    @MainActor
+    static func loadPreview(_ source: String, for assetId: String, cacheGeneration: Int, loader: ThumbLoader) {
+        guard !Task.isCancelled else { return }
+        // Ownership changes with the load, never while the new source is still resolving.
+        // Loading the same key is a no-op, but a new owner must still redraw the view.
+        if loader.owner != assetId { loader.objectWillChange.send() }
+        loader.owner = assetId
+        loader.load(source, maxPixel: ThumbnailService.Kind.preview2048.maxPixel, cacheGeneration: cacheGeneration)
     }
 
     /// Adjusted photos render their edit at full size; unadjusted paired RAWs read the camera
@@ -85,9 +102,7 @@ struct ZoomablePhoto: View {
                 let generation = app.thumbnailCacheGeneration
                 let resolved = await app.visibleImageSource(for: asset, requestedSource: asset.preview,
                                                             kind: .preview2048)
-                guard !Task.isCancelled else { return }
-                preview.load(resolved, maxPixel: ThumbnailService.Kind.preview2048.maxPixel,
-                             cacheGeneration: generation)
+                Self.loadPreview(resolved, for: asset.id, cacheGeneration: generation, loader: preview)
             }
             .task(id: zoom == nil ? nil : fullRequest(app)) {
                 guard zoom != nil else { return }
