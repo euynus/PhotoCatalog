@@ -82,6 +82,21 @@ enum CaptureDates {
         return buckets(counts, depth: 0)
     }
 
+    /// Reuse the cached hierarchy instead of scanning every photo for each pinned date.
+    static func count(for dateKey: String, in groups: [CaptureDateBucket]) -> Int {
+        guard let range = interval(for: dateKey) else { return 0 }
+        let depth = dateKey.split(separator: "-").count - 1
+        let parts = key(range.start, depth: depth).split(separator: "-")
+        var level = groups
+        for index in parts.indices {
+            let id = parts.prefix(index + 1).joined(separator: "-")
+            guard let bucket = level.first(where: { $0.id == id }) else { return 0 }
+            if index == depth { return bucket.count }
+            level = bucket.children
+        }
+        return 0
+    }
+
     /// A tree level's label: "2026年" / "2026", "3月" / "Mar", "25日" / "25".
     private static func label(_ value: Int, depth: Int) -> String {
         switch depth {

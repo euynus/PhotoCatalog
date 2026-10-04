@@ -50,6 +50,7 @@ enum PairingCheck {
             copy.rating = 0
             copy.flag = .none
             copy.keywords = []
+            copy.date = CaptureDates.interval(for: "2024-02-29")!.start
             return copy
         }
         let raw = asset(raws[0], "/tmp/pc-pairing/IMG_0001.CR3")
@@ -68,6 +69,9 @@ enum PairingCheck {
                && app.libraryCounts.all == 4,
                "a RAW and its same-name JPEG are one tile and one photo; two RAWs never pair")
         assert(app.companions(of: raw).map(\.id) == [jpeg.id], "the RAW owns its JPEG companion")
+        let datePin = PinnedSidebarItem(type: .captureDate, selectionId: "2024-02-29", name: "Pairing day")
+        assert(app.countForPinnedSidebarItem(datePin) == "4",
+               "pinned date badges count a RAW/JPEG pair once, matching the date tree and visible photos")
 
         // the bundle derived on the loading thread matches what the getters compute
         let derived = AppState.CatalogDerivedData.derive(from: app.assets, pairsRawJpeg: true,
@@ -103,8 +107,10 @@ enum PairingCheck {
 
         app.pairRawAndJpeg = false
         assert(app.list.count == 5 && app.libraryCounts.all == 5, "turning pairing off lists every file")
+        assert(app.countForPinnedSidebarItem(datePin) == "5", "pinned date badges refresh when pairing is disabled")
         app.pairRawAndJpeg = true
         assert(app.list.count == 4, "turning it back on folds the JPEG again")
+        assert(app.countForPinnedSidebarItem(datePin) == "4", "pinned date badges refresh when pairing is enabled")
 
         app.setPrimary(raw.id)
         app.removeSelected()

@@ -31,6 +31,11 @@ enum CaptureAnalysisCheck {
         assert(groups[0].children.map(\.id) == ["2024-03", "2024-02"]
                && groups[0].children[1].children.first?.count == 2,
                "date hierarchy groups by month and day")
+        for (key, expected) in [("2024", 4), ("2024-02", 3), ("2024-02-29", 2), ("2024-2-29", 2),
+                                ("2023", 1), ("2024-02-30", 0), ("2022", 0), ("invalid", 0)] {
+            assert(CaptureDates.count(for: key, in: groups) == expected,
+                   "cached date counts retain calendar boundaries, normalize keys and exclude deleted photos")
+        }
         let stats = try! CaptureStatistics(assets: assets)
         assert(stats.totalCount == 5 && stats.dayCount == 4 && stats.completeCount == 4 && stats.fileDateCount == 1,
                "analysis separates missing metadata and file-date fallback")
@@ -115,6 +120,8 @@ enum CaptureAnalysisCheck {
             return result
         }
         app.assets = assets
+        let datePin = PinnedSidebarItem(type: .captureDate, selectionId: "2024-02-29", name: "Leap day")
+        assert(app.countForPinnedSidebarItem(datePin) == "2", "pinned dates use the date hierarchy count")
         app.duplicateGroupsCache = [DuplicateGroup(id: "check-stack", method: "contentHash", score: 1,
                                                    items: Array(assets[1...2]))]
         app.select(Selection(type: .captureDate, id: "2024-02", name: "2024-02"))
@@ -145,8 +152,12 @@ enum CaptureAnalysisCheck {
         app.assets = changed
         statistics = await load()
         assert(app.captureDateGroups[0].count == oldCount - 1
-               && statistics.totalCount == 1,
+               && statistics.totalCount == 1 && app.countForPinnedSidebarItem(datePin) == "1",
                "date hierarchy and analysis caches refresh after metadata changes")
+        changed[1].date = CaptureDates.interval(for: "2024-03-01")!.start
+        app.assets = changed
+        assert(app.countForPinnedSidebarItem(datePin) == "0",
+               "a cached pinned-date count refreshes when capture dates change")
         app.switchView(.analysis)
         assert(app.handleKey("delete", hasCommand: true),
                "analysis consumes the destructive shortcut instead of forwarding it to the native menu")
@@ -234,6 +245,11 @@ enum CaptureAnalysisCheck {
         app.duplicateGroupsCache = []
         let filter = Filters(date: "custom", dateStart: start,
                              dateEnd: CaptureDates.interval(for: "2029-12-31")!.start)
+        let pinnedDates = (1...12).map { month in
+            PinnedSidebarItem(type: .captureDate, selectionId: "2020-\(month)", name: "Month \(month)")
+        }
+        let intervals = pinnedDates.map { CaptureDates.interval(for: $0.selectionId)! }
+        let expectedCounts = intervals.map { range in samples.filter { CaptureDates.contains($0.date, in: range) }.count }
         var results: [String: [Double]] = [:]
         func measure(_ name: String, _ work: () async -> Void) async {
             let begin = ProcessInfo.processInfo.systemUptime
@@ -244,6 +260,20 @@ enum CaptureAnalysisCheck {
             app.assets = samples
             await measure("date tree") {
                 precondition(app.captureDateGroups.reduce(0) { $0 + $1.count } == samples.count)
+            }
+            await measure("120 pinned date badges (cached)") {
+                for _ in 0..<10 {
+                    for (pin, expected) in zip(pinnedDates, expectedCounts) {
+                        precondition(app.countForPinnedSidebarItem(pin) == String(expected))
+                    }
+                }
+            }
+            await measure("120 pinned date badges (full scan baseline)") {
+                for _ in 0..<10 {
+                    for (range, expected) in zip(intervals, expectedCounts) {
+                        precondition(samples.filter { !$0.deleted && CaptureDates.contains($0.date, in: range) }.count == expected)
+                    }
+                }
             }
             await measure("date filter") {
                 app.setFilters(filter)
@@ -261,7 +291,8 @@ enum CaptureAnalysisCheck {
                 precondition(app.captureStatistics(for: request)?.totalCount == 10)
             }
         }
-        for name in ["date tree", "date filter", "analysis", "selected analysis"] {
+        for name in ["date tree", "120 pinned date badges (cached)", "120 pinned date badges (full scan baseline)",
+                     "date filter", "analysis", "selected analysis"] {
             let median = results[name]!.sorted()[1]
             print("100k \(name): \(median.formatted(.number.precision(.fractionLength(1)))) ms median (3 runs)")
         }

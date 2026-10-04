@@ -8020,23 +8020,21 @@ final class AppState {
     }
 
     func countForPinnedSidebarItem(_ item: PinnedSidebarItem) -> String {
-        let counts = sidebarCountIndex
         switch item.type {
         case .folder:
-            return "\(counts.folderCounts[item.selectionId] ?? 0)"
+            return "\(sidebarCountIndex.folderCounts[item.selectionId] ?? 0)"
         case .album:
-            return "\(counts.albumCounts[item.selectionId] ?? 0)"
+            return "\(sidebarCountIndex.albumCounts[item.selectionId] ?? 0)"
         case .smart:
-            return "\(counts.smartAlbumCounts[item.selectionId] ?? 0)"
+            return "\(sidebarCountIndex.smartAlbumCounts[item.selectionId] ?? 0)"
         case .keyword:
-            return "\(counts.keywordCounts[item.selectionId] ?? 0)"
+            return "\(sidebarCountIndex.keywordCounts[item.selectionId] ?? 0)"
         case .project:
-            return "\(counts.projectCounts[item.selectionId] ?? 0)"
+            return "\(sidebarCountIndex.projectCounts[item.selectionId] ?? 0)"
         case .client:
-            return "\(counts.clientCounts[item.selectionId] ?? 0)"
+            return "\(sidebarCountIndex.clientCounts[item.selectionId] ?? 0)"
         case .captureDate:
-            guard let range = CaptureDates.interval(for: item.selectionId) else { return "0" }
-            return "\(assets.filter { !$0.deleted && CaptureDates.contains($0.date, in: range) }.count)"
+            return "\(CaptureDates.count(for: item.selectionId, in: captureDateGroups))"
         case .lib:
             return ""
         }
@@ -8146,8 +8144,7 @@ final class AppState {
             guard clientList.contains(where: { $0.name == item.selectionId }) else { return nil }
             return PinnedSidebarItem(type: .client, selectionId: item.selectionId, name: item.name)
         case .captureDate:
-            guard let range = CaptureDates.interval(for: item.selectionId),
-                  assets.contains(where: { !$0.deleted && CaptureDates.contains($0.date, in: range) }) else { return nil }
+            guard CaptureDates.count(for: item.selectionId, in: captureDateGroups) > 0 else { return nil }
             return item
         case .lib:
             return nil
