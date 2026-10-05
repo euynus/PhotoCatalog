@@ -81,15 +81,17 @@ extension DescriptionReviewCheck {
                 assert(!app.applyReviewedDescriptions(firstPayload), "a failed catalog transaction is not reported as applied")
                 assert(app.descriptionReview == selectedBeforeFailure && app.asset(id: photos[0].id)?.title == "",
                        "failed persistence retains the exact proposals and selection without changing live metadata")
-                assert(app.applyDescriptions(firstPayload, options: .init()) == 0,
-                       "the legacy apply API also reports zero after failed persistence")
                 let afterFailure = try store.loadAssets()
                 assert(afterFailure.allSatisfy { $0.title.isEmpty }, "failed writes leave persistent metadata unchanged")
                 try store.db.execChecked("DROP TRIGGER description_review_reject;")
 
                 assert(app.applyReviewedDescriptions(firstPayload), "the retained selection can be applied after the database recovers")
                 let afterApply = try store.loadAssets()
-                assert(afterApply.first(where: { $0.id == photos[0].id })?.title == proposal.title
+                let appliedPhoto = app.asset(id: photos[0].id)
+                let savedPhoto = afterApply.first { $0.id == photos[0].id }
+                assert(appliedPhoto?.title == proposal.title && savedPhoto?.title == proposal.title
+                       && appliedPhoto?.caption == proposal.caption && savedPhoto?.caption == proposal.caption
+                       && appliedPhoto?.keywords == proposal.keywords && savedPhoto?.keywords == proposal.keywords
                        && afterApply.first(where: { $0.id == photos[1].id })?.title == ""
                        && app.descriptionReview?.items.count == 3 && app.descriptionReview?.failedIDs == [photos[3].id],
                        "only selected photos persist, and unselected results and failures remain reviewable")
@@ -143,6 +145,58 @@ extension DescriptionReviewCheck {
                 let afterDiscard = try store.loadAssets()
                 assert(afterDiscard.map(\.title) == beforeDiscard.map(\.title),
                        "discarding the remaining proposals makes no catalog changes")
+
+                let acceptedPhotos = [app.asset(id: photos[0].id)!, app.asset(id: photos[2].id)!]
+                let addition = PhotoDescriber.Description(title: "Do not replace title", caption: "Do not replace caption",
+                                                          keywords: ["new", "additional"])
+                let additions = Dictionary(uniqueKeysWithValues: acceptedPhotos.map { ($0.id, addition) })
+                var appendReview = DescriptionReview(targets: acceptedPhotos)
+                appendReview.record(descriptions: additions)
+                app.descriptionReviewContext = DescriptionReviewContext(configuration: configuration, key: nil,
+                    chinese: false, catalog: store, catalogGeneration: app.catalogLoadGeneration)
+                app.descriptionReview = appendReview
+                assert(app.hasDescriptionReview && app.descriptionReview?.selectedIDs.isEmpty == true
+                       && !app.applyReviewedDescriptions(additions),
+                       "a new proposal batch cannot append keywords without explicit acceptance")
+                let beforeAcceptance = try store.loadAssets()
+                for photo in acceptedPhotos {
+                    assert(app.asset(id: photo.id)?.keywords == photo.keywords
+                           && beforeAcceptance.first(where: { $0.id == photo.id })?.keywords == photo.keywords,
+                           "unselected proposals leave both live and persistent keywords unchanged")
+                }
+                app.descriptionReview?.selectAll(true)
+                let appendPayload = app.descriptionReview!.selectedDescriptions
+                assert(appendPayload.count == 2 && app.applyReviewedDescriptions(appendPayload),
+                       "both explicitly selected photos accept their applicable changes")
+                let appended = try store.loadAssets()
+                for photo in acceptedPhotos {
+                    let live = app.asset(id: photo.id)
+                    let saved = appended.first { $0.id == photo.id }
+                    assert(live?.keywords == ["new", "additional"] && saved?.keywords == live?.keywords
+                           && live?.title == photo.title && saved?.title == photo.title
+                           && live?.caption == photo.caption && saved?.caption == photo.caption,
+                           "accepted descriptions append keywords once and preserve existing titles and captions")
+                }
+
+                let replacementPhoto = app.asset(id: photos[2].id)!
+                var options = DescriptionReview.Options()
+                options.replace = true
+                options.keywords = false
+                let replacement = PhotoDescriber.Description(title: "Replacement title", caption: "", keywords: ["ignored"])
+                var replaceReview = DescriptionReview(targets: [replacementPhoto], options: options)
+                replaceReview.record(descriptions: [replacementPhoto.id: replacement])
+                replaceReview.setSelected(true, for: replacementPhoto.id)
+                app.descriptionReviewContext = DescriptionReviewContext(configuration: configuration, key: nil,
+                    chinese: false, catalog: store, catalogGeneration: app.catalogLoadGeneration)
+                app.descriptionReview = replaceReview
+                assert(app.applyReviewedDescriptions(replaceReview.selectedDescriptions),
+                       "an explicitly accepted replacement uses the reviewed field options")
+                let replaced = try store.loadAssets().first { $0.id == replacementPhoto.id }
+                let liveReplacement = app.asset(id: replacementPhoto.id)
+                assert(liveReplacement?.title == replacement.title && replaced?.title == replacement.title
+                       && liveReplacement?.caption == replacementPhoto.caption && replaced?.caption == replacementPhoto.caption
+                       && liveReplacement?.keywords == replacementPhoto.keywords && replaced?.keywords == replacementPhoto.keywords,
+                       "replacement preserves empty proposal fields and leaves disabled keywords unchanged")
             } catch {
                 assertionFailure("description workflow check failed: \(error)")
             }

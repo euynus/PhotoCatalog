@@ -103,24 +103,3 @@ struct WebGallerySheet: View {
         app.exportWebGallery(to: url)
     }
 }
-
-/// The status bar's word on a web gallery being written, with a way to stop it.
-struct WebGalleryProgressLabel: View {
-    @Environment(AppState.self) private var app
-
-    var body: some View {
-        if let progress = app.webGalleryProgress {
-            HStack(spacing: 5) {
-                ProgressView(value: progress).tint(Theme.accent).frame(width: 54)
-                Text("正在导出网页画廊…")
-                Button { app.cancelWebGallery() } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Theme.text3)
-                    .help("取消导出")
-                    .accessibilityLabel("取消导出")
-            }
-            .foregroundStyle(Theme.accent)
-            .fixedSize()
-        }
-    }
-}

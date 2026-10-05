@@ -12,7 +12,7 @@ enum LLMCheck {
         checkErrors(server)
         checkParsing()
         MainActor.assumeIsolated {
-            checkDescribe(server)
+            checkDescribe()
             checkSearch(server)
             checkDevelopByText(server)
         }
@@ -127,15 +127,14 @@ enum LLMCheck {
 
 extension LLMCheck {
     @MainActor
-    static func checkDescribe(_ server: StandInServer) {
-        // the request: the image, the language, and what the catalog knows
+    static func checkDescribe() {
+        // Optional metadata still reaches the prompt when no capture date is available.
         let image = Data([0xFF, 0xD8, 0x42])
         let chinese = PhotoDescriber.request(image: image, details: PhotoDescriber.Details(camera: "Canon EOS R6m2", place: "成都",
                                                                                           keywords: ["夜景"]), chinese: true, includeMetadata: true)
-        assert(chinese.images == [image] && chinese.system.contains("Simplified Chinese") && chinese.prompt.contains("成都")
-               && chinese.prompt.contains("夜景") && chinese.prompt.contains("Canon"),
-               "a describe request shows the photo, asks for the app's language and passes on what's known")
-        assert(PhotoDescriber.request(image: image, details: .init(), chinese: false).system.contains("English"), "or English")
+        assert(chinese.prompt.contains("place: 成都") && chinese.prompt.contains("existing keywords: 夜景")
+               && chinese.prompt.contains("camera: Canon EOS R6m2"),
+               "a describe request retains Unicode metadata even without a capture date")
 
         // the answer: found in prose, keywords as a list or a comma string, tidied
         let reply = "好的：\n```json\n{\"title\": \" 锦江夜色 \", \"caption\": \"夜晚河边的灯笼与游船。\", \"keywords\": [\"夜景\", \"灯笼\", \"灯笼\", \"河流\", \"\"]}\n```"
@@ -148,34 +147,6 @@ extension LLMCheck {
                == ["gymnastics"], "the camera passed as a hint doesn't come back as a keyword")
         assert(PhotoDescriber.parse("I can't see an image.") == nil && PhotoDescriber.parse(#"{"title": ""}"#) == nil,
                "no description is made up from an empty answer")
-
-        // into the catalog: keywords added, titles and captions kept unless replacing
-        let app = AppState.selfCheckFixture()
-        app.assets = Array(DemoData.assets.prefix(2)).map { demo in
-            var photo = demo
-            photo.isDemo = false
-            photo.localPath = "/tmp/pc-describe/\(demo.filename)"
-            return photo
-        }
-        guard app.assets.count >= 2 else { return assertionFailure("the fixture has photos") }
-        let first = app.assets[0].id, second = app.assets[1].id
-        _ = app.mutate([first, second]) { asset in
-            asset.keywords = ["旧"]
-            asset.title = asset.id == first ? "" : "原来的标题"
-            asset.caption = ""
-        }
-        let described = PhotoDescriber.Description(title: "新标题", caption: "新说明", keywords: ["旧", "海"])
-        var options = AppState.DescribeOptions()
-        let changed = app.applyDescriptions([first: described, second: described], options: options)
-        func asset(_ id: String) -> Asset { app.assets.first { $0.id == id }! }
-        assert(changed == 2 && asset(first).keywords == ["旧", "海"] && asset(first).title == "新标题"
-               && asset(second).title == "原来的标题" && asset(second).caption == "新说明",
-               "descriptions add keywords and fill empty titles and captions, keeping the ones there")
-        options.replace = true
-        options.keywords = false
-        app.applyDescriptions([second: PhotoDescriber.Description(title: "替换", caption: "", keywords: ["不加"])], options: options)
-        assert(asset(second).title == "替换" && asset(second).caption == "新说明" && !asset(second).keywords.contains("不加"),
-               "replacing swaps titles, leaves what the model didn't give, and adds no keywords when they're off")
     }
 }
 
@@ -311,7 +282,7 @@ extension LLMCheck {
         assert(warmer?.settings.temperature == 5700 && warmer?.settings.tint == nil,
                "a repeated as-shot tint stays as shot beside a changed temperature")
 
-        // the whole of it, against the stand-in: the photo in Develop takes the look, undoably
+        // the whole of it, against the stand-in: the photo in Develop takes the look
         let saved = UserDefaults.standard.data(forKey: "pc_llm")
         defer { UserDefaults.standard.set(saved, forKey: "pc_llm") }
         let app = AppState.selfCheckFixture()

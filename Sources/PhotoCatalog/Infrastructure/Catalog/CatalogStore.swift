@@ -528,8 +528,6 @@ final class CatalogStore: @unchecked Sendable {
             .joined(separator: " ")
     }
 
-    func updateAsset(_ a: Asset) throws { try upsert([a]) }
-
     func updateRatings(_ rating: Int, assetIDs: Set<String>) throws {
         try updateAssetColumn("rating", value: .int(rating), assetIDs: assetIDs)
     }
@@ -1098,10 +1096,6 @@ final class CatalogStore: @unchecked Sendable {
         WHERE id=?;
         """, [.text(displayName), .text(path), bookmark.map { SQLValue.blob($0) } ?? .null,
               .text(status), volumeIdentifier.map { SQLValue.text($0) } ?? .null, .text(id)])
-    }
-
-    func removeSourceRoot(id: String) throws {
-        try db.run("DELETE FROM source_roots WHERE id=?;", [.text(id)])
     }
 
     func removeSourceRootAndSoftDeleteAssets(id: String) throws {

@@ -2285,11 +2285,17 @@ enum DevelopCheck {
         undo.endUndoGrouping()
         assert(app.developSettings["h"] == first && app.developSnapshots(for: "h")[0].name == "Soft",
                "applying a snapshot restores its settings; names are trimmed")
+        undo.beginUndoGrouping()
+        app.commitDevelop(["h": second], undoName: "调整对比度")
+        undo.endUndoGrouping()
         app.updateDevelopSnapshot(kept[0].id, for: "h")
+        let updated = app.developSnapshots(for: "h")
+        assert(updated.count == 1 && updated[0].id == kept[0].id && updated[0].name == "Soft" && updated[0].settings == second,
+               "updating a snapshot replaces its settings without changing its identity or name")
         app.deleteDevelopSnapshot(kept[0].id, for: "h")
         assert(app.developSnapshots(for: "h").isEmpty, "snapshots delete")
         app.clearDevelopHistory(for: "h")
-        assert(app.developHistory(for: "h").isEmpty && app.developSettings["h"] == first,
+        assert(app.developHistory(for: "h").isEmpty && app.developSettings["h"] == second,
                "clearing history keeps the current settings")
     }
 }

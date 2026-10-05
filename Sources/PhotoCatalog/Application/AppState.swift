@@ -668,7 +668,6 @@ final class AppState {
     @ObservationIgnored private var importCheckpoints: [String: ImportFileCheckpoint] = [:]
     @ObservationIgnored private var pendingImportFiles: [ImportFileResult] = []
     @ObservationIgnored private var lastImportBatchWrite: ContinuousClock.Instant?
-    @ObservationIgnored private var launchCatalogHandled = false
     @ObservationIgnored var confirmDestructiveAction = AppState.confirmDestructiveAction
     private static let catalogURLKey = "pc_catalogURL"
     private static let recentCatalogsKey = "pc_recentCatalogs"
@@ -2416,7 +2415,6 @@ final class AppState {
             }
         } else {
             if onboarded, let launchURL = Self.launchCatalogURL(from: arguments) {
-                launchCatalogHandled = true
                 if !openCatalog(at: launchURL), store == nil, openLastCatalogOnLaunch,
                    let error = loadExistingCatalog() {
                     push(verbatim: catalogOpenFailureMessage(error), "warning")
@@ -2612,7 +2610,6 @@ final class AppState {
         deferredCatalogArguments = nil
 
         let launchURL = Self.launchCatalogURL(from: arguments).map(Self.catalogPackageURL(for:))
-        if launchURL != nil { launchCatalogHandled = true }
         let fallbackURL: URL? = if onboarded && openLastCatalogOnLaunch,
                                    FileManager.default.fileExists(
                                     atPath: configuredCatalogURL.appendingPathComponent("catalog.sqlite").path
@@ -2991,14 +2988,15 @@ final class AppState {
     }
 
     func configureCatalogOpenPanel(_ panel: NSOpenPanel) {
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = L("打开")
         panel.message = L("选择 .photolibrary 目录库")
         if let libraryType = UTType(filenameExtension: "photolibrary") {
             panel.allowedContentTypes = [libraryType]
         }
+        // Setting allowedContentTypes updates these flags on macOS 27 and later.
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
     }
 
     @discardableResult
@@ -3059,13 +3057,6 @@ final class AppState {
             return
         }
 
-        beginCatalogSwitch(at: url)
-    }
-
-    func openLaunchCatalogIfNeeded(arguments: [String] = CommandLine.arguments) {
-        guard !launchCatalogHandled else { return }
-        launchCatalogHandled = true
-        guard let url = Self.launchCatalogURL(from: arguments) else { return }
         beginCatalogSwitch(at: url)
     }
 
@@ -5340,10 +5331,6 @@ final class AppState {
         }
     }
 
-    func cancelEnhance() {
-        enhanceCancellation?.set()
-    }
-
     private enum EnhanceOutcome: Sendable {
         case made(url: URL, asset: Asset?)
         case unreadable, readOnly, cancelled
@@ -6615,8 +6602,6 @@ final class AppState {
         }
     }
 
-    func cancelSlideshowExport() { slideshowCancellation?.set() }
-
     // ----- web gallery (Lightroom's Web module) -----
     var webGallerySettings: WebGallerySettings =
         AppState.loadJSON(WebGallerySettings.self, forKey: "pc_webGallery") ?? WebGallerySettings() {
@@ -6721,8 +6706,6 @@ final class AppState {
         }
     }
 
-    func cancelWebGallery() { webGalleryCancellation?.set() }
-
     // ----- photo book (Lightroom's Book module) -----
     var bookSettings: BookSettings = AppState.loadJSON(BookSettings.self, forKey: "pc_book") ?? BookSettings() {
         didSet { AppState.store(bookSettings, forKey: "pc_book") }
@@ -6815,8 +6798,6 @@ final class AppState {
             }
         }
     }
-
-    func cancelBook() { bookCancellation?.set() }
 
     // ----- print: the selection on paper (Lightroom's Print module) -----
     var printSettings: PrintSettings = AppState.loadJSON(PrintSettings.self, forKey: "pc_printSettings") ?? PrintSettings() {

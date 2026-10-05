@@ -261,13 +261,6 @@ extension AppState {
         return true
     }
 
-    /// Kept for existing callers; generation never calls this without explicit review acceptance.
-    @discardableResult
-    func applyDescriptions(_ results: [String: PhotoDescriber.Description], options: DescribeOptions) -> Int {
-        let outcome = persistDescriptions(results, options: options)
-        return outcome.saved ? outcome.changed : 0
-    }
-
     private func persistDescriptions(_ results: [String: PhotoDescriber.Description],
                                      options: DescribeOptions) -> (saved: Bool, changed: Int) {
         let ids = Set(results.keys.filter { id in

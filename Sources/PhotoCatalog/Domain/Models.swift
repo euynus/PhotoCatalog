@@ -429,8 +429,6 @@ struct FolderTreeItem: Identifiable, Hashable, Sendable {
     let status: String
     let depth: Int
     let directoryPath: String?
-
-    var isSourceRoot: Bool { directoryPath == nil }
 }
 
 struct RecentCatalog: Identifiable, Equatable, Sendable {
@@ -580,12 +578,6 @@ struct Filters: Equatable, Sendable {
         date == "custom"
             ? CaptureDates.interval(from: dateStart, through: dateEnd)
             : CaptureDates.presetInterval(date, now: now)
-    }
-
-    func matchesCaptureDate(_ value: Date, now: Date = .now) -> Bool {
-        if date == "any" { return true }
-        guard let interval = captureDateInterval(now: now) else { return false }
-        return CaptureDates.contains(value, in: interval)
     }
 
     func smartConditions(search: String) -> [SmartCondition] {

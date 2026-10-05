@@ -235,9 +235,6 @@ extension ExportSettings {
         return pixels >= Int(long) ? nil : pixels
     }
 
-    /// The output sharpening's luminance sharpness (0 = none).
-    var sharpenStrength: Double { sharpenFor.strength(sharpenAmount) }
-
     /// The file name (without extension) for one photo.
     func fileName(original: String, sequence: Int, date: Date, camera: String, title: String,
                   rating: Int) -> String {

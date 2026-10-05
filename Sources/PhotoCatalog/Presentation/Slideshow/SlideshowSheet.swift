@@ -148,24 +148,3 @@ struct SlideshowSheet: View {
         app.exportSlideshowVideo(to: url)
     }
 }
-
-/// The status bar's word on a slideshow video being written, with a way to stop it.
-struct SlideshowExportLabel: View {
-    @Environment(AppState.self) private var app
-
-    var body: some View {
-        if let progress = app.slideshowExportProgress {
-            HStack(spacing: 5) {
-                ProgressView(value: progress).tint(Theme.accent).frame(width: 54)
-                Text("正在导出幻灯片视频…").monospacedDigit()
-                Button { app.cancelSlideshowExport() } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Theme.text3)
-                    .help("取消导出")
-                    .accessibilityLabel("取消导出")
-            }
-            .foregroundStyle(Theme.accent)
-            .fixedSize()
-        }
-    }
-}

@@ -18,8 +18,9 @@ enum DescriptionReviewCheck {
                                              keywords: ["PRIVATE_KEYWORD", "another"])
         let previewOnly = PhotoDescriber.request(image: image, details: details, chinese: false)
         assert(!DescriptionReview.Options().includeMetadata, "metadata consent starts off")
-        assert(previewOnly.prompt == "Describe this photo." && previewOnly.images == [image],
-               "the default request carries only the preview and the generic description prompt")
+        assert(previewOnly.prompt == "Describe this photo." && previewOnly.images == [image]
+               && previewOnly.system.contains("English"),
+               "the default request carries only the preview and the generic prompt, asking for English")
         for value in ["PRIVATE_CAMERA", "PRIVATE_PLACE", "PRIVATE_KEYWORD", date.formatted(.iso8601.year().month().day())] {
             assert(!previewOnly.prompt.contains(value) && !previewOnly.system.contains(value),
                    "catalog metadata is absent without consent")

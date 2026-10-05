@@ -312,7 +312,7 @@ enum ImportPersistenceCheck {
         edited.rating = 5
         edited.title = "User title after import"
         edited.keywords = ["user-keyword"]
-        try store.updateAsset(edited)
+        try store.upsert([edited])
         var userSettings = expectedSettings
         userSettings.exposure = -0.5
         try store.saveDevelopSettings([photo.id: userSettings])
@@ -384,7 +384,7 @@ enum ImportPersistenceCheck {
             let first = try store.saveImportBatch([files[0]], run: run, options: options)
             var edited = first.assets[0]
             edited.rating = 5
-            try store.updateAsset(edited)
+            try store.upsert([edited])
             try store.addSourceRoot(id: edited.folderId, displayName: "Before rejected batch", path: directory.path,
                                     bookmark: Data("preserved access".utf8))
             let beforeSession = try store.loadImportSessions()
@@ -467,7 +467,7 @@ enum ImportPersistenceCheck {
                "a concurrent insert is never overwritten or given import defaults")
 
         edited.deleted = true
-        try peer.updateAsset(edited)
+        try peer.upsert([edited])
         let deletedId = ImportFileResult(source: ImportSourceFile(path: directory.appendingPathComponent("deleted-id.jpg").path,
                                                                  byteCount: 4096, modifiedAt: 1), asset: original, reason: nil)
         var replacement = asset(in: directory, index: 3)
@@ -486,7 +486,7 @@ enum ImportPersistenceCheck {
 
         var removed = next.assets[0]
         removed.deleted = true
-        try peer.updateAsset(removed)
+        try peer.upsert([removed])
         let replay = try store.saveImportBatch([replacementFile], run: run, options: options)
         assert(replay.assets.isEmpty && replay.checkpoints.isEmpty && replay.run.saved == 1 && replay.run.skipped == 3,
                "successful replay cannot resurrect a photo the user deleted after import")

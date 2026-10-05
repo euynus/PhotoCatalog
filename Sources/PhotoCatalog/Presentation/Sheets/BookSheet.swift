@@ -150,24 +150,3 @@ struct BookSheet: View {
         .background(Theme.bgContent)
     }
 }
-
-/// The status bar's word on a book being saved, with a way to stop it.
-struct BookProgressLabel: View {
-    @Environment(AppState.self) private var app
-
-    var body: some View {
-        if let progress = app.bookProgress {
-            HStack(spacing: 5) {
-                ProgressView(value: progress).tint(Theme.accent).frame(width: 54)
-                Text("正在存储画册…")
-                Button { app.cancelBook() } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Theme.text3)
-                    .help("取消存储")
-                    .accessibilityLabel("取消存储")
-            }
-            .foregroundStyle(Theme.accent)
-            .fixedSize()
-        }
-    }
-}

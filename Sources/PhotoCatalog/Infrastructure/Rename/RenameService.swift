@@ -131,40 +131,4 @@ enum RenameService {
         return result
     }
 
-    private static func sanitize(_ s: String) -> String {
-        let illegal = CharacterSet(charactersIn: "/\\:?%*|\"<>")
-        return s.trimmingCharacters(in: .whitespacesAndNewlines)
-            .components(separatedBy: illegal).joined(separator: "-")
-    }
-
-    /// Rename each asset's original to `<prefix>_<seq>.<ext>` starting at `start`.
-    /// Only assets with an existing local original are touched.
-    static func rename(_ assets: [Asset], prefix: String, start: Int = 1) -> [String: URL] {
-        let fm = FileManager.default
-        var result: [String: URL] = [:]
-        var seq = start
-        for a in assets {
-            guard let path = a.localPath else { continue }
-            let src = URL(fileURLWithPath: path)
-            guard fm.fileExists(atPath: src.path) else { continue }
-            let ext = src.pathExtension
-            let suffix = ext.isEmpty ? "" : ".\(ext)"
-            let dir = src.deletingLastPathComponent()
-            var dest = dir.appendingPathComponent("\(prefix)_\(String(format: "%04d", seq))\(suffix)")
-            var k = 1
-            while fm.fileExists(atPath: dest.path) && dest.path != src.path {
-                dest = dir.appendingPathComponent("\(prefix)_\(String(format: "%04d", seq))_\(k)\(suffix)")
-                k += 1
-            }
-            if dest.path == src.path { result[a.id] = src; seq += 1; continue }
-            do {
-                try fm.moveItem(at: src, to: dest)
-                result[a.id] = dest
-                seq += 1
-            } catch {
-                continue
-            }
-        }
-        return result
-    }
 }

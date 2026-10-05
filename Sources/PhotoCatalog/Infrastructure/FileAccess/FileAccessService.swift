@@ -16,12 +16,4 @@ enum FileAccessService {
                                  relativeTo: nil, bookmarkDataIsStale: &stale) else { return nil }
         return (url, stale)
     }
-
-    /// Run `work` with security-scoped access to `url`.
-    @discardableResult
-    static func withAccess<T>(to url: URL, _ work: () throws -> T) rethrows -> T {
-        let ok = url.startAccessingSecurityScopedResource()
-        defer { if ok { url.stopAccessingSecurityScopedResource() } }
-        return try work()
-    }
 }

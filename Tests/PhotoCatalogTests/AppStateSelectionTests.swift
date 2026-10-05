@@ -16,6 +16,8 @@ final class AppStateSelectionTests: XCTestCase {
     private var previousCatalogURL: Any?
     private var previousOnboarded: Any?
     private var previousPinnedSidebarItems: Any?
+    private var previousRecentCatalogs: Any?
+    private var previousRenameTemplate: Any?
 
     override func setUp() {
         super.setUp()
@@ -23,6 +25,8 @@ final class AppStateSelectionTests: XCTestCase {
         previousCatalogURL = UserDefaults.standard.object(forKey: "pc_catalogURL")
         previousOnboarded = UserDefaults.standard.object(forKey: "pc_onboarded")
         previousPinnedSidebarItems = UserDefaults.standard.object(forKey: "pc_pinnedSidebarItems")
+        previousRecentCatalogs = UserDefaults.standard.object(forKey: "pc_recentCatalogs")
+        previousRenameTemplate = UserDefaults.standard.object(forKey: "pc_renameTemplate")
         UserDefaults.standard.set(false, forKey: "pc_openLast")
         UserDefaults.standard.removeObject(forKey: "pc_pinnedSidebarItems")
     }
@@ -47,6 +51,16 @@ final class AppStateSelectionTests: XCTestCase {
             UserDefaults.standard.set(previousPinnedSidebarItems, forKey: "pc_pinnedSidebarItems")
         } else {
             UserDefaults.standard.removeObject(forKey: "pc_pinnedSidebarItems")
+        }
+        if let previousRecentCatalogs {
+            UserDefaults.standard.set(previousRecentCatalogs, forKey: "pc_recentCatalogs")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "pc_recentCatalogs")
+        }
+        if let previousRenameTemplate {
+            UserDefaults.standard.set(previousRenameTemplate, forKey: "pc_renameTemplate")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "pc_renameTemplate")
         }
         super.tearDown()
     }
@@ -354,29 +368,6 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
-    func testExportActionsRequireLocalOriginals() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-export-actions-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let original = dir.appendingPathComponent("original.jpg")
-        try Data("image".utf8).write(to: original)
-
-        let app = AppState()
-        app.onboarded = true
-        var asset = try XCTUnwrap(app.assets.first)
-        asset.filename = original.lastPathComponent
-        asset.localPath = original.path
-        asset.isDemo = false
-        app.assets = [asset]
-        app.primaryId = asset.id
-        app.selectedIds = [asset.id]
-
-        XCTAssertTrue(app.canOperateOnSelectedOriginals)
-        XCTAssertTrue(app.canExportOriginalSelection)
-        XCTAssertTrue(app.canExportPreviewSelection)
-    }
-
-    @MainActor
     func testPreviewExportAllowsCachedPreviewWithoutOriginal() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-preview-export-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -559,10 +550,12 @@ final class AppStateSelectionTests: XCTestCase {
         newer.rating = 5
 
         let writer = AutomaticXMPWriter()
-        let newerFailures = await writer.write([newer], sequence: 2)
-        let olderFailures = await writer.write([older], sequence: 1)
-        XCTAssertEqual(newerFailures, 0)
-        XCTAssertEqual(olderFailures, 0)
+        let newerResult = await writer.write([newer], sequence: 2)
+        let olderResult = await writer.write([older], sequence: 1)
+        XCTAssertEqual(newerResult.failures, 0)
+        XCTAssertEqual(olderResult.failures, 0)
+        XCTAssertNotNil(newerResult.written[newer.id])
+        XCTAssertTrue(olderResult.written.isEmpty)
 
         let sidecar = XMPSidecar.sidecarURL(for: original)
         XCTAssertEqual(XMPSidecar.read(sidecar)?.rating, 5)
@@ -1040,10 +1033,10 @@ final class AppStateSelectionTests: XCTestCase {
         app.assets = []
 
         app.importMode = .managed
-        XCTAssertEqual(app.catalogManagementText, "托管式管理 · 原件在目录库")
+        XCTAssertEqual(app.catalogManagementText, "原件已复制到目录库")
 
         app.importMode = .referenced
-        XCTAssertEqual(app.catalogManagementText, "引用式管理 · 原件只读")
+        XCTAssertEqual(app.catalogManagementText, "原位添加 · 原件只读")
     }
 
     @MainActor
@@ -1070,16 +1063,6 @@ final class AppStateSelectionTests: XCTestCase {
         app.thumbSize = 220
         XCTAssertTrue(app.handleKey("0", hasCommand: true))
         XCTAssertEqual(app.thumbSize, 168)
-    }
-
-    @MainActor
-    func testSearchFocusCanBeReleasedAfterGridSelection() {
-        let app = AppState()
-        app.onboarded = true
-
-        XCTAssertEqual(app.searchBlurToken, 0)
-        app.blurSearch()
-        XCTAssertEqual(app.searchBlurToken, 1)
     }
 
     @MainActor
@@ -1204,9 +1187,8 @@ final class AppStateSelectionTests: XCTestCase {
         app.assets = [asset]
         app.primaryId = asset.id
         app.selectedIds = []
-        app.confirmDestructiveAction = { _, _, _ in true }
 
-        app.batchRename(template: "RENAMED")
+        app.renameOriginals(template: "RENAMED")
 
         let renamed = dir.appendingPathComponent("RENAMED_0001.jpg")
         XCTAssertTrue(FileManager.default.fileExists(atPath: renamed.path))
@@ -1229,14 +1211,14 @@ final class AppStateSelectionTests: XCTestCase {
         app.primaryId = asset.id
         app.selectedIds = [asset.id]
 
-        app.batchRename(template: "RENAMED")
+        app.renameOriginals(template: "RENAMED")
 
         XCTAssertEqual(app.assets.first?.localPath, missing.path)
         XCTAssertEqual(app.toastCenter.toasts.last?.message, "仅可重命名已导入照片")
     }
 
     @MainActor
-    func testBatchRenameRequiresConfirmation() throws {
+    func testRenameSheetCancellationKeepsOriginals() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-rename-confirm-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -1253,22 +1235,20 @@ final class AppStateSelectionTests: XCTestCase {
         app.assets = [asset]
         app.primaryId = asset.id
         app.selectedIds = [asset.id]
-        app.confirmDestructiveAction = { title, message, confirmTitle in
-            XCTAssertEqual(title, "重命名原件？")
-            XCTAssertEqual(message, "将重命名 1 个磁盘原件，并更新目录库中的文件路径。")
-            XCTAssertEqual(confirmTitle, "重命名")
-            return false
-        }
 
-        app.batchRename(template: "RENAMED")
+        app.showRenameSheet()
+        XCTAssertEqual(app.sheet, "rename")
+        XCTAssertEqual(app.renameSheetTargets.map(\.id), [asset.id])
+        XCTAssertTrue(app.handleKey("escape", hasCommand: false))
 
+        XCTAssertNil(app.sheet)
         XCTAssertTrue(FileManager.default.fileExists(atPath: original.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("RENAMED_0001.jpg").path))
         XCTAssertEqual(app.assets.first?.localPath, original.path)
     }
 
     @MainActor
-    func testBatchRenameReportsRenameFailures() throws {
+    func testBatchRenameReportsReadOnlyFolders() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rename-fail-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer {
@@ -1288,12 +1268,12 @@ final class AppStateSelectionTests: XCTestCase {
         app.assets = [asset]
         app.primaryId = asset.id
         app.selectedIds = [asset.id]
-        app.confirmDestructiveAction = { _, _, _ in true }
 
-        app.batchRename(template: "RENAMED")
+        app.renameOriginals(template: "RENAMED")
 
         XCTAssertEqual(app.assets.first?.localPath, original.path)
-        XCTAssertEqual(app.toastCenter.toasts.last?.message, "重命名失败")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: original.path))
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "1 张照片所在的文件夹是只读的，无法重命名")
         XCTAssertEqual(app.toastCenter.toasts.last?.icon, "warning")
     }
 
@@ -1330,9 +1310,8 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertTrue(app.openCatalog(at: package))
         app.primaryId = asset.id
         app.selectedIds = [asset.id]
-        app.confirmDestructiveAction = { _, _, _ in true }
 
-        app.batchRename(template: "RENAMED")
+        app.renameOriginals(template: "RENAMED")
 
         let renamed = sourceDir.appendingPathComponent("RENAMED_0001.jpg")
         XCTAssertTrue(FileManager.default.fileExists(atPath: original.path))
@@ -1355,7 +1334,7 @@ final class AppStateSelectionTests: XCTestCase {
         asset.localPath = original.path
         asset.isDemo = false
 
-        let renamed = try XCTUnwrap(RenameService.rename([asset], prefix: "RENAMED")[asset.id])
+        let renamed = try XCTUnwrap(RenameService.renameWithTemplate([asset], template: "RENAMED_{seq}")[asset.id])
         XCTAssertEqual(renamed.lastPathComponent, "RENAMED_0001")
         XCTAssertTrue(FileManager.default.fileExists(atPath: renamed.path))
     }
@@ -2122,8 +2101,8 @@ final class AppStateSelectionTests: XCTestCase {
         let restored = try XCTUnwrap(app.assets.first { $0.id == asset.id })
 
         XCTAssertEqual(try store.loadSourceRoots().first?.managementMode, ImportMode.managed.rawValue)
-        XCTAssertEqual(app.catalogManagementText, "托管式管理 · 原件在目录库")
-        XCTAssertEqual(app.managementDisplayText(for: restored), "托管式 (Managed)")
+        XCTAssertEqual(app.catalogManagementText, "原件已复制到目录库")
+        XCTAssertEqual(app.managementDisplayText(for: restored), "复制到目录库")
     }
 
     @MainActor

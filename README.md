@@ -140,6 +140,8 @@ script/build_and_run.sh verify     # build (Release), launch, and verify a visib
 
 script/build_and_run.sh selfcheck  # headless demo dataset checks
 script/build_and_run.sh pipeline   # headless end-to-end import checks
+swift test                        # focused model, AppState, and UI-helper tests (full Xcode)
+swift test --filter SmartMatcherTests  # run one XCTest class
 ./.build/debug/PhotoCatalog --full-backup-check      # focused backup/restore checks with temporary fixtures
 ./.build/debug/PhotoCatalog --task-center-check      # focused task-history and lifecycle checks
 ./.build/debug/PhotoCatalog --description-review-check  # AI consent/review checks using synthetic images and a loopback service
@@ -167,6 +169,8 @@ configuration; `build`, `selfcheck`, and `pipeline` use Debug because the checks
 The script honors `SDKROOT` when set. Otherwise it probes installed macOS SDKs and
 selects one compatible with the active Swift compiler, which also handles temporarily
 out-of-sync Command Line Tools installations.
+For `swift test`, pass `--sdk /path/to/MacOSX.sdk` when the default SDK is incompatible
+with the active compiler; the SDK must come from a full Xcode installation.
 
 You can also open `Package.swift` directly in Xcode and run the `PhotoCatalog` scheme.
 

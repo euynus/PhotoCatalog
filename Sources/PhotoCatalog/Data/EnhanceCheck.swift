@@ -78,7 +78,8 @@ enum EnhanceCheck {
                "and keeps the square as dark against the gray")
         let halfway = spread(half, background).deviation
         assert(halfway > after && halfway < before, "a lower amount keeps some of the original")
-        assert(zip(none.values, noisy.values).allSatisfy { abs(Float($0) - Float($1)) < 0.002 }, "amount 0 changes nothing")
+        assert(none.width == noisy.width && none.height == noisy.height && none.values.count == noisy.values.count
+               && zip(none.values, noisy.values).allSatisfy { abs(Float($0) - Float($1)) < 0.002 }, "amount 0 changes nothing")
 
         // both steps together: denoised, then enlarged
         let image = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5)).cropped(to: CGRect(x: 0, y: 0, width: 96, height: 64))
@@ -128,7 +129,9 @@ enum EnhanceCheck {
         guard let image = Enhance.image(scene) else { return assertionFailure("a scene was drawn") }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-remove-\(UUID().uuidString).tif")
         defer { try? FileManager.default.removeItem(at: url) }
-        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.tiff" as CFString, 1, nil) else { return }
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.tiff" as CFString, 1, nil) else {
+            return assertionFailure("the remove fixture can be written")
+        }
         CGImageDestinationAddImage(destination, image, nil)
         CGImageDestinationFinalize(destination)
 
@@ -147,7 +150,9 @@ enum EnhanceCheck {
             return assertionFailure("a fill was made")
         }
         func luma(_ settings: DevelopSettings, _ x: Int, _ y: Int) -> Float {
-            guard let rendered = source.image(settings), let planes = Enhance.planes(of: rendered) else { return -1 }
+            guard let rendered = source.image(settings), let planes = Enhance.planes(of: rendered) else {
+                preconditionFailure("the remove result renders for pixel assertions")
+            }
             return Float(planes.value(1, x, y))
         }
         let filled = luma(settings, 240, 180), around = luma(settings, 180, 180), beside = luma(settings, 300, 180)

@@ -1114,7 +1114,6 @@
 "隐藏两侧面板" = "Hide Side Panels";
 " · 队列 %lld" = " · %lld queued";
 "%@ 张照片" = "%@ photos";
-"取消导出" = "Cancel Export";
 "导入 %lld%%" = "Importing %lld%%";
 "导出 %lld/%lld" = "Exporting %lld/%lld";
 "已暂停" = "Paused";
@@ -1701,8 +1700,6 @@
 "页码印在下边距里；满版时没有边距可印" = "Page numbers go in the bottom margin; full bleed leaves none";
 "%@ · %lld 页" = "%@ · %lld pages";
 "封面，共 %lld 页" = "Cover, %lld pages in all";
-"正在存储画册…" = "Saving book…";
-"取消存储" = "Cancel Saving";
 "画册已存储：%@（%lld 页）" = "Book saved: %@ (%lld pages)";
 "画册未能存储" = "The book couldn't be saved";
 
@@ -1721,7 +1718,6 @@
 "短边 %@ 像素" = "%@ px short edge";
 "照片按修图后的样子以 sRGB JPEG 输出，不含元数据。" = "Photos are saved as developed, as sRGB JPEGs without metadata.";
 "选择存放网页画廊的位置，画廊会存进其中一个新文件夹" = "Choose where the web gallery goes; it is saved in a new folder there";
-"正在导出网页画廊…" = "Exporting web gallery…";
 "网页画廊已导出：%@" = "Web gallery exported: %@";
 "网页画廊未能导出" = "The web gallery couldn't be exported";
 
@@ -1753,7 +1749,6 @@
 "结束放映 (Esc)" = "End Slideshow (Esc)";
 "没有可放映的照片" = "No photos to show";
 "这些照片没有可用的本地原件" = "These photos have no local originals";
-"正在导出幻灯片视频…" = "Exporting slideshow video…";
 "幻灯片视频已导出：%@" = "Slideshow video exported: %@";
 "幻灯片视频未能导出" = "The slideshow video couldn't be exported";
 

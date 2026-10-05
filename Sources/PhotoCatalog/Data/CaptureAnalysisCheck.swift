@@ -6,7 +6,8 @@ enum CaptureAnalysisCheck {
         let assets = checkAssets()
         let fixtures = Array(assets.prefix(5))
         let filter = Filters(date: "custom", dateStart: day.start, dateEnd: day.start)
-        let matching = Set(fixtures.filter { filter.matchesCaptureDate($0.date) }.map(\.id))
+        let interval = filter.captureDateInterval()!
+        let matching = Set(fixtures.filter { CaptureDates.contains($0.date, in: interval) }.map(\.id))
         assert(matching == ["start", "end"], "date filter includes the entire final day, not next midnight")
         assert(CaptureDates.interval(for: "2023-02-29") == nil
                && CaptureDates.interval(for: "2024-13") == nil
@@ -19,8 +20,8 @@ enum CaptureAnalysisCheck {
                && CaptureDates.presetInterval("last30Days", now: day.end)?.start == CaptureDates.interval(for: "2024-02-01")?.start,
                "relative date windows include today and cross leap-month boundaries")
         let invalid = Filters(date: "custom", dateStart: day.end, dateEnd: day.start)
-        assert(!invalid.matchesCaptureDate(day.start), "reversed custom ranges match no photos")
-        assert(!Filters(date: "custom").matchesCaptureDate(day.start), "incomplete custom ranges fail closed")
+        assert(invalid.captureDateInterval() == nil, "reversed custom ranges have no valid interval")
+        assert(Filters(date: "custom").captureDateInterval() == nil, "incomplete custom ranges fail closed")
         let rule = SmartRule(conditions: filter.smartConditions(search: ""))
         assert(Set(SmartMatcher.match(fixtures, rule).map(\.id)) == matching,
                "saved date ranges match the live filter")

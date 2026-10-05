@@ -172,11 +172,6 @@ enum Upright {
                 (angles.max() ?? 0) - (angles.min() ?? 0), (crossings.max() ?? 0) - (crossings.min() ?? 0))
     }
 
-    /// Where lines meet (see `consensus`); nil when parallel.
-    static func vanishingPoint(_ lines: [Line], along: Double, across: Double) -> CGPoint? {
-        consensus(lines, along: along)?.point
-    }
-
     // ---- lines: straight segments, found as runs of pixels whose edges line up ----
     /// A straight edge: its center, unit direction and length, in pixels.
     struct Segment: Equatable {

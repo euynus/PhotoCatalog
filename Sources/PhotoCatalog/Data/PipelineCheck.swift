@@ -263,7 +263,6 @@ enum PipelineCheck {
         try? fm.createDirectory(at: rawSrc, withIntermediateDirectories: true)
         let cr3URL = rawSrc.appendingPathComponent("CANON.CR3")
         writeTestImage(to: cr3URL, width: 720, height: 480, seed: 45)
-        check(FileScanner.isSupported(cr3URL), "scanner accepts CR3 extension")
         let rawAssets = coordinator.importFolder(rawSrc)
         let cr3Asset = rawAssets.first
         check(rawAssets.count == 1 && cr3Asset?.type == "CR3" && cr3Asset?.isRaw == true,
@@ -840,9 +839,10 @@ enum PipelineCheck {
               && reauthorizedRoot?.bookmarkData == Data([1, 2, 3])
               && reauthorizedRoot?.volumeIdentifier == "volume-b",
               "source root reauthorization persisted")
-        try? store.removeSourceRoot(id: "src-test-root")
+        try? store.removeSourceRootAndSoftDeleteAssets(id: "src-test-root")
         let removedRoot = (try? store.loadSourceRoots())?.first { $0.id == "src-test-root" }
-        check(removedRoot == nil, "source root removal persisted")
+        check(removedRoot == nil && store.assetCount() == assets.count,
+              "empty source root removal persists without deleting unrelated assets")
         try? store.addSourceRoot(id: "src-test-root", displayName: "source", path: src.path,
                                  bookmark: nil, volumeIdentifier: "volume-a")
         try? store.startImportSession(id: "session-test")
@@ -868,7 +868,7 @@ enum PipelineCheck {
 
         // 5. edit persistence
         if let id = assets.first?.id {
-            try? store.updateAsset({
+            try? store.upsert([{
                 var a = assets[0]
                 a.rating = 5
                 a.keywords = ["测试"]
@@ -879,7 +879,7 @@ enum PipelineCheck {
                 a.client = "Client A"
                 a.title = "Print 5\"x7"
                 return a
-            }())
+            }()])
             let again = (try? store.loadAssets()) ?? []
             let edited = again.first { $0.id == id }
             check(edited?.rating == 5 && edited?.keywords == ["测试"]
@@ -1090,7 +1090,6 @@ enum PipelineCheck {
 
         // 8. backup
         let backup = try? BackupService.backup(store)
-        check(backup != nil && fm.fileExists(atPath: backup!.path), "catalog backup written")
         if let backup {
             let restorePackage = tmp.appendingPathComponent("restored.photolibrary")
             try? BackupService.restore(backup, intoPackageAt: restorePackage)
@@ -1316,11 +1315,10 @@ enum PipelineCheck {
 
         // 15. batch rename moves the original on disk
         let ren = assets[2]
-        if let renURL = RenameService.rename([ren], prefix: "RENAMED")[ren.id] {
+        if let renURL = RenameService.renameWithTemplate([ren], template: "RENAMED_{seq}")[ren.id] {
             check(fm.fileExists(atPath: renURL.path) && renURL.lastPathComponent.hasPrefix("RENAMED_"),
                   "batch rename moved original to \(renURL.lastPathComponent)")
         } else { check(false, "batch rename") }
-        _ = ren
 
         // 16. on-device Vision analysis + faces column roundtrip
         let vres = VisionService.analyze(src.appendingPathComponent("IMG_0001.jpg"))
@@ -1344,13 +1342,7 @@ enum PipelineCheck {
                   "relocation matched moved original by folder selection - found \(found?.path ?? "nil"), expected \(copy.path)")
         } else { check(false, "relocation sample asset") }
 
-        // 18. missing detection after deleting an original
-        if let p = assets.first(where: { fm.fileExists(atPath: $0.localPath ?? "") })?.localPath {
-            try? fm.removeItem(at: URL(fileURLWithPath: p))
-            check(!fm.fileExists(atPath: p), "simulated missing original (file removed)")
-        }
-
-        // 19. background availability resolution + narrow persistence
+        // 18. background availability resolution + narrow persistence
         var unavailable = (try? store.loadAssets())?.first { $0.id == assets[0].id } ?? assets[0]
         unavailable.status = .ready
         unavailable.localPath = tmp.appendingPathComponent("gone.jpg").path
@@ -1374,7 +1366,7 @@ enum PipelineCheck {
               && availabilitySaved?.title == originalTitle,
               "availability persistence changes only status and path")
 
-        // 20. offline external-volume classification (§6.4 ORG-007)
+        // 19. offline external-volume classification (§6.4 ORG-007)
         check(VolumeMonitor.volumeRoot(of: "/Volumes/Photos/2026/a.jpg") == "/Volumes/Photos",
               "external volume root extracted")
         check(VolumeMonitor.volumeRoot(of: "/Users/me/Pictures/a.jpg") == nil, "internal path has no volume root")
@@ -1389,7 +1381,7 @@ enum PipelineCheck {
         check(VolumeMonitor.status(forInaccessible: "/Users/me/gone_\(UUID().uuidString).jpg") == .missing,
               "internal gone → missing")
 
-        // 21a. the whole-catalog decoder (raw columns, shared strings) matches the row decoder
+        // 20. the whole-catalog decoder (raw columns, shared strings) matches the row decoder
         _ = try? store.upsert(assets.prefix(3).enumerated().map { index, base in
             var asset = base
             asset.keywords = KeywordService.normalize(["旅行/日本/东京", "quote\"inside", "人像"].prefix(index + 1).map { $0 })

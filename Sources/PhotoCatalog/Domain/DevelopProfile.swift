@@ -62,8 +62,6 @@ enum DevelopProfile: String, CaseIterable, Identifiable, Sendable {
         var curve: [CurvePoint] = []
         var mixer = ColorMixer()
         var saturation: Double = 0
-
-        var isIdentity: Bool { curve.isEmpty && mixer.isNeutral && saturation == 0 }
     }
 
     var look: Look {
