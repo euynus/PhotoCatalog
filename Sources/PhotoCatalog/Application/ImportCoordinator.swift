@@ -88,17 +88,24 @@ final class ImportCoordinator: @unchecked Sendable {
                        preparer: preparer, progress: progress)
     }
 
+    /// A folder's files with each one's path aliases: walked and resolved once for both
+    /// incremental scans of a rescan rather than once in each.
+    static func scanWithAliases(_ folder: URL) -> [(url: URL, aliases: Set<String>)] {
+        FileScanner.scan(folder).map { ($0, PathIdentity.aliases(for: $0)) }
+    }
+
     /// Incremental: only files not already imported by path (for FSEvents rescans, §12.8).
     func scanNew(in folder: URL, knownPaths: Set<String>, mode: ImportMode = .referenced,
                  autoTag: Bool = false, readSidecar: Bool = true, previewMaxPixel: Int = 2048,
-                 sourceRootId: String? = nil, folderName: String? = nil) -> [Asset] {
+                 sourceRootId: String? = nil, folderName: String? = nil,
+                 scanned: [(url: URL, aliases: Set<String>)]? = nil) -> [Asset] {
         var knownAliases = knownPaths
         for path in knownPaths {
             knownAliases.formUnion(PathIdentity.aliases(forPath: path))
         }
-        let files = FileScanner.scan(folder).filter {
-            PathIdentity.aliases(for: $0).isDisjoint(with: knownAliases)
-        }
+        let files = (scanned ?? Self.scanWithAliases(folder))
+            .filter { $0.aliases.isDisjoint(with: knownAliases) }
+            .map(\.url)
         return process(files, folder: folder, mode: mode, autoTag: autoTag, readSidecar: readSidecar,
                        previewMaxPixel: previewMaxPixel, control: nil, sourceRootId: sourceRootId,
                        folderName: folderName, progress: nil)
@@ -107,10 +114,12 @@ final class ImportCoordinator: @unchecked Sendable {
     /// Incremental: reprocess known originals whose quick hash changed so metadata and caches stay fresh.
     func scanChanged(in folder: URL, knownAssetsByPath: [String: Asset], mode: ImportMode = .referenced,
                      autoTag: Bool = false, readSidecar: Bool = true, previewMaxPixel: Int = 2048,
-                     sourceRootId: String? = nil, folderName: String? = nil) -> [Asset] {
-        let files = FileScanner.scan(folder).filter { url in
-            let known = PathIdentity.aliases(for: url).lazy.compactMap { knownAssetsByPath[$0] }.first
+                     sourceRootId: String? = nil, folderName: String? = nil,
+                     scanned: [(url: URL, aliases: Set<String>)]? = nil) -> [Asset] {
+        let files = (scanned ?? Self.scanWithAliases(folder)).filter { file in
+            let known = file.aliases.lazy.compactMap { knownAssetsByPath[$0] }.first
             guard let known else { return false }
+            let url = file.url
             guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
                   let size = attrs[.size] as? Int64 else { return true }
             let knownSize = Int64((known.fileMB * 1024 * 1024).rounded())
@@ -121,7 +130,7 @@ final class ImportCoordinator: @unchecked Sendable {
             } ?? (modifiedAt != nil)
             let quickHashChanged = HashService.quickHash(url, fileSize: size) != known.quickHash
             return sizeChanged || modifiedChanged || quickHashChanged
-        }
+        }.map(\.url)
         let refreshed = process(files, folder: folder, mode: mode, autoTag: autoTag, readSidecar: readSidecar,
                                 previewMaxPixel: previewMaxPixel, control: nil, sourceRootId: sourceRootId,
                                 folderName: folderName, progress: nil)
@@ -327,11 +336,12 @@ final class ImportCoordinator: @unchecked Sendable {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var dest = dir.appendingPathComponent(url.lastPathComponent)
         var i = 1
+        lazy var sourceHash = HashService.contentHash(url)   // read once, and only on a name clash
         while FileManager.default.fileExists(atPath: dest.path) {
             // An identical original is already here — e.g. an import resumed after a crash
             // re-scans files already copied. Reuse it (its asset id then matches the existing
             // one and dedups) instead of writing a duplicate "name (1).ext" + duplicate asset.
-            if let existing = HashService.contentHash(dest), existing == HashService.contentHash(url) {
+            if let existing = HashService.contentHash(dest), existing == sourceHash {
                 return dest
             }
             let base = url.deletingPathExtension().lastPathComponent

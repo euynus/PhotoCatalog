@@ -10,10 +10,6 @@ struct PlacesMapView: View {
     /// Camera height in meters — drives the clustering grid size.
     @State private var cameraDistance: Double = 10_000_000
 
-    private var located: [Asset] {
-        app.list.filter(\.hasGPS)
-    }
-
     private struct Cluster: Identifiable {
         let id: String
         let representative: Asset
@@ -28,31 +24,39 @@ struct PlacesMapView: View {
         max(0.0005, (cameraDistance / 111_000) / 12)
     }
 
-    private var clusters: [Cluster] {
+    /// A grid cell of the clustering, as whole steps of latitude and longitude.
+    private struct Cell: Hashable {
+        let lat: Int
+        let lng: Int
+    }
+
+    private func clusters(of located: [Asset]) -> [Cluster] {
         let step = gridStep
-        var buckets: [String: (rep: Asset, count: Int, latSum: Double, lngSum: Double)] = [:]
-        var order: [String] = []
-        for a in located {
-            let key = "\(Int((a.gps.0 / step).rounded()))|\(Int((a.gps.1 / step).rounded()))"
-            if var b = buckets[key] {
+        var buckets: [Cell: (rep: Int, count: Int, latSum: Double, lngSum: Double)] = [:]
+        var order: [Cell] = []
+        for (offset, a) in located.enumerated() {
+            let cell = Cell(lat: Int((a.gps.0 / step).rounded()), lng: Int((a.gps.1 / step).rounded()))
+            if var b = buckets[cell] {
                 b.count += 1
                 b.latSum += a.gps.0
                 b.lngSum += a.gps.1
-                buckets[key] = b
+                buckets[cell] = b
             } else {
-                buckets[key] = (a, 1, a.gps.0, a.gps.1)
-                order.append(key)
+                buckets[cell] = (offset, 1, a.gps.0, a.gps.1)
+                order.append(cell)
             }
         }
-        return order.compactMap { key in
-            guard let b = buckets[key] else { return nil }
-            return Cluster(id: key, representative: b.rep, count: b.count,
+        return order.compactMap { cell in
+            guard let b = buckets[cell] else { return nil }
+            return Cluster(id: "\(cell.lat)|\(cell.lng)", representative: located[b.rep], count: b.count,
                            coordinate: CLLocationCoordinate2D(latitude: b.latSum / Double(b.count),
                                                               longitude: b.lngSum / Double(b.count)))
         }
     }
 
     var body: some View {
+        // once a body: it runs again with every move of the map's camera
+        let located = app.list.filter(\.hasGPS)
         Group {
             if located.isEmpty {
                 ContentUnavailableView {
@@ -63,7 +67,7 @@ struct PlacesMapView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Map(position: $position) {
-                    ForEach(clusters) { c in
+                    ForEach(clusters(of: located)) { c in
                         Annotation("", coordinate: c.coordinate) {
                             Button {
                                 if c.count == 1 {
@@ -85,7 +89,7 @@ struct PlacesMapView: View {
                 .onMapCameraChange { context in
                     cameraDistance = context.camera.distance
                 }
-                .safeAreaInset(edge: .bottom, spacing: 0) { countBadge }
+                .safeAreaInset(edge: .bottom, spacing: 0) { countBadge(located.count) }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -114,10 +118,10 @@ struct PlacesMapView: View {
             .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
     }
 
-    private var countBadge: some View {
+    private func countBadge(_ count: Int) -> some View {
         HStack(spacing: 6) {
             Icon("location", size: 13).foregroundStyle(Theme.accent)
-            Text("\(located.count) 张照片有位置信息").font(.system(size: 13)).foregroundStyle(Theme.text)
+            Text("\(count) 张照片有位置信息").font(.system(size: 13)).foregroundStyle(Theme.text)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14).padding(.vertical, 8)

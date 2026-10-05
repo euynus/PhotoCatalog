@@ -88,34 +88,39 @@ private struct AnalysisBanner: View {
                 }
                 Spacer()
                 Button("停止") { app.cancelFaceAnalysis() }
-            } else if app.faceUnscannedCount > 0 {
-                VStack(alignment: .leading, spacing: 3) {
-                    if app.faceOutdatedCount > 0 {
-                        let others = app.faceUnscannedCount - app.faceOutdatedCount
-                        Group {
-                            if others > 0 {
-                                Text("人物识别已改进：\(app.faceOutdatedCount.formatted()) 张照片需要重新分析，另有 \(others.formatted()) 张尚未分析")
-                            } else {
-                                Text("人物识别已改进：\(app.faceOutdatedCount.formatted()) 张照片需要重新分析")
-                            }
-                        }
-                        .font(.system(size: 13, weight: .semibold))
-                        Text("重新分析后分组会准确得多，已命名的人物会保留。照片不会上传，原件不会改动。")
-                            .font(.system(size: 12)).foregroundStyle(Theme.text3)
-                    } else {
-                        Text(app.faceScannedCount == 0 ? "找出照片中的人物" : "还有 \(app.faceUnscannedCount.formatted()) 张照片未分析")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("在本机识别人脸并按人分组，照片不会上传，原件不会改动。")
-                            .font(.system(size: 12)).foregroundStyle(Theme.text3)
-                    }
-                }
-                Spacer()
-                Button("分析 \(app.faceUnscannedCount.formatted()) 张照片") { app.startFaceAnalysis() }
-                    .buttonStyle(.borderedProminent)
             } else {
-                Text("已分析 \(app.faceScannedCount.formatted()) 张照片 · 分组按相貌相似度给出，命名前请检查；确认后这个人的照片会带上“人物/名字”关键词。")
-                    .font(.system(size: 12)).foregroundStyle(Theme.text3)
-                Spacer()
+                // each counts the whole catalog: read once, and only while no analysis runs
+                let unscanned = app.faceUnscannedCount
+                if unscanned > 0 {
+                    let outdated = app.faceOutdatedCount
+                    VStack(alignment: .leading, spacing: 3) {
+                        if outdated > 0 {
+                            let others = unscanned - outdated
+                            Group {
+                                if others > 0 {
+                                    Text("人物识别已改进：\(outdated.formatted()) 张照片需要重新分析，另有 \(others.formatted()) 张尚未分析")
+                                } else {
+                                    Text("人物识别已改进：\(outdated.formatted()) 张照片需要重新分析")
+                                }
+                            }
+                            .font(.system(size: 13, weight: .semibold))
+                            Text("重新分析后分组会准确得多，已命名的人物会保留。照片不会上传，原件不会改动。")
+                                .font(.system(size: 12)).foregroundStyle(Theme.text3)
+                        } else {
+                            Text(app.faceScannedCount == 0 ? "找出照片中的人物" : "还有 \(unscanned.formatted()) 张照片未分析")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("在本机识别人脸并按人分组，照片不会上传，原件不会改动。")
+                                .font(.system(size: 12)).foregroundStyle(Theme.text3)
+                        }
+                    }
+                    Spacer()
+                    Button("分析 \(unscanned.formatted()) 张照片") { app.startFaceAnalysis() }
+                        .buttonStyle(.borderedProminent)
+                } else {
+                    Text("已分析 \(app.faceScannedCount.formatted()) 张照片 · 分组按相貌相似度给出，命名前请检查；确认后这个人的照片会带上“人物/名字”关键词。")
+                        .font(.system(size: 12)).foregroundStyle(Theme.text3)
+                    Spacer()
+                }
             }
         }
         .padding(14)

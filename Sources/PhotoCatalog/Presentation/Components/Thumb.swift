@@ -295,7 +295,7 @@ struct Thumb: View {
     /// unedited, so the cell changes from one photo to the next without a blank frame between.
     private func shownImage(_ app: AppState) -> NSImage? {
         if loader.owner == asset.id { return loader.image }
-        guard urlString == nil, app.developFingerprint(for: asset.id) == nil else { return nil }
+        guard urlString == nil, app.developSettings[asset.id] == nil else { return nil }
         return ThumbLoader.cachedImage(forKey: ThumbLoader.key(source, maxPixel: decodeMaxPixel,
                                                                cacheGeneration: app.thumbnailCacheGeneration))
     }

@@ -25,7 +25,10 @@ enum FileScanner {
     ]
 
     static func isSupported(_ url: URL) -> Bool {
-        let ext = url.pathExtension.lowercased()
+        isSupported(extension: url.pathExtension.lowercased())
+    }
+
+    private static func isSupported(extension ext: String) -> Bool {
         if rawExtensions.contains(ext) || imageExtensions.contains(ext) || Asset.videoTypes.contains(ext.uppercased()) {
             return true
         }
@@ -43,6 +46,8 @@ enum FileScanner {
             options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return [] }
 
         var results: [URL] = []
+        // by extension, once a scan: a library's sidecars (.xmp, .thm…) each cost a UTType lookup
+        var supportedByExtension: [String: Bool] = [:]
         for case let url as URL in en {
             let name = url.lastPathComponent
             let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
@@ -52,7 +57,10 @@ enum FileScanner {
                 }
                 continue
             }
-            if isSupported(url) {
+            let ext = url.pathExtension.lowercased()
+            let supported = supportedByExtension[ext] ?? isSupported(extension: ext)
+            supportedByExtension[ext] = supported
+            if supported {
                 results.append(url)
                 onProgress?(results.count)
             }

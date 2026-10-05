@@ -60,7 +60,7 @@ struct GridView: View {
                                        stackCount: stack?.count,
                                        stackCollapsed: stack?.collapsed == true,
                                        pairLabel: Self.pairLabel(pair),
-                                       isEdited: app.developFingerprint(for: asset.id) != nil,
+                                       isEdited: app.developSettings[asset.id] != nil,
                                        inQuickCollection: app.quickCollection.contains(asset.id),
                                        xmpChanged: app.externallyChangedXMPIds.contains(asset.id),
                                        onToggleStack: {}),

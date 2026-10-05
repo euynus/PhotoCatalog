@@ -262,6 +262,14 @@ final class AppState {
         didMutateAssets()
     }
 
+    /// New photos added in one mutation, in place: `assets + new` copied the catalog for each
+    /// import batch, tethered shot or virtual copy.
+    private func appendAssets(_ new: [Asset]) {
+        nextAssetEditScope = .any
+        assets.append(contentsOf: new)
+        didMutateAssets()
+    }
+
     /// Writes edited copies back at their offsets in one mutation (one didSet, no array copy).
     /// Review edits also patch the library counts and — when the current collection,
     /// filters and sort ignore review fields — the cached list, instead of rescanning
@@ -2886,11 +2894,13 @@ final class AppState {
     }
 
     private func setSourceFolder(id: String, name: String, path: String, status: String) {
-        sourceRootPathsById[id] = path
+        // an import sets this again with each batch: the same values mustn't rebuild the folder tree
+        if sourceRootPathsById[id] != path { sourceRootPathsById[id] = path }
+        let folder = Folder(id: id, name: name, status: status)
         if let index = folders.firstIndex(where: { $0.id == id }) {
-            folders[index] = Folder(id: id, name: name, status: status)
+            if folders[index] != folder { folders[index] = folder }
         } else {
-            folders.append(Folder(id: id, name: name, status: status))
+            folders.append(folder)
         }
     }
 
@@ -3483,7 +3493,7 @@ final class AppState {
             push("联机拍摄的照片未能保存到目录库", "warning")
             return
         }
-        replaceAssetsForMutation(assets + fresh)
+        appendAssets(fresh)
         recordSidecarBaselines(fresh)
         applyImportDevelopSettings(to: fresh, preset: tetherPreset)
         recomputeDuplicates()
@@ -3629,14 +3639,19 @@ final class AppState {
                     albums.append(Album(id: albumId, name: options.albumName, assetIds: fresh.map(\.id)))
                 }
             }
-            // a returning photo replaces its removed copy, still here when it was removed this session
-            let kept = committed.revivedIds.isEmpty ? assets : assets.filter { !committed.revivedIds.contains($0.id) }
-            replaceAssetsForMutation(kept + fresh)
+            if committed.revivedIds.isEmpty {
+                appendAssets(fresh)
+            } else {
+                // a returning photo replaces its removed copy, still here when it was removed this session
+                replaceAssetsForMutation(assets.filter { !committed.revivedIds.contains($0.id) } + fresh)
+            }
             recordSidecarBaselines(fresh)
             clearDevelopRecordCaches()
         }
         if let source = committed.source {
-            sourceManagementModesById[source.id] = source.managementMode
+            if sourceManagementModesById[source.id] != source.managementMode {
+                sourceManagementModesById[source.id] = source.managementMode
+            }
             setSourceFolder(id: source.id, name: source.displayName, path: source.pathHint, status: source.status)
             if live.saved == 0, run.saved > 0, sheet == "import" {
                 select(Selection(type: .folder, id: source.id, name: source.displayName))
@@ -4241,7 +4256,7 @@ final class AppState {
         incrementalRescanGeneration &+= 1
         let generation = incrementalRescanGeneration
         let roots = prioritizedWatchedRoots(watchedRoots)
-        let liveAssets = assets.filter { !$0.deleted }
+        let snapshot = assets   // shared, not copied: filtered off the main thread
         let vision = visionEnabled
         let previewSize = previewMaxPixel
         let readXMP = readXMPSidecar
@@ -4253,12 +4268,12 @@ final class AppState {
                 sourceInfoByPath[alias] = (id, name)
             }
         }
-        Task { [weak self, coordinator, store, roots, liveAssets, vision, previewSize, readXMP, sourceInfoByPath] in
+        Task { [weak self, coordinator, store, roots, snapshot, vision, previewSize, readXMP, sourceInfoByPath] in
             let delta = await Task.detached(priority: .utility) {
                 // build the path index off the main thread (resolvingSymlinksInPath stats each asset)
                 var knownAssetsByPath: [String: Asset] = [:]
                 // a path belongs to the photo that owns the file, never to its virtual copies
-                for asset in liveAssets where !asset.isVirtualCopy {
+                for asset in snapshot where !asset.deleted && !asset.isVirtualCopy {
                     if let path = asset.localPath {
                         for alias in PathIdentity.aliases(forPath: path) {
                             knownAssetsByPath[alias] = asset
@@ -4270,12 +4285,13 @@ final class AppState {
                 var changed: [Asset] = []
                 for root in roots {
                     let sourceInfo = PathIdentity.aliases(for: root).lazy.compactMap { sourceInfoByPath[$0] }.first
+                    let scanned = ImportCoordinator.scanWithAliases(root)
                     fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
                                                                  mode: .referenced, autoTag: vision,
                                                                  readSidecar: readXMP,
                                                                  previewMaxPixel: previewSize,
                                                                  sourceRootId: sourceInfo?.id,
-                                                                 folderName: sourceInfo?.name))
+                                                                 folderName: sourceInfo?.name, scanned: scanned))
                     changed.append(contentsOf: coordinator.scanChanged(in: root,
                                                                        knownAssetsByPath: knownAssetsByPath,
                                                                        mode: .referenced,
@@ -4283,7 +4299,8 @@ final class AppState {
                                                                        readSidecar: readXMP,
                                                                        previewMaxPixel: previewSize,
                                                                        sourceRootId: sourceInfo?.id,
-                                                                       folderName: sourceInfo?.name))
+                                                                       folderName: sourceInfo?.name,
+                                                                       scanned: scanned))
                 }
                 return (fresh: fresh, changed: changed)
             }.value
@@ -4296,8 +4313,7 @@ final class AppState {
                     self.incrementalRescan()
                 }
             }
-            var indexById = [String: Int](minimumCapacity: self.assets.count)
-            for (i, a) in self.assets.enumerated() { indexById[a.id] = i }
+            let indexById = self.assetIndex
             let trulyNew = delta.fresh.filter { indexById[$0.id] == nil }
             let changedAssets = delta.changed.filter { indexById[$0.id] != nil }
             if !trulyNew.isEmpty || !changedAssets.isEmpty {
@@ -5377,7 +5393,7 @@ final class AppState {
             return
         }
         for (id, edit) in settings { developSettings[id] = edit }
-        replaceAssetsForMutation(assets + copies)
+        appendAssets(copies)
         let copyIds = copies.map(\.id)
         if selection.type == .album, let index = albums.firstIndex(where: { $0.id == selection.id }) {
             var album = albums[index]
@@ -8009,26 +8025,35 @@ final class AppState {
     private var sidebarCountIndex: SidebarCountIndex {
         _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = sidebarCountIndexCache { return cache }
-        let live = presentedAssets()
-        let liveIds = Set(live.map(\.id))
+        // Rebuilt after every rating while an album is in the sidebar: one pass over the photos
+        // as shown, smart albums matched in it, without copying the catalog or its ids out.
+        let pairing = assetPairing
+        let shown: (Asset) -> Bool = { !$0.deleted && !pairing.isHiddenCompanion($0.id) }
+        let rules = smartAlbums.map { SmartMatcher.Prepared($0.rule) }
+        var smartCounts = Array(repeating: 0, count: rules.count)
         var index = SidebarCountIndex()
-        for asset in live {
+        index.keywordCounts = keywordCounts.counts   // kept for the same photos, patched on edits
+        for asset in assets where shown(asset) {
             index.folderCounts[asset.folderId, default: 0] += 1
-            for keyword in asset.keywords {
-                index.keywordCounts[keyword, default: 0] += 1
-            }
             if !asset.project.isEmpty {
                 index.projectCounts[asset.project, default: 0] += 1
             }
             if !asset.client.isEmpty {
                 index.clientCounts[asset.client, default: 0] += 1
             }
+            for (offset, rule) in rules.enumerated() where rule.matches(asset) {
+                smartCounts[offset] += 1
+            }
         }
-        for album in smartAlbums {
-            index.smartAlbumCounts[album.id] = SmartMatcher.count(live, album.rule)
+        for (album, count) in zip(smartAlbums, smartCounts) {
+            index.smartAlbumCounts[album.id] = count
         }
+        let positions = assetIndex
         for album in albums {
-            index.albumCounts[album.id] = album.assetIds.filter { liveIds.contains($0) }.count
+            index.albumCounts[album.id] = album.assetIds.reduce(0) { count, id in
+                guard let position = positions[id], shown(assets[position]) else { return count }
+                return count + 1
+            }
         }
         sidebarCountIndexCache = index
         return index
@@ -8131,7 +8156,8 @@ final class AppState {
             belongs = { memberIds.contains($0.id) }
         case .smart:
             guard let sa = smartAlbums.first(where: { $0.id == selection.id }) else { return [] }
-            return SmartMatcher.match(assets.filter(live), sa.rule)
+            let rule = SmartMatcher.Prepared(sa.rule)
+            belongs = rule.matches
         case .keyword:
             belongs = { $0.keywords.contains(selection.id) }
         case .project:
@@ -9466,7 +9492,12 @@ final class AppState {
     /// Photos not yet analysed (a RAW's paired JPEG is covered by the RAW).
     var faceUnscannedCount: Int {
         _ = facesRevision
-        return presentedAssets().filter { !$0.isDemo && !$0.isVirtualCopy && !faceScannedAssetIds.contains($0.id) }.count
+        let pairing = assetPairing
+        let scanned = faceScannedAssetIds
+        return assets.reduce(0) { count, a in
+            !a.deleted && !pairing.isHiddenCompanion(a.id) && !a.isDemo && !a.isVirtualCopy
+                && !scanned.contains(a.id) ? count + 1 : count
+        }
     }
 
     var faceScannedCount: Int {
@@ -9478,7 +9509,12 @@ final class AppState {
     var faceOutdatedCount: Int {
         _ = facesRevision
         guard !faceOutdatedAssetIds.isEmpty else { return 0 }
-        return presentedAssets().filter { !$0.isVirtualCopy && faceOutdatedAssetIds.contains($0.id) }.count
+        let pairing = assetPairing
+        let outdated = faceOutdatedAssetIds
+        return assets.reduce(0) { count, a in
+            !a.deleted && !pairing.isHiddenCompanion(a.id) && !a.isVirtualCopy
+                && outdated.contains(a.id) ? count + 1 : count
+        }
     }
 
     func face(_ id: String) -> FaceRecord? { faces[id] }

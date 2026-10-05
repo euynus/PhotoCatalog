@@ -498,21 +498,25 @@ final class CatalogStore: @unchecked Sendable {
         try db.transaction { try upsertRows(assets) }
     }
 
-    private func upsertRows(_ assets: [Asset], updatingExisting: Bool = true) throws {
-        let cols = Self.columns.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    /// The asset row's insert, plain and as an upsert, each giving back the row's rowid.
+    /// The upsert is a true in-place one. INSERT OR REPLACE would DELETE the conflicting row
+    /// before re-inserting, which — with foreign_keys=ON — fires album_assets' ON DELETE CASCADE
+    /// and silently drops the asset from every manual album on each metadata edit. The
+    /// ON CONFLICT…DO UPDATE form updates the row in place, leaving FK children intact.
+    private static let assetInsertSQL: (insert: String, upsert: String) = {
+        let cols = columns.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         let placeholders = Array(repeating: "?", count: cols.count).joined(separator: ",")
-        // True in-place upsert. INSERT OR REPLACE would DELETE the conflicting row before
-        // re-inserting, which — with foreign_keys=ON — fires album_assets' ON DELETE CASCADE
-        // and silently drops the asset from every manual album on each metadata edit. The
-        // ON CONFLICT…DO UPDATE form updates the row in place, leaving FK children intact.
         let assignments = cols.filter { $0 != "id" }.map { "\($0)=excluded.\($0)" }.joined(separator: ",")
-        let conflict = updatingExisting ? " ON CONFLICT(id) DO UPDATE SET \(assignments)" : ""
-        let sql = "INSERT INTO assets(\(Self.columns)) VALUES(\(placeholders))\(conflict);"
+        let insert = "INSERT INTO assets(\(columns)) VALUES(\(placeholders))"
+        return (insert + " RETURNING rowid AS r;",
+                insert + " ON CONFLICT(id) DO UPDATE SET \(assignments) RETURNING rowid AS r;")
+    }()
+
+    private func upsertRows(_ assets: [Asset], updatingExisting: Bool = true) throws {
+        let sql = updatingExisting ? Self.assetInsertSQL.upsert : Self.assetInsertSQL.insert
         for a in assets {
-            try db.run(sql, Self.params(a))
             // keep the FTS index in sync; its rows share the asset's rowid (schema v20)
-            guard let rowid = try db.queryMap("SELECT rowid AS r FROM assets WHERE id=?;", [.text(a.id)],
-                                              transform: { $0.int("r") }).first else { continue }
+            guard let rowid = try db.queryMap(sql, Self.params(a), transform: { $0.int("r") }).first else { continue }
             try db.run("DELETE FROM asset_search WHERE rowid=?;", [.int(rowid)])
             try db.run("INSERT INTO asset_search(rowid, asset_id, content) VALUES(?,?,?);", [
                 .int(rowid),

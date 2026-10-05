@@ -10,7 +10,7 @@ struct DevelopView: View {
     var body: some View {
         let list = app.list
         VStack(spacing: 0) {
-            if let asset = app.primary, list.contains(where: { $0.id == asset.id }) {
+            if let asset = app.primary, app.listPosition(of: asset.id) != nil {
                 DevelopCanvas(asset: asset)
             } else {
                 ContentUnavailableView("没有可修图的照片", systemImage: "slider.horizontal.3")
