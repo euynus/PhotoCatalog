@@ -227,7 +227,7 @@ enum XMPSidecar {
 
     /// Text made safe for XML: markup escaped, and control characters XML can't hold at all
     /// left out (one would make the sidecar unreadable, to us and to every other app).
-    private static func escape(_ s: String) -> String {
+    static func escape(_ s: String) -> String {
         let allowed = s.unicodeScalars.filter { scalar in
             let v = scalar.value
             return v == 0x9 || v == 0xA || v == 0xD || (v >= 0x20 && v != 0xFFFE && v != 0xFFFF)

@@ -122,7 +122,7 @@ final class ImportCoordinator: @unchecked Sendable {
             let url = file.url
             guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
                   let size = attrs[.size] as? Int64 else { return true }
-            let knownSize = Int64((known.fileMB * 1024 * 1024).rounded())
+            let knownSize = known.fileBytes
             let sizeChanged = knownSize != size
             let modifiedAt = attrs[.modificationDate] as? Date
             let modifiedChanged = known.fileModifiedAt.map { knownDate in
@@ -291,7 +291,7 @@ final class ImportCoordinator: @unchecked Sendable {
             camera: meta.camera, lens: meta.lens, focal: meta.focal, aperture: meta.aperture,
             shutter: meta.shutter, iso: meta.iso, colorSpace: meta.colorSpace,
             hasICCProfile: meta.hasICCProfile,
-            fileMB: Double(meta.fileSize) / (1024 * 1024),
+            fileMB: Asset.megabytes(bytes: meta.fileSize),
             fileModifiedAt: meta.fileModifiedAt, fileCreatedAt: meta.fileCreatedAt,
             rating: 0, flag: .none, colorLabel: nil, keywords: [], title: "", caption: "",
             author: meta.author, copyright: meta.copyright, makerNotes: meta.makerNotes,

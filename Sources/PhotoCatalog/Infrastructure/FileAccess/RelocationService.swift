@@ -60,6 +60,6 @@ enum RelocationService {
     private static func fileMB(_ url: URL) -> Double? {
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
               let size = attrs[.size] as? Int64 else { return nil }
-        return Double(size) / (1024 * 1024)
+        return Asset.megabytes(bytes: size)
     }
 }

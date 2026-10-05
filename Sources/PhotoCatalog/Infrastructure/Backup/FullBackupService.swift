@@ -676,11 +676,9 @@ enum FullBackupService {
     }
 
     private static func fillPath(original: String, index: Int, settings: DevelopSettings) -> String {
-        // Mirrors GenerativeFill.key's pixel dependencies, but replaces its absolute path
-        // and modification time with the backed-up original's stable relative path.
-        let lens = String(format: "%.2f,%.2f,%.2f,%d", settings.distortion, settings.lensVignette,
-                          settings.lensVignetteMidpoint, settings.removeChromaticAberration ? 1 : 0)
-        let text = original + "|" + lens + "|" + settings.spots.prefix(index + 1).map(\.fingerprintText).joined(separator: ";")
+        // GenerativeFill.key's dependencies, with the backed-up original's stable relative path
+        // in place of its absolute path and modification time
+        let text = original + "|" + GenerativeFill.pixelDependencies(index: index, settings: settings)
         let key = SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
         return "\(fillDirectory)/\(key).png"
     }

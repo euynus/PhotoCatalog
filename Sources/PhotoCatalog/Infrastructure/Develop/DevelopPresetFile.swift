@@ -176,7 +176,7 @@ enum DevelopPresetFile {
                 elements.append("   <crs:\(key)>\n    <rdf:Seq>\n\(points.joined(separator: "\n"))\n    </rdf:Seq>\n   </crs:\(key)>")
             }
         }
-        let attributeText = attributes.map { "\n    \($0.0)=\"\(escape($0.1))\"" }.joined()
+        let attributeText = attributes.map { "\n    \($0.0)=\"\(XMPSidecar.escape($0.1))\"" }.joined()
         return """
         <x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="PhotoCatalog">
          <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
@@ -199,17 +199,7 @@ enum DevelopPresetFile {
     }
 
     private static func alt(_ name: String, _ value: String) -> String {
-        "   <\(name)>\n    <rdf:Alt>\n     <rdf:li xml:lang=\"x-default\">\(escape(value))</rdf:li>\n    </rdf:Alt>\n   </\(name)>"
-    }
-
-    private static func escape(_ text: String) -> String {
-        let allowed = text.unicodeScalars.filter { scalar in
-            let v = scalar.value
-            return v == 0x9 || v == 0xA || v == 0xD || (v >= 0x20 && v != 0xFFFE && v != 0xFFFF)
-        }
-        return String(String.UnicodeScalarView(allowed))
-            .replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
+        "   <\(name)>\n    <rdf:Alt>\n     <rdf:li xml:lang=\"x-default\">\(XMPSidecar.escape(value))</rdf:li>\n    </rdf:Alt>\n   </\(name)>"
     }
 
     // ---- reading ----

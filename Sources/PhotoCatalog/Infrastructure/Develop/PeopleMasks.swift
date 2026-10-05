@@ -60,26 +60,13 @@ enum PeopleMasks {
         cache.countLimit = 2
         return cache
     }()
-    private final class ResultBox {
-        let result: SemanticMasks.Result?
-        init(_ result: SemanticMasks.Result?) { self.result = result }
-    }
-    private static let results: NSCache<NSString, ResultBox> = {
-        let cache = NSCache<NSString, ResultBox>()
-        cache.countLimit = 24
-        return cache
-    }()
+    private static let results = SemanticMasks.ResultCache()
     /// One analysis at a time: a 2048 px decode and three Vision requests.
     private static let lock = NSLock()
 
-    private static func fileKey(_ url: URL) -> String {
-        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-        return "\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)"
-    }
-
     /// The photo's people, looked at once per version of the file; nil when it can't be read.
     static func analysis(url: URL, isRaw: Bool) -> Analysis? {
-        let key = fileKey(url) as NSString
+        let key = SemanticMasks.fileKey(url) as NSString
         if let box = analyses.object(forKey: key) { return box.analysis }
         return lock.withLock {
             if let box = analyses.object(forKey: key) { return box.analysis }
@@ -92,20 +79,19 @@ enum PeopleMasks {
 
     /// Takes `analysis` as the photo at `url`'s, for checks that can't show Vision a real face.
     static func remember(_ analysis: Analysis, for url: URL) {
-        analyses.setObject(AnalysisBox(analysis), forKey: fileKey(url) as NSString)
+        analyses.setObject(AnalysisBox(analysis), forKey: SemanticMasks.fileKey(url) as NSString)
     }
 
     /// The mask for `part` of `person` (an index into the faces, left to right; nil for
     /// everyone), none when the photo doesn't show it, or unreadable.
     static func lookup(_ part: PersonPart, person: Int?, url: URL, isRaw: Bool) -> SemanticMasks.Lookup {
-        let key = "\(part.rawValue)|\(person ?? -1)|\(fileKey(url))" as NSString
-        if let box = results.object(forKey: key) { return box.result.map(SemanticMasks.Lookup.found) ?? .notFound }
+        let key = "\(part.rawValue)|\(person ?? -1)|\(SemanticMasks.fileKey(url))"
+        if let hit = results.lookup(key) { return hit }
         guard let analysis = analysis(url: url, isRaw: isRaw) else { return .unreadable }
         let result = weights(part, person: person, in: analysis).flatMap {
             SemanticMasks.result($0, width: analysis.width, height: analysis.height, minimumCoverage: 0.00001)
         }
-        results.setObject(ResultBox(result), forKey: key)
-        return result.map(SemanticMasks.Lookup.found) ?? .notFound
+        return results.store(result, for: key)
     }
 
     // ---- looking at the photo ----

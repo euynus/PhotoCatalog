@@ -28,20 +28,24 @@ struct PrintItem: Sendable {
 }
 
 extension PrintItem {
-    /// The photo developed, at most `longEdge` on its long side (never enlarged), in
-    /// `colorSpace`: decoded no larger than that needs, allowing for the crop.
-    func rendered(longEdge: Int, colorSpace: CGColorSpace) -> CGImage? {
+    /// The photo developed for an output `longEdge` pixels on its long side, from a decode no
+    /// larger than that needs, allowing for the crop; nil when it can't be read.
+    func developed(forLongEdge longEdge: Double) -> CIImage? {
         var cropShare = 1.0
         if develop.hasGeometry {
             let frame = DevelopGeometry.rotatedSize(originalSize, develop.rotation)
             let crop = DevelopGeometry.effectiveCrop(develop, frame: frame)
             cropShare = max(0.05, min(crop.width, crop.height))
         }
-        let decode = Double(longEdge) / cropShare
+        let decode = longEdge / cropShare
         let maxPixel = decode >= Double(max(originalSize.width, originalSize.height)) ? nil : Int(decode.rounded(.up)) + 2
-        guard let source = DevelopRenderer.Source(url: URL(fileURLWithPath: sourcePath), isRaw: isRaw,
-                                                  maxPixel: maxPixel, interactive: false),
-              var image = source.image(develop) else { return nil }
+        return DevelopRenderer.Source(url: URL(fileURLWithPath: sourcePath), isRaw: isRaw,
+                                      maxPixel: maxPixel, interactive: false)?.image(develop)
+    }
+
+    /// The photo developed, at most `longEdge` on its long side (never enlarged), in `colorSpace`.
+    func rendered(longEdge: Int, colorSpace: CGColorSpace) -> CGImage? {
+        guard var image = developed(forLongEdge: Double(longEdge)) else { return nil }
         let extent = image.extent.integral
         let scale = min(1, Double(longEdge) / Double(max(extent.width, extent.height)))
         if scale < 1 {
@@ -138,18 +142,7 @@ final class PrintRenderer: @unchecked Sendable {
         let key = "\(index)|\(Int(pixels.width))x\(Int(pixels.height))"
         if let image = lock.withLock({ rendered[key] }) { return image }
         let item = items[index]
-        // decode no larger than the print needs, allowing for the crop
-        var cropShare = 1.0
-        if item.develop.hasGeometry {
-            let frame = DevelopGeometry.rotatedSize(item.originalSize, item.develop.rotation)
-            let crop = DevelopGeometry.effectiveCrop(item.develop, frame: frame)
-            cropShare = max(0.05, min(crop.width, crop.height))
-        }
-        let longest = Double(max(pixels.width, pixels.height)) / cropShare
-        let decode = longest >= Double(max(item.originalSize.width, item.originalSize.height)) ? nil : Int(longest.rounded(.up)) + 2
-        guard let source = DevelopRenderer.Source(url: URL(fileURLWithPath: item.sourcePath), isRaw: item.isRaw,
-                                                  maxPixel: decode, interactive: false),
-              var image = source.image(item.develop) else { return nil }
+        guard var image = item.developed(forLongEdge: Double(max(pixels.width, pixels.height))) else { return nil }
         let extent = image.extent.integral
         if extent.width > 0, extent.height > 0, extent.size != pixels {
             let scale = pixels.height / extent.height

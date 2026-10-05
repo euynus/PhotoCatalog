@@ -95,9 +95,7 @@ extension DevelopSettings {
             + [DevelopControl.lutAmount, DevelopControl.profileAmount]
     }()
 
-    private static let localAdjustments: [(WritableKeyPath<LocalAdjustment, Double>, ClosedRange<Double>)] = [
-        (\.exposure, -4...4), (\.contrast, -100...100), (\.highlights, -100...100), (\.shadows, -100...100),
-        (\.whites, -100...100), (\.blacks, -100...100), (\.temperature, -100...100), (\.tint, -100...100),
-        (\.texture, -100...100), (\.clarity, -100...100), (\.dehaze, -100...100), (\.saturation, -100...100),
-    ]
+    /// A mask's adjustments with their ranges: exposure in EV, the others -100…100.
+    private static let localAdjustments: [(WritableKeyPath<LocalAdjustment, Double>, ClosedRange<Double>)] =
+        LocalAdjustment.adjustments.map { ($0, $0 == \LocalAdjustment.exposure ? -4...4 : -100...100) }
 }

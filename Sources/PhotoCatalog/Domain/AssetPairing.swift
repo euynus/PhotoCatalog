@@ -18,6 +18,9 @@ struct AssetPairing: Sendable {
 
     func isHiddenCompanion(_ id: String) -> Bool { primaryByCompanion[id] != nil }
 
+    /// Whether the catalog shows `asset`: not removed, and not the JPEG behind its RAW.
+    func shows(_ asset: Asset) -> Bool { !asset.deleted && !isHiddenCompanion(asset.id) }
+
     /// `ids` plus the companions of any primaries among them.
     func withCompanions(_ ids: Set<String>) -> Set<String> {
         guard !isEmpty else { return ids }

@@ -163,18 +163,8 @@ private final class SlideRenderer: @unchecked Sendable {
         let aspect = item.aspect
         let fit = min(size.width / aspect, size.height) * 1.15
         let pixels = CGSize(width: (fit * aspect).rounded(), height: fit.rounded())
-        // decode no larger than that needs, allowing for the crop
-        var cropShare = 1.0
-        if item.develop.hasGeometry {
-            let frame = DevelopGeometry.rotatedSize(item.originalSize, item.develop.rotation)
-            let crop = DevelopGeometry.effectiveCrop(item.develop, frame: frame)
-            cropShare = max(0.05, min(crop.width, crop.height))
-        }
-        let longest = Double(max(pixels.width, pixels.height)) / cropShare
-        let decode = longest >= Double(max(item.originalSize.width, item.originalSize.height)) ? nil : Int(longest.rounded(.up)) + 2
-        guard let source = DevelopRenderer.Source(url: URL(fileURLWithPath: item.sourcePath), isRaw: item.isRaw,
-                                                  maxPixel: decode, interactive: false),
-              let developed = source.image(item.develop), let image = DevelopRenderer.render(developed) else { return nil }
+        guard let developed = item.developed(forLongEdge: Double(max(pixels.width, pixels.height))),
+              let image = DevelopRenderer.render(developed) else { return nil }
         // the photos showing now and next; earlier ones are let go
         rendered = rendered.filter { $0.key >= index - 1 }
         rendered[index] = image

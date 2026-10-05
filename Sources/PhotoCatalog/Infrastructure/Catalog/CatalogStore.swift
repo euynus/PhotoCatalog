@@ -767,7 +767,9 @@ final class CatalogStore: @unchecked Sendable {
             ) { $0.int("total") }.first ?? 0
 
             guard safeLimit > 0, safeOffset < totalCount else { return }
-            assets = try db.queryMap(
+            // decoded as the whole catalog is, so a page's photos are those it later loads
+            let decoder = AssetRowDecoder(columns: Self.columnNames)
+            assets = try db.queryRows(
                 """
                 SELECT \(Self.columns)
                 FROM assets AS a
@@ -776,7 +778,7 @@ final class CatalogStore: @unchecked Sendable {
                 LIMIT ? OFFSET ?;
                 """,
                 sql.params + [.int(safeLimit), .int(safeOffset)],
-                transform: Self.asset(from:)
+                transform: decoder.asset(from:)
             )
         }
         return AssetPage(assets: assets, totalCount: totalCount, offset: safeOffset)
@@ -1058,7 +1060,7 @@ final class CatalogStore: @unchecked Sendable {
         VALUES(?,?,?,?,?,?,?,?);
         """, [.text(id), .text(displayName), .text(path),
               bookmark.map { SQLValue.blob($0) } ?? .null, .text(mode.rawValue),
-              .text("online"), .text(ISO8601DateFormatter().string(from: Date())),
+              .text("online"), .text(Self.iso(Date())),
               volumeIdentifier.map { SQLValue.text($0) } ?? .null])
     }
 
@@ -1743,7 +1745,7 @@ final class CatalogStore: @unchecked Sendable {
         if existing["schemaVersion"] as? Int == Self.latestSchemaVersion { return }
         let manifest: [String: Any] = [
             "libraryVersion": 1, "schemaVersion": Self.latestSchemaVersion,
-            "createdAt": existing["createdAt"] as? String ?? ISO8601DateFormatter().string(from: Date()),
+            "createdAt": existing["createdAt"] as? String ?? Self.iso(Date()),
             "appBuild": "1.0.0", "uuid": existing["uuid"] as? String ?? UUID().uuidString,
         ]
         if let data = try? JSONSerialization.data(withJSONObject: manifest, options: .prettyPrinted) {
@@ -1815,48 +1817,6 @@ final class CatalogStore: @unchecked Sendable {
             a.copyName.map { SQLValue.text($0) } ?? .null,
             a.duration.map { SQLValue.double($0) } ?? .null,
         ]
-    }
-
-    private static func asset(from row: Row) -> Asset? {
-        guard let id = row.text("id") else { return nil }
-        let kws = ((try? JSONSerialization.jsonObject(with: Data((row.text("keywords") ?? "[]").utf8)))
-                   as? [String]) ?? []
-        return Asset(
-            id: id, pid: row.int("pid") ?? 0, ori: row.text("ori") ?? "l",
-            thumb: row.text("thumb") ?? "", preview: row.text("preview") ?? "",
-            filename: row.text("filename") ?? "", type: row.text("type") ?? "",
-            isRaw: row.bool("is_raw"), folderId: row.text("folder_id") ?? "",
-            folderName: row.text("folder_name") ?? "",
-            date: Date(timeIntervalSince1970: row.double("capture_date") ?? 0),
-            width: row.int("width") ?? 0, height: row.int("height") ?? 0,
-            orientation: row.int("orientation") ?? 1,
-            camera: MetadataReader.normalizedCameraName(row.text("camera") ?? ""), lens: row.text("lens") ?? "",
-            focal: row.int("focal") ?? 0, aperture: row.double("aperture") ?? 0,
-            shutter: row.text("shutter") ?? "", iso: row.int("iso") ?? 0,
-            colorSpace: row.text("color_space") ?? "",
-            hasICCProfile: row.bool("has_icc_profile"),
-            fileMB: row.double("file_mb") ?? 0,
-            fileModifiedAt: row.double("file_modified_at").map(Date.init(timeIntervalSince1970:)),
-            fileCreatedAt: row.double("file_created_at").map(Date.init(timeIntervalSince1970:)),
-            rating: row.int("rating") ?? 0,
-            flag: Flag(rawValue: row.text("flag") ?? "none") ?? .none,
-            colorLabel: row.text("color_label").flatMap { ColorLabel(rawValue: $0) },
-            keywords: kws, title: row.text("title") ?? "", caption: row.text("caption") ?? "",
-            author: row.text("author") ?? "", copyright: row.text("copyright") ?? "",
-            makerNotes: row.text("maker_notes") ?? "",
-            project: row.text("project") ?? "", client: row.text("client") ?? "",
-            location: row.text("location") ?? "",
-            gps: (row.double("gps_lat") ?? 0, row.double("gps_lon") ?? 0),
-            gpsAltitude: row.double("gps_altitude"),
-            status: AssetStatus(rawValue: row.text("status") ?? "ready") ?? .ready,
-            importedAt: Date(timeIntervalSince1970: row.double("imported_at") ?? 0),
-            deleted: row.bool("deleted"),
-            localPath: row.text("local_path"),
-            captureDateSource: row.text("capture_date_source") ?? "EXIF · DateTimeOriginal",
-            contentHash: row.text("content_hash"), quickHash: row.text("quick_hash"),
-            isDemo: row.bool("is_demo"), faces: row.int("faces") ?? 0,
-            perceptualHash: row.int("perceptual_hash").map { UInt64(bitPattern: Int64($0)) },
-            masterId: row.text("master_id"), copyName: row.text("copy_name"), duration: row.double("duration"))
     }
 
     private static func importSession(from row: Row) -> ImportSessionRecord? {

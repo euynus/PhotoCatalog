@@ -47,39 +47,28 @@ enum SceneSegmentation {
         cache.countLimit = 4
         return cache
     }()
-    private final class ResultBox { let result: SemanticMasks.Result?; init(_ result: SemanticMasks.Result?) { self.result = result } }
-    private static let results: NSCache<NSString, ResultBox> = {
-        let cache = NSCache<NSString, ResultBox>()
-        cache.countLimit = 24
-        return cache
-    }()
+    private static let results = SemanticMasks.ResultCache()
     private static let lock = NSLock()
-
-    private static func fileKey(_ url: URL) -> String {
-        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-        return "\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)"
-    }
 
     /// The mask of `category` in the photo at `url`: found, none of it in the photo, or a photo
     /// (or model) that can't be read, which isn't remembered.
     static func lookup(_ category: LandscapeCategory, url: URL, isRaw: Bool) -> SemanticMasks.Lookup {
-        let file = fileKey(url)
-        let key = "\(category.rawValue)|\(file)" as NSString
-        if let box = results.object(forKey: key) { return box.result.map(SemanticMasks.Lookup.found) ?? .notFound }
+        let file = SemanticMasks.fileKey(url)
+        let key = "\(category.rawValue)|\(file)"
+        if let hit = results.lookup(key) { return hit }
         return lock.withLock {
-            if let box = results.object(forKey: key) { return box.result.map(SemanticMasks.Lookup.found) ?? .notFound }
+            if let hit = results.lookup(key) { return hit }
             guard let canonical = SemanticMasks.canonical(url: url, isRaw: isRaw),
                   let map = classMap(canonical, file: file) else { return .unreadable }
             let result = refined(weights(category, in: map), width: map.width, height: map.height, guide: canonical)
                 .flatMap { SemanticMasks.result($0, width: canonical.width, height: canonical.height, minimumCoverage: 0.002) }
-            results.setObject(ResultBox(result), forKey: key)
-            return result.map(SemanticMasks.Lookup.found) ?? .notFound
+            return results.store(result, for: key)
         }
     }
 
     /// Takes `map` as the photo at `url`'s, for checks that need labels they know.
     static func remember(_ map: ClassMap, for url: URL) {
-        maps.setObject(MapBox(map), forKey: fileKey(url) as NSString)
+        maps.setObject(MapBox(map), forKey: SemanticMasks.fileKey(url) as NSString)
     }
 
     /// The labels of `image` (the photo at `file`), from memory or the model.

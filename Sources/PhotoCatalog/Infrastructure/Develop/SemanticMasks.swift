@@ -30,12 +30,34 @@ enum SemanticMasks {
         case unreadable
     }
 
-    private final class Box { let result: Result?; init(_ result: Result?) { self.result = result } }
-    private static let cache: NSCache<NSString, Box> = {
-        let cache = NSCache<NSString, Box>()
-        cache.countLimit = 24
-        return cache
-    }()
+    /// The last masks a provider found, or found missing; each provider (subject and sky here,
+    /// people, landscape, objects) keeps its own. An unreadable photo isn't remembered.
+    final class ResultCache: @unchecked Sendable {
+        private final class Box { let result: Result?; init(_ result: Result?) { self.result = result } }
+        private let cache: NSCache<NSString, Box> = {
+            let cache = NSCache<NSString, Box>()
+            cache.countLimit = 24
+            return cache
+        }()
+
+        func lookup(_ key: String) -> Lookup? {
+            cache.object(forKey: key as NSString).map { $0.result.map(Lookup.found) ?? .notFound }
+        }
+
+        /// Remembers `result` for `key` and gives it back as a lookup.
+        func store(_ result: Result?, for key: String) -> Lookup {
+            cache.setObject(Box(result), forKey: key as NSString)
+            return result.map(Lookup.found) ?? .notFound
+        }
+    }
+
+    /// A version of a file, as cache keys name it: its path and when it last changed.
+    static func fileKey(_ url: URL) -> String {
+        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        return "\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)"
+    }
+
+    private static let results = ResultCache()
     private final class ImageBox { let image: CGImage; init(_ image: CGImage) { self.image = image } }
     /// The last few canonical images, so a photo's subject and sky share one decode.
     private static let images: NSCache<NSString, ImageBox> = {
@@ -54,10 +76,8 @@ enum SemanticMasks {
     }
 
     static func lookup(_ kind: LocalAdjustment.Kind, url: URL, isRaw: Bool) -> Lookup {
-        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-        let key = "\(kind.rawValue)|\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)"
-        func cached() -> Lookup? { cache.object(forKey: key as NSString).map { $0.result.map(Lookup.found) ?? .notFound } }
-        if let hit = cached() { return hit }
+        let key = "\(kind.rawValue)|" + fileKey(url)
+        if let hit = results.lookup(key) { return hit }
         // Vision and the RAW decode are the slow part: done once per mask, not once per render
         let lock = locksLock.withLock {
             let entry = locks[key] ?? (NSLock(), 0)
@@ -70,22 +90,20 @@ enum SemanticMasks {
             }
         }
         return lock.withLock {
-            if let hit = cached() { return hit }
+            if let hit = results.lookup(key) { return hit }
             guard let image = canonical(url: url, isRaw: isRaw) else { return .unreadable }
             let result: Result? = switch kind {
             case .subject: subject(in: image)
             case .sky: sky(in: image)
             default: nil
             }
-            cache.setObject(Box(result), forKey: key as NSString)
-            return result.map(Lookup.found) ?? .notFound
+            return results.store(result, for: key)
         }
     }
 
     /// The photo as shot at 1024 px, the image automatic masks and spot sources are found in.
     static func canonical(url: URL, isRaw: Bool) -> CGImage? {
-        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-        let file = "\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)" as NSString
+        let file = fileKey(url) as NSString
         if let cached = images.object(forKey: file) { return cached.image }
         guard let decoded = canonicalImage(url: url, isRaw: isRaw) else { return nil }
         images.setObject(ImageBox(decoded), forKey: file)

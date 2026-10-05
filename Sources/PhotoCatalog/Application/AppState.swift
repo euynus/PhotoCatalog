@@ -299,7 +299,7 @@ final class AppState {
             let pairing = assetPairing
             patchedKeywords = keywordCountsCache.map { cache in
                 var patched = cache
-                for edit in edits where !pairing.isHiddenCompanion(edit.asset.id) && !edit.asset.deleted {
+                for edit in edits where pairing.shows(edit.asset) {
                     for keyword in assets[edit.offset].keywords { patched.counts[keyword, default: 0] -= 1 }
                     for keyword in edit.asset.keywords {
                         if patched.counts[keyword] == nil { patched.order.append(keyword) }
@@ -517,7 +517,7 @@ final class AppState {
     /// Live assets as the library presents them: companions are folded into their RAW.
     private func presentedAssets() -> [Asset] {
         let pairing = assetPairing
-        return assets.filter { !$0.deleted && !pairing.isHiddenCompanion($0.id) }
+        return assets.filter(pairing.shows)
     }
 
     /// Pairing changes what every count and list shows.
@@ -7586,7 +7586,7 @@ final class AppState {
         -> (order: [String], counts: [String: Int]) {
         var order: [String] = []
         var counts: [String: Int] = [:]
-        for a in assets where !a.deleted && !pairing.isHiddenCompanion(a.id) {
+        for a in assets where pairing.shows(a) {
             for k in a.keywords {
                 if counts[k] == nil { order.append(k) }
                 counts[k, default: 0] += 1
@@ -7613,7 +7613,7 @@ final class AppState {
             return CatalogDerivedData(
                 pairing: pairing, indexById: indexById,
                 keywordCounts: AppState.keywordCounts(of: assets, pairing: pairing),
-                captureDateGroups: CaptureDates.groups(assets.filter { !$0.deleted && !pairing.isHiddenCompanion($0.id) }),
+                captureDateGroups: CaptureDates.groups(assets.filter(pairing.shows)),
                 projects: AppState.metadataCounts(assets, pairing: pairing, \.project),
                 clients: AppState.metadataCounts(assets, pairing: pairing, \.client),
                 libraryCounts: AppState.libraryCounts(assets, pairing: pairing, recentCutoff: recentCutoff))
@@ -7866,7 +7866,7 @@ final class AppState {
         }
         let pairing = assetPairing
         let groups = PhotoStackService.captureTimeGroups(
-            assets.filter { !$0.deleted && !pairing.isHiddenCompanion($0.id) }, within: seconds)
+            assets.filter(pairing.shows), within: seconds)
         if seconds == autoStackSeconds { captureTimeGroupsCache = (structureVersion, seconds, groups) }
         return groups
     }
@@ -8028,12 +8028,11 @@ final class AppState {
         // Rebuilt after every rating while an album is in the sidebar: one pass over the photos
         // as shown, smart albums matched in it, without copying the catalog or its ids out.
         let pairing = assetPairing
-        let shown: (Asset) -> Bool = { !$0.deleted && !pairing.isHiddenCompanion($0.id) }
         let rules = smartAlbums.map { SmartMatcher.Prepared($0.rule) }
         var smartCounts = Array(repeating: 0, count: rules.count)
         var index = SidebarCountIndex()
         index.keywordCounts = keywordCounts.counts   // kept for the same photos, patched on edits
-        for asset in assets where shown(asset) {
+        for asset in assets where pairing.shows(asset) {
             index.folderCounts[asset.folderId, default: 0] += 1
             if !asset.project.isEmpty {
                 index.projectCounts[asset.project, default: 0] += 1
@@ -8051,7 +8050,7 @@ final class AppState {
         let positions = assetIndex
         for album in albums {
             index.albumCounts[album.id] = album.assetIds.reduce(0) { count, id in
-                guard let position = positions[id], shown(assets[position]) else { return count }
+                guard let position = positions[id], pairing.shows(assets[position]) else { return count }
                 return count + 1
             }
         }
@@ -8141,7 +8140,7 @@ final class AppState {
         let selection = self.selection
         // Missing/offline is file-level: a lost JPEG must show even when its RAW is fine.
         let pairing = selection.type == .lib && selection.id == "missing" ? .empty : assetPairing
-        let live: (Asset) -> Bool = { !$0.deleted && !pairing.isHiddenCompanion($0.id) }
+        let live = pairing.shows
         let belongs: (Asset) -> Bool
         switch selection.type {
         case .folder:
@@ -8324,13 +8323,7 @@ final class AppState {
             if filters.minRating > 0 && a.rating < filters.minRating { return false }
             if filters.flag != "any" && a.flag.rawValue != filters.flag { return false }
             if filters.color != "any" && a.colorLabel?.rawValue != filters.color { return false }
-            if filters.type != "any" {
-                switch filters.type {
-                case "RAW": if !a.isRaw { return false }
-                case "VIDEO": if !a.isVideo { return false }
-                default: if a.type != filters.type { return false }
-                }
-            }
+            if filters.type != "any" && !a.matchesType(filters.type) { return false }
             if !cameraQuery.isEmpty && !a.camera.localizedStandardContains(cameraQuery) { return false }
             if !lensQuery.isEmpty && !a.lens.localizedStandardContains(lensQuery) { return false }
             if filters.date != "any" {
@@ -8343,10 +8336,7 @@ final class AppState {
                 if let indexedSearchIds {
                     if !indexedSearchIds.contains(a.id) { return false }
                 } else {
-                    let haystack = ([a.filename, a.camera, a.lens, a.title, a.caption, a.location,
-                                     a.project, a.client]
-                        + a.keywords).joined(separator: " ")
-                    if !haystack.localizedStandardContains(q) { return false }
+                    if !a.searchHaystack.localizedStandardContains(q) { return false }
                 }
             }
             return true
@@ -9288,7 +9278,7 @@ final class AppState {
         guard mutateAsset(id, {
             $0.localPath = replacement.path
             $0.filename = replacement.lastPathComponent
-            $0.fileMB = Double(size) / (1024 * 1024)
+            $0.fileMB = Asset.megabytes(bytes: size)
             $0.fileModifiedAt = attrs?[.modificationDate] as? Date
             $0.fileCreatedAt = attrs?[.creationDate] as? Date
             $0.hasICCProfile = meta.hasICCProfile
@@ -9495,7 +9485,7 @@ final class AppState {
         let pairing = assetPairing
         let scanned = faceScannedAssetIds
         return assets.reduce(0) { count, a in
-            !a.deleted && !pairing.isHiddenCompanion(a.id) && !a.isDemo && !a.isVirtualCopy
+            pairing.shows(a) && !a.isDemo && !a.isVirtualCopy
                 && !scanned.contains(a.id) ? count + 1 : count
         }
     }
@@ -9512,7 +9502,7 @@ final class AppState {
         let pairing = assetPairing
         let outdated = faceOutdatedAssetIds
         return assets.reduce(0) { count, a in
-            !a.deleted && !pairing.isHiddenCompanion(a.id) && !a.isVirtualCopy
+            pairing.shows(a) && !a.isVirtualCopy
                 && outdated.contains(a.id) ? count + 1 : count
         }
     }

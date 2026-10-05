@@ -93,7 +93,7 @@ enum CardImportService {
 
         init(_ assets: [Asset]) {
             for asset in assets where !asset.deleted && !asset.isDemo {
-                let size = Int64((asset.fileMB * 1024 * 1024).rounded())
+                let size = asset.fileBytes
                 bySize[size, default: []].append((asset.filename.lowercased(), asset.date))
             }
         }

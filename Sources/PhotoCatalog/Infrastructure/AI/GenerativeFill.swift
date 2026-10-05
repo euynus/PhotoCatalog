@@ -41,11 +41,16 @@ enum GenerativeFill {
     /// corrections (they move pixels). Not tone or white balance: the fill follows those.
     static func key(index: Int, settings: DevelopSettings, url: URL) -> String {
         let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        let text = "\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)|" + pixelDependencies(index: index, settings: settings)
+        return SHA256.hash(data: Data(text.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// What of the settings a fill depends on: the lens corrections, this spot and those before
+    /// it. Shared with a full backup's fill names, which must change whenever the fill does.
+    static func pixelDependencies(index: Int, settings: DevelopSettings) -> String {
         let lens = String(format: "%.2f,%.2f,%.2f,%d", settings.distortion, settings.lensVignette,
                           settings.lensVignetteMidpoint, settings.removeChromaticAberration ? 1 : 0)
-        let text = "\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)|\(lens)|"
-            + settings.spots.prefix(index + 1).map(\.fingerprintText).joined(separator: ";")
-        return SHA256.hash(data: Data(text.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
+        return lens + "|" + settings.spots.prefix(index + 1).map(\.fingerprintText).joined(separator: ";")
     }
 
     /// The fill for `settings.spots[index]`: remembered, or — when `make` — made now (a

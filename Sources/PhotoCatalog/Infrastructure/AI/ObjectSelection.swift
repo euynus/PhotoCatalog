@@ -17,36 +17,25 @@ enum ObjectSelection {
         cache.countLimit = 2
         return cache
     }()
-    private final class ResultBox { let result: SemanticMasks.Result?; init(_ result: SemanticMasks.Result?) { self.result = result } }
-    private static let results: NSCache<NSString, ResultBox> = {
-        let cache = NSCache<NSString, ResultBox>()
-        cache.countLimit = 24
-        return cache
-    }()
+    private static let results = SemanticMasks.ResultCache()
     private static let lock = NSLock()
 
     /// The side of the square the model sees.
     private static let side = 1024.0
 
-    private static func fileKey(_ url: URL) -> String {
-        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-        return "\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)"
-    }
-
     /// The object `prompt` picks out in the photo at `url`: found, nothing there, or a photo (or
     /// model) that can't be read, which isn't remembered.
     static func lookup(_ prompt: ObjectPrompt, url: URL, isRaw: Bool) -> SemanticMasks.Lookup {
         guard !prompt.isEmpty else { return .notFound }
-        let file = fileKey(url)
-        let key = "\(file)|\(prompt.fingerprintText)" as NSString
-        if let box = results.object(forKey: key) { return box.result.map(SemanticMasks.Lookup.found) ?? .notFound }
+        let file = SemanticMasks.fileKey(url)
+        let key = "\(file)|\(prompt.fingerprintText)"
+        if let hit = results.lookup(key) { return hit }
         return lock.withLock {
-            if let box = results.object(forKey: key) { return box.result.map(SemanticMasks.Lookup.found) ?? .notFound }
+            if let hit = results.lookup(key) { return hit }
             guard let canonical = SemanticMasks.canonical(url: url, isRaw: isRaw),
                   let weights = mask(prompt, in: canonical, file: file) else { return .unreadable }
             let result = SemanticMasks.result(weights, width: canonical.width, height: canonical.height, minimumCoverage: 0.0002)
-            results.setObject(ResultBox(result), forKey: key)
-            return result.map(SemanticMasks.Lookup.found) ?? .notFound
+            return results.store(result, for: key)
         }
     }
 

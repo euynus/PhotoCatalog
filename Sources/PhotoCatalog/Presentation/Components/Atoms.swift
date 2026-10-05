@@ -265,7 +265,7 @@ extension View {
 
 // ---------- Media size helpers ----------
 func fileSizeText(megabytes: Double) -> String {
-    let bytes = Int64((max(0, megabytes) * 1_024 * 1_024).rounded())
+    let bytes = Asset.bytes(megabytes: max(0, megabytes))
     return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
 }
 

@@ -114,21 +114,21 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         }
     }
 
+    /// The adjustments, in the order a fingerprint lists them.
+    static let adjustments: [WritableKeyPath<LocalAdjustment, Double>] = [
+        \.exposure, \.contrast, \.highlights, \.shadows, \.whites, \.blacks, \.temperature, \.tint,
+        \.texture, \.clarity, \.dehaze, \.saturation,
+    ]
+
     /// Whether any adjustment is set; a mask without one changes nothing.
     var hasEffect: Bool {
-        [exposure, contrast, highlights, shadows, whites, blacks, temperature, tint, texture, clarity, dehaze, saturation]
-            .contains { $0 != 0 }
+        Self.adjustments.contains { self[keyPath: $0] != 0 }
     }
 
     /// The same mask with every adjustment back at zero.
     var withoutAdjustments: LocalAdjustment {
-        var copy = LocalAdjustment(kind: kind)
-        copy.id = id
-        copy.start = start; copy.end = end
-        copy.center = center; copy.radiusX = radiusX; copy.radiusY = radiusY; copy.angle = angle
-        copy.feather = feather; copy.strokes = strokes; copy.inverted = inverted; copy.range = range
-        copy.part = part; copy.person = person
-        copy.prompt = prompt; copy.landscape = landscape
+        var copy = self
+        for adjustment in Self.adjustments { copy[keyPath: adjustment] = 0 }
         return copy
     }
 
@@ -149,8 +149,7 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
         case .brush: [Double(strokes.count), Double(BrushStroke.hash(strokes))]
         case .subject, .sky, .person, .colorRange, .luminanceRange, .object, .landscape: []   // found in the photo itself
         }
-        let values = [exposure, contrast, highlights, shadows, whites, blacks, temperature, tint,
-                      texture, clarity, dehaze, saturation]
+        let values = Self.adjustments.map { self[keyPath: $0] }
         let refinement = kind != .brush && !strokes.isEmpty ? ":s\(strokes.count),\(BrushStroke.hash(strokes))" : ""
         return kind.rawValue + (inverted ? "!" : "") + ":"
             + geometry.map { String(format: "%.4f", $0) }.joined(separator: ",") + ":"

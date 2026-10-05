@@ -112,11 +112,7 @@ enum SmartMatcher {
                 if c.op == "=" { return a.lens == c.value }
                 return a.lens.localizedStandardContains(c.value)
             case "type":
-                switch c.value {
-                case "RAW": return a.isRaw
-                case "VIDEO": return a.isVideo
-                default: return a.type == c.value
-                }
+                return a.matchesType(c.value)
             case "captureYear":
                 let y = Calendar.captureWallClock.component(.year, from: a.date)
                 if c.op == ">=" { return y >= number }
@@ -136,11 +132,7 @@ enum SmartMatcher {
             case "status":
                 return a.status.rawValue == c.value
             case "search":
-                // keep this haystack in sync with AppState.computeList (which includes project/client),
-                // so a smart album saved from a search matches the live filtered list
-                let haystack = ([a.filename, a.camera, a.lens, a.title, a.caption, a.location,
-                                 a.project, a.client] + a.keywords).joined(separator: " ")
-                return haystack.localizedStandardContains(c.value)
+                return a.searchHaystack.localizedStandardContains(c.value)
             default:
                 return true
             }

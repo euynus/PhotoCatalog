@@ -388,6 +388,29 @@ struct Asset: Identifiable, Equatable, Sendable {
 
     var megapixels: Double { Double(width * height) / 1_000_000 }
 
+    /// A file's size as `fileMB` keeps it, and back. One conversion for every comparison by size
+    /// (a rescan's changed files, a card's photos imported before, exact duplicates), which only
+    /// agree while they round alike.
+    static func megabytes(bytes: Int64) -> Double { Double(bytes) / (1024 * 1024) }
+    static func bytes(megabytes: Double) -> Int64 { Int64((megabytes * 1024 * 1024).rounded()) }
+    var fileBytes: Int64 { Self.bytes(megabytes: fileMB) }
+
+    /// The text a search looks through, for the search box and a smart album's 全文搜索 alike,
+    /// so an album saved from a search finds what the search did.
+    var searchHaystack: String {
+        ([filename, camera, lens, title, caption, location, project, client] + keywords).joined(separator: " ")
+    }
+
+    /// Whether the photo is of `type` as the filters and smart albums name it: RAW, VIDEO (any
+    /// movie), or a file type.
+    func matchesType(_ type: String) -> Bool {
+        switch type {
+        case "RAW": isRaw
+        case "VIDEO": isVideo
+        default: self.type == type
+        }
+    }
+
     /// A video's length as a clock: "0:23", "12:05", "1:02:09".
     var durationText: String? { duration.map(Self.clock) }
 

@@ -101,7 +101,7 @@ enum HashService {
     }
 
     private static func fileSizeBytes(_ fileMB: Double) -> Int64 {
-        Int64((fileMB * 1024 * 1024).rounded())
+        Asset.bytes(megabytes: fileMB)
     }
 
     private static func normalizedFilename(_ filename: String) -> String {
