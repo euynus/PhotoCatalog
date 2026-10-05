@@ -31,6 +31,8 @@ struct CommittedImportBatch: Sendable {
     let run: ImportRun
     let source: SourceRootRecord?
     let developSettings: [String: DevelopSettings]
+    /// Among `assets`, photos removed from the catalog before the import began and now back.
+    let revivedIds: Set<String>
 }
 
 struct ImportFileCheckpoint: Sendable {
@@ -59,6 +61,9 @@ struct ImportOptionsSnapshot: Codable, Equatable, Sendable {
     var rawDefaults: [String: DevelopPreset]
     var rawDefaultOptOuts: Set<String>
     var bookmark: Data?
+    /// Photos already removed from the catalog when the import began, which it may bring back; one
+    /// removed while it runs stays removed. Optional, so options saved before it still decode.
+    var revivableIds: Set<String>?
 
     var postActions: ImportPostActions {
         ImportPostActions(keywords: keywords, colorLabel: colorLabel.flatMap(ColorLabel.init(rawValue:)),

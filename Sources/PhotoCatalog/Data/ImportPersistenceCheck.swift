@@ -21,6 +21,7 @@ enum ImportPersistenceCheck {
                 try checkCommittedRetries(in: directory)
                 try checkCommittedRollback(in: directory)
                 try checkCommittedCatalogChanges(in: directory)
+                try checkReimportRemoved(in: directory)
                 try checkRecovery(in: directory)
                 try checkCancellation(in: directory)
                 print("--- import persistence assertions passed ---")
@@ -496,6 +497,65 @@ enum ImportPersistenceCheck {
                "demo results never become persisted imports")
         let count = try store.db.query("SELECT COUNT(*) AS n FROM assets WHERE id=?;", [.text(demoResult.id)]).first?.int("n")
         assert(count == 0)
+    }
+
+    /// Importing a folder again brings back a photo removed from the catalog before the import
+    /// began: once, in place of its removed copy, with the edits it had. One removed while the
+    /// import runs stays removed.
+    @MainActor
+    private static func checkReimportRemoved(in directory: URL) throws {
+        let store = try catalog("reimport-removed", in: directory)
+        let app = AppState.selfCheckFixture(store: store)
+        app.assets = []
+        let oldPreset = app.importDevelopPresetId
+        defer { app.importDevelopPresetId = oldPreset }
+        app.importDevelopPresetId = ""
+        var photos: [Asset] = []
+        for (index, name) in [(6, "reimport-removed.jpg"), (7, "reimport-removed-later.jpg")] {
+            var photo = asset(in: directory, index: index, raw: false)
+            photo.localPath = directory.appendingPathComponent(name).path
+            try Data("fixture".utf8).write(to: URL(fileURLWithPath: photo.localPath!))
+            photos.append(photo)
+        }
+        let (removed, removedLater) = (photos[0], photos[1])
+        var historyBefore = 0
+        for pass in 0..<2 {
+            let run = ImportRun(source: directory, mode: .referenced)
+            assert(app.startPersistedImport(run, store: store))
+            if pass == 1 { assert(app.mutate([removedLater.id], writingSidecars: false) { $0.deleted = true }) }
+            for (offset, photo) in photos.enumerated() {
+                let source = ImportSourceFile(url: URL(fileURLWithPath: photo.localPath!))
+                app.recordImportProgress(ImportProgress(total: 2, processed: offset + 1, latestAsset: photo,
+                                                       latestSource: source), for: run.id, store: store)
+            }
+            if pass == 0 {
+                assert(app.importRun?.saved == 2)
+            } else {
+                assert(app.importRun?.saved == 1 && app.importRun?.skipped == 1,
+                       "a photo removed before the import began comes back; one removed while it runs stays removed")
+            }
+            app.finishImport(folder: directory, imported: photos, store: store, mode: .referenced, runId: run.id)
+            if pass == 0 {
+                // edited, then removed from the catalog; the next import has a preset it must not take
+                try store.db.run("""
+                INSERT INTO develop_settings(asset_id, settings, updated_at) VALUES(?,?,?)
+                ON CONFLICT(asset_id) DO UPDATE SET settings=excluded.settings;
+                """, [.text(removed.id), .text("kept-edits"), .text("before")])
+                historyBefore = try store.db.query("SELECT seq FROM develop_history WHERE asset_id=?;",
+                                                   [.text(removed.id)]).count
+                assert(app.mutate([removed.id], writingSidecars: false) { $0.deleted = true })
+                app.importDevelopPresetId = DevelopPreset.builtIns[0].id
+            }
+        }
+        assert(app.assets.filter { $0.id == removed.id }.map(\.deleted) == [false],
+               "a photo imported again is in the catalog once, in place of its removed copy")
+        let rows = try store.db.query("SELECT id, deleted FROM assets;")
+        assert(rows.first { $0.text("id") == removed.id }?.bool("deleted") == false
+               && rows.first { $0.text("id") == removedLater.id }?.bool("deleted") == true)
+        let settings = try store.db.query("SELECT settings FROM develop_settings WHERE asset_id=?;", [.text(removed.id)])
+        let history = try store.db.query("SELECT seq FROM develop_history WHERE asset_id=?;", [.text(removed.id)])
+        assert(settings.map { $0.text("settings") } == ["kept-edits"] && history.count == historyBefore,
+               "a returning photo keeps its own edits rather than taking the import's preset")
     }
 
     private static func fileResult(_ asset: Asset, in directory: URL) -> ImportFileResult {

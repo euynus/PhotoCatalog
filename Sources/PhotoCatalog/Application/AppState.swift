@@ -3581,7 +3581,9 @@ final class AppState {
             albumId: albumName.isEmpty ? nil : (albums.first { $0.name == albumName }?.id ?? "al-" + UUID().uuidString),
             preset: importDevelopPreset, rawDefaults: rawDefaultPresetIds.compactMapValues { presets[$0] },
             rawDefaultOptOuts: Set(rawDefaultPresetIds.filter { $0.value == "none" }.map(\.key)),
-            bookmark: FileAccessService.createBookmark(for: folder))
+            bookmark: FileAccessService.createBookmark(for: folder),
+            // taken as the import begins: photos removed later, while it runs, stay removed
+            revivableIds: try? store?.removedAssetIds(under: folder))
     }
 
     private func prepareImportBatches(options: ImportOptionsSnapshot,
@@ -3628,12 +3630,17 @@ final class AppState {
             developSettings.merge(committed.developSettings) { _, latest in latest }
             if let albumId = options.albumId {
                 if let index = albums.firstIndex(where: { $0.id == albumId }) {
-                    albums[index].assetIds.append(contentsOf: fresh.map(\.id))
+                    // a returning photo may still be in the album from before
+                    let added = committed.revivedIds.isEmpty ? fresh.map(\.id)
+                        : fresh.map(\.id).filter { !albums[index].assetIds.contains($0) }
+                    albums[index].assetIds.append(contentsOf: added)
                 } else {
                     albums.append(Album(id: albumId, name: options.albumName, assetIds: fresh.map(\.id)))
                 }
             }
-            replaceAssetsForMutation(assets + fresh)
+            // a returning photo replaces its removed copy, still here when it was removed this session
+            let kept = committed.revivedIds.isEmpty ? assets : assets.filter { !committed.revivedIds.contains($0.id) }
+            replaceAssetsForMutation(kept + fresh)
             recordSidecarBaselines(fresh)
             clearDevelopRecordCaches()
         }

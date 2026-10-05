@@ -1485,6 +1485,21 @@ final class CatalogStore: @unchecked Sendable {
             .compactMap(Self.importCheckpoint(from:))
     }
 
+    /// Photos removed from the catalog whose originals lie in `folder`: a referenced photo's ID
+    /// comes from its path, so these are the rows an import of the folder would find taken.
+    func removedAssetIds(under folder: URL) throws -> Set<String> {
+        var ids: Set<String> = []
+        for path in Set([folder.path, folder.resolvingSymlinksInPath().path]) {
+            let prefix = path.hasSuffix("/") ? path : path + "/"
+            for row in try db.query("""
+            SELECT id FROM assets WHERE deleted=1 AND is_demo=0 AND substr(local_path, 1, length(?)) = ?;
+            """, [.text(prefix), .text(prefix)]) {
+                if let id = row.text("id") { ids.insert(id) }
+            }
+        }
+        return ids
+    }
+
     /// Returns only this transaction's additions. Counters come from the persisted session;
     /// processing progress, failure details and phase remain owned by the caller.
     func saveImportBatch(_ results: [ImportFileResult], run: ImportRun,
@@ -1494,6 +1509,10 @@ final class CatalogStore: @unchecked Sendable {
         var writes: [String: ImportFileCheckpoint] = [:]
         var source: SourceRootRecord?
         var settings: [String: DevelopSettings] = [:]
+        var revived: Set<String> = []
+        let revivable = options.revivableIds ?? []
+        // a file system call: outside the transaction, a slow volume would hold the catalog's lock
+        let volume = VolumeMonitor.volumeIdentifier(for: URL(fileURLWithPath: run.sourcePath))
         try db.transaction {
             guard let session = try db.query("SELECT * FROM import_sessions WHERE id=?;", [.text(run.id.uuidString)])
                 .first.flatMap(Self.importSession(from:)) else {
@@ -1518,7 +1537,11 @@ final class CatalogStore: @unchecked Sendable {
 
                 var outcome: ImportFileCheckpoint.Outcome = result.reason == nil ? .skipped : .failed
                 if let asset = result.asset, !asset.isDemo, !newIds.contains(asset.id),
-                   try db.query("SELECT id FROM assets WHERE id=?;", [.text(asset.id)]).isEmpty {
+                   case let existing = try db.query("SELECT deleted FROM assets WHERE id=?;", [.text(asset.id)]).first,
+                   // a photo removed before this import began comes back; one removed while it runs (even
+                   // after it came back) stays removed
+                   existing == nil || (existing?.bool("deleted") == true && revivable.contains(asset.id)
+                                       && previous?.outcome != .saved) {
                     let key = HashService.exactDuplicateKey(asset)
                     var duplicate = key.map { newKeys.contains($0) } ?? false
                     if skipExact, !duplicate, let hash = asset.contentHash, let key {
@@ -1533,6 +1556,7 @@ final class CatalogStore: @unchecked Sendable {
                     if !skipExact || !duplicate {
                         fresh.append(asset)
                         newIds.insert(asset.id)
+                        if existing != nil { revived.insert(asset.id) }
                         if let key { newKeys.insert(key) }
                         outcome = .saved
                     }
@@ -1554,21 +1578,23 @@ final class CatalogStore: @unchecked Sendable {
                     .first?.blob("bookmark_data")
                 source = SourceRootRecord(id: rootId, displayName: folder.lastPathComponent, pathHint: folder.path,
                                           bookmarkData: bookmark ?? options.bookmark, managementMode: run.mode.rawValue,
-                                          status: "online", volumeIdentifier: VolumeMonitor.volumeIdentifier(for: folder))
+                                          status: "online", volumeIdentifier: volume)
             }
             committedRun.sourceId = rootId
-            settings = try writeImportBatchRows(fresh, checkpoints: Array(writes.values), run: committedRun,
-                                                source: source, options: options)
+            settings = try writeImportBatchRows(fresh, revived: revived, checkpoints: Array(writes.values),
+                                                run: committedRun, source: source, options: options)
         }
         return CommittedImportBatch(assets: fresh, checkpoints: writes.values.sorted { $0.source.path < $1.source.path },
-                                    run: committedRun, source: source, developSettings: settings)
+                                    run: committedRun, source: source, developSettings: settings, revivedIds: revived)
     }
 
     /// A checkpoint only becomes resumable together with its assets and initial edits.
-    private func writeImportBatchRows(_ assets: [Asset], checkpoints: [ImportFileCheckpoint], run: ImportRun,
-                                      source: SourceRootRecord?, options: ImportOptionsSnapshot) throws
+    private func writeImportBatchRows(_ assets: [Asset], revived: Set<String>, checkpoints: [ImportFileCheckpoint],
+                                      run: ImportRun, source: SourceRootRecord?, options: ImportOptionsSnapshot) throws
         -> [String: DevelopSettings] {
-        try upsertRows(assets, updatingExisting: false)
+        try upsertRows(assets.filter { !revived.contains($0.id) }, updatingExisting: false)
+        // a removed photo's row comes back in place, with the albums it was in
+        try upsertRows(assets.filter { revived.contains($0.id) }, updatingExisting: true)
         if let source {
             try addSourceRoot(id: source.id, displayName: source.displayName, path: source.pathHint,
                               bookmark: source.bookmarkData, mode: run.mode,
@@ -1577,6 +1603,10 @@ final class CatalogStore: @unchecked Sendable {
         let now = Self.iso(.now)
         var initialSettings: [String: DevelopSettings] = [:]
         for asset in assets {
+            // a returning photo keeps the edits it had rather than taking the import's
+            if revived.contains(asset.id), try !db.query("""
+            SELECT 1 FROM develop_settings WHERE asset_id=? UNION ALL SELECT 1 FROM develop_history WHERE asset_id=? LIMIT 1;
+            """, [.text(asset.id), .text(asset.id)]).isEmpty { continue }
             let steps = options.developSteps(for: asset)
             if let settings = steps.last?.settings, !settings.isNeutral {
                 try db.run("INSERT INTO develop_settings(asset_id, settings, updated_at) VALUES(?,?,?);",
