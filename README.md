@@ -174,6 +174,20 @@ with the active compiler; the SDK must come from a full Xcode installation.
 
 You can also open `Package.swift` directly in Xcode and run the `PhotoCatalog` scheme.
 
+### Continuous integration
+
+GitHub Actions runs on pull requests, pushes to `main`, and manual dispatches.
+The workflow uses the standard `macos-26` ARM64 runner with Xcode 26.6 from the
+[runner image](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md).
+It checks localization, builds the Debug app bundle, runs XCTest, then runs the full
+`selfcheck` and `pipeline` commands above. Checks run sequentially because they share
+user defaults and build output. No signing credentials or external AI service is needed.
+
+Full selfcheck exercises Metal kernels, bundled Core ML models and video encoding;
+an unsupported runner fails these checks instead of silently skipping them. This is
+headless regression coverage, not interactive UI, physical camera or real-RAW acceptance.
+Failed runs retain check logs for seven days. The workflow does not publish the app.
+
 ### Language models
 
 Settings → AI points the AI features at a language-model service: Anthropic's Messages API or

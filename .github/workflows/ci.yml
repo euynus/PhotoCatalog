@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS checks
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      CONFIGURATION: debug
+      SWIFTPM_MODULECACHE_OVERRIDE: ${{ github.workspace }}/.build/ModuleCache
+      SWIFT_MODULECACHE_PATH: ${{ github.workspace }}/.build/ModuleCache
+      CLANG_MODULE_CACHE_PATH: ${{ github.workspace }}/.build/ModuleCache
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+      TZ: UTC
+      NO_PROXY: localhost,127.0.0.1,::1
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Report toolchain
+        run: |
+          mkdir -p "$RUNNER_TEMP/photocatalog-ci-logs"
+          xcodebuild -version
+          swift --version
+          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
+
+      - name: Check localization
+        timeout-minutes: 5
+        run: python3 script/check_localization.py 2>&1 | tee "$RUNNER_TEMP/photocatalog-ci-logs/localization.log"
+
+      - name: Build Debug app bundle
+        timeout-minutes: 15
+        run: script/build_and_run.sh build 2>&1 | tee "$RUNNER_TEMP/photocatalog-ci-logs/build.log"
+
+      - name: Run XCTest
+        timeout-minutes: 10
+        run: swift test -c debug --sdk "$SDKROOT" 2>&1 | tee "$RUNNER_TEMP/photocatalog-ci-logs/xctest.log"
+
+      - name: Run full selfcheck
+        timeout-minutes: 20
+        run: script/build_and_run.sh selfcheck 2>&1 | tee "$RUNNER_TEMP/photocatalog-ci-logs/selfcheck.log"
+
+      - name: Run import pipeline checks
+        timeout-minutes: 10
+        run: script/build_and_run.sh pipeline 2>&1 | tee "$RUNNER_TEMP/photocatalog-ci-logs/pipeline.log"
+
+      - name: Upload failure logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-check-logs
+          path: ${{ runner.temp }}/photocatalog-ci-logs/*.log
+          retention-days: 7
+          if-no-files-found: ignore
