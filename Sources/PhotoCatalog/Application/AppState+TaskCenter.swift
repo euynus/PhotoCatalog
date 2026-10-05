@@ -125,7 +125,7 @@ extension AppState {
         task.succeededCount = run.saved
         task.skippedCount = run.skipped
         task.failedCount = max(run.failed, run.failures.count)
-        task.detail = L("已处理 \(run.processed) 个文件 · 已保存 \(run.saved) 张照片") + "\n" + run.sourcePath
+        task.detail = L("已处理 \(task.completedCount) 个文件 · 已保存 \(run.saved) 张照片") + "\n" + run.sourcePath
         task.errorMessage = run.errorMessage
         task.finishedAt = run.finishedAt
         // Keep row identity stable while progress is published, without copying every failure.
@@ -232,6 +232,9 @@ extension AppState {
 
     private func offeredTaskActions(_ task: BackgroundTask) -> BackgroundTask.Actions {
         var offered = taskActions[task.id] ?? .init()
+        if task.kind == .ai, describeProgress != nil || !hasDescriptionReview {
+            offered.review = nil
+        }
         if task.kind == .importPhotos {
             // Import has pause/resume, not a user cancellation engine. A historical run may
             // never borrow the current run's failed paths or settings for retry.

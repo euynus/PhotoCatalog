@@ -43,6 +43,25 @@ extension DescriptionReviewCheck {
                 app.descriptionReview = review
                 assert(app.hasDescriptionReview && app.describeProgress == nil,
                        "completed proposals remain available for explicit review")
+                let reviewTask = BackgroundTask(kind: .ai, title: "AI descriptions", state: .failed)
+                var reviewOpens = 0
+                app.recordBackgroundTask(reviewTask, originHistory: app.taskHistory!,
+                                         actions: .init(review: { reviewOpens += 1 }))
+                let openReview = app.taskCenterActions(reviewTask).review
+                assert(openReview != nil, "a completed batch with retained results offers review")
+                app.describeProgress = (0, 1)
+                assert(app.hasDescriptionReview && app.taskCenterActions(reviewTask).review == nil,
+                       "a prior batch cannot offer review while its failed items are being retried")
+                openReview?()
+                assert(reviewOpens == 0, "a callback obtained before retry rechecks the current review capability")
+                app.describeProgress = nil
+                app.taskCenterActions(reviewTask).review?()
+                assert(reviewOpens == 1, "review becomes available again after retry without replacing the old callback")
+                app.descriptionReviewContext = nil
+                assert(app.taskCenterActions(reviewTask).review == nil,
+                       "retained results without a current review context cannot offer a review action")
+                app.descriptionReviewContext = context
+
                 let beforeApply = try store.loadAssets()
                 assert(app.assets.allSatisfy { $0.title.isEmpty && $0.caption.isEmpty && $0.keywords.isEmpty }
                        && beforeApply.allSatisfy { $0.title.isEmpty && $0.caption.isEmpty && $0.keywords.isEmpty },

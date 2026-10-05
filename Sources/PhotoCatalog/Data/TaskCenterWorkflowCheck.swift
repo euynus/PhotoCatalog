@@ -86,6 +86,22 @@ enum TaskCenterWorkflowCheck {
                "a database-only import failure still offers explicit continuation")
         assert(app.taskCenterActions(importTask).cancel == nil, "import does not invent a cancel capability")
 
+        var mixed = ImportRun(source: directory, mode: .referenced)
+        mixed.phase = .complete
+        mixed.total = 2
+        mixed.processed = 1
+        mixed.saved = 1
+        mixed.failed = 1
+        mixed.failures = [.init(url: directory.appendingPathComponent("unreadable.jpg"), reason: "Unreadable")]
+        app.importRun = mixed
+        let mixedTask = app.backgroundTasks.first { $0.id == mixed.id }!
+        assert(mixedTask.completedCount == 2 && mixedTask.fractionCompleted == 1
+               && mixedTask.succeededCount == 1 && mixedTask.failureCount == 1 && mixedTask.hasPartialFailure,
+               "mixed import progress includes failed files without counting them as successful saves")
+        let expectedSummary = L("已处理 \(mixedTask.completedCount) 个文件 · 已保存 \(mixed.saved) 张照片")
+        assert(mixedTask.detail == expectedSummary + "\n" + mixed.sourcePath,
+               "import summary and progress use the same completed count when files fail")
+
         var kept = DemoData.assets[0], removed = DemoData.assets[1]
         kept.deleted = false
         removed.deleted = true
