@@ -111,9 +111,7 @@ struct SlideshowSheet: View {
                     app.slideshowSettings = settings
                     app.playSlideshow()
                 } label: {
-                    Label("播放", systemImage: "play.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
-                        .padding(.horizontal, 17).padding(.vertical, 8)
-                        .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                    Label("播放", systemImage: "play.fill").sheetPrimaryLabel()
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)

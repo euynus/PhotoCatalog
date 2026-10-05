@@ -43,7 +43,7 @@ struct TetherSheet: View {
                         Color.clear.frame(width: 1, height: 1)
                         VStack(alignment: .leading, spacing: 4) {
                             folderRow(settings.watchedFolderPath, placeholder: L("尚未选择")) {
-                                if let url = chooseFolder(L("选择联机软件保存照片的文件夹")) { settings.watchedFolderPath = url.path }
+                                if let url = NSOpenPanel.chooseFolder(message: L("选择联机软件保存照片的文件夹")) { settings.watchedFolderPath = url.path }
                             }
                             Text("开始前已在文件夹中的照片不会导入")
                                 .font(.system(size: 11)).foregroundStyle(Theme.text3)
@@ -58,7 +58,7 @@ struct TetherSheet: View {
                 GridRow {
                     Text("保存到")
                     folderRow(settings.destinationPath, placeholder: "") {
-                        if let url = chooseFolder(L("选择保存联机拍摄会话的文件夹")) { settings.destinationPath = url.path }
+                        if let url = NSOpenPanel.chooseFolder(message: L("选择保存联机拍摄会话的文件夹")) { settings.destinationPath = url.path }
                     }
                 }
                 GridRow {
@@ -94,9 +94,7 @@ struct TetherSheet: View {
                     app.sheet = nil
                     app.startTether(next, camera: camera)
                 } label: {
-                    Text("开始").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
-                        .padding(.horizontal, 17).padding(.vertical, 8)
-                        .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                    Text("开始").sheetPrimaryLabel()
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
@@ -118,15 +116,6 @@ struct TetherSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button("选择…", action: choose).controlSize(.small)
         }
-    }
-
-    private func chooseFolder(_ message: String) -> URL? {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.message = message
-        return panel.runModal() == .OK ? panel.url : nil
     }
 }
 

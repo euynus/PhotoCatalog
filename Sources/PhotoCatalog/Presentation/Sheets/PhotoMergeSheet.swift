@@ -20,9 +20,7 @@ struct PhotoMergeSheet: View {
                 Text(app.photoMergeKind == .hdr ? L("HDR 合并") : L("全景合并")).font(.system(size: 17, weight: .semibold))
                 Spacer()
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.surface)
-            .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetHeaderBar()
 
             VStack(alignment: .leading, spacing: 12) {
                 Text(app.photoMergeKind == .hdr
@@ -72,18 +70,14 @@ struct PhotoMergeSheet: View {
                     app.mergePhotos()
                 } label: {
                     Text("合并")
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
-                        .padding(.horizontal, 17).padding(.vertical, 8)
-                        .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                        .sheetPrimaryLabel()
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
                 .disabled(failure != nil)
                 .opacity(failure != nil ? 0.5 : 1)
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.bgSidebar)
-            .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetFooterBar()
         }
         .frame(width: 520)
         .font(.system(size: 13))

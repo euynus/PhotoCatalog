@@ -87,7 +87,7 @@ struct CardImportSheet: View {
                 }
                 if !app.cardVolumes.isEmpty || !app.cameraDevices.isEmpty { Divider() }
                 Button("选择文件夹…") {
-                    if let url = chooseFolder(prompt: L("选择来源"), start: nil) {
+                    if let url = NSOpenPanel.chooseFolder(prompt: L("选择来源"), start: nil) {
                         choose(device: nil)
                         customSource = url
                     }
@@ -98,9 +98,7 @@ struct CardImportSheet: View {
             .fixedSize()
             Spacer()
         }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(Theme.surface)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .sheetHeaderBar()
     }
 
     /// Switches the source; leaving a device ends its session.
@@ -181,7 +179,7 @@ struct CardImportSheet: View {
                 Text("插入存储卡、用数据线连接相机或 iPhone，或选择一个包含照片的文件夹。")
             } actions: {
                 Button("选择文件夹…") {
-                    if let url = chooseFolder(prompt: L("选择来源"), start: nil) { customSource = url }
+                    if let url = NSOpenPanel.chooseFolder(prompt: L("选择来源"), start: nil) { customSource = url }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -251,7 +249,7 @@ struct CardImportSheet: View {
                         Text((options.destination.path as NSString).abbreviatingWithTildeInPath)
                             .lineLimit(1).truncationMode(.middle).foregroundStyle(Theme.text2)
                         Button("选择…") {
-                            if let url = chooseFolder(prompt: L("选择"), start: options.destination) {
+                            if let url = NSOpenPanel.chooseFolder(prompt: L("选择"), start: options.destination) {
                                 options.destination = url
                             }
                         }
@@ -291,7 +289,7 @@ struct CardImportSheet: View {
                             Text(options.backup.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? L("未选择"))
                                 .lineLimit(1).truncationMode(.middle).foregroundStyle(Theme.text2)
                             Button("选择…") {
-                                if let url = chooseFolder(prompt: L("选择"), start: options.backup) { options.backup = url }
+                                if let url = NSOpenPanel.chooseFolder(prompt: L("选择"), start: options.backup) { options.backup = url }
                             }
                         }
                     }
@@ -333,9 +331,7 @@ struct CardImportSheet: View {
             ghostButton(nil, L("取消")) { app.sheet = nil }
             if sourceKey != nil { importButton(chosen, ready: ready) }
         }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(Theme.bgSidebar)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .sheetFooterBar()
     }
 
     private func importButton(_ chosen: [CardFile], ready: Bool) -> some View {
@@ -349,25 +345,13 @@ struct CardImportSheet: View {
             }
         } label: {
             Label("导入 \(chosen.count) 张", systemImage: "square.and.arrow.down")
-                .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
                 .fixedSize()
-                .padding(.horizontal, 17).padding(.vertical, 8)
-                .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                .sheetPrimaryLabel()
         }
         .buttonStyle(.plain)
         .keyboardShortcut(.defaultAction)
         .disabled(!ready)
         .opacity(ready ? 1 : 0.5)
-    }
-
-    private func chooseFolder(prompt: String, start: URL?) -> URL? {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.prompt = prompt
-        panel.directoryURL = start
-        return panel.runModal() == .OK ? panel.url : nil
     }
 }
 

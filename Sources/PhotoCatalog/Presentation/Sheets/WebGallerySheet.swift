@@ -76,9 +76,7 @@ struct WebGallerySheet: View {
                 Button {
                     export()
                 } label: {
-                    Text("导出…").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
-                        .padding(.horizontal, 17).padding(.vertical, 8)
-                        .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                    Text("导出…").sheetPrimaryLabel()
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
@@ -92,13 +90,8 @@ struct WebGallerySheet: View {
     }
 
     private func export() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.prompt = L("导出")
-        panel.message = L("选择存放网页画廊的位置，画廊会存进其中一个新文件夹")
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let url = NSOpenPanel.chooseFolder(prompt: L("导出"),
+                                                 message: L("选择存放网页画廊的位置，画廊会存进其中一个新文件夹")) else { return }
         app.webGallerySettings = settings
         app.exportWebGallery(to: url)
     }

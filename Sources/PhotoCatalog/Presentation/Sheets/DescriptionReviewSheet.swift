@@ -107,9 +107,7 @@ struct DescriptionReviewSheet: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(isRetrying || review.selectedIDs.isEmpty)
             }
-            .padding(.horizontal, 18).padding(.vertical, 12)
-            .background(Theme.bgSidebar)
-            .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetFooterBar(vertical: 12)
         }
         .frame(width: 760, height: 640)
         .font(.system(size: 13))

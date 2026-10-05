@@ -32,9 +32,7 @@ struct PrintSheet: View {
                 }
                 Spacer()
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.surface)
-            .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetHeaderBar()
 
             HStack(spacing: 0) {
                 form.frame(width: 360)
@@ -192,17 +190,13 @@ struct PrintSheet: View {
                 .disabled(items.isEmpty)
             Button { app.printPhotos(settings) } label: {
                 Label("打印…", systemImage: "printer")
-                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
                     .fixedSize()
-                    .padding(.horizontal, 17).padding(.vertical, 8)
-                    .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                    .sheetPrimaryLabel()
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.defaultAction)
             .disabled(items.isEmpty)
         }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(Theme.bgSidebar)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .sheetFooterBar()
     }
 }

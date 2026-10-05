@@ -45,9 +45,7 @@ struct AutoStackSheet: View {
                     app.sheet = nil
                     app.setAutoStack(seconds: seconds)
                 } label: {
-                    Text("叠放").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
-                        .padding(.horizontal, 17).padding(.vertical, 8)
-                        .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                    Text("叠放").sheetPrimaryLabel()
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)

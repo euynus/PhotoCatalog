@@ -1977,12 +1977,7 @@ final class AppState {
             }
             push("已导出预设“\(presets[0].name)”", "square.and.arrow.up")
         } else {
-            let panel = NSOpenPanel()
-            panel.canChooseDirectories = true
-            panel.canChooseFiles = false
-            panel.canCreateDirectories = true
-            panel.prompt = L("导出到此处")
-            guard panel.runModal() == .OK, let folder = panel.url else { return }
+            guard let folder = NSOpenPanel.chooseFolder(prompt: L("导出到此处")) else { return }
             let written = Self.writeDevelopPresets(presets, to: folder)
             push(verbatim: L("已导出 \(written) 个预设") + (written < presets.count ? L(" · \(presets.count - written) 失败") : ""),
                  written < presets.count ? "warning" : "square.and.arrow.up")

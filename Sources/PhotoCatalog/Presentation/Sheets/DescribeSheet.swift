@@ -12,9 +12,7 @@ struct DescribeSheet: View {
                 Spacer()
                 Text("\(targets.count) 张照片").foregroundStyle(Theme.text2).monospacedDigit()
             }
-            .padding(.horizontal, 18).padding(.vertical, 12)
-            .background(Theme.surface)
-            .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetHeaderBar(vertical: 12)
 
             VStack(alignment: .leading, spacing: 16) {
                 DescriptionConsentFields(configuration: app.descriptionConfiguration,
@@ -57,9 +55,7 @@ struct DescribeSheet: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(!app.canStartDescribingPhotos)
             }
-            .padding(.horizontal, 18).padding(.vertical, 12)
-            .background(Theme.bgSidebar)
-            .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetFooterBar(vertical: 12)
         }
         .frame(width: 600)
         .font(.system(size: 13))

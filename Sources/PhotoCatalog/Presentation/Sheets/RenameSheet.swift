@@ -44,9 +44,7 @@ struct RenameSheet: View {
                 Text("重命名照片").font(.system(size: 17, weight: .semibold))
                 Spacer()
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.surface)
-            .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetHeaderBar()
 
             VStack(alignment: .leading, spacing: 14) {
                 Text("将重命名 \(targets.count) 张照片的磁盘原件，并更新目录库中的路径。RAW+JPEG 配对的 JPEG 一起改名，扩展名保持不变。")
@@ -109,19 +107,15 @@ struct RenameSheet: View {
                 ghostButton(nil, L("取消")) { app.sheet = nil }
                 Button(action: confirm) {
                     Text("重命名 \(targets.count) 张")
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
                         .fixedSize()
-                        .padding(.horizontal, 17).padding(.vertical, 8)
-                        .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                        .sheetPrimaryLabel()
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canConfirm)
                 .opacity(canConfirm ? 1 : 0.5)
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.bgSidebar)
-            .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetFooterBar()
         }
         .frame(width: 480)
         .font(.system(size: 13))

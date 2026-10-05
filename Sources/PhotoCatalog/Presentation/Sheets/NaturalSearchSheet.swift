@@ -14,9 +14,7 @@ struct NaturalSearchSheet: View {
                 Text("用自然语言查找").font(.system(size: 17, weight: .semibold))
                 Spacer()
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.surface)
-            .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetHeaderBar()
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("用一句话描述要找的照片，AI 会把它换成筛选条件和搜索词，在当前来源中查找。只发送这句话和目录库中的相机、镜头与关键词名称，不发送照片。")
@@ -43,18 +41,14 @@ struct NaturalSearchSheet: View {
                 ghostButton(nil, L("取消")) { app.sheet = nil }
                 Button(action: search) {
                     Text("查找")
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
-                        .padding(.horizontal, 17).padding(.vertical, 8)
-                        .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                        .sheetPrimaryLabel()
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canSearch)
                 .opacity(canSearch ? 1 : 0.5)
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.bgSidebar)
-            .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetFooterBar()
         }
         .frame(width: 480)
         .font(.system(size: 13))

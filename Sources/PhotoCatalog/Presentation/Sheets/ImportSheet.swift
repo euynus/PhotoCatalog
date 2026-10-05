@@ -44,9 +44,7 @@ struct ImportSheet: View {
             }
             Spacer()
         }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(Theme.surface)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .sheetHeaderBar()
     }
 
     private var idleBody: some View {
@@ -137,9 +135,7 @@ struct ImportSheet: View {
             .buttonStyle(.plain)
             .keyboardShortcut(.defaultAction)
         }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(Theme.bgSidebar)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .sheetFooterBar()
     }
 
     private func head(_ run: ImportRun) -> some View {
@@ -151,9 +147,7 @@ struct ImportSheet: View {
             }
             Spacer()
         }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(Theme.surface)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .sheetHeaderBar()
     }
 
     private func source(_ run: ImportRun) -> some View {
@@ -351,9 +345,7 @@ struct ImportSheet: View {
                 }
             }
         }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(Theme.bgSidebar)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .sheetFooterBar()
     }
 
     private func title(for phase: ImportPhase) -> String {
@@ -380,6 +372,29 @@ struct ImportSheet: View {
 }
 
 // shared sheet helpers
+extension View {
+    /// A sheet's title bar: the same padding, ground and rule under it in every sheet.
+    func sheetHeaderBar(vertical: CGFloat = 10) -> some View {
+        padding(.horizontal, 18).padding(.vertical, vertical)
+            .background(Theme.surface)
+            .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+
+    /// A sheet's button bar, the counterpart of its title bar.
+    func sheetFooterBar(vertical: CGFloat = 10) -> some View {
+        padding(.horizontal, 18).padding(.vertical, vertical)
+            .background(Theme.bgSidebar)
+            .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+    }
+
+    /// The label of a sheet's main action: white on the accent.
+    func sheetPrimaryLabel() -> some View {
+        font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
+            .padding(.horizontal, 17).padding(.vertical, 8)
+            .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+    }
+}
+
 @MainActor
 func ghostButton(_ icon: String?, _ label: String, danger: Bool = false, small: Bool = false,
                  disabled: Bool = false,

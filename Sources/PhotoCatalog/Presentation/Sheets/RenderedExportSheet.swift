@@ -31,9 +31,7 @@ struct RenderedExportSheet: View {
                 }
                 Spacer()
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.surface)
-            .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetHeaderBar()
 
             HStack(spacing: 0) {
                 presetColumn
@@ -239,28 +237,18 @@ struct RenderedExportSheet: View {
             ghostButton(nil, L("取消")) { app.sheet = nil }
             Button(action: export) {
                 Label("导出", systemImage: "square.and.arrow.up")
-                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
                     .fixedSize()
-                    .padding(.horizontal, 17).padding(.vertical, 8)
-                    .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                    .sheetPrimaryLabel()
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.defaultAction)
             .disabled(count == 0)
         }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(Theme.bgSidebar)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .sheetFooterBar()
     }
 
     private func chooseFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.prompt = L("选择")
-        panel.directoryURL = URL(fileURLWithPath: folder)
-        if panel.runModal() == .OK, let url = panel.url { folder = url.path }
+        if let url = NSOpenPanel.chooseFolder(prompt: L("选择"), start: URL(fileURLWithPath: folder)) { folder = url.path }
     }
 
     private func export() {

@@ -45,9 +45,7 @@ struct FullBackupSheet: View {
             .disabled(state.isRunning)
             .onChange(of: state.operation) { state.clearResult() }
         }
-        .padding(.horizontal, 18).padding(.vertical, 12)
-        .background(Theme.surface)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .sheetHeaderBar(vertical: 12)
     }
 
     private var controls: some View {

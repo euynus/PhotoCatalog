@@ -33,9 +33,7 @@ struct LocationSheet: View {
                 Text("设置位置 · \(ids.count) 张照片").font(.system(size: 17, weight: .semibold))
                 Spacer()
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.surface)
-            .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetHeaderBar()
 
             HStack(spacing: 0) {
                 searchColumn.frame(width: 260)
@@ -74,18 +72,14 @@ struct LocationSheet: View {
                     app.sheet = nil
                 } label: {
                     Text("设置位置")
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
-                        .padding(.horizontal, 17).padding(.vertical, 8)
-                        .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                        .sheetPrimaryLabel()
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
                 .disabled(pin == nil)
                 .opacity(pin == nil ? 0.5 : 1)
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.bgSidebar)
-            .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetFooterBar()
         }
         .frame(width: 880, height: 600)
         .font(.system(size: 13))
@@ -190,9 +184,7 @@ struct GPXMatchSheet: View {
                 Text("按 GPX 轨迹匹配位置").font(.system(size: 17, weight: .semibold))
                 Spacer()
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.surface)
-            .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetHeaderBar()
 
             Form {
                 Section("轨迹") {
@@ -238,18 +230,14 @@ struct GPXMatchSheet: View {
                     app.sheet = nil
                 } label: {
                     Text("添加 \(matches.count) 个位置")
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
-                        .padding(.horizontal, 17).padding(.vertical, 8)
-                        .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                        .sheetPrimaryLabel()
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
                 .disabled(matches.isEmpty)
                 .opacity(matches.isEmpty ? 0.5 : 1)
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.bgSidebar)
-            .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetFooterBar()
         }
         .frame(width: 520, height: 560)
         .font(.system(size: 13))

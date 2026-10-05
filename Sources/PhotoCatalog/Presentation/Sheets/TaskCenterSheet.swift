@@ -86,9 +86,7 @@ struct TaskCenterSheet: View {
             .font(.caption).monospacedDigit().foregroundStyle(Theme.text2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 18).padding(.vertical, 12)
-        .background(Theme.surface)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .sheetHeaderBar(vertical: 12)
     }
 
     private func reconcileSelection() {

@@ -58,9 +58,7 @@ struct SmartAlbumBuilder: View {
             }
             Spacer()
         }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(Theme.surface)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .sheetHeaderBar()
     }
 
     private func body_(_ matched: [Asset]) -> some View {
@@ -228,18 +226,14 @@ struct SmartAlbumBuilder: View {
             ghostButton(nil, L("取消")) { app.dismissSmartAlbumBuilder() }
             Button { app.saveSmart(name: name, rule: rule, count: matchedCount) } label: {
                 Label(album == nil ? "创建智能相册" : "保存更改", systemImage: "checkmark")
-                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
                     .fixedSize()
-                    .padding(.horizontal, 17).padding(.vertical, 8)
-                    .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                    .sheetPrimaryLabel()
             }.buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canSave)
                 .opacity(canSave ? 1 : 0.5)
         }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(Theme.bgSidebar)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+        .sheetFooterBar()
     }
 }
 

@@ -30,9 +30,7 @@ struct BookSheet: View {
                 }
                 Spacer()
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.surface)
-            .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetHeaderBar()
 
             HStack(spacing: 0) {
                 form.frame(width: 340)
@@ -46,10 +44,8 @@ struct BookSheet: View {
                 ghostButton(nil, L("取消")) { app.sheet = nil }
                 Button { app.saveBookPDF(settings) } label: {
                     Label("存储为 PDF…", systemImage: "doc.richtext")
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
                         .fixedSize()
-                        .padding(.horizontal, 17).padding(.vertical, 8)
-                        .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                        .sheetPrimaryLabel()
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)

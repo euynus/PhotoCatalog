@@ -42,9 +42,7 @@ struct DevelopTransferSheet: View {
                 Text(title).font(.system(size: 17, weight: .semibold))
                 Spacer()
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.surface)
-            .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetHeaderBar()
 
             VStack(alignment: .leading, spacing: 14) {
                 if mode == .preset {
@@ -88,19 +86,15 @@ struct DevelopTransferSheet: View {
                 ghostButton(nil, L("取消")) { app.sheet = nil }
                 Button(action: confirm) {
                     Text(actionTitle)
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
                         .fixedSize()
-                        .padding(.horizontal, 17).padding(.vertical, 8)
-                        .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                        .sheetPrimaryLabel()
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canConfirm)
                 .opacity(canConfirm ? 1 : 0.5)
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.bgSidebar)
-            .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetFooterBar()
         }
         .frame(width: 420)
         .font(.system(size: 13))

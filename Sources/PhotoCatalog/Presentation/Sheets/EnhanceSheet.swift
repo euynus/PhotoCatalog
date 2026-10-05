@@ -18,9 +18,7 @@ struct EnhanceSheet: View {
                 Text("增强").font(.system(size: 17, weight: .semibold))
                 Spacer()
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.surface)
-            .overlay(alignment: .bottom) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetHeaderBar()
 
             VStack(alignment: .leading, spacing: 12) {
                 Text(L("用这台 Mac 上的 AI 模型处理 \(targets.count) 张照片。结果存为原片旁的 16 位 TIFF（…-Enhanced.tif），带原片的元数据加入目录库，修图设置也一并带过去（白平衡除外）。"))
@@ -55,18 +53,14 @@ struct EnhanceSheet: View {
                     app.enhancePhotos()
                 } label: {
                     Text("增强")
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.onAccent)
-                        .padding(.horizontal, 17).padding(.vertical, 8)
-                        .background(Theme.accentFill).clipShape(RoundedRectangle(cornerRadius: 7))
+                        .sheetPrimaryLabel()
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
                 .disabled(app.enhanceOptions.isEmpty)
                 .opacity(app.enhanceOptions.isEmpty ? 0.5 : 1)
             }
-            .padding(.horizontal, 18).padding(.vertical, 10)
-            .background(Theme.bgSidebar)
-            .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
+            .sheetFooterBar()
         }
         .frame(width: 560)
         .font(.system(size: 13))
