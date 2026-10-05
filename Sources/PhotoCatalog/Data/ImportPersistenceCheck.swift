@@ -16,6 +16,11 @@ enum ImportPersistenceCheck {
                 try checkConcurrentEdits(in: directory)
                 try checkInitialEdits(in: directory)
                 try checkRetryOptions(in: directory)
+                try checkCommittedDuplicates(in: directory)
+                try checkCommittedReplay(in: directory)
+                try checkCommittedRetries(in: directory)
+                try checkCommittedRollback(in: directory)
+                try checkCommittedCatalogChanges(in: directory)
                 try checkRecovery(in: directory)
                 try checkCancellation(in: directory)
                 print("--- import persistence assertions passed ---")
@@ -68,7 +73,7 @@ enum ImportPersistenceCheck {
                 assert(sessions.first?.state == "failed" && jobs.first?.state == "failed")
             }
             app.recordImportProgress(ImportProgress(total: 2, processed: 2), for: run.id, store: store)
-            app.finishImport(folder: directory, imported: [asset(in: directory)], existingIds: [],
+            app.finishImport(folder: directory, imported: [asset(in: directory)],
                              store: store, mode: .managed, runId: run.id)
             assert(app.importRun?.phase == .failed && !app.importing && store.assetCount() == 0,
                    "late progress and completion must not turn a checkpoint failure into success")
@@ -95,7 +100,7 @@ enum ImportPersistenceCheck {
             let failedJob = try store.loadJobs().first
             assert(app.importRun?.phase == .failed && failedSession?.state == "failed" && failedJob?.state == "failed",
                    "failed pause/resume writes must not publish a successful transition")
-            app.finishImport(folder: directory, imported: [], existingIds: [], store: store,
+            app.finishImport(folder: directory, imported: [], store: store,
                              mode: .managed, runId: run.id)
         }
     }
@@ -118,7 +123,7 @@ enum ImportPersistenceCheck {
                 try store.addSourceRoot(id: "persistence-source", displayName: "Source", path: directory.path,
                                         bookmark: Data("preserved bookmark".utf8), mode: .managed)
             }
-            app.finishImport(folder: directory, imported: [asset(in: directory)], existingIds: [],
+            app.finishImport(folder: directory, imported: [asset(in: directory)],
                              store: store, mode: .managed, runId: run.id)
             let session = try store.loadImportSessions().first
             let job = try store.loadJobs().first
@@ -194,6 +199,316 @@ enum ImportPersistenceCheck {
         try CatalogStore(packageURL: directory.appendingPathComponent(name + ".photolibrary"))
     }
 
+    private static func checkCommittedDuplicates(in directory: URL) throws {
+        let store = try catalog("committed-duplicates", in: directory)
+        var run = ImportRun(source: directory, mode: .referenced)
+        run.total = 12
+        try store.startImportSession(id: run.id.uuidString)
+        var options = batchOptions()
+        var photos = (0..<5).map { asset(in: directory, index: $0) }
+        for index in 0..<3 { photos[index].contentHash = "rounded-size" }
+        photos[0].fileMB = 1024.1 / (1024 * 1024)
+        photos[1].fileMB = 1024.4 / (1024 * 1024)
+        photos[2].fileMB = 1024.6 / (1024 * 1024)
+        let files = photos.map { fileResult($0, in: directory) }
+        let first = try store.saveImportBatch(files + [files[0]], run: run, options: options)
+        assert(first.assets.map(\.id) == [photos[0], photos[2], photos[3], photos[4]].map(\.id),
+               "dedup uses rounded bytes plus hash, while files without hashes remain distinct")
+        assert(first.run.saved == 4 && first.run.skipped == 1 && first.checkpoints.count == 5,
+               "same-batch duplicates and repeated successful events count only once")
+        var duplicate = asset(in: directory, index: 5)
+        duplicate.contentHash = photos[0].contentHash
+        duplicate.fileMB = 1024.49 / (1024 * 1024)
+        let nextFile = fileResult(duplicate, in: directory)
+        let next = try store.saveImportBatch([nextFile, nextFile], run: run, options: options)
+        assert(next.assets.isEmpty && next.developSettings.isEmpty && next.checkpoints.count == 1)
+        assert(next.run.saved == 4 && next.run.skipped == 2,
+               "persisted hashes and counts are used even when the caller supplies its original run")
+        let replay = try store.saveImportBatch([nextFile], run: run, options: options)
+        assert(replay.checkpoints.isEmpty && replay.run.saved == 4 && replay.run.skipped == 2,
+               "a skipped checkpoint is also a successful replay")
+        for (index, strategy) in [ImportDuplicateStrategy.keep, .groupExact].enumerated() {
+            options.duplicateStrategy = strategy.rawValue
+            var copy = asset(in: directory, index: index + 6)
+            copy.contentHash = duplicate.contentHash
+            copy.fileMB = duplicate.fileMB
+            let alias = ImportFileResult(source: ImportSourceFile(path: directory.appendingPathComponent("alias-\(index)").path,
+                                                                 byteCount: 4096, modifiedAt: 1), asset: copy, reason: nil)
+            let kept = try store.saveImportBatch([fileResult(copy, in: directory), alias], run: run, options: options)
+            assert(kept.assets.map(\.id) == [copy.id] && kept.checkpoints.count == 2,
+                   "keep/groupExact retain matching content but collapse repeated IDs within a batch")
+            let repeatedId = try store.saveImportBatch([alias], run: run, options: options)
+            assert(repeatedId.assets.isEmpty && repeatedId.checkpoints.isEmpty,
+                   "keep/groupExact also preserve already skipped checkpoints")
+        }
+        assert(store.assetCount() == 6)
+    }
+
+    private static func checkCommittedReplay(in directory: URL) throws {
+        let store = try catalog("committed-replay", in: directory)
+        var photo = asset(in: directory, raw: true)
+        photo.localPath = store.originalsURL.appendingPathComponent("managed.CR3").path
+        let file = fileResult(photo, in: directory)
+        var run = ImportRun(source: directory, mode: .managed)
+        run.sourceId = "explicit-source"
+        run.phase = .paused
+        run.total = 10
+        run.processed = 3
+        run.saved = 99
+        run.skipped = 98
+        run.failed = 97
+        run.recentAssets = [photo]
+        run.failures = [ImportFailure(url: directory.appendingPathComponent("other.CR3"), reason: "Unreadable")]
+        run.errorMessage = "Preserve progress details"
+        try store.startImportSession(id: run.id.uuidString)
+        let bookmark = Data("prior source permission".utf8)
+        try store.addSourceRoot(id: run.sourceId!, displayName: "Old name", path: directory.path,
+                                bookmark: bookmark, mode: .managed)
+        var options = batchOptions()
+        options.author = "Frozen author"
+        options.copyright = "Copyright {year}"
+        options.keywords = ["frozen-keyword"]
+        options.colorLabel = ColorLabel.red.rawValue
+        options.albumId = "frozen-album"
+        options.albumName = "Frozen album"
+        options.bookmark = Data("new source permission".utf8)
+        var rawSettings = DevelopSettings.neutral
+        rawSettings.exposure = 1.25
+        options.rawDefaults[photo.camera] = DevelopPreset(id: "raw-default", name: "Camera default",
+            transfer: DevelopTransfer(settings: rawSettings, fields: [.exposure], sourceIsRaw: true))
+        var presetSettings = DevelopSettings.neutral
+        presetSettings.contrast = 17
+        options.preset = DevelopPreset(id: "import-preset", name: "Import preset",
+            transfer: DevelopTransfer(settings: presetSettings, fields: [.contrast], sourceIsRaw: true))
+        var expectedSettings = rawSettings
+        expectedSettings.contrast = 17
+        let first = try store.saveImportBatch([file], run: run, options: options)
+        var expectedRun = run
+        expectedRun.saved = 1
+        expectedRun.skipped = 0
+        expectedRun.failed = 0
+        assert(first.run == expectedRun, "committed counters must not replace UI progress, failures or paused phase")
+        assert(first.assets[0].author == options.author && first.assets[0].keywords.contains("frozen-keyword")
+               && first.assets[0].colorLabel == .red)
+        let year = Calendar.captureWallClock.component(.year, from: photo.date)
+        assert(first.assets[0].copyright == "Copyright \(year)")
+        assert(first.source?.id == run.sourceId && first.source?.pathHint == run.sourcePath
+               && first.source?.bookmarkData == bookmark && first.source?.managementMode == "managed"
+               && first.source?.volumeIdentifier == VolumeMonitor.volumeIdentifier(for: directory))
+        assert(first.checkpoints.first?.source == file.source && first.checkpoints.first?.source.path != photo.localPath,
+               "managed destination paths never replace the original source identity")
+        let persistedSettings = try store.loadDevelopSettings()
+        let initialHistory = try store.loadDevelopHistory(photo.id)
+        assert(first.developSettings == [photo.id: expectedSettings] && first.developSettings == persistedSettings)
+        assert(initialHistory.map(\.settings) == [rawSettings, expectedSettings],
+               "RAW defaults precede the frozen import preset")
+        let albums = try store.loadAlbums()
+        let session = try store.loadImportSessions().first
+        assert(albums.first?.assetIds == [photo.id] && albums.first?.name == options.albumName)
+        assert(session?.state == "paused")
+
+        var edited = first.assets[0]
+        edited.rating = 5
+        edited.title = "User title after import"
+        edited.keywords = ["user-keyword"]
+        try store.updateAsset(edited)
+        var userSettings = expectedSettings
+        userSettings.exposure = -0.5
+        try store.saveDevelopSettings([photo.id: userSettings])
+        _ = try store.appendDevelopHistory([photo.id: (name: "User edit", settings: userSettings)])
+        let history = try store.loadDevelopHistory(photo.id)
+        let lateFailure = ImportFileResult(source: file.source, asset: nil, reason: "Late duplicate event")
+        let replay = try store.saveImportBatch([file, lateFailure], run: run, options: options)
+        assert(replay.assets.isEmpty && replay.checkpoints.isEmpty && replay.developSettings.isEmpty)
+        assert(replay.run == expectedRun, "a replay must not double-count or downgrade an already saved source")
+        let saved = try store.loadAssets()
+        let settings = try store.loadDevelopSettings()
+        let replayHistory = try store.loadDevelopHistory(photo.id)
+        let replayAlbums = try store.loadAlbums()
+        assert(saved.first?.rating == 5 && saved.first?.title == edited.title && saved.first?.keywords == edited.keywords)
+        assert(settings == [photo.id: userSettings] && replayHistory == history && replayAlbums == albums,
+               "replays must not reapply initial metadata, settings, history or album membership")
+    }
+
+    private static func checkCommittedRetries(in directory: URL) throws {
+        let store = try catalog("committed-retries", in: directory)
+        let run = ImportRun(source: directory, mode: .referenced)
+        try store.startImportSession(id: run.id.uuidString)
+        let options = batchOptions()
+        let firstFile = fileResult(asset(in: directory), in: directory)
+        let failedFile = ImportFileResult(source: firstFile.source, asset: nil, reason: "Decoder failed")
+        let failed = try store.saveImportBatch([failedFile, failedFile], run: run, options: options)
+        assert(failed.run.failed == 1 && failed.run.saved == 0 && failed.checkpoints.count == 1 && failed.source == nil)
+        let retried = try store.saveImportBatch([firstFile], run: run, options: options)
+        assert(retried.run.saved == 1 && retried.run.failed == 0 && retried.checkpoints.first?.reason == nil,
+               "successful retry replaces, rather than adds to, a failed checkpoint")
+        let changedSource = ImportSourceFile(path: firstFile.source.path, byteCount: 8192, modifiedAt: 2)
+        let changed = ImportFileResult(source: changedSource, asset: asset(in: directory, index: 1), reason: nil)
+        let replaced = try store.saveImportBatch([changed], run: run, options: options)
+        assert(replaced.assets.count == 1 && replaced.run.saved == 1 && store.assetCount() == 2,
+               "a changed fingerprint is processed and counts still describe one checkpoint per source path")
+        let sameId = ImportFileResult(source: ImportSourceFile(path: changedSource.path, byteCount: 8192, modifiedAt: 3),
+                                      asset: changed.asset, reason: nil)
+        let skipped = try store.saveImportBatch([sameId], run: run, options: options)
+        assert(skipped.run.saved == 0 && skipped.run.skipped == 1 && skipped.assets.isEmpty,
+               "changed source fingerprints cannot overwrite already cataloged IDs")
+        let failedAgain = ImportFileResult(source: ImportSourceFile(path: changedSource.path, byteCount: 8192, modifiedAt: 4),
+                                           asset: nil, reason: "Changed file is unreadable")
+        let failure = try store.saveImportBatch([failedAgain], run: run, options: options)
+        assert(failure.run.saved == 0 && failure.run.skipped == 0 && failure.run.failed == 1)
+        let recovered = ImportFileResult(source: failedAgain.source, asset: asset(in: directory, index: 2), reason: nil)
+        let final = try store.saveImportBatch([failedAgain, recovered, recovered], run: run, options: options)
+        let session = try store.loadImportSessions().first
+        let checkpoints = try store.loadImportCheckpoints(sessionId: run.id.uuidString)
+        assert(final.run.saved == 1 && final.run.failed == 0 && final.run.skipped == 0 && final.assets.count == 1)
+        assert(session?.importedCount == 1 && session?.failedCount == 0 && session?.skippedCount == 0)
+        assert(checkpoints.count == 1 && checkpoints[0].source == recovered.source && checkpoints[0].outcome == .saved)
+    }
+
+    private static func checkCommittedRollback(in directory: URL) throws {
+        for table in ["assets", "source_roots", "develop_settings", "develop_history", "albums",
+                      "album_assets", "import_files", "import_sessions"] {
+            let store = try catalog("committed-rollback-\(table)", in: directory)
+            var run = ImportRun(source: directory, mode: .referenced)
+            run.total = 3
+            try store.startImportSession(id: run.id.uuidString)
+            var options = batchOptions()
+            options.author = "Atomic author"
+            options.keywords = ["atomic-keyword"]
+            options.albumId = "atomic-album"
+            options.albumName = "Atomic album"
+            options.preset = DevelopPreset.builtIns[0]
+            let photos = (0..<3).map { asset(in: directory, index: $0, raw: false) }
+            let files = photos.map { fileResult($0, in: directory) }
+            let first = try store.saveImportBatch([files[0]], run: run, options: options)
+            var edited = first.assets[0]
+            edited.rating = 5
+            try store.updateAsset(edited)
+            try store.addSourceRoot(id: edited.folderId, displayName: "Before rejected batch", path: directory.path,
+                                    bookmark: Data("preserved access".utf8))
+            let beforeSession = try store.loadImportSessions()
+            let beforeAssets = try store.loadAssets()
+            let beforeSettings = try store.loadDevelopSettings()
+            let beforeHistory = try store.loadDevelopHistory(edited.id)
+            let beforeAlbums = try store.loadAlbums()
+            let beforeSource = try store.loadSourceRoots().first
+            // Reject the second new asset so an earlier row in the same batch also has to roll back.
+            let condition = table == "assets" ? "WHEN NEW.id='\(photos[2].id)'" : ""
+            try block(store, table: table, operation: table == "import_sessions" ? "UPDATE" : "INSERT",
+                      condition: condition)
+            expectFailure {
+                _ = try store.saveImportBatch(Array(files.dropFirst()), run: run, options: options)
+            }
+            let saved = try store.loadAssets()
+            let settings = try store.loadDevelopSettings()
+            let history = try store.loadDevelopHistory(edited.id)
+            let albums = try store.loadAlbums()
+            let sessions = try store.loadImportSessions()
+            let checkpoints = try store.loadImportCheckpoints(sessionId: run.id.uuidString)
+            let source = try store.loadSourceRoots().first
+            assert(saved == beforeAssets && settings == beforeSettings && history == beforeHistory,
+                   "\(table) rejection must preserve earlier assets/edits and roll back the whole new batch")
+            assert(albums == beforeAlbums && sessions == beforeSession,
+                   "\(table) rejection must not publish membership or committed counts")
+            assert(checkpoints.count == 1 && checkpoints[0].source == files[0].source && checkpoints[0].outcome == .saved)
+            assert(source?.displayName == beforeSource?.displayName && source?.bookmarkData == beforeSource?.bookmarkData)
+            assert(store.db.scalarInt("SELECT COUNT(*) FROM asset_search;") == 1)
+            for photo in photos.dropFirst() {
+                let newHistory = try store.loadDevelopHistory(photo.id)
+                assert(newHistory.isEmpty, "initial develop history rolls back with its asset")
+            }
+            try store.db.execChecked("DROP TRIGGER block_\(table);")
+            let retry = try store.saveImportBatch(Array(files.dropFirst()), run: run, options: options)
+            assert(retry.assets.count == 2 && retry.run.saved == 3 && retry.developSettings.count == 2,
+                   "a rejected batch can retry without losing earlier commits or counting attempted writes")
+            let afterRetrySettings = try store.loadDevelopSettings()
+            for photo in retry.assets {
+                assert(photo.author == options.author && photo.keywords.contains("atomic-keyword"))
+                assert(retry.developSettings[photo.id] == afterRetrySettings[photo.id])
+            }
+        }
+        let store = try catalog("committed-missing-session", in: directory)
+        expectFailure {
+            _ = try store.saveImportBatch([fileResult(asset(in: directory), in: directory)],
+                                         run: ImportRun(source: directory, mode: .referenced), options: batchOptions())
+        }
+        let sources = try store.loadSourceRoots()
+        assert(store.assetCount() == 0 && sources.isEmpty, "missing sessions fail before any batch is published")
+    }
+
+    private static func checkCommittedCatalogChanges(in directory: URL) throws {
+        let store = try catalog("committed-catalog-changes", in: directory)
+        let run = ImportRun(source: directory, mode: .referenced)
+        try store.startImportSession(id: run.id.uuidString)
+        var options = batchOptions()
+        options.author = "Import author"
+        let peer = try CatalogStore(packageURL: store.packageURL)
+        var original = asset(in: directory)
+        original.contentHash = "current-content"
+        original.fileMB = 1
+        var edited = original
+        edited.rating = 5
+        edited.title = "Inserted and edited by another catalog writer"
+        var demo = asset(in: directory, index: 1)
+        demo.contentHash = original.contentHash
+        demo.fileMB = original.fileMB
+        demo.isDemo = true
+        try peer.upsert([edited, demo])
+        var duplicate = asset(in: directory, index: 2)
+        duplicate.contentHash = original.contentHash
+        duplicate.fileMB = original.fileMB
+        let first = try store.saveImportBatch([fileResult(original, in: directory), fileResult(duplicate, in: directory)],
+                                             run: run, options: options)
+        assert(first.assets.isEmpty && first.run.skipped == 2 && first.source?.id == original.folderId,
+               "current persisted IDs/content win over worker snapshots; all-skipped batches still retain source metadata")
+        let current = try peer.loadAssets().first { $0.id == original.id }
+        assert(current?.rating == 5 && current?.title == edited.title && current?.author == edited.author,
+               "a concurrent insert is never overwritten or given import defaults")
+
+        edited.deleted = true
+        try peer.updateAsset(edited)
+        let deletedId = ImportFileResult(source: ImportSourceFile(path: directory.appendingPathComponent("deleted-id.jpg").path,
+                                                                 byteCount: 4096, modifiedAt: 1), asset: original, reason: nil)
+        var replacement = asset(in: directory, index: 3)
+        replacement.contentHash = original.contentHash
+        replacement.fileMB = original.fileMB
+        replacement.folderId = "fresh-source"
+        options.bookmark = Data("snapshot permission".utf8)
+        let replacementFile = fileResult(replacement, in: directory)
+        let next = try store.saveImportBatch([deletedId, replacementFile], run: run, options: options)
+        assert(next.assets.map(\.id) == [replacement.id] && next.run.saved == 1 && next.run.skipped == 3,
+               "deleted IDs are reserved, but deleted and demo rows are excluded from content duplication")
+        assert(next.source?.id == replacement.folderId && next.source?.bookmarkData == options.bookmark,
+               "the first fresh folder takes precedence over skipped result folders and uses frozen access")
+        let deleted = try store.db.query("SELECT deleted,rating,title FROM assets WHERE id=?;", [.text(original.id)]).first
+        assert(deleted?.bool("deleted") == true && deleted?.int("rating") == 5 && deleted?.text("title") == edited.title)
+
+        var removed = next.assets[0]
+        removed.deleted = true
+        try peer.updateAsset(removed)
+        let replay = try store.saveImportBatch([replacementFile], run: run, options: options)
+        assert(replay.assets.isEmpty && replay.checkpoints.isEmpty && replay.run.saved == 1 && replay.run.skipped == 3,
+               "successful replay cannot resurrect a photo the user deleted after import")
+        var demoResult = asset(in: directory, index: 4)
+        demoResult.isDemo = true
+        let ignored = try store.saveImportBatch([fileResult(demoResult, in: directory)], run: run, options: options)
+        assert(ignored.assets.isEmpty && ignored.checkpoints.first?.outcome == .skipped,
+               "demo results never become persisted imports")
+        let count = try store.db.query("SELECT COUNT(*) AS n FROM assets WHERE id=?;", [.text(demoResult.id)]).first?.int("n")
+        assert(count == 0)
+    }
+
+    private static func fileResult(_ asset: Asset, in directory: URL) -> ImportFileResult {
+        ImportFileResult(source: ImportSourceFile(path: directory.appendingPathComponent(asset.id + ".jpg").path,
+                                                  byteCount: 4096, modifiedAt: 1), asset: asset, reason: nil)
+    }
+
+    private static func batchOptions() -> ImportOptionsSnapshot {
+        ImportOptionsSnapshot(duplicateStrategy: ImportDuplicateStrategy.skipExact.rawValue,
+                              keywords: [], colorLabel: nil, author: "", copyright: "", albumName: "", albumId: nil,
+                              preset: nil, rawDefaults: [:], rawDefaultOptOuts: [], bookmark: nil)
+    }
+
     @MainActor
     private static func checkBatches(in directory: URL) throws {
         let store = try catalog("batches", in: directory)
@@ -249,7 +564,7 @@ enum ImportPersistenceCheck {
                                                latestSource: ImportSourceFile(url: thirdURL)), for: run.id, store: store)
         assert(app.importRun?.phase == .failed && app.importRun?.saved == 1 && store.assetCount() == 1,
                "failed checkpoint transactions roll back only their batch and preserve earlier saves")
-        app.finishImport(folder: directory, imported: [first, duplicate, third], existingIds: [],
+        app.finishImport(folder: directory, imported: [first, duplicate, third],
                          store: store, mode: .managed, runId: run.id)
         assert(app.assets.first?.rating == 5 && !app.importing,
                "late completion cannot overwrite an edit made while importing")
@@ -274,7 +589,7 @@ enum ImportPersistenceCheck {
             assert(app.startPersistedImport(run, store: store))
             app.importAuthor = "Changed after start"
             if table != "success" { try block(store, table: table, operation: "INSERT") }
-            app.finishImport(folder: directory, imported: [asset(in: directory)], existingIds: [],
+            app.finishImport(folder: directory, imported: [asset(in: directory)],
                              store: store, mode: .referenced, runId: run.id)
             let saved = try store.loadAssets()
             let files = try store.loadImportCheckpoints(sessionId: run.id.uuidString)
@@ -330,7 +645,7 @@ enum ImportPersistenceCheck {
                "a photo deleted between batches is no longer a live exact-duplicate candidate")
         let saved = try store.loadAssets()
         assert(saved.count == 1 && saved[0].id == replacement.id)
-        app.finishImport(folder: directory, imported: [original, replacement], existingIds: [],
+        app.finishImport(folder: directory, imported: [original, replacement],
                          store: store, mode: .referenced, runId: run.id)
     }
 
@@ -355,7 +670,7 @@ enum ImportPersistenceCheck {
         let run = ImportRun(source: directory, mode: .managed)
         assert(app.startPersistedImport(run, store: store))
         let original = try app.savedImportConfiguration(for: run, store: store).payload
-        app.finishImport(folder: directory, imported: [], existingIds: [], store: store, mode: .managed, runId: run.id)
+        app.finishImport(folder: directory, imported: [], store: store, mode: .managed, runId: run.id)
         app.importAuthor = "Later author"
         app.importPostKeywords = "later-keyword"
         app.importDevelopPresetId = ""
@@ -369,7 +684,7 @@ enum ImportPersistenceCheck {
                && saved.readSidecar == original.readSidecar && saved.previewMaxPixel == original.previewMaxPixel
                && saved.archiveRule == original.archiveRule,
                "a retry keeps its original metadata, preset, image processing and archive settings")
-        app.finishImport(folder: directory, imported: [], existingIds: [], store: store, mode: .managed, runId: retry.id)
+        app.finishImport(folder: directory, imported: [], store: store, mode: .managed, runId: retry.id)
     }
 
     private static func checkCancellation(in directory: URL) throws {
@@ -417,8 +732,9 @@ enum ImportPersistenceCheck {
         assert(failed, "missing/inconsistent/unreadable persistence records must fail closed")
     }
 
-    private static func asset(in directory: URL, index: Int = 0) -> Asset {
-        var asset = DemoData.assets[index]
+    private static func asset(in directory: URL, index: Int = 0, raw: Bool? = nil) -> Asset {
+        let candidates = raw.map { isRaw in DemoData.assets.filter { $0.isRaw == isRaw } } ?? DemoData.assets
+        var asset = candidates[index]
         asset.folderId = "persistence-source"
         asset.folderName = "Source"
         asset.isDemo = false

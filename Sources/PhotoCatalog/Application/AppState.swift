@@ -642,11 +642,8 @@ final class AppState {
     @ObservationIgnored private var importControl: ImportControl?
     @ObservationIgnored private var activeImportJobId: String?
     @ObservationIgnored private var importOptions: ImportOptionsSnapshot?
-    @ObservationIgnored private var importKnownIds: Set<String> = []
-    @ObservationIgnored private var importExactKeys: Set<String> = []
-    @ObservationIgnored private var importIndexVersion = -1
     @ObservationIgnored private var importCheckpoints: [String: ImportFileCheckpoint] = [:]
-    @ObservationIgnored private var pendingImportFiles: [(source: ImportSourceFile, asset: Asset?, reason: String?)] = []
+    @ObservationIgnored private var pendingImportFiles: [ImportFileResult] = []
     @ObservationIgnored private var lastImportBatchWrite: ContinuousClock.Instant?
     @ObservationIgnored private var launchCatalogHandled = false
     @ObservationIgnored var confirmDestructiveAction = AppState.confirmDestructiveAction
@@ -2544,7 +2541,7 @@ final class AppState {
             duplicateGroupsCache = []
             restoreSourceRoots(from: store)
             restoreAlbums(from: store, assets: [])
-            recoverInterruptedImportJobs(existingAssets: [])
+            recoverInterruptedImportJobs()
             ensurePrimaryValid()
             return
         }
@@ -2577,7 +2574,7 @@ final class AppState {
         }
         recomputeDuplicates()
         restoreAlbums(from: store, assets: checked)
-        recoverInterruptedImportJobs(existingAssets: checked)
+        recoverInterruptedImportJobs()
         primeDefaultListCache(with: checked)
         ensurePrimaryValid()
         backfillThumbnails()
@@ -3157,7 +3154,6 @@ final class AppState {
         openOrCreateCatalog()
         guard let coordinator, let store else { return }
         let sourceId = coordinator.sourceId(forFolder: folder)
-        let existingIds = Set(assets.map { $0.id })
         // referenced assets already in this source folder can be reused on a re-import instead
         // of being re-read/re-thumbnailed/re-Vision'd (process() skips by id)
         let knownAssetsById = Dictionary(
@@ -3171,14 +3167,14 @@ final class AppState {
         let readXMP = readXMPSidecar
         cancelBackfill()  // let the import generate thumbnails without a background pass contending
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
-        Task { [weak self, coordinator, store, folder, mode, vision, previewSize, archiveRule, readXMP, existingIds, sourceId, run, control, knownAssetsById] in
+        Task { [weak self, coordinator, store, folder, mode, vision, previewSize, archiveRule, readXMP, sourceId, run, control, knownAssetsById] in
             guard let self else { return }
             let imported = await self.runImportWorker(run, store: store) { progress in
                 coordinator.importFolder(folder, mode: mode, autoTag: vision, archiveRule: archiveRule,
                                          readSidecar: readXMP, previewMaxPixel: previewSize, control: control,
                                          knownAssetsById: knownAssetsById, progress: progress)
             }
-            self.finishImport(folder: folder, imported: imported, existingIds: existingIds,
+            self.finishImport(folder: folder, imported: imported,
                               store: store, mode: mode, runId: run.id, sourceId: sourceId)
         }
     }
@@ -3520,7 +3516,6 @@ final class AppState {
                                finished: @escaping @MainActor (Int) -> Void) {
         guard let coordinator, let store else { return }
         let sourceId = coordinator.sourceId(forFolder: root)
-        let existingIds = Set(assets.map { $0.id })
         // an interrupted import resumes from the copies, never from a card or camera that may be gone
         let run = ImportRun(source: root, mode: .referenced)
         guard startPersistedImport(run, store: store), let control = importControl else { return }
@@ -3529,7 +3524,7 @@ final class AppState {
         let readXMP = readXMPSidecar
         cancelBackfill()
         push("正在从「\(sourceName)」导入 \(urls.count) 张照片…", "importIcon")
-        Task { [weak self, coordinator, store, root, vision, previewSize, readXMP, existingIds, sourceId, run,
+        Task { [weak self, coordinator, store, root, vision, previewSize, readXMP, sourceId, run,
                 control, preparer, urls] in
             guard let self else { return }
             let imported = await self.runImportWorker(run, store: store) { progress in
@@ -3537,7 +3532,7 @@ final class AppState {
                                         previewMaxPixel: previewSize, control: control,
                                         preparer: preparer, progress: progress)
             }
-            self.finishImport(folder: root, imported: imported, existingIds: existingIds,
+            self.finishImport(folder: root, imported: imported,
                               store: store, mode: .referenced, runId: run.id, sourceId: sourceId)
             let completed = self.importRun?.phase == .complete
             finished(completed ? (self.importRun?.failed ?? 0) : max(1, self.importRun?.failed ?? 0))
@@ -3569,9 +3564,6 @@ final class AppState {
     private func prepareImportBatches(options: ImportOptionsSnapshot,
                                       checkpoints: [ImportFileCheckpoint] = []) {
         importOptions = options
-        importKnownIds = Set(assets.lazy.filter { !$0.isDemo }.map(\.id))
-        importExactKeys = Set(assets.lazy.filter { !$0.isDemo && !$0.deleted }.compactMap(HashService.exactDuplicateKey))
-        importIndexVersion = structureVersion
         importCheckpoints = Dictionary(checkpoints.map { ($0.source.path, $0) }, uniquingKeysWith: { _, last in last })
         pendingImportFiles = []
         lastImportBatchWrite = nil
@@ -3595,69 +3587,22 @@ final class AppState {
     func flushImportBatch(store: CatalogStore) -> Bool {
         guard !pendingImportFiles.isEmpty else { return true }
         guard let live = importRun, live.phase.isActive, let options = importOptions else { return false }
-        if importIndexVersion != structureVersion {
-            // Other importers and deletions can change the catalog while this worker decodes.
-            importKnownIds = Set(assets.lazy.filter { !$0.isDemo }.map(\.id))
-            importExactKeys = Set(assets.lazy.filter { !$0.isDemo && !$0.deleted }.compactMap(HashService.exactDuplicateKey))
-            importIndexVersion = structureVersion
-        }
         var run = pendingImportRun ?? live
-        var newIds: Set<String> = [], newKeys: Set<String> = []
-        var writes: [String: ImportFileCheckpoint] = [:]
-        var fresh: [Asset] = []
-        for item in pendingImportFiles {
-            let existing = writes[item.source.path] ?? importCheckpoints[item.source.path]
-            if let existing, existing.source == item.source,
-               existing.outcome != .failed { continue }
-            var outcome: ImportFileCheckpoint.Outcome = item.reason == nil ? .skipped : .failed
-            if let asset = item.asset, !importKnownIds.contains(asset.id), !newIds.contains(asset.id) {
-                let key = HashService.exactDuplicateKey(asset)
-                let duplicate = key.map { importExactKeys.contains($0) || newKeys.contains($0) } ?? false
-                if options.duplicateStrategy != ImportDuplicateStrategy.skipExact.rawValue || !duplicate {
-                    fresh.append(asset)
-                    newIds.insert(asset.id)
-                    if let key { newKeys.insert(key) }
-                    outcome = .saved
-                }
-            }
-            let checkpoint = ImportFileCheckpoint(source: item.source, assetId: item.asset?.id,
-                                                  outcome: outcome, reason: item.reason)
-            if existing?.outcome == .saved { run.saved -= 1 }
-            if existing?.outcome == .skipped { run.skipped -= 1 }
-            if existing?.outcome == .failed { run.failed -= 1 }
-            if outcome == .saved { run.saved += 1 }
-            if outcome == .skipped { run.skipped += 1 }
-            if outcome == .failed { run.failed += 1 }
-            writes[item.source.path] = checkpoint
-        }
-        fresh = ImportPostActionService.apply(to: fresh, actions: options.postActions)
         run.phase = live.phase == .paused ? .paused : .importing
-        let folder = URL(fileURLWithPath: run.sourcePath)
-        let rootId = run.sourceId ?? fresh.first?.folderId ?? pendingImportFiles.compactMap(\.asset).first?.folderId
+        let committed: CommittedImportBatch
         do {
-            let prior = try store.loadSourceRoots().first { $0.id == rootId }
-            let source = rootId.map {
-                SourceRootRecord(id: $0, displayName: folder.lastPathComponent, pathHint: folder.path,
-                                 bookmarkData: prior?.bookmarkData ?? options.bookmark, managementMode: run.mode.rawValue,
-                                 status: "online", volumeIdentifier: VolumeMonitor.volumeIdentifier(for: folder))
-            }
-            try store.saveImportBatch(fresh, checkpoints: Array(writes.values), run: run, source: source, options: options)
+            committed = try store.saveImportBatch(pendingImportFiles, run: run, options: options)
         } catch {
             failImportPersistence(error, run: live, store: store)
             return false
         }
-        importKnownIds.formUnion(newIds)
-        importExactKeys.formUnion(newKeys)
-        importCheckpoints.merge(writes) { _, last in last }
+        for checkpoint in committed.checkpoints { importCheckpoints[checkpoint.source.path] = checkpoint }
         pendingImportFiles = []
         lastImportBatchWrite = .now
-        run.sourceId = rootId
+        run = committed.run
+        let fresh = committed.assets
         if !fresh.isEmpty {
-            for asset in fresh {
-                if let settings = options.developSteps(for: asset).last?.settings, !settings.isNeutral {
-                    developSettings[asset.id] = settings
-                }
-            }
+            developSettings.merge(committed.developSettings) { _, latest in latest }
             if let albumId = options.albumId {
                 if let index = albums.firstIndex(where: { $0.id == albumId }) {
                     albums[index].assetIds.append(contentsOf: fresh.map(\.id))
@@ -3669,14 +3614,13 @@ final class AppState {
             recordSidecarBaselines(fresh)
             clearDevelopRecordCaches()
         }
-        if let rootId {
-            sourceManagementModesById[rootId] = run.mode.rawValue
-            setSourceFolder(id: rootId, name: folder.lastPathComponent, path: folder.path, status: "online")
+        if let source = committed.source {
+            sourceManagementModesById[source.id] = source.managementMode
+            setSourceFolder(id: source.id, name: source.displayName, path: source.pathHint, status: source.status)
             if live.saved == 0, run.saved > 0, sheet == "import" {
-                select(Selection(type: .folder, id: rootId, name: folder.lastPathComponent))
+                select(Selection(type: .folder, id: source.id, name: source.displayName))
             }
         }
-        importIndexVersion = structureVersion
         pendingImportRun = run
         flushPendingImportRun()
         return true
@@ -3712,7 +3656,8 @@ final class AppState {
             if progress.latestFailure == nil, failureSeenIds.ids.remove(source.path) != nil {
                 run.failures.removeAll { $0.path == source.path }
             }
-            pendingImportFiles.append((source, progress.latestAsset, progress.latestFailure?.reason))
+            pendingImportFiles.append(ImportFileResult(source: source, asset: progress.latestAsset,
+                                                      reason: progress.latestFailure?.reason))
         }
         pendingImportRun = run
         let final = progress.total > 0 && progress.processed + progress.failed >= progress.total
@@ -3737,7 +3682,7 @@ final class AppState {
         importRun = flush
     }
 
-    func finishImport(folder: URL, imported: [Asset], existingIds: Set<String>, store: CatalogStore,
+    func finishImport(folder: URL, imported: [Asset], store: CatalogStore,
                       mode: ImportMode, runId: UUID, sourceId: String? = nil) {
         guard importRun?.id == runId else { return }
         defer {
@@ -3746,13 +3691,12 @@ final class AppState {
             activeImportJobId = nil
         }
         guard importRun?.phase.isActive == true else { return }
-        importKnownIds.formUnion(existingIds)
         let checkpointIds = Set(importCheckpoints.values.compactMap(\.assetId))
         let pendingIds = Set(pendingImportFiles.compactMap { $0.asset?.id })
         // Also supports callers delivering a completed batch without progress events.
         for asset in imported where !checkpointIds.contains(asset.id) && !pendingIds.contains(asset.id) {
             let url = asset.localPath.map { URL(fileURLWithPath: $0) } ?? folder.appendingPathComponent(asset.filename)
-            pendingImportFiles.append((ImportSourceFile(url: url), asset, nil))
+            pendingImportFiles.append(ImportFileResult(source: ImportSourceFile(url: url), asset: asset, reason: nil))
         }
         guard flushImportBatch(store: store) else { return }
         flushPendingImportRun()
@@ -3906,7 +3850,7 @@ final class AppState {
         }
     }
 
-    private func recoverInterruptedImportJobs(existingAssets: [Asset]) {
+    private func recoverInterruptedImportJobs() {
         guard !importing, let store else { return }
         do {
             let jobs = try store.loadJobs(type: "scan", states: ["running", "paused", "failed"])
@@ -3943,8 +3887,7 @@ final class AppState {
                                        autoTag: payload.autoTag,
                                        archiveRule: recoveredArchiveRule(payload),
                                        readSidecar: payload.readSidecar ?? readXMPSidecar,
-                                       previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel,
-                                       existingIds: Set(existingAssets.map { $0.id }), options: payload.options)
+                                       previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel, options: payload.options)
             } catch {
                 var message = L("未能恢复导入：\(String(describing: error))")
                 do {
@@ -3977,8 +3920,7 @@ final class AppState {
                                    autoTag: payload.autoTag,
                                    archiveRule: recoveredArchiveRule(payload),
                                    readSidecar: payload.readSidecar ?? readXMPSidecar,
-                                   previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel,
-                                   existingIds: Set(assets.map { $0.id }), options: payload.options)
+                                   previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel, options: payload.options)
         } catch {
             failImportPersistence(error, run: run, store: store, detail: L("未能恢复导入"))
             importControl = nil
@@ -3990,7 +3932,7 @@ final class AppState {
     private func restartRecoveredImport(jobId: String, run: ImportRun, folder: URL, mode: ImportMode,
                                         autoTag: Bool, archiveRule: ManagedArchiveRule,
                                         readSidecar: Bool, previewMaxPixel: Int,
-                                        existingIds: Set<String>, options: ImportOptionsSnapshot?) {
+                                        options: ImportOptionsSnapshot?) {
         guard let coordinator, let store else { return }
         do {
             let checkpoints = try store.loadImportCheckpoints(sessionId: run.id.uuidString)
@@ -4023,7 +3965,7 @@ final class AppState {
         sheet = "import"
         push("正在恢复导入「\(folder.lastPathComponent)」…", "refresh")
 
-        Task { [weak self, coordinator, store, folder, mode, autoTag, archiveRule, readSidecar, previewMaxPixel, existingIds, sourceId, runningRun, control, knownAssetsById, checkpoints] in
+        Task { [weak self, coordinator, store, folder, mode, autoTag, archiveRule, readSidecar, previewMaxPixel, sourceId, runningRun, control, knownAssetsById, checkpoints] in
             guard let self else { return }
             let imported = await self.runImportWorker(runningRun, store: store) { progress in
                 coordinator.importFolder(folder, mode: mode, autoTag: autoTag,
@@ -4031,7 +3973,7 @@ final class AppState {
                                          previewMaxPixel: previewMaxPixel, control: control,
                                          knownAssetsById: knownAssetsById, checkpoints: checkpoints, progress: progress)
             }
-            self.finishImport(folder: folder, imported: imported, existingIds: existingIds,
+            self.finishImport(folder: folder, imported: imported,
                               store: store, mode: mode, runId: runningRun.id, sourceId: sourceId)
         }
     }
@@ -4110,8 +4052,7 @@ final class AppState {
                 restartRecoveredImport(jobId: configuration.job.id, run: restored, folder: folder, mode: run.mode,
                     autoTag: payload.autoTag, archiveRule: recoveredArchiveRule(payload),
                     readSidecar: payload.readSidecar ?? readXMPSidecar,
-                    previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel,
-                    existingIds: Set(assets.map(\.id)), options: payload.options)
+                    previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel, options: payload.options)
                 return
             }
         } catch {
@@ -4124,20 +4065,19 @@ final class AppState {
             importRun?.failures = run.failures
             return
         }
-        let existingIds = Set(assets.map { $0.id })
         let vision = configuration.payload.autoTag
         let previewSize = configuration.payload.previewMaxPixel ?? previewMaxPixel
         let archiveRule = recoveredArchiveRule(configuration.payload)
         let readXMP = configuration.payload.readSidecar ?? readXMPSidecar
         push("正在重试 \(files.count) 个失败文件…", "refresh")
-        Task { [weak self, coordinator, store, folder, files, existingIds, retry, vision, archiveRule, readXMP, previewSize, control] in
+        Task { [weak self, coordinator, store, folder, files, retry, vision, archiveRule, readXMP, previewSize, control] in
             guard let self else { return }
             let imported = await self.runImportWorker(retry, store: store) { progress in
                 coordinator.importFiles(files, from: folder, mode: retry.mode, autoTag: vision,
                                         archiveRule: archiveRule, readSidecar: readXMP,
                                         previewMaxPixel: previewSize, control: control, progress: progress)
             }
-            self.finishImport(folder: folder, imported: imported, existingIds: existingIds,
+            self.finishImport(folder: folder, imported: imported,
                               store: store, mode: retry.mode, runId: retry.id)
         }
     }
@@ -7396,8 +7336,6 @@ final class AppState {
         pendingImportFiles = []
         importOptions = nil
         importCheckpoints = [:]
-        importKnownIds = []
-        importExactKeys = []
         importing = false
         store = nil
         coordinator = nil

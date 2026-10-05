@@ -498,7 +498,7 @@ final class CatalogStore: @unchecked Sendable {
         try db.transaction { try upsertRows(assets) }
     }
 
-    private func upsertRows(_ assets: [Asset]) throws {
+    private func upsertRows(_ assets: [Asset], updatingExisting: Bool = true) throws {
         let cols = Self.columns.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         let placeholders = Array(repeating: "?", count: cols.count).joined(separator: ",")
         // True in-place upsert. INSERT OR REPLACE would DELETE the conflicting row before
@@ -506,7 +506,8 @@ final class CatalogStore: @unchecked Sendable {
         // and silently drops the asset from every manual album on each metadata edit. The
         // ON CONFLICT…DO UPDATE form updates the row in place, leaving FK children intact.
         let assignments = cols.filter { $0 != "id" }.map { "\($0)=excluded.\($0)" }.joined(separator: ",")
-        let sql = "INSERT INTO assets(\(Self.columns)) VALUES(\(placeholders)) ON CONFLICT(id) DO UPDATE SET \(assignments);"
+        let conflict = updatingExisting ? " ON CONFLICT(id) DO UPDATE SET \(assignments)" : ""
+        let sql = "INSERT INTO assets(\(Self.columns)) VALUES(\(placeholders))\(conflict);"
         for a in assets {
             try db.run(sql, Self.params(a))
             // keep the FTS index in sync; its rows share the asset's rowid (schema v20)
@@ -1480,68 +1481,152 @@ final class CatalogStore: @unchecked Sendable {
     }
 
     func loadImportCheckpoints(sessionId: String) throws -> [ImportFileCheckpoint] {
-        try db.query("SELECT * FROM import_files WHERE session_id=?;", [.text(sessionId)]).compactMap { row in
-            guard let path = row.text("source_path"), let raw = row.text("outcome"),
-                  let outcome = ImportFileCheckpoint.Outcome(rawValue: raw) else { return nil }
-            return ImportFileCheckpoint(source: ImportSourceFile(path: path, byteCount: row.int("file_size"),
-                                                                 modifiedAt: row.double("modified_at")),
-                                        assetId: row.text("asset_id"), outcome: outcome, reason: row.text("reason"))
+        try db.query("SELECT * FROM import_files WHERE session_id=?;", [.text(sessionId)])
+            .compactMap(Self.importCheckpoint(from:))
+    }
+
+    /// Returns only this transaction's additions. Counters come from the persisted session;
+    /// processing progress, failure details and phase remain owned by the caller.
+    func saveImportBatch(_ results: [ImportFileResult], run: ImportRun,
+                         options: ImportOptionsSnapshot) throws -> CommittedImportBatch {
+        var committedRun = run
+        var fresh: [Asset] = []
+        var writes: [String: ImportFileCheckpoint] = [:]
+        var source: SourceRootRecord?
+        var settings: [String: DevelopSettings] = [:]
+        try db.transaction {
+            guard let session = try db.query("SELECT * FROM import_sessions WHERE id=?;", [.text(run.id.uuidString)])
+                .first.flatMap(Self.importSession(from:)) else {
+                throw DBError.step("Import session not found: \(run.id.uuidString)")
+            }
+            committedRun.saved = session.importedCount
+            committedRun.skipped = session.skippedCount
+            committedRun.failed = session.failedCount
+            var newIds: Set<String> = []
+            var newKeys: Set<String> = []
+            let skipExact = options.duplicateStrategy == ImportDuplicateStrategy.skipExact.rawValue
+            for result in results {
+                let previous: ImportFileCheckpoint?
+                if let pending = writes[result.source.path] {
+                    previous = pending
+                } else {
+                    previous = try db.query("SELECT * FROM import_files WHERE session_id=? AND source_path=?;",
+                                            [.text(run.id.uuidString), .text(result.source.path)])
+                        .first.flatMap(Self.importCheckpoint(from:))
+                }
+                if let previous, previous.source == result.source, previous.outcome != .failed { continue }
+
+                var outcome: ImportFileCheckpoint.Outcome = result.reason == nil ? .skipped : .failed
+                if let asset = result.asset, !asset.isDemo, !newIds.contains(asset.id),
+                   try db.query("SELECT id FROM assets WHERE id=?;", [.text(asset.id)]).isEmpty {
+                    let key = HashService.exactDuplicateKey(asset)
+                    var duplicate = key.map { newKeys.contains($0) } ?? false
+                    if skipExact, !duplicate, let hash = asset.contentHash, let key {
+                        // Only inspect this indexed hash bucket; retain Swift's byte rounding.
+                        duplicate = try db.query("""
+                        SELECT file_mb FROM assets INDEXED BY idx_assets_hash
+                        WHERE content_hash=? AND is_demo=0 AND deleted=0;
+                        """, [.text(hash)]).contains {
+                            HashService.exactDuplicateKey(fileMB: $0.double("file_mb") ?? 0, contentHash: hash) == key
+                        }
+                    }
+                    if !skipExact || !duplicate {
+                        fresh.append(asset)
+                        newIds.insert(asset.id)
+                        if let key { newKeys.insert(key) }
+                        outcome = .saved
+                    }
+                }
+                if previous?.outcome == .saved { committedRun.saved -= 1 }
+                if previous?.outcome == .skipped { committedRun.skipped -= 1 }
+                if previous?.outcome == .failed { committedRun.failed -= 1 }
+                if outcome == .saved { committedRun.saved += 1 }
+                if outcome == .skipped { committedRun.skipped += 1 }
+                if outcome == .failed { committedRun.failed += 1 }
+                writes[result.source.path] = ImportFileCheckpoint(source: result.source, assetId: result.asset?.id,
+                                                                 outcome: outcome, reason: result.reason)
+            }
+            fresh = ImportPostActionService.apply(to: fresh, actions: options.postActions)
+            let rootId = run.sourceId ?? fresh.first?.folderId ?? results.compactMap(\.asset).first?.folderId
+            if let rootId {
+                let folder = URL(fileURLWithPath: run.sourcePath)
+                let bookmark = try db.query("SELECT bookmark_data FROM source_roots WHERE id=?;", [.text(rootId)])
+                    .first?.blob("bookmark_data")
+                source = SourceRootRecord(id: rootId, displayName: folder.lastPathComponent, pathHint: folder.path,
+                                          bookmarkData: bookmark ?? options.bookmark, managementMode: run.mode.rawValue,
+                                          status: "online", volumeIdentifier: VolumeMonitor.volumeIdentifier(for: folder))
+            }
+            committedRun.sourceId = rootId
+            settings = try writeImportBatchRows(fresh, checkpoints: Array(writes.values), run: committedRun,
+                                                source: source, options: options)
         }
+        return CommittedImportBatch(assets: fresh, checkpoints: writes.values.sorted { $0.source.path < $1.source.path },
+                                    run: committedRun, source: source, developSettings: settings)
     }
 
     /// A checkpoint only becomes resumable together with its assets and initial edits.
-    func saveImportBatch(_ assets: [Asset], checkpoints: [ImportFileCheckpoint], run: ImportRun,
-                         source: SourceRootRecord?, options: ImportOptionsSnapshot) throws {
-        try db.transaction {
-            try upsertRows(assets)
-            if let source {
-                try addSourceRoot(id: source.id, displayName: source.displayName, path: source.pathHint,
-                                  bookmark: source.bookmarkData, mode: run.mode,
-                                  volumeIdentifier: source.volumeIdentifier)
-            }
-            let now = Self.iso(.now)
-            for asset in assets {
-                let steps = options.developSteps(for: asset)
-                if let settings = steps.last?.settings, !settings.isNeutral {
-                    try db.run("INSERT INTO develop_settings(asset_id, settings, updated_at) VALUES(?,?,?);",
-                               [.text(asset.id), .text(DevelopHistoryStep.json(settings)), .text(now)])
-                }
-                for (index, step) in steps.enumerated() {
-                    try db.run("INSERT INTO develop_history(asset_id,seq,name,created_at,settings) VALUES(?,?,?,?,?);",
-                               [.text(asset.id), .int(index + 1), .text(step.name), .text(now),
-                                .text(DevelopHistoryStep.json(step.settings))])
-                }
-            }
-            if let albumId = options.albumId, !assets.isEmpty {
-                try db.run("""
-                INSERT INTO albums(id,type,name,sort_order,created_at,updated_at)
-                VALUES(?,'album',?,(SELECT COALESCE(MAX(sort_order),0)+1 FROM albums),?,?)
-                ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at;
-                """, [.text(albumId), .text(options.albumName), .text(now), .text(now)])
-                let position = try db.query("SELECT COALESCE(MAX(position),-1)+1 AS n FROM album_assets WHERE album_id=?;",
-                                            [.text(albumId)]).first?.int("n") ?? 0
-                for (offset, asset) in assets.enumerated() {
-                    try db.run("INSERT OR IGNORE INTO album_assets(album_id,asset_id,position,added_at) VALUES(?,?,?,?);",
-                               [.text(albumId), .text(asset.id), .int(position + offset), .text(now)])
-                }
-            }
-            for checkpoint in checkpoints {
-                try db.run("""
-                INSERT INTO import_files(session_id,source_path,file_size,modified_at,asset_id,outcome,reason)
-                VALUES(?,?,?,?,?,?,?)
-                ON CONFLICT(session_id,source_path) DO UPDATE SET
-                  file_size=excluded.file_size,modified_at=excluded.modified_at,asset_id=excluded.asset_id,
-                  outcome=excluded.outcome,reason=excluded.reason;
-                """, [.text(run.id.uuidString), .text(checkpoint.source.path),
-                      checkpoint.source.byteCount.map(SQLValue.int) ?? .null,
-                      checkpoint.source.modifiedAt.map(SQLValue.double) ?? .null,
-                      checkpoint.assetId.map(SQLValue.text) ?? .null, .text(checkpoint.outcome.rawValue),
-                      checkpoint.reason.map(SQLValue.text) ?? .null])
-            }
-            try updateImportSession(id: run.id.uuidString, rootId: source?.id,
-                                    state: run.phase == .paused ? "paused" : "running", totalCount: run.total,
-                                    importedCount: run.saved, skippedCount: run.skipped, failedCount: run.failed)
+    private func writeImportBatchRows(_ assets: [Asset], checkpoints: [ImportFileCheckpoint], run: ImportRun,
+                                      source: SourceRootRecord?, options: ImportOptionsSnapshot) throws
+        -> [String: DevelopSettings] {
+        try upsertRows(assets, updatingExisting: false)
+        if let source {
+            try addSourceRoot(id: source.id, displayName: source.displayName, path: source.pathHint,
+                              bookmark: source.bookmarkData, mode: run.mode,
+                              volumeIdentifier: source.volumeIdentifier)
         }
+        let now = Self.iso(.now)
+        var initialSettings: [String: DevelopSettings] = [:]
+        for asset in assets {
+            let steps = options.developSteps(for: asset)
+            if let settings = steps.last?.settings, !settings.isNeutral {
+                try db.run("INSERT INTO develop_settings(asset_id, settings, updated_at) VALUES(?,?,?);",
+                           [.text(asset.id), .text(DevelopHistoryStep.json(settings)), .text(now)])
+                initialSettings[asset.id] = settings
+            }
+            for (index, step) in steps.enumerated() {
+                try db.run("INSERT INTO develop_history(asset_id,seq,name,created_at,settings) VALUES(?,?,?,?,?);",
+                           [.text(asset.id), .int(index + 1), .text(step.name), .text(now),
+                            .text(DevelopHistoryStep.json(step.settings))])
+            }
+        }
+        if let albumId = options.albumId, !assets.isEmpty {
+            try db.run("""
+            INSERT INTO albums(id,type,name,sort_order,created_at,updated_at)
+            VALUES(?,'album',?,(SELECT COALESCE(MAX(sort_order),0)+1 FROM albums),?,?)
+            ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at;
+            """, [.text(albumId), .text(options.albumName), .text(now), .text(now)])
+            let position = try db.query("SELECT COALESCE(MAX(position),-1)+1 AS n FROM album_assets WHERE album_id=?;",
+                                        [.text(albumId)]).first?.int("n") ?? 0
+            for (offset, asset) in assets.enumerated() {
+                try db.run("INSERT OR IGNORE INTO album_assets(album_id,asset_id,position,added_at) VALUES(?,?,?,?);",
+                           [.text(albumId), .text(asset.id), .int(position + offset), .text(now)])
+            }
+        }
+        for checkpoint in checkpoints {
+            try db.run("""
+            INSERT INTO import_files(session_id,source_path,file_size,modified_at,asset_id,outcome,reason)
+            VALUES(?,?,?,?,?,?,?)
+            ON CONFLICT(session_id,source_path) DO UPDATE SET
+              file_size=excluded.file_size,modified_at=excluded.modified_at,asset_id=excluded.asset_id,
+              outcome=excluded.outcome,reason=excluded.reason;
+            """, [.text(run.id.uuidString), .text(checkpoint.source.path),
+                  checkpoint.source.byteCount.map(SQLValue.int) ?? .null,
+                  checkpoint.source.modifiedAt.map(SQLValue.double) ?? .null,
+                  checkpoint.assetId.map(SQLValue.text) ?? .null, .text(checkpoint.outcome.rawValue),
+                  checkpoint.reason.map(SQLValue.text) ?? .null])
+        }
+        try updateImportSession(id: run.id.uuidString, rootId: source?.id,
+                                state: run.phase == .paused ? "paused" : "running", totalCount: run.total,
+                                importedCount: run.saved, skippedCount: run.skipped, failedCount: run.failed)
+        return initialSettings
+    }
+
+    private static func importCheckpoint(from row: Row) -> ImportFileCheckpoint? {
+        guard let path = row.text("source_path"), let raw = row.text("outcome"),
+              let outcome = ImportFileCheckpoint.Outcome(rawValue: raw) else { return nil }
+        return ImportFileCheckpoint(source: ImportSourceFile(path: path, byteCount: row.int("file_size"),
+                                                             modifiedAt: row.double("modified_at")),
+                                    assetId: row.text("asset_id"), outcome: outcome, reason: row.text("reason"))
     }
 
     // ---------- jobs (§10.2 / §13) ----------

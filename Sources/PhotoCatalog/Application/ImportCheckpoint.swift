@@ -19,6 +19,20 @@ struct ImportSourceFile: Equatable, Sendable {
     }
 }
 
+struct ImportFileResult: Sendable {
+    let source: ImportSourceFile
+    let asset: Asset?
+    let reason: String?
+}
+
+struct CommittedImportBatch: Sendable {
+    let assets: [Asset]
+    let checkpoints: [ImportFileCheckpoint]
+    let run: ImportRun
+    let source: SourceRootRecord?
+    let developSettings: [String: DevelopSettings]
+}
+
 struct ImportFileCheckpoint: Sendable {
     enum Outcome: String, Sendable { case saved, skipped, failed }
     let source: ImportSourceFile
