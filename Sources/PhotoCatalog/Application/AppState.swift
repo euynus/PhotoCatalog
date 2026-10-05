@@ -480,6 +480,7 @@ final class AppState {
     /// Show a RAW and its same-name JPEG/HEIC as one photo; off lists every file separately.
     var pairRawAndJpeg: Bool = (UserDefaults.standard.object(forKey: "pc_pairRawJpeg") as? Bool) ?? true {
         didSet {
+            guard pairRawAndJpeg != oldValue else { return }
             UserDefaults.standard.set(pairRawAndJpeg, forKey: "pc_pairRawJpeg")
             invalidatePresentationCaches()
         }
@@ -514,16 +515,38 @@ final class AppState {
     /// Pairing changes what every count and list shows.
     private func invalidatePresentationCaches() {
         captureTimeGroupsCache = nil
+        photoStacksCache = nil
+        stackByAssetCache = nil
+        stackInputsVersion &+= 1
         folderTreeCountCache = nil
         captureDateGroupsCache = nil
+        keywordCountsCache = nil
         keywordListCache = nil
+        keywordSuggestionPoolCache = nil
+        gearCountsCache = nil
         projectListCache = nil
         clientListCache = nil
         libraryCountsCache = nil
         sidebarCountIndexCache = nil
         pinnedSidebarFavoritesCache = nil
         listInputsVersion &+= 1
-        ensurePrimaryValid()
+        if pairRawAndJpeg, !(selection.type == .lib && selection.id == "missing") {
+            let primaries = assetPairing.primaryByCompanion
+            func presentedID(_ id: String) -> String { primaries[id] ?? id }
+            func presentedIDs(_ ids: [String]) -> [String] {
+                var seen = Set<String>()
+                return ids.map(presentedID).filter { seen.insert($0).inserted }
+            }
+            selectedIds = Set(selectedIds.map(presentedID))
+            primaryId = primaryId.map(presentedID)
+            anchorId = anchorId.map(presentedID)
+            compareIds = presentedIDs(compareIds)
+            winner = winner.map(presentedID)
+            surveyIds = presentedIDs(surveyIds)
+        }
+        // Survey owns a fixed set of photos, including ones no longer matching the filter.
+        if view != .survey { ensurePrimaryValid() }
+        if view == .compare { syncCompareSelection() }
     }
 
     var appearance: AppAppearance = .stored {

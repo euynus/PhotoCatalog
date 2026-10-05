@@ -1,16 +1,164 @@
 import Foundation
+import Observation
 
 /// RAW+JPEG pairs present as one photo and edit as one.
 enum PairingCheck {
     static func run() {
+        let pairing = UserDefaults.standard.object(forKey: "pc_pairRawJpeg")
+        let autoStack = UserDefaults.standard.object(forKey: "pc_autoStackSeconds")
+        defer {
+            UserDefaults.standard.set(pairing, forKey: "pc_pairRawJpeg")
+            UserDefaults.standard.set(autoStack, forKey: "pc_autoStackSeconds")
+        }
         checkPathStrings()
         MainActor.assumeIsolated {
             checkPresentationAndEdits()
+            checkPairingChanges()
             checkSelectionSummary()
             checkEditedVersions()
         }
         checkRenameKeepsPairs()
         print("--- RAW+JPEG pairing assertions passed ---")
+    }
+
+    @MainActor
+    private static func checkPairingChanges() {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        func photo(_ id: String, _ name: String, raw: Bool, offset: Double,
+                   keywords: [String]) -> Asset {
+            Asset(id: id, pid: 0, ori: "l", thumb: "", preview: "", filename: name,
+                  type: raw ? "CR3" : "JPEG", isRaw: raw, folderId: "pairing", folderName: "Pairing",
+                  date: date.addingTimeInterval(offset), width: 6000, height: 4000, orientation: 1,
+                  camera: "Pairing camera", lens: "Pairing lens", focal: 50, aperture: 4,
+                  shutter: "1/100", iso: 100, colorSpace: "sRGB", fileMB: 1,
+                  rating: 0, flag: .none, keywords: keywords, title: "", caption: "", location: "",
+                  gps: (0, 0), status: .ready, importedAt: date,
+                  localPath: "/tmp/pc-pairing-toggle/" + name)
+        }
+        let solo = photo("solo", "001.CR3", raw: true, offset: 0, keywords: ["solo"])
+        let raw = photo("raw", "002.CR3", raw: true, offset: 10, keywords: ["shared"])
+        let jpeg = photo("jpeg", "002.JPG", raw: false, offset: 10, keywords: ["shared", "jpeg-only"])
+        let last = photo("last", "003.CR3", raw: true, offset: 20, keywords: ["last"])
+        let app = AppState.selfCheckFixture()
+        app.pairRawAndJpeg = true
+        app.autoStackSeconds = 1
+        app.assets = [solo, raw, jpeg, last]
+        app.duplicateGroupsCache = []
+        app.setSort(Sort(field: .name, descending: false))
+        app.select(Selection(type: .lib, id: "all", name: "Pairing changes"))
+        assert(app.list.map(\.id) == [solo.id, raw.id, last.id] && app.libraryCounts.all == 3)
+        assert(app.keywordList.first { $0.name == "shared" }?.count == 1
+               && !app.keywordSuggestionPool.contains("jpeg-only"))
+        assert(app.gearCounts.cameras.first?.count == 3 && app.gearCounts.lenses.first?.count == 3)
+        assert(!app.hasStacks && app.stackInfo(for: raw) == nil,
+               "warm all presentation caches while the pair is folded")
+
+        let invalidated = CancellationFlag()
+        withObservationTracking {
+            _ = app.keywordList
+            _ = app.gearCounts
+            _ = app.stackInfo(for: raw)
+        } onChange: { invalidated.set() }
+        app.pairRawAndJpeg = false
+        assert(invalidated.isSet)
+        assert(app.keywordList.first { $0.name == "shared" }?.count == 2
+               && app.keywordList.first { $0.name == "jpeg-only" }?.count == 1
+               && app.keywordSuggestionPool.contains("jpeg-only"),
+               "unfolding a pair rebuilds keyword counts and suggestions, not just their display")
+        assert(app.gearCounts.cameras.first?.count == 4 && app.gearCounts.lenses.first?.count == 4,
+               "camera and lens counts follow the newly visible files")
+        assert(app.hasStacks && app.stackInfo(for: raw)?.count == 2 && app.stackInfo(for: jpeg)?.count == 2,
+               "capture-time stacks rebuild when the paired file becomes visible")
+
+        let stackInvalidated = CancellationFlag()
+        withObservationTracking {
+            _ = app.stackInfo(for: jpeg)
+        } onChange: { stackInvalidated.set() }
+        app.setPrimary(jpeg.id)
+        app.selectedIds.insert(solo.id)
+        app.pairRawAndJpeg = true
+        assert(stackInvalidated.isSet && !app.hasStacks && app.stackInfo(for: jpeg) == nil,
+               "folding a pair refreshes cached stack membership and its view dependencies")
+        assert(app.primaryId == raw.id && app.selectedIds == [solo.id, raw.id],
+               "the selected JPEG becomes its RAW tile without jumping or dropping other selected photos")
+        assert(app.keywordList.first { $0.name == "shared" }?.count == 1
+               && !app.keywordSuggestionPool.contains("jpeg-only")
+               && app.gearCounts.cameras.first?.count == 3 && app.gearCounts.lenses.first?.count == 3)
+        app.selectCell(last.id, shift: true, meta: false)
+        assert(app.selectedIds == [raw.id, last.id], "range selection keeps the remapped anchor")
+        let sameList = app.photoList
+        app.pairRawAndJpeg = true
+        assert(app.photoList == sameList, "assigning the current pairing preference does not rebuild the list")
+
+        app.pairRawAndJpeg = false
+        app.openLoupe(jpeg.id)
+        app.pairRawAndJpeg = true
+        assert(app.view == .loupe && app.primaryId == raw.id && app.selectedIds == [raw.id],
+               "Loupe stays on the same exposure when its JPEG folds into the RAW")
+
+        app.view = .grid
+        app.pairRawAndJpeg = false
+        app.compareIds = [jpeg.id, raw.id, last.id]
+        app.winner = jpeg.id
+        app.setPrimary(jpeg.id)
+        app.view = .compare
+        app.pairRawAndJpeg = true
+        assert(app.compareIds == [raw.id, last.id] && app.winner == raw.id && app.primaryId == raw.id,
+               "Compare preserves order, active photo and winner while collapsing duplicate tiles")
+
+        app.view = .grid
+        app.pairRawAndJpeg = false
+        for index in [0, 2, 3] { app.assets[index].rating = 5 }
+        var filters = Filters()
+        filters.minRating = 5
+        app.setFilters(filters)
+        app.compareIds = [jpeg.id, last.id]
+        app.winner = jpeg.id
+        app.setPrimary(jpeg.id)
+        app.view = .compare
+        app.pairRawAndJpeg = true
+        assert(app.list.first?.id == solo.id && app.compareIds == [last.id]
+               && app.primaryId == last.id && app.selectedIds == [last.id] && app.winner == nil,
+               "a filtered-out RAW cannot move Compare's selection to an unrelated library result")
+        assert(app.setFlag(.pick) && app.asset(id: last.id)?.flag == .pick && app.asset(id: solo.id)?.flag == Flag.none,
+               "the next review command targets only the surviving comparison panel")
+
+        app.view = .grid
+        app.setFilters(Filters())
+        app.assets = [solo, raw, jpeg, last]
+        app.pairRawAndJpeg = false
+        app.setPrimary(jpeg.id)
+        app.selectedIds = [raw.id, jpeg.id, last.id]
+        app.enterSurvey()
+        app.filters = filters
+        app.pairRawAndJpeg = true
+        assert(app.view == .survey && app.surveyIds == [raw.id, last.id]
+               && app.primaryId == raw.id && app.selectedIds == [raw.id],
+               "Survey keeps its own remapped photos even when the library filter excludes them")
+        app.pairRawAndJpeg = false
+        assert(app.primaryId == raw.id && app.selectedIds == [raw.id],
+               "disabling pairing does not let the library filter clear Survey's active photo")
+
+        app.view = .grid
+        app.setFilters(Filters())
+        var missingJPEG = jpeg
+        missingJPEG.status = .missing
+        app.assets = [solo, raw, missingJPEG, last]
+        app.select(Selection(type: .lib, id: "missing", name: "Missing files"))
+        app.setPrimary(jpeg.id)
+        app.pairRawAndJpeg = true
+        assert(app.list.map(\.id) == [jpeg.id] && app.primaryId == jpeg.id
+               && app.selectedIds == [jpeg.id] && app.libraryCounts.missingOffline == 1,
+               "the missing-file collection keeps an unavailable JPEG visible and selected")
+
+        app.pairRawAndJpeg = false
+        app.select(Selection(type: .lib, id: "all", name: "Filtered files"))
+        app.assets[2].rating = 5
+        app.setFilters(filters)
+        app.setPrimary(jpeg.id)
+        app.pairRawAndJpeg = true
+        assert(app.list.isEmpty && app.primaryId == nil && app.selectedIds.isEmpty,
+               "ordinary filters still remove a remapped RAW that does not match")
     }
 
     /// The string path helpers used in catalog-wide loops agree with URL, without its disk access.
