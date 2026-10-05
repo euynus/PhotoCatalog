@@ -111,15 +111,10 @@ struct PhotoMergeSheet: View {
         let result: (image: CGImage?, failure: PhotoMerge.PanoramaFailure?) = await withCheckedContinuation { continuation in
             PhotoMerge.queue.async {
                 let frames = AppState.photoMergeFrames(targets)
-                switch kind {
-                case .hdr:
-                    let merged = PhotoMerge.hdr(frames, options: options, maxPixel: 900)
-                    continuation.resume(returning: (merged.flatMap { DevelopRenderer.render($0.image) }, nil))
-                case .panorama:
-                    switch PhotoMerge.panorama(frames, maxPixel: 600) {
-                    case .success(let image): continuation.resume(returning: (DevelopRenderer.render(image), nil))
-                    case .failure(let failure): continuation.resume(returning: (nil, failure))
-                    }
+                switch PhotoMerge.merge(frames, kind: kind, options: options, maxPixel: kind == .hdr ? 900 : 600) {
+                case .success(let merged): continuation.resume(returning: (DevelopRenderer.render(merged.image), nil))
+                case .failure(.unreadable): continuation.resume(returning: (nil, nil))
+                case .failure(.panorama(let failure)): continuation.resume(returning: (nil, failure))
                 }
             }
         }

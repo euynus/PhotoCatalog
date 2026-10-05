@@ -65,7 +65,7 @@ struct BookSettings: Codable, Equatable, Sendable {
         }
     }
 
-    enum Caption: String, Codable, CaseIterable, Sendable {
+    enum Caption: String, Codable, CaseIterable, Sendable, PhotoCaption {
         case none, title, caption, filename
 
         var title: String {

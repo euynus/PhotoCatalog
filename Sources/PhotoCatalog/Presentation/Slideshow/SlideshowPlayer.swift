@@ -166,16 +166,7 @@ final class SlideshowModel {
         return CGImageSourceCreateImageAtIndex(image, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
     }
 
-    func caption(_ index: Int) -> String { SlideshowModel.caption(assets[index], settings.caption) }
-
-    static func caption(_ asset: Asset, _ caption: SlideshowSettings.Caption) -> String {
-        switch caption {
-        case .none: ""
-        case .title: asset.title
-        case .filename: asset.filename
-        case .caption: asset.caption
-        }
-    }
+    func caption(_ index: Int) -> String { settings.caption.text(for: assets[index]) }
 }
 
 struct SlideshowView: View {

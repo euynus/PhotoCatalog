@@ -23,6 +23,32 @@ enum Enhance {
     /// Runs one photo at a time, off the main thread and the cooperative pool (RAW decoding).
     static let queue = DispatchQueue(label: "PhotoCatalog.enhance", qos: .userInitiated)
 
+    /// Before and after at 100% for the dialog: a patch of the photo around the largest face's
+    /// eyes (else its middle), the after at twice the size with super resolution. Run on `queue`.
+    static func preview(url: URL, isRaw: Bool, options: Options) -> (before: CGImage, after: CGImage)? {
+        guard !options.isEmpty,
+              let image = DevelopRenderer.Source(url: url, isRaw: isRaw, maxPixel: nil)?.image(.neutral) else { return nil }
+        let extent = image.extent
+        // super resolution shows half the area, at twice the size
+        let side: CGFloat = options.superResolution ? 128 : 256
+        var center = CGPoint(x: extent.midX, y: extent.midY)
+        if let people = PeopleMasks.analysis(url: url, isRaw: isRaw),
+           let face = people.faces.max(by: { $0.width < $1.width }) {
+            let point = face.eyes.first.map { eye in
+                CGPoint(x: eye.map(\.x).reduce(0, +) / CGFloat(eye.count), y: eye.map(\.y).reduce(0, +) / CGFloat(eye.count))
+            } ?? face.center
+            center = CGPoint(x: extent.minX + point.x / CGFloat(people.width) * extent.width,
+                             y: extent.maxY - point.y / CGFloat(people.height) * extent.height)
+        }
+        let crop = CGRect(x: center.x - side / 2, y: center.y - side / 2, width: side, height: side).integral
+            .intersection(extent)
+        let piece = image.cropped(to: crop).transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
+        guard let after = enhance(piece, options: options).flatMap(Enhance.image),
+              let before = DevelopRenderer.render(options.superResolution
+                  ? piece.samplingNearest().transformed(by: CGAffineTransform(scaleX: 2, y: 2)) : piece) else { return nil }
+        return (before, after)
+    }
+
     /// An image as three planes of display-encoded values, 0…1.
     struct Planes {
         let width: Int, height: Int

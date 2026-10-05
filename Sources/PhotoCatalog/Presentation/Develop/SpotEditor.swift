@@ -78,9 +78,7 @@ struct SpotEditor: View {
                 .clipped()
                 .contentShape(Rectangle())
                 .gesture(gesture(mapper))
-                .onDisappear {   // the tool closed mid-drag
-                    if app.developDraft?.assetId == asset.id { app.developDraft = nil }
-                }
+                .onDisappear { app.discardDevelopDraft(for: asset.id) }   // the tool closed mid-drag
                 .onContinuousHover { phase in
                     switch phase {
                     case .active(let location):
@@ -217,11 +215,10 @@ struct SpotEditor: View {
                     app.developSelectedSpotId = id
                 default:
                     // moved back to where it started: nothing to save, and no preview left behind
-                    guard moved, let draft = app.developDraft, draft.assetId == asset.id else {
-                        if app.developDraft?.assetId == asset.id { app.developDraft = nil }
+                    guard moved, app.commitDevelopDraft(for: asset.id, undoName: L("编辑污点")) else {
+                        app.discardDevelopDraft(for: asset.id)
                         return
                     }
-                    app.commitDevelop([asset.id: draft.settings], undoName: L("编辑污点"))
                 }
             }
     }

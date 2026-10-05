@@ -67,10 +67,7 @@ struct DevelopPanel: View {
                                         next.curve = curve
                                         app.updateDevelopDraft(next, for: asset.id)
                                     },
-                                    onCommit: { undoName in
-                                        guard let draft = app.developDraft, draft.assetId == asset.id else { return }
-                                        app.commitDevelop([asset.id: draft.settings], undoName: undoName)
-                                    })
+                                    onCommit: { undoName in app.commitDevelopDraft(for: asset.id, undoName: undoName) })
                 }
                 if DevelopProfile(stored: settings.profile) == .monochrome {
                     section(L("黑白混合"), id: "mixer", accessory: {
@@ -215,19 +212,19 @@ struct DevelopPanel: View {
                           range: 2000...12000, step: 50,
                           format: { String(format: "%.0f K", $0) },
                           isNeutral: settings.temperature == nil,
-                          onChange: { draft(asset, settings) { $0.temperature = $1 }($0) },
-                          onReset: { commit(asset, settings, L("色温")) { $0.temperature = nil } },
+                          onChange: draft(asset) { $0.temperature = $1 },
+                          onReset: { commit(asset, L("色温")) { $0.temperature = nil } },
                           onCommit: { commitDraft(asset, L("色温")) })
             DevelopSlider(title: L("色调", table: "Context"), value: settings.tint ?? asShot?.tint ?? 0,
                           range: -150...150, step: 1,
                           format: { String(format: "%+.0f", $0) },
                           isNeutral: settings.tint == nil,
-                          onChange: { draft(asset, settings) { $0.tint = $1 }($0) },
-                          onReset: { commit(asset, settings, L("色调", table: "Context")) { $0.tint = nil } },
+                          onChange: draft(asset) { $0.tint = $1 },
+                          onReset: { commit(asset, L("色调", table: "Context")) { $0.tint = nil } },
                           onCommit: { commitDraft(asset, L("色调", table: "Context")) })
             if settings.temperature != nil || settings.tint != nil {
                 Button("原照设置") {
-                    commit(asset, settings, L("白平衡")) { $0.temperature = nil; $0.tint = nil }
+                    commit(asset, L("白平衡")) { $0.temperature = nil; $0.tint = nil }
                 }
                 .controlSize(.small)
             }
@@ -235,14 +232,14 @@ struct DevelopPanel: View {
             DevelopSlider(title: L("色温"), value: settings.temperature ?? 0, range: -100...100, step: 1,
                           format: { $0 == 0 ? "0" : String(format: "%+.0f", $0) },
                           isNeutral: (settings.temperature ?? 0) == 0,
-                          onChange: { draft(asset, settings) { $0.temperature = $1 }($0) },
-                          onReset: { commit(asset, settings, L("色温")) { $0.temperature = nil } },
+                          onChange: draft(asset) { $0.temperature = $1 },
+                          onReset: { commit(asset, L("色温")) { $0.temperature = nil } },
                           onCommit: { commitDraft(asset, L("色温")) })
             DevelopSlider(title: L("色调", table: "Context"), value: settings.tint ?? 0, range: -100...100, step: 1,
                           format: { $0 == 0 ? "0" : String(format: "%+.0f", $0) },
                           isNeutral: (settings.tint ?? 0) == 0,
-                          onChange: { draft(asset, settings) { $0.tint = $1 }($0) },
-                          onReset: { commit(asset, settings, L("色调", table: "Context")) { $0.tint = nil } },
+                          onChange: draft(asset) { $0.tint = $1 },
+                          onReset: { commit(asset, L("色调", table: "Context")) { $0.tint = nil } },
                           onCommit: { commitDraft(asset, L("色调", table: "Context")) })
         }
     }
@@ -886,7 +883,7 @@ struct DevelopPanel: View {
                               next.crop = DevelopGeometry.refit(next, frame: app.developFrame(for: asset, settings: next))
                               app.updateDevelopDraft(next, for: asset.id)
                           },
-                          onReset: { commit(asset, settings, control.title) { $0[keyPath: control.id] = control.neutral } },
+                          onReset: { commit(asset, control.title) { $0[keyPath: control.id] = control.neutral } },
                           onCommit: { commitDraft(asset, control.title) })
         }
     }
@@ -942,8 +939,8 @@ struct DevelopPanel: View {
         DevelopSlider(title: control.title, value: settings[keyPath: control.id], range: control.range,
                       step: control.step, format: control.format,
                       isNeutral: settings[keyPath: control.id] == control.neutral,
-                      onChange: { draft(asset, settings) { $0[keyPath: control.id] = $1 }($0) },
-                      onReset: { commit(asset, settings, control.title) { $0[keyPath: control.id] = control.neutral } },
+                      onChange: draft(asset) { $0[keyPath: control.id] = $1 },
+                      onReset: { commit(asset, control.title) { $0[keyPath: control.id] = control.neutral } },
                       onCommit: { commitDraft(asset, control.title) })
     }
 
@@ -957,7 +954,7 @@ struct DevelopPanel: View {
     }
 
     // ---- editing: drafts drive the live preview, a release saves one undoable step ----
-    private func draft(_ asset: Asset, _ settings: DevelopSettings,
+    private func draft(_ asset: Asset,
                        _ apply: @escaping (inout DevelopSettings, Double) -> Void) -> (Double) -> Void {
         { value in
             var next = app.developSettings(for: asset.id)
@@ -967,12 +964,10 @@ struct DevelopPanel: View {
     }
 
     private func commitDraft(_ asset: Asset, _ title: String) {
-        guard let draft = app.developDraft, draft.assetId == asset.id else { return }
-        app.commitDevelop([asset.id: draft.settings], undoName: L("调整\(title)"))
+        app.commitDevelopDraft(for: asset.id, undoName: L("调整\(title)"))
     }
 
-    private func commit(_ asset: Asset, _ settings: DevelopSettings, _ title: String,
-                        _ apply: (inout DevelopSettings) -> Void) {
+    private func commit(_ asset: Asset, _ title: String, _ apply: (inout DevelopSettings) -> Void) {
         var next = app.developSettings[asset.id] ?? .neutral
         apply(&next)
         app.commitDevelop([asset.id: next], undoName: L("复位\(title)"))

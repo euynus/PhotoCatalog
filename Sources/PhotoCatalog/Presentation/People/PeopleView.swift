@@ -2,7 +2,6 @@
 //  People — faces found on device, grouped for naming
 // ============================================================
 import SwiftUI
-import ImageIO
 
 struct PeopleView: View {
     @Environment(AppState.self) private var app
@@ -406,13 +405,12 @@ struct FaceAvatar: View {
         .task(id: faceId) {
             guard !Task.isCancelled else { return }
             imageState.clear()
-            guard let app, let face = app.face(faceId), let asset = app.asset(id: face.assetId) else { return }
-            let hasPreview = !asset.preview.isEmpty && !asset.preview.hasPrefix("http")
-                && FileManager.default.fileExists(atPath: asset.preview)
-            let source = hasPreview ? asset.preview : (asset.localPath ?? "")
-            // without a cached preview, a RAW's embedded JPEG is what the face was found in
-            let image = await FaceCropLoader.shared.crop(faceId: faceId, box: face.box, source: source,
-                                                        embeddedPreview: !hasPreview && asset.isRaw)
+            guard let app, let face = app.face(faceId), let asset = app.asset(id: face.assetId),
+                  // the file the face was found in, as the analysis chose it
+                  let source = FaceService.analysisSource(preview: asset.preview, original: asset.localPath,
+                                                          isRaw: asset.isRaw) else { return }
+            let image = await FaceCropLoader.shared.crop(faceId: faceId, box: face.box, source: source.url,
+                                                        embeddedPreview: source.embeddedPreview)
             imageState.accept(image, for: faceId)
         }
     }
@@ -427,18 +425,10 @@ final class FaceCropLoader {
         return cache
     }()
 
-    func crop(faceId: String, box: CGRect, source: String, embeddedPreview: Bool = false) async -> CGImage? {
+    func crop(faceId: String, box: CGRect, source: URL, embeddedPreview: Bool = false) async -> CGImage? {
         if let hit = cache.object(forKey: faceId as NSString) { return hit.image }
-        guard !source.isEmpty else { return nil }
         let result = await ThumbnailRepairQueue.run(.visible) { () -> ImageBox? in
-            let fromImage = embeddedPreview ? kCGImageSourceCreateThumbnailFromImageIfAbsent
-                                            : kCGImageSourceCreateThumbnailFromImageAlways
-            guard let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: source) as CFURL, nil),
-                  let image = CGImageSourceCreateThumbnailAtIndex(src, 0, [
-                      fromImage: true,
-                      kCGImageSourceCreateThumbnailWithTransform: true,
-                      kCGImageSourceThumbnailMaxPixelSize: FaceService.analysisMaxPixel,
-                  ] as CFDictionary) else { return nil }
+            guard let image = FaceService.analysisImage(source, embeddedPreview: embeddedPreview) else { return nil }
             let width = CGFloat(image.width), height = CGFloat(image.height)
             let side = max(box.width * width, box.height * height) * 1.6
             let rect = CGRect(x: box.midX * width - side / 2, y: box.midY * height - side / 2, width: side, height: side)

@@ -2,7 +2,6 @@
 //  Enhance dialog — AI denoise and super resolution, with a preview
 // ============================================================
 import SwiftUI
-import CoreImage
 
 struct EnhanceSheet: View {
     @Environment(AppState.self) private var app
@@ -118,29 +117,7 @@ struct EnhanceSheet: View {
         previewFailed = false
         let result: (before: CGImage, after: CGImage)? = await withCheckedContinuation { continuation in
             Enhance.queue.async {
-                guard !options.isEmpty,
-                      let image = DevelopRenderer.Source(url: source.url, isRaw: source.isRaw, maxPixel: nil)?.image(.neutral)
-                else { return continuation.resume(returning: nil) }
-                let extent = image.extent
-                // super resolution shows half the area, at twice the size
-                let side: CGFloat = options.superResolution ? 128 : 256
-                var center = CGPoint(x: extent.midX, y: extent.midY)
-                if let people = PeopleMasks.analysis(url: source.url, isRaw: source.isRaw),
-                   let face = people.faces.max(by: { $0.width < $1.width }) {
-                    let point = face.eyes.first.map { eye in
-                        CGPoint(x: eye.map(\.x).reduce(0, +) / CGFloat(eye.count), y: eye.map(\.y).reduce(0, +) / CGFloat(eye.count))
-                    } ?? face.center
-                    center = CGPoint(x: extent.minX + point.x / CGFloat(people.width) * extent.width,
-                                     y: extent.maxY - point.y / CGFloat(people.height) * extent.height)
-                }
-                let crop = CGRect(x: center.x - side / 2, y: center.y - side / 2, width: side, height: side).integral
-                    .intersection(extent)
-                let piece = image.cropped(to: crop).transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
-                guard let after = Enhance.enhance(piece, options: options).flatMap(Enhance.image),
-                      let before = DevelopRenderer.render(options.superResolution
-                          ? piece.samplingNearest().transformed(by: CGAffineTransform(scaleX: 2, y: 2)) : piece)
-                else { return continuation.resume(returning: nil) }
-                continuation.resume(returning: (before, after))
+                continuation.resume(returning: Enhance.preview(url: source.url, isRaw: source.isRaw, options: options))
             }
         }
         guard mine == generation else { return }

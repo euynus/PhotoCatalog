@@ -120,8 +120,8 @@ struct CropEditor: View {
                 guard let drag else { return }
                 if case .level = drag.kind {
                     straighten(along: value.startLocation, value.location, frame: frame)
-                } else if let draft = app.developDraft, draft.assetId == asset.id {
-                    app.commitDevelop([asset.id: draft.settings], undoName: L("裁剪"))
+                } else {
+                    app.commitDevelopDraft(for: asset.id, undoName: L("裁剪"))
                 }
             }
     }

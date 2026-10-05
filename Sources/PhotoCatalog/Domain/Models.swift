@@ -668,3 +668,17 @@ struct Toast: Identifiable, Equatable {
     let message: String
     let icon: String
 }
+
+/// What a slideshow, a web gallery or a book shows with a photo: their choices share these names.
+protocol PhotoCaption: RawRepresentable where RawValue == String {}
+
+extension PhotoCaption {
+    func text(for asset: Asset) -> String {
+        switch rawValue {
+        case "title": asset.title
+        case "caption": asset.caption
+        case "filename": asset.filename
+        default: ""
+        }
+    }
+}

@@ -583,8 +583,8 @@ final class AppState {
             UserDefaults.standard.set(exportDirectoryStructure.rawValue, forKey: "pc_exportDirectoryStructure")
         }
     }
-    var exportPresets: [ExportPreset] = AppState.loadExportPresets() {
-        didSet { AppState.saveExportPresets(exportPresets) }
+    var exportPresets: [ExportPreset] = AppState.loadJSON([ExportPreset].self, forKey: "pc_exportPresets") ?? [] {
+        didSet { AppState.store(exportPresets, forKey: "pc_exportPresets") }
     }
     var recentImportDays: Int = (UserDefaults.standard.object(forKey: "pc_recentDays") as? Int) ?? 14 {
         didSet { UserDefaults.standard.set(recentImportDays, forKey: "pc_recentDays"); libraryCountsCache = nil }
@@ -722,11 +722,18 @@ final class AppState {
         didSet { UserDefaults.standard.set(gridFill, forKey: "pc_gridFill") }
     }
     var insTab = "org"
-    private var pinnedSidebarItems = AppState.loadPinnedSidebarItems() {
-        didSet { pinnedSidebarFavoritesCache = nil }
+    private var pinnedSidebarItems = AppState.loadJSON([PinnedSidebarItem].self, forKey: pinnedSidebarItemsKey) ?? [] {
+        didSet {
+            pinnedSidebarFavoritesCache = nil
+            AppState.store(pinnedSidebarItems, forKey: Self.pinnedSidebarItemsKey)
+        }
     }
-    private var sourcePriorities = AppState.loadSourcePriorities() {
-        didSet { folderTreeCache = nil; listInputsVersion &+= 1 }
+    private var sourcePriorities = AppState.loadJSON([String: Int].self, forKey: sourcePrioritiesKey) ?? [:] {
+        didSet {
+            folderTreeCache = nil
+            listInputsVersion &+= 1
+            AppState.store(sourcePriorities, forKey: Self.sourcePrioritiesKey)
+        }
     }
     @ObservationIgnored private var anchorId: String?
 
@@ -917,17 +924,8 @@ final class AppState {
             } ?? .unreadable
             guard let self else { return }
             self.developDetectingMask = nil
-            let found: SemanticMasks.Result
-            switch lookup {
-            case .found(let result):
-                found = result
-            case .notFound:
-                if kind == .subject { self.push("没有找到明显的主体", "info") } else { self.push("没有找到天空", "info") }
-                return
-            case .unreadable:
-                self.push("原件不可用", "warning")
-                return
-            }
+            guard let found = self.maskResult(lookup, notFound: kind == .subject ? L("没有找到明显的主体") : L("没有找到天空"))
+            else { return }
             var mask = LocalAdjustment(kind: kind)
             mask.center = found.centroid
             mask.exposure = kind == .sky ? -0.3 : 0.3   // a visible start, as with the gradients
@@ -960,7 +958,7 @@ final class AppState {
             guard let self else { return }
             self.developDetectingMask = nil
             if let count { self.developPeopleCounts[id] = count }
-            guard let result = self.peopleMaskResult(lookup, count: count) else { return }
+            guard let result = self.maskResult(lookup, notFound: Self.peopleNotFound(count)) else { return }
             var mask = LocalAdjustment(kind: .person)
             mask.part = part
             mask.center = result.centroid
@@ -984,7 +982,7 @@ final class AppState {
                 (PeopleMasks.lookup(part, person: person, url: source.url, isRaw: source.isRaw),
                  PeopleMasks.analysis(url: source.url, isRaw: source.isRaw)?.count)
             } ?? (.unreadable, nil)
-            guard let self, let result = self.peopleMaskResult(lookup, count: count) else { return }
+            guard let self, let result = self.maskResult(lookup, notFound: Self.peopleNotFound(count)) else { return }
             self.commitDevelopChange([id], undoName: L("更改人物蒙版")) { _, settings in
                 guard let index = settings.masks.firstIndex(where: { $0.id == maskId }) else { return }
                 settings.masks[index].part = part
@@ -1021,7 +1019,7 @@ final class AppState {
             } ?? .unreadable
             guard let self else { return }
             self.developDetectingMask = nil
-            guard let result = self.landscapeMaskResult(lookup, category) else { return }
+            guard let result = self.maskResult(lookup, notFound: L("照片中没有找到\(category.title)")) else { return }
             var mask = LocalAdjustment(kind: .landscape)
             mask.landscape = category
             mask.center = result.centroid
@@ -1043,7 +1041,7 @@ final class AppState {
             let lookup = await ThumbnailRepairQueue.run(.visible) {
                 SceneSegmentation.lookup(category, url: source.url, isRaw: source.isRaw)
             } ?? .unreadable
-            guard let self, let result = self.landscapeMaskResult(lookup, category) else { return }
+            guard let self, let result = self.maskResult(lookup, notFound: L("照片中没有找到\(category.title)")) else { return }
             self.commitDevelopChange([id], undoName: L("更改景观蒙版")) { _, settings in
                 guard let index = settings.masks.firstIndex(where: { $0.id == maskId }) else { return }
                 settings.masks[index].landscape = category
@@ -1052,10 +1050,11 @@ final class AppState {
         }
     }
 
-    private func landscapeMaskResult(_ lookup: SemanticMasks.Lookup, _ category: LandscapeCategory) -> SemanticMasks.Result? {
+    /// The mask found, or nil after saying why there's none: `notFound` says what wasn't there.
+    private func maskResult(_ lookup: SemanticMasks.Lookup, notFound: String) -> SemanticMasks.Result? {
         switch lookup {
         case .found(let result): return result
-        case .notFound: push(verbatim: L("照片中没有找到\(category.title)"), "info")
+        case .notFound: push(verbatim: notFound, "info")
         case .unreadable: push("原件不可用", "warning")
         }
         return nil
@@ -1074,16 +1073,7 @@ final class AppState {
             } ?? .unreadable
             guard let self else { return }
             self.developDetectingMask = nil
-            let result: SemanticMasks.Result
-            switch lookup {
-            case .found(let found): result = found
-            case .notFound:
-                self.push("这里没有找到物体", "info")
-                return
-            case .unreadable:
-                self.push("原件不可用", "warning")
-                return
-            }
+            guard let result = self.maskResult(lookup, notFound: L("这里没有找到物体")) else { return }
             if let maskId {
                 self.commitDevelopChange([id], undoName: L("修改物体蒙版")) { _, settings in
                     guard let index = settings.masks.firstIndex(where: { $0.id == maskId }) else { return }
@@ -1112,17 +1102,9 @@ final class AppState {
         selectObject(mask.prompt.adding(point, include: include), maskId: maskId)
     }
 
-    /// The mask found, or nil after saying why there's none.
-    private func peopleMaskResult(_ lookup: SemanticMasks.Lookup, count: Int?) -> SemanticMasks.Result? {
-        switch lookup {
-        case .found(let result):
-            return result
-        case .notFound:
-            if count == 0 { push("没有找到人物", "info") } else { push("照片中看不到这个部位", "info") }
-        case .unreadable:
-            push("原件不可用", "warning")
-        }
-        return nil
+    /// Why a people mask came back empty: no one in the photo, or not this part of them.
+    private static func peopleNotFound(_ count: Int?) -> String {
+        count == 0 ? L("没有找到人物") : L("照片中看不到这个部位")
     }
 
     /// [ and ]: a smaller or larger brush.
@@ -1505,11 +1487,8 @@ final class AppState {
     // ----- soft proofing: the photo in Develop as another color space or a printer shows it -----
     /// Whether Develop shows the proof (S): a way of looking, off at each launch.
     var softProofing = false
-    var softProof: SoftProof = {
-        UserDefaults.standard.data(forKey: "pc_softProof").flatMap { try? JSONDecoder().decode(SoftProof.self, from: $0) }
-            ?? SoftProof()
-    }() {
-        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(softProof), forKey: "pc_softProof") }
+    var softProof: SoftProof = AppState.loadJSON(SoftProof.self, forKey: "pc_softProof") ?? SoftProof() {
+        didSet { AppState.store(softProof, forKey: "pc_softProof") }
     }
     /// The profiles to proof with, found when proofing first turns on.
     var softProofProfiles: [SoftProofing.Profile] = []
@@ -1616,7 +1595,7 @@ final class AppState {
     /// Settings copied with ⇧⌘C, waiting for ⇧⌘V.
     var developClipboard: DevelopTransfer?
     /// The user's own presets; built-ins come first wherever presets are listed.
-    var developPresets: [DevelopPreset] = AppState.loadDevelopPresets() {
+    var developPresets: [DevelopPreset] = AppState.loadJSON([DevelopPreset].self, forKey: developPresetsKey) ?? [] {
         didSet { AppState.store(developPresets, forKey: AppState.developPresetsKey) }
     }
     var allDevelopPresets: [DevelopPreset] { DevelopPreset.builtIns + developPresets }
@@ -1628,7 +1607,8 @@ final class AppState {
         return adjusted.isEmpty ? developTransferFields : adjusted
     }
     /// Fields the copy / sync dialog offers checked, as last used.
-    var developTransferFields: Set<DevelopField> = AppState.loadDevelopTransferFields() {
+    var developTransferFields: Set<DevelopField> =
+        AppState.loadJSON(Set<DevelopField>.self, forKey: developTransferFieldsKey) ?? DevelopField.defaultCopy {
         didSet { AppState.store(developTransferFields, forKey: AppState.developTransferFieldsKey) }
     }
     enum DevelopTransferMode { case copy, sync, preset }
@@ -1636,16 +1616,6 @@ final class AppState {
 
     private static let developPresetsKey = "pc_developPresets"
     private static let developTransferFieldsKey = "pc_developTransferFields"
-
-    private static func loadDevelopPresets() -> [DevelopPreset] {
-        UserDefaults.standard.data(forKey: developPresetsKey)
-            .flatMap { try? JSONDecoder().decode([DevelopPreset].self, from: $0) } ?? []
-    }
-
-    private static func loadDevelopTransferFields() -> Set<DevelopField> {
-        UserDefaults.standard.data(forKey: developTransferFieldsKey)
-            .flatMap { try? JSONDecoder().decode(Set<DevelopField>.self, from: $0) } ?? DevelopField.defaultCopy
-    }
 
     private static func store<T: Encodable>(_ value: T, forKey key: String) {
         if let data = try? JSONEncoder().encode(value) { UserDefaults.standard.set(data, forKey: key) }
@@ -1847,12 +1817,8 @@ final class AppState {
     }
 
     // ----- LUTs: creative looks from .cube files, kept in the app's own folder -----
-    var developLUTs: [DevelopLUT] = AppState.loadLUTs() {
+    var developLUTs: [DevelopLUT] = AppState.loadJSON([DevelopLUT].self, forKey: "pc_luts") ?? [] {
         didSet { AppState.store(developLUTs, forKey: "pc_luts") }
-    }
-
-    private static func loadLUTs() -> [DevelopLUT] {
-        UserDefaults.standard.data(forKey: "pc_luts").flatMap { try? JSONDecoder().decode([DevelopLUT].self, from: $0) } ?? []
     }
 
     /// Adds the 3D LUTs in `urls` to the library, named by their title or file name.
@@ -2099,6 +2065,20 @@ final class AppState {
 
     func updateDevelopDraft(_ settings: DevelopSettings, for id: String) {
         developDraft = DevelopDraft(assetId: id, settings: settings)
+    }
+
+    /// Saves the photo's draft (a drag's live preview) as one undo step; false when there's
+    /// none, or it is another photo's.
+    @discardableResult
+    func commitDevelopDraft(for id: String, undoName: String) -> Bool {
+        guard let draft = developDraft, draft.assetId == id else { return false }
+        commitDevelop([id: draft.settings], undoName: undoName)
+        return true
+    }
+
+    /// Drops the photo's draft, so a drag that ends without saving leaves no preview behind.
+    func discardDevelopDraft(for id: String) {
+        if developDraft?.assetId == id { developDraft = nil }
     }
 
     /// Saves adjustments for each id (persisted and undoable; neutral clears the photo's edit).
@@ -2419,7 +2399,7 @@ final class AppState {
             deferredCatalogArguments = arguments
             if onboarded || Self.launchCatalogURL(from: arguments) != nil {
                 isLoadingCatalog = true
-                resetToEmptyCatalog()
+                resetCatalog(toDemo: false)
             }
         } else {
             if onboarded, let launchURL = Self.launchCatalogURL(from: arguments) {
@@ -2666,6 +2646,15 @@ final class AppState {
             }.value
 
             guard let self, self.catalogLoadGeneration == generation, !Task.isCancelled else { return }
+            /// Says why the catalog didn't open, then opens the fallback, or leaves the failure showing.
+            @MainActor func fail(_ message: String) {
+                if let fallbackURL {
+                    self.push(verbatim: message, "warning")
+                    self.beginDeferredCatalogLoad(at: fallbackURL, fallbackURL: nil)
+                } else {
+                    self.finishDeferredCatalogLoadFailure(message: message)
+                }
+            }
             switch outcome {
             case .success(let store, let page):
                 self.store = store
@@ -2704,28 +2693,12 @@ final class AppState {
                     }
                 case .failure:
                     self.discardCatalogPreview()
-                    if let fallbackURL {
-                        self.push("打开目录库失败", "warning")
-                        self.beginDeferredCatalogLoad(at: fallbackURL, fallbackURL: nil)
-                    } else {
-                        self.finishDeferredCatalogLoadFailure(message: L("打开目录库失败"))
-                    }
+                    fail(L("打开目录库失败"))
                 }
             case .incompatibleSchema(let current, let supported):
-                let message = L("目录库版本过新（schema \(current)，当前支持 \(supported)），请升级 PhotoCatalog 后再打开")
-                if let fallbackURL {
-                    self.push(verbatim: message, "warning")
-                    self.beginDeferredCatalogLoad(at: fallbackURL, fallbackURL: nil)
-                } else {
-                    self.finishDeferredCatalogLoadFailure(message: message)
-                }
+                fail(L("目录库版本过新（schema \(current)，当前支持 \(supported)），请升级 PhotoCatalog 后再打开"))
             case .failure:
-                if let fallbackURL {
-                    self.push("打开目录库失败", "warning")
-                    self.beginDeferredCatalogLoad(at: fallbackURL, fallbackURL: nil)
-                } else {
-                    self.finishDeferredCatalogLoadFailure(message: L("打开目录库失败"))
-                }
+                fail(L("打开目录库失败"))
             }
         }
     }
@@ -2744,7 +2717,7 @@ final class AppState {
         coordinator = nil
         hasCatalogPreview = false
         loadingCatalogTotalCount = nil
-        resetToEmptyCatalog()
+        resetCatalog(toDemo: false)
     }
 
     private func finishDeferredCatalogLoadFailure(message: String?) {
@@ -2757,7 +2730,7 @@ final class AppState {
         loadingCatalogTotalCount = nil
         isLoadingCatalog = false
         loadingCatalogURL = nil
-        resetToDemoCatalog()
+        resetCatalog(toDemo: true)
         UserDefaults.standard.set("0", forKey: "pc_onboarded")
         onboarded = false
         if let message { push(verbatim: message, "warning") }
@@ -2946,7 +2919,7 @@ final class AppState {
 
         do {
             closeCurrentCatalog()
-            resetToEmptyCatalog()
+            resetCatalog(toDemo: false)
             let nextStore = try CatalogStore(packageURL: url)
             store = nextStore
             coordinator = ImportCoordinator(store: nextStore)
@@ -2957,7 +2930,7 @@ final class AppState {
             push("已创建目录库 · \(url.lastPathComponent)", "check")
             return true
         } catch {
-            resetToDemoCatalog()
+            resetCatalog(toDemo: true)
             loadExistingCatalog()
             push(verbatim: catalogOpenFailureMessage(error, fallback: L("创建目录库失败")), "warning")
             return false
@@ -2990,7 +2963,7 @@ final class AppState {
         filterOpen = false
         view = .grid
         sheet = nil
-        resetToDemoCatalog()
+        resetCatalog(toDemo: true)
         UserDefaults.standard.removeObject(forKey: Self.catalogURLKey)
         UserDefaults.standard.set("0", forKey: "pc_onboarded")
         onboarded = false
@@ -3025,13 +2998,13 @@ final class AppState {
 
         let previousURL = configuredCatalogURL
         closeCurrentCatalog()
-        resetToDemoCatalog()
+        resetCatalog(toDemo: true)
         setActiveCatalog(url)
         let error = loadExistingCatalog()
         if store == nil {
             forgetCatalog(url)
             setActiveCatalog(previousURL)
-            resetToDemoCatalog()
+            resetCatalog(toDemo: true)
             loadExistingCatalog()
             push(verbatim: catalogOpenFailureMessage(error), "warning")
             return false
@@ -3054,23 +3027,11 @@ final class AppState {
     }
 
     func openCatalogFromSystem(_ selected: URL) {
-        guard !importing else {
-            push("导入中无法切换目录库", "warning")
-            return
-        }
-        let url = Self.catalogPackageURL(for: selected)
-        if (store?.packageURL ?? loadingCatalogURL)?.standardizedFileURL == url.standardizedFileURL {
-            return
-        }
-        guard FileManager.default.fileExists(atPath: url.appendingPathComponent("catalog.sqlite").path) else {
-            push("所选目录库无效", "warning")
-            return
-        }
-
-        beginCatalogSwitch(at: url)
+        // opened from the Finder, it needn't be among the recents: an invalid one is only refused
+        beginCatalogSwitch(at: selected, forgettingInvalid: false)
     }
 
-    private func beginCatalogSwitch(at selected: URL, announceSuccess: Bool = false) {
+    private func beginCatalogSwitch(at selected: URL, announceSuccess: Bool = false, forgettingInvalid: Bool = true) {
         guard !importing else {
             push("导入中无法切换目录库", "warning")
             return
@@ -3080,14 +3041,14 @@ final class AppState {
             return
         }
         guard FileManager.default.fileExists(atPath: url.appendingPathComponent("catalog.sqlite").path) else {
-            forgetCatalog(url)
+            if forgettingInvalid { forgetCatalog(url) }
             push("所选目录库无效", "warning")
             return
         }
 
         let fallbackURL = store?.packageURL
         closeCurrentCatalog()
-        resetToEmptyCatalog()
+        resetCatalog(toDemo: false)
         beginDeferredCatalogLoad(at: url, fallbackURL: fallbackURL, announceSuccess: announceSuccess)
     }
 
@@ -3317,11 +3278,8 @@ final class AppState {
 
     // ---------- tethered capture ----------
     /// The next (or running) tethered session's settings.
-    var tetherSettings: TetherSettings = UserDefaults.standard.data(forKey: "pc_tether")
-        .flatMap { try? JSONDecoder().decode(TetherSettings.self, from: $0) } ?? TetherSettings() {
-        didSet {
-            if let data = try? JSONEncoder().encode(tetherSettings) { UserDefaults.standard.set(data, forKey: "pc_tether") }
-        }
+    var tetherSettings: TetherSettings = AppState.loadJSON(TetherSettings.self, forKey: "pc_tether") ?? TetherSettings() {
+        didSet { AppState.store(tetherSettings, forKey: "pc_tether") }
     }
 
     /// A running tethered session, as its bar shows it.
@@ -4873,7 +4831,7 @@ final class AppState {
     var canEditInExternalEditor: Bool { canOperateOnSelectedOriginals && onboarded && sheet == nil }
 
     // ---------- photo merge ----------
-    enum PhotoMergeKind: String, Sendable { case hdr, panorama }
+    typealias PhotoMergeKind = PhotoMerge.Kind
     var photoMergeKind: PhotoMergeKind = .hdr
     /// The photos the open merge dialog merges, taken as it opened.
     @ObservationIgnored private(set) var photoMergeTargets: [Asset] = []
@@ -4968,17 +4926,10 @@ final class AppState {
                     let frames = Self.photoMergeFrames(targets)
                     guard frames.count == targets.count else { return continuation.resume(returning: .unreadable) }
                     let merged: (image: CIImage, reference: Int)
-                    switch kind {
-                    case .hdr:
-                        guard let found = PhotoMerge.hdr(frames, options: options, maxPixel: nil) else {
-                            return continuation.resume(returning: .unreadable)
-                        }
-                        merged = found
-                    case .panorama:
-                        switch PhotoMerge.panorama(frames, maxPixel: nil) {
-                        case .success(let image): merged = (image, 0)
-                        case .failure(let failure): return continuation.resume(returning: .panorama(failure))
-                        }
+                    switch PhotoMerge.merge(frames, kind: kind, options: options, maxPixel: nil) {
+                    case .success(let found): merged = found
+                    case .failure(.unreadable): return continuation.resume(returning: .unreadable)
+                    case .failure(.panorama(let failure)): return continuation.resume(returning: .panorama(failure))
                     }
                     let original = frames[merged.reference].url
                     let folder = original.deletingLastPathComponent()
@@ -5011,13 +4962,9 @@ final class AppState {
     }
 
     // ---------- AI: language models (Settings → AI) ----------
-    var llmConfiguration: LLMConfiguration = {
-        guard let data = UserDefaults.standard.data(forKey: "pc_llm"),
-              let configuration = try? JSONDecoder().decode(LLMConfiguration.self, from: data) else { return .anthropic }
-        return configuration
-    }() {
+    var llmConfiguration: LLMConfiguration = AppState.loadJSON(LLMConfiguration.self, forKey: "pc_llm") ?? .anthropic {
         didSet {
-            if let data = try? JSONEncoder().encode(llmConfiguration) { UserDefaults.standard.set(data, forKey: "pc_llm") }
+            AppState.store(llmConfiguration, forKey: "pc_llm")
             llmTestResult = nil
         }
     }
@@ -6412,17 +6359,6 @@ final class AppState {
     }
 
     // ---------- export presets (§4.2) ----------
-    static func loadExportPresets() -> [ExportPreset] {
-        guard let data = UserDefaults.standard.data(forKey: "pc_exportPresets"),
-              let presets = try? JSONDecoder().decode([ExportPreset].self, from: data) else { return [] }
-        return presets
-    }
-    static func saveExportPresets(_ presets: [ExportPreset]) {
-        if let data = try? JSONEncoder().encode(presets) {
-            UserDefaults.standard.set(data, forKey: "pc_exportPresets")
-        }
-    }
-
     func saveExportPreset(name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
@@ -6556,18 +6492,24 @@ final class AppState {
 
     func slideshowEnded() { slideshowPlayer = nil }
 
+    /// A photo as slideshow videos, web galleries and books render it: its original, with its
+    /// develop settings; nil without a local original.
+    private func renderItem(for asset: Asset) -> PrintItem? {
+        guard let source = developSource(for: asset) else { return nil }
+        return PrintItem(sourcePath: source.url.path, isRaw: source.isRaw,
+                         develop: developSettings[asset.id] ?? .neutral,
+                         originalSize: CGSize(width: asset.width, height: asset.height),
+                         filename: asset.filename, title: asset.title)
+    }
+
     /// Writes the slideshow as an MP4 video at `url`: the photos with a local original, rendered
     /// with their develop settings at the video's size, and the music.
     func exportSlideshowVideo(to url: URL) {
         guard slideshowExportProgress == nil else { return }
         let settings = slideshowSettings
         let slides = slideshowOrder(presentationAssets(), settings: settings).compactMap { asset -> SlideshowSlide? in
-            guard let source = developSource(for: asset) else { return nil }
-            return SlideshowSlide(item: PrintItem(sourcePath: source.url.path, isRaw: source.isRaw,
-                                                  develop: developSettings[asset.id] ?? .neutral,
-                                                  originalSize: CGSize(width: asset.width, height: asset.height),
-                                                  filename: asset.filename, title: asset.title),
-                                  caption: SlideshowModel.caption(asset, settings.caption))
+            guard let item = renderItem(for: asset) else { return nil }
+            return SlideshowSlide(item: item, caption: settings.caption.text(for: asset))
         }
         guard !slides.isEmpty else {
             push("这些照片没有可用的本地原件", "warning")
@@ -6576,44 +6518,64 @@ final class AppState {
         sheet = nil
         let music = slideshowMusic(settings)
         let seconds = settings.slideSeconds(fitting: slides.count, toMusic: music.flatMap(SlideshowVideo.musicDuration))
-        let cancellation = CancellationFlag()
-        slideshowCancellation = cancellation
-        slideshowExportProgress = 0
-        let originHistory = taskHistory
         let timeline = SlideshowTimeline(count: slides.count, slide: seconds, fade: settings.fadeSeconds, repeats: false)
         let frames = Int((timeline.duration * Double(SlideshowVideo.framesPerSecond)).rounded())
         var initial = BackgroundTask(kind: .exportPhotos, title: L("导出幻灯片视频"), state: .running,
                                      totalCount: frames, destination: url)
         initial.detail = L("照片 \(slides.count) 张 · 视频帧 \(frames)")
+        runArtifactExport(initial, progress: \.slideshowExportProgress, cancellation: \.slideshowCancellation,
+                          failureMessage: L("幻灯片视频未能导出"), work: { progress, cancelled in
+            SlideshowVideo.export(slides, settings: settings, slideSeconds: seconds, music: music, to: url,
+                                  progress: progress, cancelled: cancelled) ? url : nil
+        }, done: { app, url in
+            app.push(verbatim: L("幻灯片视频已导出：\(url.lastPathComponent)"), "check")
+        })
+    }
+
+    /// Makes a slideshow video, web gallery or book in the background: the task `initial` in the
+    /// task center, how far it has got in `progress`, its cancellation in `cancellation` (one
+    /// each, so they can run at once). `work` makes it, reporting progress and checking for
+    /// cancellation, and gives back where it is; `done` says so.
+    private func runArtifactExport(_ initial: BackgroundTask,
+                                   progress: ReferenceWritableKeyPath<AppState, Double?>,
+                                   cancellation flag: ReferenceWritableKeyPath<AppState, CancellationFlag?>,
+                                   failureMessage: String,
+                                   work: @escaping @Sendable (_ progress: @escaping @Sendable (Double) -> Void,
+                                                              _ cancelled: @escaping @Sendable () -> Bool) -> URL?,
+                                   done: @escaping (AppState, URL) -> Void) {
+        let cancellation = CancellationFlag()
+        self[keyPath: flag] = cancellation
+        self[keyPath: progress] = 0
+        let originHistory = taskHistory
         if let originHistory {
             recordBackgroundTask(initial, originHistory: originHistory, actions: .init(cancel: { cancellation.set() }))
         }
         Task { [weak self, originHistory, initial] in
             let owner = self
-            let made = await Task.detached(priority: .userInitiated) {
-                SlideshowVideo.export(slides, settings: settings, slideSeconds: seconds, music: music, to: url, progress: { fraction in
+            let output = await Task.detached(priority: .userInitiated) {
+                work({ fraction in
                     Task { @MainActor in
-                        guard let self = owner, self.slideshowCancellation === cancellation, fraction.isFinite,
-                              fraction >= (self.slideshowExportProgress ?? 0) else { return }
-                        self.slideshowExportProgress = min(1, max(0, fraction))
+                        guard let self = owner, self[keyPath: flag] === cancellation, fraction.isFinite,
+                              fraction >= (self[keyPath: progress] ?? 0) else { return }
+                        self[keyPath: progress] = min(1, max(0, fraction))
                         if let originHistory {
                             self.recordArtifactExportProgress(initial, originHistory: originHistory, fraction: fraction)
                         }
                     }
-                }, cancelled: { cancellation.isSet })
+                }, { cancellation.isSet })
             }.value
             guard let self else { return }
             if let originHistory {
-                self.finishArtifactExportTask(initial, originHistory: originHistory, output: made ? url : nil,
-                                              cancelled: cancellation.isSet, failureMessage: L("幻灯片视频未能导出"))
+                self.finishArtifactExportTask(initial, originHistory: originHistory, output: output,
+                                              cancelled: cancellation.isSet, failureMessage: failureMessage)
             }
-            guard self.slideshowCancellation === cancellation else { return }
-            self.slideshowExportProgress = nil
-            self.slideshowCancellation = nil
-            if made {
-                self.push(verbatim: L("幻灯片视频已导出：\(url.lastPathComponent)"), "check")
+            guard self[keyPath: flag] === cancellation else { return }
+            self[keyPath: progress] = nil
+            self[keyPath: flag] = nil
+            if let output {
+                done(self, output)
             } else if !cancellation.isSet {
-                self.push("幻灯片视频未能导出", "warning")
+                self.push(verbatim: failureMessage, "warning")
             }
         }
     }
@@ -6661,17 +6623,9 @@ final class AppState {
         guard webGalleryProgress == nil else { return }
         let settings = webGallerySettings
         let photos = presentationAssets().compactMap { asset -> WebGalleryPhoto? in
-            guard let source = developSource(for: asset) else { return nil }
-            let caption = switch settings.caption {
-            case .none: ""
-            case .title: asset.title
-            case .caption: asset.caption
-            case .filename: asset.filename
-            }
-            return WebGalleryPhoto(item: PrintItem(sourcePath: source.url.path, isRaw: source.isRaw,
-                                                   develop: developSettings[asset.id] ?? .neutral,
-                                                   originalSize: CGSize(width: asset.width, height: asset.height),
-                                                   filename: asset.filename, title: asset.title),
+            guard let item = renderItem(for: asset) else { return nil }
+            let caption = settings.caption.text(for: asset)
+            return WebGalleryPhoto(item: item,
                                    baseName: (asset.filename as NSString).deletingPathExtension,
                                    caption: caption, details: Self.exposureDetails(asset))
         }
@@ -6681,45 +6635,17 @@ final class AppState {
         }
         sheet = nil
         let name = settings.title.isEmpty ? webGalleryDefaultTitle : settings.title
-        let cancellation = CancellationFlag()
-        webGalleryCancellation = cancellation
-        webGalleryProgress = 0
-        let originHistory = taskHistory
         var initial = BackgroundTask(kind: .exportPhotos, title: L("导出网页画廊"), state: .running,
                                      totalCount: photos.count, destination: parent)
         initial.detail = L("输入照片 \(photos.count) 张")
-        if let originHistory {
-            recordBackgroundTask(initial, originHistory: originHistory, actions: .init(cancel: { cancellation.set() }))
-        }
-        Task { [weak self, originHistory, initial] in
-            let owner = self
-            let page = await Task.detached(priority: .userInitiated) {
-                WebGalleryExporter.export(photos, settings: settings, name: name, in: parent, progress: { fraction in
-                    Task { @MainActor in
-                        guard let self = owner, self.webGalleryCancellation === cancellation, fraction.isFinite,
-                              fraction >= (self.webGalleryProgress ?? 0) else { return }
-                        self.webGalleryProgress = min(1, max(0, fraction))
-                        if let originHistory {
-                            self.recordArtifactExportProgress(initial, originHistory: originHistory, fraction: fraction)
-                        }
-                    }
-                }, cancelled: { cancellation.isSet })
-            }.value
-            guard let self else { return }
-            if let originHistory {
-                self.finishArtifactExportTask(initial, originHistory: originHistory, output: page,
-                                              cancelled: cancellation.isSet, failureMessage: L("网页画廊未能导出"))
-            }
-            guard self.webGalleryCancellation === cancellation else { return }
-            self.webGalleryProgress = nil
-            self.webGalleryCancellation = nil
-            if let page {
-                self.push(verbatim: L("网页画廊已导出：\(page.deletingLastPathComponent().lastPathComponent)"), "check")
-                NSWorkspace.shared.activateFileViewerSelecting([page])
-            } else if !cancellation.isSet {
-                self.push("网页画廊未能导出", "warning")
-            }
-        }
+        runArtifactExport(initial, progress: \.webGalleryProgress, cancellation: \.webGalleryCancellation,
+                          failureMessage: L("网页画廊未能导出"), work: { progress, cancelled in
+            WebGalleryExporter.export(photos, settings: settings, name: name, in: parent,
+                                      progress: progress, cancelled: cancelled)
+        }, done: { app, page in
+            app.push(verbatim: L("网页画廊已导出：\(page.deletingLastPathComponent().lastPathComponent)"), "check")
+            NSWorkspace.shared.activateFileViewerSelecting([page])
+        })
     }
 
     // ----- photo book (Lightroom's Book module) -----
@@ -6735,18 +6661,8 @@ final class AppState {
     /// The book's photos: those of `presentationAssets` with a local original, as they render.
     func bookItems(caption: BookSettings.Caption) -> [BookItem] {
         presentationAssets().compactMap { asset in
-            guard let source = developSource(for: asset) else { return nil }
-            let text = switch caption {
-            case .none: ""
-            case .title: asset.title
-            case .caption: asset.caption
-            case .filename: asset.filename
-            }
-            return BookItem(item: PrintItem(sourcePath: source.url.path, isRaw: source.isRaw,
-                                            develop: developSettings[asset.id] ?? .neutral,
-                                            originalSize: CGSize(width: asset.width, height: asset.height),
-                                            filename: asset.filename, title: asset.title),
-                            caption: text)
+            guard let item = renderItem(for: asset) else { return nil }
+            return BookItem(item: item, caption: caption.text(for: asset))
         }
     }
 
@@ -6774,45 +6690,17 @@ final class AppState {
         guard !items.isEmpty, bookProgress == nil else { return }
         sheet = nil
         let renderer = BookRenderer(items: items, settings: settings)
-        let cancellation = CancellationFlag()
-        bookCancellation = cancellation
-        bookProgress = 0
-        let originHistory = taskHistory
+        let pageCount = renderer.pages.count
         var initial = BackgroundTask(kind: .exportPhotos, title: L("导出画册 PDF"), state: .running,
-                                     totalCount: renderer.pages.count, destination: url)
-        initial.detail = L("画册页数 \(renderer.pages.count)")
-        if let originHistory {
-            recordBackgroundTask(initial, originHistory: originHistory, actions: .init(cancel: { cancellation.set() }))
-        }
-        Task { [weak self, originHistory, initial] in
-            let owner = self
-            let made = await Task.detached(priority: .userInitiated) {
-                renderer.writePDF(to: url, progress: { fraction in
-                    Task { @MainActor in
-                        guard let self = owner, self.bookCancellation === cancellation, fraction.isFinite,
-                              fraction >= (self.bookProgress ?? 0) else { return }
-                        self.bookProgress = min(1, max(0, fraction))
-                        if let originHistory {
-                            self.recordArtifactExportProgress(initial, originHistory: originHistory, fraction: fraction)
-                        }
-                    }
-                }, cancelled: { cancellation.isSet })
-            }.value
-            guard let self else { return }
-            if let originHistory {
-                self.finishArtifactExportTask(initial, originHistory: originHistory, output: made ? url : nil,
-                                              cancelled: cancellation.isSet, failureMessage: L("画册未能存储"))
-            }
-            guard self.bookCancellation === cancellation else { return }
-            self.bookProgress = nil
-            self.bookCancellation = nil
-            if made {
-                self.push(verbatim: L("画册已存储：\(url.lastPathComponent)（\(renderer.pages.count) 页）"), "check")
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-            } else if !cancellation.isSet {
-                self.push("画册未能存储", "warning")
-            }
-        }
+                                     totalCount: pageCount, destination: url)
+        initial.detail = L("画册页数 \(pageCount)")
+        runArtifactExport(initial, progress: \.bookProgress, cancellation: \.bookCancellation,
+                          failureMessage: L("画册未能存储"), work: { progress, cancelled in
+            renderer.writePDF(to: url, progress: progress, cancelled: cancelled) ? url : nil
+        }, done: { app, url in
+            app.push(verbatim: L("画册已存储：\(url.lastPathComponent)（\(pageCount) 页）"), "check")
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        })
     }
 
     // ----- print: the selection on paper (Lightroom's Print module) -----
@@ -7191,36 +7079,11 @@ final class AppState {
     func runBackup() {
         guard !importing else { push("导入中无法备份目录库", "warning"); return }
         guard let store else { push("无目录库可备份", "warning"); return }
-        let packageURL = store.packageURL
-        let originHistory = taskHistory
-        let initial = BackgroundTask(kind: .backup, title: L("目录库快照（不含原件）"), state: .running,
-                                     totalCount: 1, destination: store.backupsURL)
-        if let originHistory { recordBackgroundTask(initial, originHistory: originHistory) }
-        Task { [weak self, store, packageURL, originHistory, initial] in
-            let result = await Task.detached(priority: .utility) { () -> (url: URL?, error: String?) in
-                do {
-                    return (try BackupService.backup(store), nil)
-                } catch {
-                    return (nil, error.localizedDescription)
-                }
-            }.value
-            guard let self else { return }
-            var task = initial
-            task.state = result.url == nil ? .failed : .completed
-            task.completedCount = 1
-            task.succeededCount = result.url == nil ? 0 : 1
-            task.destination = result.url ?? initial.destination
-            task.errorMessage = result.error
-            if let error = result.error {
-                task.failures = [.init(item: packageURL.lastPathComponent, message: error, path: packageURL.path)]
-            }
-            if let originHistory { self.recordBackgroundTask(task, originHistory: originHistory) }
-            guard self.store === store else { return }
-            if let url = result.url {
-                self.refreshStatusMetrics()
-                self.push("已备份目录库 · \(url.lastPathComponent)", "check")
+        backUpCatalog(store, title: L("目录库快照（不含原件）")) { app, url, error in
+            if let url {
+                app.push("已备份目录库 · \(url.lastPathComponent)", "check")
             } else {
-                self.push("备份失败：\(result.error ?? L("未知错误"))", "warning")
+                app.push("备份失败：\(error ?? L("未知错误"))", "warning")
             }
         }
     }
@@ -7243,15 +7106,31 @@ final class AppState {
             return
         }
 
+        backUpCatalog(store, title: L("自动目录库快照（不含原件）"), at: now,
+                      saved: { _ in UserDefaults.standard.set(now, forKey: backupKey) }) { app, url, error in
+            if let url {
+                app.push("已自动备份目录库 · \(url.lastPathComponent)", "check")
+            } else {
+                app.push("自动备份失败：\(error ?? L("未知错误"))", "warning")
+            }
+        }
+    }
+
+    /// Snapshots `store` off the main thread as a background task titled `title`, named for
+    /// `date` (when it's taken, if nil). `saved` runs on success; `finished` runs only while the
+    /// same catalog is still open, after the status bar's metrics are refreshed on success.
+    private func backUpCatalog(_ store: CatalogStore, title: String, at date: Date? = nil,
+                               saved: @escaping (URL) -> Void = { _ in },
+                               finished: @escaping (AppState, _ url: URL?, _ error: String?) -> Void) {
         let packageURL = store.packageURL
         let originHistory = taskHistory
-        let initial = BackgroundTask(kind: .backup, title: L("自动目录库快照（不含原件）"), state: .running,
+        let initial = BackgroundTask(kind: .backup, title: title, state: .running,
                                      totalCount: 1, destination: store.backupsURL)
         if let originHistory { recordBackgroundTask(initial, originHistory: originHistory) }
-        Task { [weak self, store, packageURL, backupKey, now, originHistory, initial] in
+        Task { [weak self, store, packageURL, originHistory, initial, date] in
             let result = await Task.detached(priority: .utility) { () -> (url: URL?, error: String?) in
                 do {
-                    return (try BackupService.backup(store, at: now), nil)
+                    return (try date.map { try BackupService.backup(store, at: $0) } ?? BackupService.backup(store), nil)
                 } catch {
                     return (nil, error.localizedDescription)
                 }
@@ -7267,14 +7146,10 @@ final class AppState {
                 task.failures = [.init(item: packageURL.lastPathComponent, message: error, path: packageURL.path)]
             }
             if let originHistory { self.recordBackgroundTask(task, originHistory: originHistory) }
-            if result.url != nil { UserDefaults.standard.set(now, forKey: backupKey) }
+            if let url = result.url { saved(url) }
             guard self.store === store else { return }
-            if let url = result.url {
-                self.refreshStatusMetrics()
-                self.push("已自动备份目录库 · \(url.lastPathComponent)", "check")
-            } else {
-                self.push("自动备份失败：\(result.error ?? L("未知错误"))", "warning")
-            }
+            if result.url != nil { self.refreshStatusMetrics() }
+            finished(self, result.url, result.error)
         }
     }
 
@@ -7302,13 +7177,9 @@ final class AppState {
         }
         guard panel.runModal() == .OK, let backup = panel.url else { return }
 
-        let alert = NSAlert()
-        alert.messageText = L("恢复目录库备份？")
-        alert.informativeText = L("当前目录库数据库会被所选备份替换。应用会先尝试创建一次当前状态备份。")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: L("恢复"))
-        alert.addButton(withTitle: L("取消"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard confirmDestructiveAction(L("恢复目录库备份？"),
+                                       L("当前目录库数据库会被所选备份替换。应用会先尝试创建一次当前状态备份。"),
+                                       L("恢复")) else { return }
 
         do {
             if let store {
@@ -7316,12 +7187,12 @@ final class AppState {
                 _ = try BackupService.backup(store)
             }
             closeCurrentCatalog()
-            resetToDemoCatalog()
+            resetCatalog(toDemo: true)
             try BackupService.restore(backup, intoPackageAt: packageURL)
             loadExistingCatalog()
             push("已恢复备份 · \(backup.lastPathComponent)", "check")
         } catch {
-            resetToDemoCatalog()
+            resetCatalog(toDemo: true)
             loadExistingCatalog()
             push("恢复备份失败", "warning")
         }
@@ -7369,49 +7240,26 @@ final class AppState {
         statusMetrics = StatusMetrics()
     }
 
-    private func resetToDemoCatalog() {
+    /// The demo catalog, or an empty one, its first photo (if any) selected.
+    private func resetCatalog(toDemo demo: Bool) {
         duplicateRecomputeGeneration &+= 1
-        let a = DemoData.assets
+        let a = demo ? DemoData.assets : []
         assets = a
-        albums = DemoData.initialAlbums(a)
+        albums = demo ? DemoData.initialAlbums(a) : []
         quickCollection = []
-        smartAlbums = DemoData.initialSmartAlbums(a)
+        smartAlbums = demo ? DemoData.initialSmartAlbums(a) : []
         albumSets = []
-        folders = DemoData.folders
+        folders = demo ? DemoData.folders : []
         developSettings = [:]
         clearDevelopRecordCaches()
         clearFaces()
         sourceRootPathsById = [:]
         sourceManagementModesById = [:]
-        duplicateGroupsCache = DemoData.duplicateGroups
+        duplicateGroupsCache = demo ? DemoData.duplicateGroups : []
         selection = Selection(type: .lib, id: "all", name: L("全部照片"))
         primaryId = list.first?.id
         selectedIds = primaryId.map { Set([$0]) } ?? []
         anchorId = primaryId
-        compareIds = []
-        winner = nil
-        importRun = nil
-        healthReport = nil
-    }
-
-    private func resetToEmptyCatalog() {
-        duplicateRecomputeGeneration &+= 1
-        developSettings = [:]
-        clearDevelopRecordCaches()
-        clearFaces()
-        assets = []
-        albums = []
-        quickCollection = []
-        smartAlbums = []
-        albumSets = []
-        folders = []
-        sourceRootPathsById = [:]
-        sourceManagementModesById = [:]
-        duplicateGroupsCache = []
-        selection = Selection(type: .lib, id: "all", name: L("全部照片"))
-        primaryId = nil
-        selectedIds = []
-        anchorId = nil
         compareIds = []
         winner = nil
         importRun = nil
@@ -7990,7 +7838,6 @@ final class AppState {
             pinnedSidebarItems.append(item)
             push("已固定「\(item.name)」到收藏夹", "star")
         }
-        savePinnedSidebarItems()
     }
 
     func countForPinnedSidebarItem(_ item: PinnedSidebarItem) -> String {
@@ -8058,34 +7905,6 @@ final class AppState {
         return index
     }
 
-    private static func loadPinnedSidebarItems() -> [PinnedSidebarItem] {
-        guard let data = UserDefaults.standard.data(forKey: pinnedSidebarItemsKey),
-              let items = try? JSONDecoder().decode([PinnedSidebarItem].self, from: data) else {
-            return []
-        }
-        return items
-    }
-
-    private func savePinnedSidebarItems() {
-        if let data = try? JSONEncoder().encode(pinnedSidebarItems) {
-            UserDefaults.standard.set(data, forKey: Self.pinnedSidebarItemsKey)
-        }
-    }
-
-    private static func loadSourcePriorities() -> [String: Int] {
-        guard let data = UserDefaults.standard.data(forKey: sourcePrioritiesKey),
-              let priorities = try? JSONDecoder().decode([String: Int].self, from: data) else {
-            return [:]
-        }
-        return priorities
-    }
-
-    private func saveSourcePriorities() {
-        if let data = try? JSONEncoder().encode(sourcePriorities) {
-            UserDefaults.standard.set(data, forKey: Self.sourcePrioritiesKey)
-        }
-    }
-
     private func moveSelectedSourcePriority(up: Bool) {
         var ordered = orderedFolders
         guard let index = ordered.firstIndex(where: { $0.id == selection.id }) else { return }
@@ -8093,7 +7912,6 @@ final class AppState {
         guard ordered.indices.contains(target) else { return }
         ordered.swapAt(index, target)
         sourcePriorities = Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($0.element.id, $0.offset) })
-        saveSourcePriorities()
         refreshWatcher()
         push(up ? "已提高源优先级" : "已降低源优先级", "sort")
     }
@@ -8754,7 +8572,6 @@ final class AppState {
         folders.removeAll { $0.id == folderId }
         sourceRootPathsById.removeValue(forKey: folderId)
         sourcePriorities.removeValue(forKey: folderId)
-        saveSourcePriorities()
         if let sourceRootPath {
             let removedPath = URL(fileURLWithPath: sourceRootPath).standardizedFileURL.path
             watchedRoots.removeAll { $0.standardizedFileURL.path == removedPath }
@@ -9001,7 +8818,6 @@ final class AppState {
         }
         albums.remove(at: index)
         pinnedSidebarItems.removeAll { $0.type == .album && $0.selectionId == id }
-        savePinnedSidebarItems()
         if selection.type == .album, selection.id == id {
             selection = Selection(type: .lib, id: "all", name: L("全部照片"))
             ensurePrimaryValid()
@@ -9036,7 +8852,6 @@ final class AppState {
         }
         smartAlbums.remove(at: index)
         pinnedSidebarItems.removeAll { $0.type == .smart && $0.selectionId == id }
-        savePinnedSidebarItems()
         if smartAlbumEditingID == id {
             dismissSmartAlbumBuilder()
         }
@@ -9562,10 +9377,10 @@ final class AppState {
                         }
                         guard let index else { return }
                         let input = chunk[index]
-                        let usePreview = !input.preview.isEmpty && FileManager.default.fileExists(atPath: input.preview)
-                        let path = usePreview ? input.preview : input.original
-                        let detected = path.isEmpty ? nil : autoreleasepool {
-                            FaceService.faces(in: URL(fileURLWithPath: path), embeddedPreview: !usePreview && input.isRaw)
+                        let source = FaceService.analysisSource(preview: input.preview, original: input.original,
+                                                                isRaw: input.isRaw)
+                        let detected = source.flatMap { source in
+                            autoreleasepool { FaceService.faces(in: source.url, embeddedPreview: source.embeddedPreview) }
                         }
                         guard let detected else { continue }   // an unreadable photo stays unscanned for a later try
                         let records = detected.enumerated().map { offset, face in
@@ -9837,13 +9652,9 @@ final class AppState {
     }
 
     func confirmDeleteKeyword(_ keyword: String) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = L("删除关键词「\(keyword)」？")
-        alert.informativeText = L("将从 \(photoIds(withKeyword: keyword).count) 张照片中移除它及其下级关键词。可以撤销。")
-        alert.addButton(withTitle: L("删除"))
-        alert.addButton(withTitle: L("取消"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard confirmDestructiveAction(L("删除关键词「\(keyword)」？"),
+                                       L("将从 \(photoIds(withKeyword: keyword).count) 张照片中移除它及其下级关键词。可以撤销。"),
+                                       L("删除")) else { return }
         deleteKeyword(keyword)
     }
 
@@ -9890,13 +9701,8 @@ final class AppState {
             return
         }
 
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = L("移到废纸篓")
-        alert.informativeText = L("将 \(real.count) 个磁盘原件移到废纸篓，并从目录库移除对应记录。")
-        alert.addButton(withTitle: L("移到废纸篓"))
-        alert.addButton(withTitle: L("取消"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard confirmDestructiveAction(L("移到废纸篓"), L("将 \(real.count) 个磁盘原件移到废纸篓，并从目录库移除对应记录。"),
+                                       L("移到废纸篓")) else { return }
         performTrashOriginals(real)
     }
 

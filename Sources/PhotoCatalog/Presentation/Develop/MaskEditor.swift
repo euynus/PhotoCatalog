@@ -217,9 +217,9 @@ struct MaskEditor: View {
                     // a click paints a single dab
                     if case .create = drag.target {
                         app.addMask(painted, to: asset.id)
-                    } else if let draft = app.developDraft, draft.assetId == asset.id {
+                    } else {
                         let erased = painted.strokes.last?.erase == true
-                        app.commitDevelop([asset.id: draft.settings], undoName: erased ? L("擦除蒙版") : L("画笔描边"))
+                        app.commitDevelopDraft(for: asset.id, undoName: erased ? L("擦除蒙版") : L("画笔描边"))
                     }
                     return
                 }
@@ -245,8 +245,7 @@ struct MaskEditor: View {
                     if let mask { app.addMask(mask, to: asset.id) }
                 case .handle:
                     // dragged back to where it started: nothing to save, and no preview left behind
-                    guard moved, let draft = app.developDraft, draft.assetId == asset.id else { discardDraft(); return }
-                    app.commitDevelop([asset.id: draft.settings], undoName: L("编辑蒙版"))
+                    guard moved, app.commitDevelopDraft(for: asset.id, undoName: L("编辑蒙版")) else { discardDraft(); return }
                 case .select(let id):
                     app.developSelectedMaskId = id
                 case .sample(let id):
@@ -270,7 +269,7 @@ struct MaskEditor: View {
 
     /// Drops this photo's unsaved preview, left by a drag that ends without saving.
     private func discardDraft() {
-        if app.developDraft?.assetId == asset.id { app.developDraft = nil }
+        app.discardDevelopDraft(for: asset.id)
     }
 
     /// Starts a stroke when the drag paints: on a new brush mask, or on the selected one.

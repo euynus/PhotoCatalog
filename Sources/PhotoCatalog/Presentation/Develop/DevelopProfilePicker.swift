@@ -44,10 +44,7 @@ struct DevelopProfilePicker: View {
                                   next.profileAmount = control.neutral
                                   app.commitDevelop([asset.id: next], undoName: L("配置文件数量"))
                               },
-                              onCommit: {
-                                  guard let draft = app.developDraft, draft.assetId == asset.id else { return }
-                                  app.commitDevelop([asset.id: draft.settings], undoName: L("配置文件数量"))
-                              })
+                              onCommit: { app.commitDevelopDraft(for: asset.id, undoName: L("配置文件数量")) })
             }
         }
         .onChange(of: asset.id) {

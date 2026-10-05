@@ -39,6 +39,28 @@ enum PhotoMerge {
     /// Merges run here, off the Swift cooperative pool (RAW decodes can deadlock it), one at a time.
     static let queue = DispatchQueue(label: "PhotoCatalog.photo-merge", qos: .userInitiated)
 
+    /// HDR (one scene at several exposures) or a panorama (overlapping frames).
+    enum Kind: String, Sendable { case hdr, panorama }
+
+    /// Why frames didn't merge: one couldn't be read, or they don't make a panorama.
+    enum Failure: Error { case unreadable, panorama(PanoramaFailure) }
+
+    /// The frames merged as `kind`, no larger than `maxPixel` (nil: full size): the image, and the
+    /// frame it was aligned to. For the dialog's preview and the merge itself alike.
+    static func merge(_ frames: [Frame], kind: Kind, options: HDROptions, maxPixel: Int?)
+        -> Result<(image: CIImage, reference: Int), Failure> {
+        switch kind {
+        case .hdr:
+            guard let merged = hdr(frames, options: options, maxPixel: maxPixel) else { return .failure(.unreadable) }
+            return .success(merged)
+        case .panorama:
+            switch panorama(frames, maxPixel: maxPixel) {
+            case .success(let image): return .success((image, 0))
+            case .failure(let failure): return .failure(.panorama(failure))
+            }
+        }
+    }
+
     /// Frames are lined up on renders this size, and deghosting measures exposures on them.
     private static let analysisPixel = 1024
 

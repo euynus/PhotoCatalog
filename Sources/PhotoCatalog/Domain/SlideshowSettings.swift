@@ -5,7 +5,7 @@ import CoreGraphics
 import Foundation
 
 struct SlideshowSettings: Codable, Equatable, Sendable {
-    enum Caption: String, Codable, CaseIterable, Sendable {
+    enum Caption: String, Codable, CaseIterable, Sendable, PhotoCaption {
         case none, title, filename, caption
 
         var title: String {

@@ -23,17 +23,35 @@ enum FaceService {
     static let vectorLength = FaceClustering.vectorLength
 
     /// Faces in an image file, upright. Nil when the file can't be read or the recognition
-    /// model won't load. For a RAW original, `embeddedPreview` reads the camera's JPEG preview
-    /// instead of developing the RAW (~10× faster, and plenty of pixels for faces).
+    /// model won't load.
     static func faces(in url: URL, embeddedPreview: Bool = false) -> [Detected]? {
+        analysisImage(url, embeddedPreview: embeddedPreview).flatMap { faces(in: $0) }
+    }
+
+    /// The file faces are found in for a photo: its cached preview when there's one, else the
+    /// original, a RAW's embedded preview standing in for it. Nil with neither.
+    static func analysisSource(preview: String, original: String?, isRaw: Bool) -> (url: URL, embeddedPreview: Bool)? {
+        if !preview.isEmpty, !preview.hasPrefix("http"), FileManager.default.fileExists(atPath: preview) {
+            return (URL(fileURLWithPath: preview), false)
+        }
+        guard let original, !original.isEmpty else { return nil }
+        return (URL(fileURLWithPath: original), isRaw)
+    }
+
+    /// The image faces are found in, upright, at most `analysisMaxPixel`: a face's box measures
+    /// out this image, so its avatar is cut from it too. For a RAW original, `embeddedPreview`
+    /// reads the camera's JPEG preview instead of developing the RAW (~10× faster, and plenty of
+    /// pixels for faces).
+    static func analysisImage(_ url: URL, embeddedPreview: Bool = false) -> CGImage? {
         let fromImage = embeddedPreview ? kCGImageSourceCreateThumbnailFromImageIfAbsent : kCGImageSourceCreateThumbnailFromImageAlways
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                  fromImage: true,
-                  kCGImageSourceCreateThumbnailWithTransform: true,
-                  kCGImageSourceThumbnailMaxPixelSize: analysisMaxPixel,
-              ] as CFDictionary) else { return nil }
-        return faces(in: image)
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else {
+            return nil
+        }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            fromImage: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: analysisMaxPixel,
+        ] as CFDictionary)
     }
 
     static func faces(in image: CGImage) -> [Detected]? {
