@@ -52,7 +52,7 @@ final class AppState {
         didSet {
             let scope = nextAssetEditScope
             nextAssetEditScope = .any
-            if scope == .any {
+            if scope.contains(.structure) {
                 structureVersion &+= 1
                 assetIndexCache = nil
                 // edited copies stack with their originals by name, so file changes can move stacks
@@ -65,7 +65,7 @@ final class AppState {
                 folderTreeCache = nil
                 folderTreeCountCache = nil
             }
-            if scope != .review {
+            if !scope.isDisjoint(with: [.metadata, .structure]) {
                 keywordListCache = nil   // re-derived from the (patched) counts
                 keywordSuggestionPoolCache = nil
                 projectListCache = nil
@@ -77,13 +77,15 @@ final class AppState {
             listInputsVersion &+= 1
         }
     }
-    /// What an `assets` write may have changed. Review edits (rating / flag / color label)
-    /// keep ids, order, paths, dates, status and keywords, so the structural caches —
-    /// folder tree and counts, capture-date tree, id index, keyword/project/client lists —
-    /// stay valid. Rebuilding them on every rating keystroke cost ~150 ms on 8k photos.
-    /// Metadata edits (keywords, title, caption, credits, location) also keep the id index,
-    /// RAW+JPEG pairing, folder and date trees — rebuilding pairing alone took ~1 s at 500k.
-    enum AssetEditScope: Comparable { case review, metadata, any }
+    /// Review and metadata effects can occur together, including on different photos in
+    /// one edit. Neither invalidates structural indexes, pairing, or date/folder trees.
+    private struct AssetEditScope: OptionSet {
+        let rawValue: Int
+        static let review = Self(rawValue: 1 << 0)
+        static let metadata = Self(rawValue: 1 << 1)
+        static let structure = Self(rawValue: 1 << 2)
+        static let any: Self = [.review, .metadata, .structure]
+    }
     @ObservationIgnored private var nextAssetEditScope: AssetEditScope = .any
     /// id → index map, lazily rebuilt after any `assets` change (invalidated above).
     @ObservationIgnored private var assetIndexCache: [String: Int]?
@@ -244,7 +246,9 @@ final class AppState {
         let current = edits.map { assets[$0.offset] }
         guard persistChanged(edits.map(\.asset)) else { return }
         let deletionChanged = zip(current, edits).contains { $0.deleted != $1.asset.deleted }
-        let scope = zip(current, edits).map { Self.editScope(from: $0, to: $1.asset) }.max() ?? .review
+        let scope = zip(current, edits).reduce(into: AssetEditScope()) {
+            $0.formUnion(Self.editScope(from: $1.0, to: $1.1.asset))
+        }
         applyAssetEdits(edits, scope: scope)
         ensurePrimaryValid()
         enqueueAutomaticXMPWrite(snapshot.filter { !$0.isDemo && !$0.deleted })
@@ -252,8 +256,8 @@ final class AppState {
         registerUndo(restoring: current, actionName: actionName)
     }
 
-    private func replaceAssetsForMutation(_ updated: [Asset], scope: AssetEditScope = .any) {
-        nextAssetEditScope = scope
+    private func replaceAssetsForMutation(_ updated: [Asset]) {
+        nextAssetEditScope = .any
         assets = updated
         didMutateAssets()
     }
@@ -266,23 +270,25 @@ final class AppState {
         var patchedCounts: LibraryCounts?
         var patchedKeywords: (order: [String], counts: [String: Int])?
         var listBefore: ListSignature?
-        if scope == .review {
+        if !scope.contains(.structure) {
             let pairing = assetPairing
             patchedCounts = libraryCountsCache.map { counts in
                 edits.reduce(into: counts) { counts, edit in
                     guard !pairing.isHiddenCompanion(edit.asset.id) else { return }
-                    counts.applyReviewChange(from: assets[edit.offset], to: edit.asset)
+                    if scope.contains(.review) {
+                        counts.applyReviewChange(from: assets[edit.offset], to: edit.asset)
+                    }
+                    if scope.contains(.metadata) {
+                        counts.applyMetadataChange(from: assets[edit.offset], to: edit.asset)
+                    }
                 }
             }
-            if !listDependsOnReviewFields { listBefore = currentListSignature }
-        } else if scope == .metadata {
+            let membershipCanChange = (scope.contains(.review) && listDependsOnReviewFields)
+                || (scope.contains(.metadata) && listDependsOnMetadataFields)
+            if !membershipCanChange { listBefore = currentListSignature }
+        }
+        if scope.contains(.metadata), !scope.contains(.structure) {
             let pairing = assetPairing
-            patchedCounts = libraryCountsCache.map { counts in
-                edits.reduce(into: counts) { counts, edit in
-                    guard !pairing.isHiddenCompanion(edit.asset.id) else { return }
-                    counts.applyMetadataChange(from: assets[edit.offset], to: edit.asset)
-                }
-            }
             patchedKeywords = keywordCountsCache.map { cache in
                 var patched = cache
                 for edit in edits where !pairing.isHiddenCompanion(edit.asset.id) && !edit.asset.deleted {
@@ -294,7 +300,6 @@ final class AppState {
                 }
                 return patched
             }
-            if !listDependsOnMetadataFields { listBefore = currentListSignature }
         }
         nextAssetEditScope = scope
         assets.withUnsafeMutableBufferPointer { buffer in
@@ -306,8 +311,8 @@ final class AppState {
         didMutateAssets()
     }
 
-    /// The narrowest scope covering what changed between two versions of a photo.
-    nonisolated static func editScope(from old: Asset, to new: Asset) -> AssetEditScope {
+    /// All effects of an edit, not just the broadest category of changed fields.
+    nonisolated private static func editScope(from old: Asset, to new: Asset) -> AssetEditScope {
         if old.filename != new.filename || old.folderId != new.folderId || old.folderName != new.folderName
             || old.date != new.date || old.status != new.status || old.importedAt != new.importedAt
             || old.deleted != new.deleted || old.localPath != new.localPath || old.faces != new.faces
@@ -318,13 +323,17 @@ final class AppState {
             || old.masterId != new.masterId || old.copyName != new.copyName {
             return .any
         }
+        var scope = AssetEditScope()
+        if old.rating != new.rating || old.flag != new.flag || old.colorLabel != new.colorLabel {
+            scope.insert(.review)
+        }
         if old.keywords != new.keywords || old.title != new.title || old.caption != new.caption
             || old.author != new.author || old.copyright != new.copyright || old.makerNotes != new.makerNotes
             || old.project != new.project || old.client != new.client || old.location != new.location
             || old.gps.0 != new.gps.0 || old.gps.1 != new.gps.1 || old.gpsAltitude != new.gpsAltitude {
-            return .metadata
+            scope.insert(.metadata)
         }
-        return .review
+        return scope
     }
 
     /// Whether the current list's membership or order can move with a metadata edit.
@@ -8667,7 +8676,9 @@ final class AppState {
         guard !edits.isEmpty else { return false }
         guard persistChanged(edits.map(\.asset), writingSidecars: writingSidecars) else { return false }
         let before = edits.map { assets[$0.offset] }
-        let scope = zip(before, edits).map { Self.editScope(from: $0, to: $1.asset) }.max() ?? .review
+        let scope = zip(before, edits).reduce(into: AssetEditScope()) {
+            $0.formUnion(Self.editScope(from: $1.0, to: $1.1.asset))
+        }
         applyAssetEdits(edits, scope: scope)
         ensurePrimaryValid()
         registerUndo(restoring: before, actionName: undoName)
@@ -8675,46 +8686,37 @@ final class AppState {
     }
 
     @discardableResult
-    func mutateAsset(_ id: String, scope: AssetEditScope = .any, withCompanions: Bool = false,
-                     undoName: String? = nil, _ transform: (inout Asset) -> Void) -> Bool {
-        let ids = withCompanions ? self.withCompanions([id]) : [id]
-        let offsets = ids.compactMap { assetIndex[$0] }
-        guard !offsets.isEmpty else { return false }
-        var updated = assets
-        let before = offsets.map { assets[$0] }
-        for offset in offsets { transform(&updated[offset]) }
-        guard persist(ids, in: updated) else { return false }
-        registerUndo(restoring: before, actionName: undoName)
-        replaceAssetsForMutation(updated, scope: scope)
-        ensurePrimaryValid()
-        return true
+    func mutateAsset(_ id: String, undoName: String? = nil, _ transform: (inout Asset) -> Void) -> Bool {
+        mutate([id], undoName: undoName, transform)
     }
 
     @discardableResult
-    func setRating(_ n: Int) -> Bool {
-        mutateIndexedMetadata(undoName: L("评分"), { $0.rating = n }) { store, ids in
+    func setRating(_ n: Int, on ids: Set<String>? = nil) -> Bool {
+        guard (0...5).contains(n) else { return false }
+        return mutateIndexedMetadata(ids, undoName: L("评分"), { $0.rating = n }) { store, ids in
             try store.updateRatings(n, assetIDs: ids)
         }
     }
     @discardableResult
-    func setFlag(_ f: Flag) -> Bool {
-        mutateIndexedMetadata(undoName: L("旗标"), { $0.flag = f }) { store, ids in
+    func setFlag(_ f: Flag, on ids: Set<String>? = nil) -> Bool {
+        mutateIndexedMetadata(ids, undoName: L("旗标"), { $0.flag = f }) { store, ids in
             try store.updateFlags(f, assetIDs: ids)
         }
     }
     @discardableResult
-    func setColor(_ c: ColorLabel?) -> Bool {
-        mutateIndexedMetadata(undoName: L("颜色标签"), { $0.colorLabel = c }) { store, ids in
+    func setColor(_ c: ColorLabel?, on ids: Set<String>? = nil) -> Bool {
+        mutateIndexedMetadata(ids, undoName: L("颜色标签"), { $0.colorLabel = c }) { store, ids in
             try store.updateColorLabels(c, assetIDs: ids)
         }
     }
 
     private func mutateIndexedMetadata(
+        _ targets: Set<String>?,
         undoName: String,
         _ transform: (inout Asset) -> Void,
         persist: (CatalogStore, Set<String>) throws -> Void
     ) -> Bool {
-        let ids = targetIds
+        let ids = withCompanions(targets ?? selectionTargetIds)
         guard !ids.isEmpty else { return false }
         // Edit copies of only the targeted assets, persist, then write them back in place:
         // copying the whole array retained every string of every asset on each keystroke.
@@ -8725,6 +8727,7 @@ final class AppState {
             transform(&asset)
             return (offset, asset)
         }.sorted { $0.offset < $1.offset }
+        guard !edits.isEmpty else { return false }
         let changed = edits.map(\.asset).filter { !$0.isDemo }
         if let store, !changed.isEmpty {
             do {
