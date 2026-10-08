@@ -228,8 +228,15 @@ enum ExportCheck {
                                 space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        // bottom-right quarter (rows are top-down in memory)
-        return (height / 2..<height).flatMap { row in data[(row * width + width / 2) * 4..<(row * width + width) * 4] }
+        // bottom-right quarter (rows are top-down in memory); spelled out, since Xcode 26's
+        // compiler gives up type-checking it as one expression
+        var corner: [UInt8] = []
+        for row in height / 2..<height {
+            let start = (row * width + width / 2) * 4
+            let end = (row * width + width) * 4
+            corner += data[start..<end]
+        }
+        return corner
     }
 
     @MainActor
