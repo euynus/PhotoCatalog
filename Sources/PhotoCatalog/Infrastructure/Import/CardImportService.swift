@@ -64,9 +64,8 @@ struct CardImportOptions: Codable, Equatable, Sendable {
     var ejectAfter = false
 
     static var standard: CardImportOptions {
-        let pictures = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory())
-        return CardImportOptions(destination: pictures.appendingPathComponent(L("PhotoCatalog 照片"), isDirectory: true))
+        CardImportOptions(destination: FileAccessService.picturesFolder
+            .appendingPathComponent(L("PhotoCatalog 照片"), isDirectory: true))
     }
 }
 

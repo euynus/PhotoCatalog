@@ -2518,6 +2518,7 @@ final class AppState {
     @discardableResult
     private func loadExistingCatalog() -> Error? {
         let url = configuredCatalogURL
+        FileAccessService.reach(url)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let s: CatalogStore
         do {
@@ -2614,6 +2615,7 @@ final class AppState {
     }
 
     private func beginDeferredCatalogLoad(at url: URL, fallbackURL: URL?, announceSuccess: Bool = false) {
+        FileAccessService.reach(url)
         invalidateDescriptionReview()
         catalogLoadTask?.cancel()
         catalogLoadGeneration &+= 1
@@ -2750,6 +2752,8 @@ final class AppState {
     }
 
     private func restoreSourceRoots(from store: CatalogStore) {
+        // originals relocated or moved outside the source folders
+        FileAccessService.reachOriginals()
         guard let roots = try? store.loadSourceRoots() else { return }
         for root in roots {
             let resolved = resolveSourceRoot(root)
@@ -2806,6 +2810,8 @@ final class AppState {
                     volumeIdentifier: root.volumeIdentifier
                 ).rawValue)
             }
+            // a sandboxed copy sees folders it may not read
+            guard FileAccessService.canRead(resolved.url.path) else { return (resolved.url, "permissionLost") }
             return (resolved.url, "online")
         }
         return fallbackSourceRoot(root, preferredStatus: nil)
@@ -2814,7 +2820,7 @@ final class AppState {
     private func fallbackSourceRoot(_ root: SourceRootRecord, preferredStatus: String?) -> (url: URL?, status: String) {
         let url = URL(fileURLWithPath: root.pathHint)
         if FileManager.default.fileExists(atPath: url.path) {
-            return (url, preferredStatus ?? "online")
+            return (url, preferredStatus ?? (FileAccessService.canRead(url.path) ? "online" : "permissionLost"))
         }
         if let relocated = VolumeMonitor.relocatedURL(for: root.pathHint,
                                                       volumeIdentifier: root.volumeIdentifier) {
@@ -2874,6 +2880,7 @@ final class AppState {
 
     private func openOrCreateCatalog() {
         guard store == nil else { return }
+        FileAccessService.reach(configuredCatalogURL)
         do {
             let s = try CatalogStore(packageURL: configuredCatalogURL)
             store = s
@@ -3048,6 +3055,8 @@ final class AppState {
     }
 
     func clearRecentCatalogs() {
+        let active = configuredCatalogURL.standardizedFileURL.path
+        for path in recentCatalogPaths where path != active { FileAccessService.forget(URL(fileURLWithPath: path)) }
         recentCatalogPaths = []
         UserDefaults.standard.set(recentCatalogPaths, forKey: Self.recentCatalogsKey)
         push("已清除最近目录库", "trash")
@@ -3085,6 +3094,8 @@ final class AppState {
 
     private func setActiveCatalog(_ url: URL) {
         UserDefaults.standard.set(url, forKey: Self.catalogURLKey)
+        // so a sandboxed copy can open it again in a later launch
+        FileAccessService.remember(url)
         rememberCatalog(url)
     }
 
@@ -3101,6 +3112,7 @@ final class AppState {
     private func forgetCatalog(_ url: URL) {
         recentCatalogPaths.removeAll { $0 == url.path }
         UserDefaults.standard.set(recentCatalogPaths, forKey: Self.recentCatalogsKey)
+        if url.standardizedFileURL != configuredCatalogURL.standardizedFileURL { FileAccessService.forget(url) }
     }
 
     // ---------- real folder import (§6.3) ----------
@@ -3311,7 +3323,9 @@ final class AppState {
             push("请选择相机或要监视的文件夹", "warning")
             return false
         }
-        return startTether(settings, source: FolderTetherSource(folder: URL(fileURLWithPath: settings.watchedFolderPath)))
+        let watched = URL(fileURLWithPath: settings.watchedFolderPath)
+        FileAccessService.reach(watched)
+        return startTether(settings, source: FolderTetherSource(folder: watched))
     }
 
     /// Starts a session taking shots from `source`. The session's folder is cataloged in place
@@ -3328,6 +3342,7 @@ final class AppState {
         }
         openOrCreateCatalog()
         guard let coordinator, store != nil else { return false }
+        FileAccessService.reach(URL(fileURLWithPath: settings.destinationPath))
         let folder = URL(fileURLWithPath: settings.destinationPath).appendingPathComponent(settings.folderName(), isDirectory: true)
             .standardizedFileURL
         if !settings.watchedFolderPath.isEmpty, source is FolderTetherSource {
@@ -3478,6 +3493,8 @@ final class AppState {
         cardImportOptions = options
         openOrCreateCatalog()
         guard coordinator != nil, store != nil else { return nil }
+        FileAccessService.reach(options.destination)
+        if options.backupEnabled, let backup = options.backup { FileAccessService.reach(backup) }
         do {
             try FileManager.default.createDirectory(at: options.destination, withIntermediateDirectories: true)
         } catch {
@@ -3851,6 +3868,7 @@ final class AppState {
                     throw DBError.step(L("无法解析导入任务"))
                 }
                 let folder = URL(fileURLWithPath: payload.sourcePath)
+                reachImportSource(payload)
                 if job.state == "failed" {
                     importRun = try restoredImportRun(job: job, payload: payload, folder: folder,
                                                       mode: mode, phase: .failed, store: store, allowFailed: true)
@@ -3887,6 +3905,16 @@ final class AppState {
         } catch {
             push("读取导入任务失败：\(String(describing: error))", "warning")
         }
+    }
+
+    /// Opens the folder of an import interrupted in an earlier launch through the bookmark taken
+    /// when it began (a sandboxed copy can't read it otherwise), for resuming or retrying it.
+    private func reachImportSource(_ payload: ImportJobPayload) {
+        guard let bookmark = payload.options?.bookmark,
+              let resolved = FileAccessService.resolveBookmark(bookmark),
+              resolved.url.standardizedFileURL.path == URL(fileURLWithPath: payload.sourcePath).standardizedFileURL.path,
+              resolved.url.startAccessingSecurityScopedResource() else { return }
+        securityScopedRoots.append(resolved.url)
     }
 
     private func resumeRecoveredImport(_ run: ImportRun) {
@@ -5481,6 +5509,7 @@ final class AppState {
         panel.allowsMultipleSelection = false
         panel.prompt = operation == .move ? L("移动到此处") : L("复制到此处")
         guard panel.runModal() == .OK, let destination = panel.url else { return }
+        if operation == .move { FileAccessService.remember(destination, for: .originals) }
 
         Task { [weak self, operation, real, destination, operationCatalogURL] in
             let report = await Task.detached(priority: .userInitiated) {
@@ -6382,8 +6411,7 @@ final class AppState {
         didSet { AppState.store(renderedExportSettings, forKey: "pc_renderedExportSettings") }
     }
     var renderedExportFolder: String = UserDefaults.standard.string(forKey: "pc_renderedExportFolder")
-        ?? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first?
-            .appendingPathComponent(L("PhotoCatalog 导出")).path ?? NSHomeDirectory() {
+        ?? FileAccessService.picturesFolder.appendingPathComponent(L("PhotoCatalog 导出")).path {
         didSet { UserDefaults.standard.set(renderedExportFolder, forKey: "pc_renderedExportFolder") }
     }
     var renderedExportPresets: [RenderedExportPreset] =
@@ -6471,8 +6499,10 @@ final class AppState {
     }
 
     private func slideshowMusic(_ settings: SlideshowSettings) -> URL? {
-        guard !settings.musicPath.isEmpty, FileManager.default.fileExists(atPath: settings.musicPath) else { return nil }
-        return URL(fileURLWithPath: settings.musicPath)
+        guard !settings.musicPath.isEmpty else { return nil }
+        let url = URL(fileURLWithPath: settings.musicPath)
+        FileAccessService.reach(url)
+        return FileAccessService.canRead(url.path) ? url : nil
     }
 
     /// ⌘↩ or 播放: the slideshow full screen with the current settings.
@@ -6811,6 +6841,7 @@ final class AppState {
         }
         renderedExportSettings = settings
         renderedExportFolder = folder.path
+        FileAccessService.reach(folder)
         let subfolder = settings.subfolder.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "/", with: "-")
         let destination = subfolder.isEmpty ? folder : folder.appendingPathComponent(subfolder, isDirectory: true)
@@ -9083,6 +9114,7 @@ final class AppState {
             push("未找到匹配的原件", "warning")
             return
         }
+        FileAccessService.remember(selected, for: .originals)
 
         let attrs = try? FileManager.default.attributesOfItem(atPath: replacement.path)
         let size = (attrs?[.size] as? Int64) ?? 0

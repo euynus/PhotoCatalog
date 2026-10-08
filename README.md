@@ -246,4 +246,9 @@ silicon only (the AI code's `Float16` doesn't exist on Intel). Every build's Inf
 the App Store category, export-compliance answer and the Xcode and SDK versions it was built
 with, and `Resources/PrivacyInfo.xcprivacy` declares no tracking and no collected data.
 
+In the sandbox the app reaches what the user chose and nothing else: photo folders through the
+bookmarks their source roots keep in the catalog; catalogs, export, card-copy, tether and music locations, and places
+originals were relocated or moved to, through bookmarks `FileAccessService` keeps in the app's
+settings.
+
 Photos load from the Unsplash CDN; when offline each tile shows its deterministic gradient placeholder (matching the prototype's graceful fallback).

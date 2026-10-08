@@ -248,7 +248,9 @@ struct RenderedExportSheet: View {
     }
 
     private func chooseFolder() {
-        if let url = NSOpenPanel.chooseFolder(prompt: L("选择"), start: URL(fileURLWithPath: folder)) { folder = url.path }
+        guard let url = NSOpenPanel.chooseFolder(prompt: L("选择"), start: URL(fileURLWithPath: folder)) else { return }
+        FileAccessService.remember(url)
+        folder = url.path
     }
 
     private func export() {

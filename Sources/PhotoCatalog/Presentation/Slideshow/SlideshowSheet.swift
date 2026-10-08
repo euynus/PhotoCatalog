@@ -19,7 +19,10 @@ struct SlideshowSheet: View {
     }
 
     private static func length(_ path: String) -> Double? {
-        path.isEmpty ? nil : SlideshowVideo.musicDuration(URL(fileURLWithPath: path))
+        guard !path.isEmpty else { return nil }
+        let url = URL(fileURLWithPath: path)
+        FileAccessService.reach(url)
+        return SlideshowVideo.musicDuration(url)
     }
 
     var body: some View {
@@ -134,7 +137,9 @@ struct SlideshowSheet: View {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.audio]
         panel.message = L("选择幻灯片的音乐")
-        if panel.runModal() == .OK, let url = panel.url { settings.musicPath = url.path }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        FileAccessService.remember(url)
+        settings.musicPath = url.path
     }
 
     private func exportVideo() {

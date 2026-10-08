@@ -250,6 +250,7 @@ struct CardImportSheet: View {
                             .lineLimit(1).truncationMode(.middle).foregroundStyle(Theme.text2)
                         Button("选择…") {
                             if let url = NSOpenPanel.chooseFolder(prompt: L("选择"), start: options.destination) {
+                                FileAccessService.remember(url)
                                 options.destination = url
                             }
                         }
@@ -289,7 +290,10 @@ struct CardImportSheet: View {
                             Text(options.backup.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? L("未选择"))
                                 .lineLimit(1).truncationMode(.middle).foregroundStyle(Theme.text2)
                             Button("选择…") {
-                                if let url = NSOpenPanel.chooseFolder(prompt: L("选择"), start: options.backup) { options.backup = url }
+                                if let url = NSOpenPanel.chooseFolder(prompt: L("选择"), start: options.backup) {
+                                    FileAccessService.remember(url)
+                                    options.backup = url
+                                }
                             }
                         }
                     }

@@ -123,9 +123,7 @@ final class CatalogStore: @unchecked Sendable {
     var tempURL: URL { packageURL.appendingPathComponent("Temp") }
 
     static var defaultURL: URL {
-        let pics = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Pictures")
-        return pics.appendingPathComponent("PhotoCatalog Library.photolibrary")
+        FileAccessService.picturesFolder.appendingPathComponent("PhotoCatalog Library.photolibrary")
     }
 
     init(packageURL: URL) throws {

@@ -43,7 +43,10 @@ struct TetherSheet: View {
                         Color.clear.frame(width: 1, height: 1)
                         VStack(alignment: .leading, spacing: 4) {
                             folderRow(settings.watchedFolderPath, placeholder: L("尚未选择")) {
-                                if let url = NSOpenPanel.chooseFolder(message: L("选择联机软件保存照片的文件夹")) { settings.watchedFolderPath = url.path }
+                                if let url = NSOpenPanel.chooseFolder(message: L("选择联机软件保存照片的文件夹")) {
+                                    FileAccessService.remember(url)
+                                    settings.watchedFolderPath = url.path
+                                }
                             }
                             Text("开始前已在文件夹中的照片不会导入")
                                 .font(.system(size: 11)).foregroundStyle(Theme.text3)
@@ -58,7 +61,10 @@ struct TetherSheet: View {
                 GridRow {
                     Text("保存到")
                     folderRow(settings.destinationPath, placeholder: "") {
-                        if let url = NSOpenPanel.chooseFolder(message: L("选择保存联机拍摄会话的文件夹")) { settings.destinationPath = url.path }
+                        if let url = NSOpenPanel.chooseFolder(message: L("选择保存联机拍摄会话的文件夹")) {
+                            FileAccessService.remember(url)
+                            settings.destinationPath = url.path
+                        }
                     }
                 }
                 GridRow {
