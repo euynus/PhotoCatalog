@@ -62,4 +62,4 @@ SwiftUI pitfalls hit here before:
 - Commits follow Conventional Commits (`feat(xmp): …`, `fix(backup): …`), one feature per commit.
 - Keyboard shortcuts are centralized in `Presentation/MainWindow/` (RootView key handling + `PhotoCatalogCommands`); the full shortcut map is documented in `docs/features.md`.
 - `site/` is the product page and privacy policy: static files, no build step, both languages in the markup (`lang` attributes; `site.js` flips `data-lang`). Its screenshots use Unsplash sample photos, never the user's own library.
-- Document user-visible behavior in `docs/features.md` as part of the change. README.md is a one-page overview: touch it only when a highlight changes. Build, test, architecture and release notes for people live in `docs/development.md`.
+- Document user-visible behavior in `docs/features.md` as part of the change. The docs are English, so quote menu items, buttons and settings as the English interface shows them (their `en.lproj` values), never the Chinese keys. README.md is a one-page overview: touch it only when a highlight changes. Build, test, architecture and release notes for people live in `docs/development.md`.

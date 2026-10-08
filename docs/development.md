@@ -115,7 +115,7 @@ Still deferred from the PRD: an Apple Photos import bridge, a plugin system, and
 
 `script/release.sh <version>` builds the Release app with that version, signs it with the hardened runtime, notarizes and staples it, and leaves `dist/PhotoCatalog-<version>.zip` to publish as a GitHub release (`gh release create v<version> …`). It needs a Developer ID Application certificate (`DEVELOPER_ID`) and a notarytool keychain profile (`NOTARY_PROFILE`); the script's header shows the one-time setup.
 
-**Updates.** PhotoCatalog → 检查更新…, and once a day shortly after launch unless Settings → 常规 → 自动检查更新 is off, compares the running version with the latest GitHub release. A Developer ID-signed copy offers 安装并重新启动 (install and relaunch): it downloads the release's `PhotoCatalog-<version>.zip`, installs it only if the app inside is that version and meets the running app's own designated requirement (same identifier, same team; an altered or differently signed app is refused), swaps it in and relaunches. A copy signed ad hoc, or one in a folder it can't write, offers the download page instead. `PC_UPDATE_FEED` (an https or file URL of a release in GitHub's format) points the check elsewhere for testing; Debug builds also take `PC_UPDATE_REQUIREMENT` in place of the running app's requirement.
+**Updates.** PhotoCatalog → Check for Updates…, and once a day shortly after launch unless Settings → General → Check for Updates Automatically is off, compares the running version with the latest GitHub release. A Developer ID-signed copy offers Install and Relaunch: it downloads the release's `PhotoCatalog-<version>.zip`, installs it only if the app inside is that version and meets the running app's own designated requirement (same identifier, same team; an altered or differently signed app is refused), swaps it in and relaunches. A copy signed ad hoc, or one in a folder it can't write, offers the download page instead. `PC_UPDATE_FEED` (an https or file URL of a release in GitHub's format) points the check elsewhere for testing; Debug builds also take `PC_UPDATE_REQUIREMENT` in place of the running app's requirement.
 
 **Crash reports.** After an unexpected quit, the next launch offers to show the crash report macOS saved; it stays on the Mac.
 
@@ -123,7 +123,7 @@ Still deferred from the PRD: an Apple Photos import bridge, a plugin system, and
 
 `script/appstore.sh <version>` builds the Mac App Store edition:
 
-- compiled with `-D APPSTORE`: no 检查更新…, no automatic update check and no crash-report prompt, since the App Store does both;
+- compiled with `-D APPSTORE`: no Check for Updates…, no automatic update check and no crash-report prompt, since the App Store does both;
 - signed with the App Sandbox entitlements in `Resources/AppStore.entitlements` (folders and files the user picks, their bookmarks, ~/Pictures, outgoing network, printing, USB cameras), carrying its provisioning profile;
 - wrapped in an installer package, `dist/PhotoCatalog-<version>.pkg`, to upload with Transporter or `xcrun altool --upload-package`.
 
