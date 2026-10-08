@@ -247,7 +247,8 @@ the App Store category, export-compliance answer and the Xcode and SDK versions 
 with, and `Resources/PrivacyInfo.xcprivacy` declares no tracking and no collected data.
 
 In the sandbox the app reaches what the user chose and nothing else: photo folders through the
-bookmarks their source roots keep in the catalog; catalogs, export, card-copy, tether and music locations, and places
+bookmarks their source roots keep in the catalog (refreshed when a folder is renamed or moved,
+its photos following); catalogs, export, card-copy, tether and music locations, and places
 originals were relocated or moved to, through bookmarks `FileAccessService` keeps in the app's
 settings. A memory card is read once the user allows it in an open panel the import dialog
 offers, and is remembered for the next time it's inserted.

@@ -1999,6 +1999,53 @@ final class AppStateSelectionTests: XCTestCase {
     }
 
     @MainActor
+    func testRenamedSourceFolderReopensWithItsPhotos() throws {
+        let defaults = UserDefaults.standard
+        let saved = ["pc_catalogURL", "pc_recentCatalogs", "pc_rememberedLocations"].map { ($0, defaults.object(forKey: $0)) }
+        defer {
+            for (key, value) in saved {
+                if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
+            }
+        }
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-renamed-source-\(UUID().uuidString)")
+        let source = dir.appendingPathComponent("Source")
+        let renamed = dir.appendingPathComponent("Renamed")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data("photo".utf8).write(to: source.appendingPathComponent("photo.jpg"))
+
+        let store = try CatalogStore(packageURL: package)
+        let bookmark = try XCTUnwrap(FileAccessService.createBookmark(for: source))
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path,
+                                bookmark: bookmark, volumeIdentifier: nil)
+        var photo = DemoData.assets[0]
+        photo.isDemo = false
+        photo.folderId = "source-1"
+        photo.folderName = "Source"
+        photo.localPath = source.appendingPathComponent("photo.jpg").path
+        photo.status = .ready
+        try store.upsert([photo])
+
+        // renamed while the app was closed: its bookmark still finds it
+        try FileManager.default.moveItem(at: source, to: renamed)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        XCTAssertEqual(app.folders.first { $0.id == "source-1" }?.status, "online")
+        // the bookmark resolves temporary folders to /private/var
+        let renamedTail = "/\(dir.lastPathComponent)/Renamed"
+        let reopened = try XCTUnwrap(app.assets.first { $0.id == photo.id })
+        XCTAssertTrue(reopened.localPath?.hasSuffix(renamedTail + "/photo.jpg") == true, reopened.localPath ?? "nil")
+        XCTAssertEqual(reopened.status, .ready)
+        let root = try XCTUnwrap(try store.loadSourceRoots().first { $0.id == "source-1" })
+        XCTAssertTrue(root.pathHint.hasSuffix(renamedTail), root.pathHint)
+        XCTAssertNotNil(root.bookmarkData)
+    }
+
+    @MainActor
     func testReauthorizingSourceRebasesMovedAssetPaths() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rebase-source-\(UUID().uuidString)")
         let oldRoot = dir.appendingPathComponent("Old")

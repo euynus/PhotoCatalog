@@ -657,6 +657,8 @@ final class AppState {
     @ObservationIgnored private var watcher: FileWatcher?
     @ObservationIgnored private var watchedRoots: [URL] = []
     @ObservationIgnored private var securityScopedRoots: [URL] = []
+    /// Source folders found renamed or moved as the catalog opened; their photos follow once loaded.
+    @ObservationIgnored private var movedSourceRoots: [(id: String, from: String, to: String)] = []
     @ObservationIgnored private var sourceRootPathsById: [String: String] = [:] {
         didSet {
             folderTreeCache = nil
@@ -2545,6 +2547,7 @@ final class AppState {
             folders = []
             duplicateGroupsCache = []
             restoreSourceRoots(from: store)
+            movedSourceRoots = []
             restoreAlbums(from: store, assets: [])
             recoverInterruptedImportJobs()
             ensurePrimaryValid()
@@ -2582,6 +2585,10 @@ final class AppState {
         recoverInterruptedImportJobs()
         primeDefaultListCache(with: checked)
         ensurePrimaryValid()
+        for moved in movedSourceRoots {
+            rebaseSourceRootAssetPaths(folderId: moved.id, oldRoot: moved.from, newRoot: moved.to)
+        }
+        movedSourceRoots = []
         backfillThumbnails()
         detectMissingRealAssets()
         checkExternalXMPChanges()
@@ -2757,15 +2764,20 @@ final class AppState {
         guard let roots = try? store.loadSourceRoots() else { return }
         for root in roots {
             let resolved = resolveSourceRoot(root)
-            if resolved.status == "online", let url = resolved.url, url.path != root.pathHint {
+            if resolved.status == "online", let url = resolved.url,
+               url.path != root.pathHint || resolved.bookmark != root.bookmarkData {
                 try? store.updateSourceRootAccess(
                     id: root.id,
                     displayName: root.displayName,
                     path: url.path,
-                    bookmark: root.bookmarkData,
+                    bookmark: resolved.bookmark,
                     status: resolved.status,
                     volumeIdentifier: VolumeMonitor.volumeIdentifier(for: url) ?? root.volumeIdentifier
                 )
+                // a stale bookmark that found the folder elsewhere: it was renamed or moved
+                if url.path != root.pathHint, resolved.bookmark != root.bookmarkData {
+                    movedSourceRoots.append((root.id, root.pathHint, url.path))
+                }
             } else {
                 try? store.updateSourceRootStatus(id: root.id, status: resolved.status)
             }
@@ -2787,34 +2799,43 @@ final class AppState {
         refreshWatcher()
     }
 
-    private func resolveSourceRoot(_ root: SourceRootRecord) -> (url: URL?, status: String) {
+    /// Where a source folder is now, whether it can be read, and its bookmark: a stale one is
+    /// replaced by one made as it's opened.
+    private func resolveSourceRoot(_ root: SourceRootRecord) -> (url: URL?, status: String, bookmark: Data?) {
         if root.managementMode == ImportMode.managed.rawValue {
-            return (nil, "online")
+            return (nil, "online", root.bookmarkData)
         }
-        if let bookmark = root.bookmarkData {
-            guard let resolved = FileAccessService.resolveBookmark(bookmark) else {
-                return fallbackSourceRoot(root, preferredStatus: "permissionLost")
-            }
-            guard !resolved.isStale else {
-                return (resolved.url, "permissionLost")
-            }
-            let ok = resolved.url.startAccessingSecurityScopedResource()
-            if ok { securityScopedRoots.append(resolved.url) }
-            guard FileManager.default.fileExists(atPath: resolved.url.path) else {
-                if let relocated = VolumeMonitor.relocatedURL(for: resolved.url.path,
-                                                              volumeIdentifier: root.volumeIdentifier) {
-                    return (relocated, "online")
-                }
-                return (resolved.url, VolumeMonitor.status(
-                    forInaccessible: resolved.url.path,
-                    volumeIdentifier: root.volumeIdentifier
-                ).rawValue)
-            }
-            // a sandboxed copy sees folders it may not read
-            guard FileAccessService.canRead(resolved.url.path) else { return (resolved.url, "permissionLost") }
-            return (resolved.url, "online")
+        guard var bookmark = root.bookmarkData else {
+            let fallback = fallbackSourceRoot(root, preferredStatus: nil)
+            return (fallback.url, fallback.status, nil)
         }
-        return fallbackSourceRoot(root, preferredStatus: nil)
+        guard let resolved = FileAccessService.resolveBookmark(bookmark) else {
+            let fallback = fallbackSourceRoot(root, preferredStatus: "permissionLost")
+            return (fallback.url, fallback.status, bookmark)
+        }
+        let ok = resolved.url.startAccessingSecurityScopedResource()
+        if ok { securityScopedRoots.append(resolved.url) }
+        if resolved.isStale {
+            // a renamed or moved folder still opens; the bookmark made now finds it next time
+            guard ok, let fresh = FileAccessService.createBookmark(for: resolved.url) else {
+                return (resolved.url, "permissionLost", bookmark)
+            }
+            bookmark = fresh
+        }
+        guard FileManager.default.fileExists(atPath: resolved.url.path) else {
+            if let relocated = VolumeMonitor.relocatedURL(for: resolved.url.path,
+                                                          volumeIdentifier: root.volumeIdentifier) {
+                return (relocated, "online", bookmark)
+            }
+            return (resolved.url, VolumeMonitor.status(
+                forInaccessible: resolved.url.path,
+                volumeIdentifier: root.volumeIdentifier
+            ).rawValue, bookmark)
+        }
+        guard FileAccessService.canRead(resolved.url.path) else {
+            return (resolved.url, "permissionLost", bookmark)
+        }
+        return (resolved.url, "online", bookmark)
     }
 
     private func fallbackSourceRoot(_ root: SourceRootRecord, preferredStatus: String?) -> (url: URL?, status: String) {
