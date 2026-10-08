@@ -15,6 +15,8 @@ struct CardImportSheet: View {
     @State private var customSource: URL?
     /// Why a device lists nothing (locked, gone).
     @State private var deviceProblem: String?
+    /// A card the sandbox doesn't let the app read until the user picks it once.
+    @State private var cardNeedsAccess = false
     @State private var importStarted = false
     @State private var options: CardImportOptions
     @State private var files: [CardFile] = []
@@ -101,6 +103,21 @@ struct CardImportSheet: View {
         .sheetHeaderBar()
     }
 
+    /// Asks for the card in an open panel, which is how a sandboxed app is let in; the card is
+    /// remembered, so it opens without asking the next time it's inserted.
+    private func grantAccess(to card: CardVolume) {
+        guard let url = NSOpenPanel.chooseFolder(prompt: L("允许"), message: L("允许 PhotoCatalog 读取「\(card.name)」中的照片"),
+                                                 start: card.url) else { return }
+        FileAccessService.remember(url)
+        let picked = url.standardizedFileURL.path
+        if card.dcim.standardizedFileURL.path == picked || card.dcim.standardizedFileURL.path.hasPrefix(picked + "/") {
+            Task { await scan() }
+        } else {
+            // another folder: import from that instead
+            customSource = url
+        }
+    }
+
     /// Switches the source; leaving a device ends its session.
     private func choose(device next: CameraDevice?) {
         if let device, device != next { CameraDeviceBrowser.shared.close(device) }
@@ -110,6 +127,7 @@ struct CardImportSheet: View {
     private func scan() async {
         let key = sourceKey
         deviceProblem = nil
+        cardNeedsAccess = false
         guard key != nil else {
             files = []
             selection = []
@@ -126,6 +144,14 @@ struct CardImportSheet: View {
             case .unavailable: deviceProblem = L("无法读取「\(device.name)」。请重新连接后再试。")
             }
         } else if let root = sourceRoot {
+            if let card, customSource == nil {
+                FileAccessService.reach(card.url)
+                guard FileAccessService.canRead(root.path) else {
+                    cardNeedsAccess = true
+                    scanning = false
+                    return
+                }
+            }
             found = await Task.detached(priority: .userInitiated) { CardImportService.scan(root, catalog: index) }.value
         }
         guard key == sourceKey else { return }
@@ -172,6 +198,15 @@ struct CardImportSheet: View {
         if let deviceProblem {
             ContentUnavailableView(sourceName, systemImage: sourceSymbol, description: Text(deviceProblem))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if cardNeedsAccess, let card {
+            ContentUnavailableView {
+                Label(L("允许读取「\(card.name)」"), systemImage: "sdcard")
+            } description: {
+                Text("macOS 需要你确认一次，PhotoCatalog 才能读取这张存储卡。在打开的窗口中直接点“允许”。")
+            } actions: {
+                Button("允许读取…") { grantAccess(to: card) }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if sourceKey == nil {
             ContentUnavailableView {
                 Label("未检测到存储卡或相机", systemImage: "sdcard")

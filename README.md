@@ -249,6 +249,7 @@ with, and `Resources/PrivacyInfo.xcprivacy` declares no tracking and no collecte
 In the sandbox the app reaches what the user chose and nothing else: photo folders through the
 bookmarks their source roots keep in the catalog; catalogs, export, card-copy, tether and music locations, and places
 originals were relocated or moved to, through bookmarks `FileAccessService` keeps in the app's
-settings.
+settings. A memory card is read once the user allows it in an open panel the import dialog
+offers, and is remembered for the next time it's inserted.
 
 Photos load from the Unsplash CDN; when offline each tile shows its deterministic gradient placeholder (matching the prototype's graceful fallback).

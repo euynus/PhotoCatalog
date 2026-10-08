@@ -1176,9 +1176,14 @@
 /* Presentation/Sheets/CardImportSheet.swift */
 "%lld 张" = "%lld photos";
 "%lld 张已在目录库中" = "%lld already in the catalog";
+"macOS 需要你确认一次，PhotoCatalog 才能读取这张存储卡。在打开的窗口中直接点“允许”。" = "macOS needs you to confirm once before PhotoCatalog can read this card. In the window that opens, just click Allow.";
 "© {year} 名字" = "© {year} Name";
 "从存储卡导入" = "Import from Memory Card";
 "作者" = "Creator";
+"允许" = "Allow";
+"允许 PhotoCatalog 读取「%@」中的照片" = "Allow PhotoCatalog to read the photos on “%@”";
+"允许读取…" = "Allow Access…";
+"允许读取「%@」" = "Allow Access to “%@”";
 "全不选" = "Select None";
 "全选" = "Select All";
 "取消选择此日" = "Deselect This Day";
