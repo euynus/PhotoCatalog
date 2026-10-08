@@ -60,4 +60,5 @@ SwiftUI pitfalls hit here before:
 
 - Package has zero external dependencies — system frameworks only (SQLite, Image I/O, Core Image, Core ML, MapKit, Vision, CryptoKit, ImageCaptureCore). Keep it that way unless asked.
 - Commits follow Conventional Commits (`feat(xmp): …`, `fix(backup): …`), one feature per commit.
-- Keyboard shortcuts are centralized in `Presentation/MainWindow/` (RootView key handling + `PhotoCatalogCommands`); the full shortcut map is documented in README.md.
+- Keyboard shortcuts are centralized in `Presentation/MainWindow/` (RootView key handling + `PhotoCatalogCommands`); the full shortcut map is documented in `docs/features.md`.
+- Document user-visible behavior in `docs/features.md` as part of the change. README.md is a one-page overview: touch it only when a highlight changes. Build, test, architecture and release notes for people live in `docs/development.md`.
