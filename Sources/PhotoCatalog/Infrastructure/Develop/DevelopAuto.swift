@@ -254,8 +254,9 @@ enum DevelopAuto {
             var pixels = [UInt8](repeating: 0, count: width * height * 4)
             DevelopRenderer.context.render(image, toBitmap: &pixels, rowBytes: width * 4, bounds: rect,
                                            format: .RGBA8, colorSpace: DevelopRenderer.outputColorSpace)
-            return stride(from: 0, to: pixels.count, by: 4).map {
-                (0.2126 * Double(pixels[$0]) + 0.7152 * Double(pixels[$0 + 1]) + 0.0722 * Double(pixels[$0 + 2])) / 255
+            return stride(from: 0, to: pixels.count, by: 4).map { (i: Int) -> Double in
+                let r = Double(pixels[i]), g = Double(pixels[i + 1]), b = Double(pixels[i + 2])
+                return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
             }.sorted()
         }
         func percentile(_ values: [Double], _ q: Double) -> Double {

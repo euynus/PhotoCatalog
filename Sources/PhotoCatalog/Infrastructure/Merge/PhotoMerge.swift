@@ -486,7 +486,8 @@ enum PhotoMerge {
         guard let rgba = SemanticMasks.rgba(image) else { return nil }
         var gray = [UInt8](repeating: 0, count: image.width * image.height)
         for i in gray.indices {
-            gray[i] = UInt8((54 * Int(rgba[i * 4]) + 183 * Int(rgba[i * 4 + 1]) + 19 * Int(rgba[i * 4 + 2])) >> 8)
+            let r = Int(rgba[i * 4]), g = Int(rgba[i * 4 + 1]), b = Int(rgba[i * 4 + 2])
+            gray[i] = UInt8((54 * r + 183 * g + 19 * b) >> 8)
         }
         return (gray, image.width, image.height)
     }

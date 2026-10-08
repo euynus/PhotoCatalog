@@ -115,8 +115,13 @@ enum PhotoSearch {
         if ["yes", "no"].contains(text("gps")) { result.filters.gps = text("gps") }
         // They also put filters in the search words ("精选", "红色标签"), which then match nothing. Search words
         // made only of filter words become the flag or label they name, and go once any filter is set.
-        let restated = Cue.ratingCues + Cue.pickCues + Cue.rejectCues + Cue.colorCues.keys + Cue.colorCues.values + Cue.labelCues
-            + Cue.labelSuffixCues + Cue.typeCues + Cue.locationCues + Cue.dateCues + Cue.fillerCues + vocabulary.types.map { $0.lowercased() }
+        // added up a list at a time: Xcode 26's compiler gives up on the whole sum in one expression
+        var restated: [String] = Cue.ratingCues + Cue.pickCues + Cue.rejectCues
+        restated += Cue.colorCues.keys
+        restated += Cue.colorCues.values
+        restated += Cue.labelCues + Cue.labelSuffixCues + Cue.typeCues
+        restated += Cue.locationCues + Cue.dateCues + Cue.fillerCues
+        restated += vocabulary.types.map { $0.lowercased() }
         let searchWords = result.text.lowercased()
         var rest = searchWords
         for word in restated.sorted(by: { $0.count > $1.count }) { rest = rest.replacingOccurrences(of: word, with: "") }

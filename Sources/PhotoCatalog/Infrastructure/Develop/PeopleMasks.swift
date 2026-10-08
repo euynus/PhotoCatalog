@@ -334,8 +334,9 @@ enum PeopleMasks {
     /// 1 where the image is smooth, falling to 0 where its luma varies by more than a few
     /// percent over 5 × 5 pixels.
     private static func smoothness(_ a: Analysis) -> [Float] {
-        let luma = (0..<(a.width * a.height)).map { i in
-            (0.299 * Float(a.pixels[i * 4]) + 0.587 * Float(a.pixels[i * 4 + 1]) + 0.114 * Float(a.pixels[i * 4 + 2])) / 255
+        let luma = (0..<(a.width * a.height)).map { (i: Int) -> Float in
+            let r = Float(a.pixels[i * 4]), g = Float(a.pixels[i * 4 + 1]), b = Float(a.pixels[i * 4 + 2])
+            return (0.299 * r + 0.587 * g + 0.114 * b) / 255
         }
         let mean = SemanticMasks.boxBlur(luma, width: a.width, height: a.height, radius: 2)
         let meanSquare = SemanticMasks.boxBlur(luma.map { $0 * $0 }, width: a.width, height: a.height, radius: 2)
