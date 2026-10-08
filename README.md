@@ -1,256 +1,369 @@
-# PhotoCatalog Mac
+# PhotoCatalog
 
-A native **SwiftUI macOS app** that implements the **PhotoCatalog Mac** design — a local-first, non-destructive photo-original manager in the spirit of Lightroom's Library module.
+A native macOS photo manager and RAW editor in the mould of Lightroom Classic: a catalog to cull, organize and search your photos and videos, non-destructive RAW development, and delivery as exports, prints, slideshows, web galleries and photo books.
 
-This repository realises two inputs:
+- **Your files stay yours.** Photos are referenced where they are, or copied into dated folders or into the catalog. Edits never touch the original files: develop settings live in the catalog, and ratings, keywords and captions also go to XMP sidecars that Lightroom, Bridge and Camera Raw read.
+- **Runs on this Mac.** Face recognition, the AI masks, depth, denoise, super resolution and object removal run on Core ML models bundled in the app. Only the optional AI assistant talks to a language-model service: one you choose, and only when you use it (see [Privacy](#privacy)).
+- **Native and self-contained.** SwiftUI and AppKit on system frameworks only, with no third-party code.
+- **Built for large libraries.** A 500,000-photo catalog is usable about five seconds after launch.
 
-- **The design** exported from Claude Design (`PhotoCatalog Mac.html` + its React/CSS prototype) — the source of truth for the visual system and interactions.
-- **The PRD** (`docs/macos_photo_manager_prd_tech.md`) — the product/technical spec that defines the domain model, architecture layering, and feature scope.
+**Requirements:** macOS 14 or later on Apple silicon. The interface is in Simplified Chinese and English.
 
-The HTML/React files were prototypes; this app re-creates them faithfully in native SwiftUI/AppKit, the technology the PRD calls for (§8: Swift, SwiftUI + AppKit).
+**Getting it:** build it from source (see [Building](#building)). `script/release.sh` makes the signed, notarized release for GitHub and `script/appstore.sh` the Mac App Store edition (see [Releasing](#releasing)).
 
-## What's implemented
+Menu and control names below are given in Chinese, the app's source language; the English interface shows their translations.
 
-A native photo workbench: system-style chrome that follows the macOS light / dark
-appearance (Settings → 外观), a neutral dark photo canvas in every mode, and a blue accent:
+## Features
 
-- **Main window** — native split view: source-list sidebar, unified toolbar (view mode, filter, sort, import / export, catalog actions, search), optional filter bar, photo grid, collapsible Inspector, and a status bar carrying the thumbnail-size slider.
-- **Sidebar** — 资料库 (全部 / 最近导入 / 未评分 / 精选 / 被拒绝 / 缺失·离线 / 重复文件), 文件夹, 相册, 智能相册, 关键词 — all with live counts. Album sets (相册集, + → 新建相册集) file albums, smart albums and other sets into nested folders; right-click any of them → 移到相册集, and deleting a set moves what it held up a level.
-- **RAW+JPEG pairs** — a RAW and its same-name JPEG/HEIC in one folder show as one photo; ratings, flags, keywords, time shifts, deletion and batch rename act on both files (Settings → 导入 to list them separately).
-- **Working with other apps** — right-click a photo to open it (default app or 打开方式), show it in Finder, share it, or rate, flag, label and remove it; drag photos out to Finder or an editor, and drop a folder onto the window to import it.
-- **Grid view** — borderless photo tiles that fill each row, adjustable thumbnail size, offline/missing badges, color labels, flags, star ratings, accent-ring multi-select.
-- **Loupe** — single-photo view with bottom HUD and a filmstrip; zoom to 1:1 (double-click or `Z`), drag or pinch to pan, and the zoom holds while stepping through a burst. Full resolution decodes on demand, from the paired JPEG when there is one.
-- **Develop** — non-destructive RAW adjustments (`D`): profiles (标准 is the RAW engine's own rendering; 中性, 鲜艳, 人像 and 风景 are the app's own base looks — a tone curve, a response per color band and an overall saturation — applied before every other adjustment at an amount of 0–200%; rest the pointer on one to preview it; Lightroom presets' Adobe and Camera profiles map to the nearest one), black and white (处理方式 彩色 / 黑白, or the 单色 profile: the color mixer gives way to a black-and-white mix — how light each of the eight color bands turns, scaled by how colorful a pixel is so grays keep their tone; 自动 spreads the photo's main colors apart by their lightness without darkening skin's orange; color grading then tones it, e.g. sepia; Camera Raw's ConvertToGrayscale and GrayMixer settings map both ways), soft proofing (`S`, or 软打样 at the top of the panel: the photo shown through sRGB, Display P3, Adobe RGB or any printer profile installed on this Mac, with a perceptual or relative intent through ColorSync, optionally simulating paper white and ink black; 色域警告 paints red the colors whose hue, saturation or lightness doesn't survive the profile — black that only prints as the ink's black doesn't count; the histogram shows the proof), white balance (as-shot Kelvin/tint read from the RAW), exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze, vibrance and saturation; a point tone curve (composite and per channel: click to add a point, drag, double-click to remove; linear / medium / strong presets); an HSL color mixer (hue, saturation and luminance for eight color bands, weighted by how colorful a pixel is so whites and grays stay put); color grading (a tint and luminance for shadows, midtones, highlights and the whole photo, with blending and balance — positive favors the highlights, as in Lightroom); LUTs (import `.cube` 3D LUTs into a library every catalog shares, apply one with an amount; 33- and 65-point LUTs are resampled); a white-balance eyedropper (`W`, click something that should be gray), auto white balance (`⇧⌘U`, or 自动 beside 白平衡: the photo's gray surfaces are found near neutral on its as-shot rendering, brighter ones counting more, and temperature and tint set so they render gray — the same answer from any slider position, and none when nothing in the photo is close to gray; one photo in Develop or every selected photo in the grid), auto tone (`⌘U`, one photo in Develop or every selected photo in the grid), detail (sharpening with radius and edge masking, luminance and color noise reduction), manual lens corrections (distortion, lens vignetting — Apple's RAW engine has no profiles for Canon RF lenses), chromatic aberration (删除色差 measures the photo's lateral chromatic aberration on its achromatic edges — red and blue each magnified slightly differently from green — once per file, and rescales red and blue back into place; 紫边去除 / 绿边去除, 0–20 as in Lightroom, take the color out of purple and green fringes along high-contrast edges; presets carry them as Camera Raw's AutoLateralCA and Defringe amounts), effects (post-crop vignette, film grain), lens blur (镜头模糊: the background or foreground blurred by how far it lies from the depth in focus, from a depth map Depth Anything V2 (bundled, running on this Mac) makes once per photo and caches; turning it on focuses on the largest face, else the subject; 点选焦点 sets the focus by clicking the photo, 显示深度 shows the depth map, near warm and far cool; amount, focus distance and focus range sliders; copy and sync leave it behind unless ticked, since its focus belongs to one photo), and calibration (applied first: a green–magenta shadows tint, and the red, green and blue primaries' hue and saturation through a matrix on linear light that keeps white and grays as they are; Camera Raw's ShadowTint, RedHue … BlueSaturation map both ways); local adjustments through linear and radial gradients and the brush (`M` / `⇧M`: drag on the photo to draw a gradient, drag its handles to move, turn or reshape it; `K`: paint a brush mask with size, feather and density, hold `⌥` to erase, `[`/`]` resize; 选择主体 / 选择天空 find the subject (Vision's foreground segmentation) or the sky (smooth, bright or blue areas grown from the top edge, stopped at the horizon and the subject) and mask it; 选择人物 masks a whole person or a part of them — face skin, body skin, eyebrows, eye sclera, iris and pupil, lips or teeth — from Vision's person segmentation and person instances and its face landmarks, skin told apart by the face's own color; with several people in the photo a mask takes everyone or one person (numbered left to right), and its part can be changed later; 选择物体 (select object) masks whatever a box drawn around it, or a click on it, picks out — SAM 2.1 (bundled, running on this Mac) encodes the photo once and each box or click is decoded in a few hundredths of a second; click a part it missed to add it, ⌥-click an extra part to take it out, or drag to box it again; 选择景观 (select landscape) masks the water, vegetation, mountains, architecture, natural ground or artificial ground, from the labels DETR (bundled) gives every part of the photo, its edges fitted to the photo's, and its category can be changed later; 用画笔增减 paints onto or erases from any gradient, subject or sky mask; 颜色范围 / 明亮度范围 select the parts of the photo in sampled colors (click up to five places) or within a range of tones, and any other mask can be narrowed to such a range; `O` tints the selected mask's coverage red; invert a mask and give it its own exposure, contrast, highlights, shadows, whites, blacks, temperature, tint, texture, clarity, dehaze and saturation; masks stay on the same part of the picture when you crop or rotate); spot removal (`Q`: click a speck to heal it — the source is found automatically among nearby places whose surroundings match — or drag outward to size it; drag a spot or its source to move it, its edge to resize; heal matches the surrounding color and brightness, clone copies as is; 移除 (remove) paints over an object and, on letting go, fills it with what LaMa (bundled, running on this Mac) makes of its surroundings — made once from the full-size photo and cached, then matched to the current color and brightness like heal, so later exposure or white-balance changes still blend; 显示污点 shows only fine detail so sensor dust stands out); snapshots (named states to come back to: new, rename, update, delete) and a per-photo history of every edit, kept in the catalog (click a step or snapshot to return to it; undo takes a step away, redo puts it back); live preview while dragging, an RGB histogram with clipping warnings, before/after (`\`), before and after side by side (`Y`, framed alike, side by side or one above the other, whichever shows the photo larger), double-click a slider name to reset, undoable. Crop & straighten tool (`R`): aspect presets, drag corners/edges or move the crop, draw a line outside it to level the photo, or auto-straighten from the horizon (Vision); quarter turns (`⌘[` / `⌘]`) and horizontal flip work on a whole selection from the grid too. Transform: Vertical and Horizontal perspective correction, and Upright (自动 sets verticals upright and turns a clearly visible facade's horizontals most of the way to parallel; 垂直 sets verticals upright only), with the crop kept off the empty corners. Photo Merge → Panorama (`⌃M`): 2–30 overlapping photos, in order, projected onto a cylinder (focal length from EXIF), lined up by masked normalized correlation, horizontal or vertical, exposure-matched and feathered, and auto-cropped to the largest filled rectangle; a pair that doesn't overlap is named. The result is `name-Pano.tif` beside the first photo. Enhance (`⌃⌥I`, 照片 menu or right-click): AI denoise (SCUNet, amount 0–100) and/or super resolution (Real-ESRGAN, twice the width and height) with Core ML models bundled in the app, running on this Mac; a 100% before/after preview; each result is a 16-bit TIFF beside its original (`name-Enhanced.tif`) carrying the original's metadata, added to the catalog with its develop settings (white balance aside); progress and cancel in the status bar. Photo Merge → HDR (`⌃H`, 照片 menu or right-click): 2–9 bracketed exposures lined up by median threshold bitmaps and merged by exposure fusion in Laplacian pyramids, with optional deghosting and a preview; the result is a 16-bit TIFF beside the middle exposure (`name-HDR.tif`), added to the catalog with its metadata. Edit in an external editor (`⌥⌘E`; pick the app once — Photoshop, Affinity Photo, Pixelmator Pro…): the photo with its adjustments becomes a 16-bit Adobe RGB TIFF beside the original (`name-编辑.tif`), joins the catalog with the original's rating, labels and keywords, stacks with it, and opens in the editor; the original is never touched, and the editor's saves come back through folder watching. Rename Photos (照片 menu or right-click): a name template with tokens ({original} {seq} {date} {time} {camera} {title} {rating}) and a start number, previewing old → new names before anything moves; a RAW's paired JPEG and the `.xmp` sidecar are renamed with it and virtual copies follow, and a name another file in the folder already has, in any extension, gets `_1` (the preview warns). Virtual copies (`⌘'`, 照片 menu or right-click): another catalog entry for the same original with its own develop settings and metadata, badged 副本 n on the thumbnail — they're never taken for duplicates or RAW+JPEG pairs, don't write the shared XMP sidecar, follow the original when it's renamed, moved or relocated, and removing a copy only removes it from the catalog. Copy / paste settings (`⇧⌘C` / `⇧⌘V`) and sync them across a selection (`⇧⌘S`) with a per-setting checklist; built-in and your own presets apply from the Develop panel, the 照片 menu or the right-click menu (white balance only travels between photos of the same kind). Rendered with the system RAW engine (CIRAWFilter); the original is never modified.
-- **AI assistant** (optional; uses the service set in Settings → AI — Anthropic or any OpenAI-compatible endpoint, including Ollama / LM Studio on this Mac) — 照片 → AI 描述照片… (`⌃⌥D`, or right-click): confirm the service, model and sending scope before generating titles, captions and keywords from 1024-pixel previews, three at a time with progress and cancel in the task center. Catalog metadata is excluded unless explicitly enabled for that batch. Generated results are not applied automatically: review current and proposed values, select photos, then apply. Keywords are appended; titles and captions fill empty fields unless 替换 is on, and each application is undoable. Failed items can be resent after confirmation without regenerating successful ones. Unapplied results stay in memory until discarded, the catalog is switched, or the app quits; task history persists, but cannot restore these proposals or automatically resend photos. 视图 → 用自然语言查找… (`⌥⌘F`): a sentence ("去年夏天在海边拍的、四星以上的照片") becomes the filter bar and the search box — rating, flag, color label, file type, camera, lens, capture dates, location, search words — checked against what the filters accept; only the sentence and the catalog's camera, lens and keyword names are sent. Develop → AI 调整: a described look ("暖一点的胶片感") becomes new values for the Basic, Presence and Effects sliders, white balance and color grading, each kept within its slider, applied as one undoable step, with the model's one-line explanation; the first time it would send a photo to a service off this Mac, it asks. Replies are read leniently: JSON inside prose or a code fence, single-quoted, or cut off by the token limit.
-- **Compare** — 2–4 photos side by side with linked 1:1 zoom and pan, per-photo rating/flags, "选为最佳" winner.
-- **Capture dates** — year/month/day navigation, relative-date presets, and inclusive custom date ranges that can be saved as smart albums.
-- **Capture analysis** — camera, lens, focal length, aperture, shutter and ISO distributions for filtered results or selected photos; cancellable background aggregation rejects stale results and reports missing metadata separately.
+### Library
+
+- **Main window** — native split view: source-list sidebar, unified toolbar (图库 | 修图 module picker, view mode, filter, sort, import / export, catalog actions, search), optional filter bar, photo grid, collapsible Inspector, and a status bar carrying the thumbnail-size slider. The chrome follows the macOS light or dark appearance (Settings → 常规 → 外观) around a neutral dark photo canvas, with a blue accent.
+- **Sidebar** — 资料库 (全部 / 最近导入 / 未评分 / 精选 / 被拒绝 / 缺失·离线 / 重复文件 / 快捷收藏), 设备, 文件夹, 相册, 智能相册, 关键词, 人物 and 地点, all with live counts. Album sets (相册集, + → 新建相册集) file albums, smart albums and other sets into nested folders; right-click any of them → 移到相册集, and deleting a set moves what it held up a level.
+- **Grid** — borderless photo tiles that fill each row, adjustable thumbnail size, offline / missing badges, color labels, flags, star ratings and accent-ring multi-select (click, ⌘-click, ⇧-click).
+- **Loupe** — single-photo view with a bottom HUD and a filmstrip; zoom to 1:1 (double-click or `Z`), drag or pinch to pan, and the zoom holds while stepping through a burst. Full resolution decodes on demand, from the paired JPEG when there is one.
+- **Compare** — 2–4 photos side by side with linked 1:1 zoom and pan, per-photo rating and flags, and 选为最佳 to pick the winner.
+- **Survey** — the selection side by side, as large as fits: arrows pick the active photo, rating and flag keys act on it, × takes one out, and the rest stay selected back in the grid.
+- **Culling** — rate, flag and label from the keyboard; hold `Shift` to move on to the next photo, or make that the default with 照片 → 评分后自动前进. `B` adds to or removes from the Quick Collection (资料库 → 快捷收藏, kept in the catalog), `Tab` hides the side panels, and 照片 → 移除被拒绝的照片… clears the rejects out of the current view at once.
+- **RAW+JPEG pairs** — a RAW and its same-name JPEG or HEIC in one folder show as one photo; ratings, flags, keywords, time shifts, deletion and batch rename act on both files (Settings → 导入 lists them separately).
+- **Stacks** — duplicates and edited copies stack with their originals. 照片 → 堆叠 → 按拍摄时间自动叠放… (Lightroom's Auto-Stack by Capture Time) stacks photos one camera took within 1 s – 1 h of each other (bursts, brackets; the dialog counts the stacks as the slider moves), keeps doing so for later imports, collapses the new stacks, and undoes in one step. `S` (or the badge) opens or closes a stack, and the menu collapses or expands them all.
+- **Virtual copies** (照片 menu or right-click) — another catalog entry for the same original with its own develop settings and metadata, badged 副本 n on the thumbnail. They're never taken for duplicates or RAW+JPEG pairs, don't write the shared XMP sidecar, follow the original when it's renamed, moved or relocated, and removing a copy only removes it from the catalog.
+- **Search and filters** — live search over an FTS5 index, a filter bar and sort. Capture dates by year, month and day, relative-date presets, and inclusive custom ranges; any filter can be saved as a smart album. To search with a sentence, see [AI assistant](#ai-assistant).
+- **Smart albums** — AND/OR rule rows with a live match-count preview.
+- **Capture analysis** — camera, lens, focal length, aperture, shutter and ISO distributions for the filtered results or the selected photos; cancellable background aggregation rejects stale results and reports missing metadata separately.
 - **Inspector** — header with focal length / aperture / shutter / ISO at a glance, then Info / Metadata (EXIF, GPS, maker notes) / Organize (rating, flags, color, keywords, title, caption) / History.
-- **Smart Album builder** — AND/OR rule rows with a live match-count preview.
-- **Duplicate detection** — exact (content-hash) & perceptual groups with keep-one resolution.
-- **Videos** — MOV, MP4 and M4V import beside photos (folders, cards): their length, size as they play (turned by the track's transform), creation time (an instant, kept as this Mac's wall clock like a photo's capture time), camera (QuickTime make/model or MP4 user data) and location are read with AVFoundation, and an early frame makes their thumbnails; in the loupe a video plays in the system player with its inline controls (Space plays or pauses; it stops when you move on or leave); a ▶ badge shows the length in the grid, the inspector shows length, resolution and format. They rate, flag, label, keyword, filter (类型 → 视频, also in smart albums) and stack like photos; develop, merge, enhance, print and outside editors are for photos, and export copies a video's original under the name template. A video beside a photo of the same name (a Live Photo) keeps its own `<name>.<ext>.xmp` sidecar.
-- **Stacks** — duplicates and edited copies stack with their originals; 照片 → 堆叠 → 按拍摄时间自动叠放… (Lightroom's Auto-Stack by Capture Time) stacks photos one camera took within 1 s – 1 h of each other (bursts, brackets; the dialog counts the stacks as the slider moves), keeps doing so for later imports, collapses the new stacks, and undoes in one step; `S` (or the badge) opens or closes a stack, and the menu collapses or expands them all.
-- **Import / scan** — animated scan→import progress with a 5-stat panel and a thumbnail wall.
-- **First-launch / Welcome** — catalog creation card with recents.
-- **Interactions** — click / ⌘-click / ⇧-click selection, live search, filter bar, sort, toasts, and keyboard shortcuts:
-  `1–5` rate · `0` clear · `P/X/U` flags · `6–9` color (hold `Shift` to move on to the next photo; 照片 → 评分后自动前进 makes it the default) · `B` add to / remove from the Quick Collection (资料库 → 快捷收藏, kept in the catalog) · `Tab` hide side panels · `N` Survey (the selection side by side; arrows pick, keys act on the active photo, × takes one out) · `G/E/C/D/A` views (`D` develop, `\` before/after, `Y` before and after side by side, `R` crop, `W` white-balance eyedropper, `M`/`⇧M` linear / radial gradient, `K` brush (`⌥` erases, `[`/`]` size), `O` mask overlay, `Q` spot removal, `Space` plays or pauses a video in the loupe, `S` soft proofing (in other views `S` opens or closes a stack), `Delete` removes the selected mask or spot, `Return`/`Esc` to finish) · `⌘U` auto tone · `⇧⌘U` auto white balance · `⌘'` virtual copy · `⌥⌘E` edit in external editor · `⌘[`/`⌘]` rotate · `⇧⌘C`/`⇧⌘V`/`⇧⌘S` copy / paste / sync develop settings · `Z` zoom 1:1 (double-click too; linked across Compare) · `⌘Z/⇧⌘Z` undo/redo catalog edits · arrows navigate · `Return` loupe · `Esc` close panels · `F` filters · `I` thumbnail info · `⌘F` search · `⌘I` inspector · `⌘N/⌘O` catalog · `⇧⌘I` import · `⇧⌘E` export (rendered) · `⌘E` export originals · `⌘R` rescan · `⌘B` backup · `⌘,` settings · `⌘+/-/0` thumbnail size · `⌫` remove · `⌘⌫` trash originals.
+- **Working with other apps** — right-click a photo to open it (default app or 打开方式), show it in Finder, share it, or rate, flag, label and remove it; drag photos out to Finder or an editor, and drop a folder onto the window to import it.
 
-### Real catalog backend (PRD Infrastructure layer, §11)
+### Organizing and metadata
 
-Beyond the UI, the app has a working file→catalog pipeline:
-
-- **Add folder import** (toolbar 导入) — `NSOpenPanel` → recursive scan → real EXIF/GPS metadata (Image I/O) → thumbnail + preview generation (sharded disk cache) → content/quick hashing → persisted to a real `.photolibrary` catalog.
-- **Import checkpoints** — the first photo becomes browsable immediately, then files commit in batches of up to 32 or one second. Each transaction saves the assets, initial metadata/develop settings, album membership, source root and per-file checkpoint together. Saved counts reflect committed photos; browsing and editing can continue during import. Restarted managed and referenced imports reuse committed files without overwriting later edits. Persistence failures stop subsequent files and preserve earlier batches; already-copied originals and caches are not automatically removed.
-- **SQLite persistence** — a `.photolibrary` package (`catalog.sqlite` + `manifest.json` + `Cache/` + `Backups/`) via the system SQLite library; user edits (rating/flag/color/keywords/title/caption) write through and survive relaunch.
-- **Exact duplicate detection** — size-bucketed SHA-256 content hashing.
-- **Print** (`⌘P`, 文件 menu) — the selection on paper: A3 / A4 / A5 / Letter / Legal / Tabloid / 4×6 / 5×7 / 8×10, portrait or landscape, margins; one photo per page (fit, or fill and crop) or a contact sheet of rows × columns with spacing; rotate to fit turns a photo a quarter when that fills its place better; captions (file name or title) under each photo; photos rendered at 150–360 ppi for their size on the paper (never decoded larger than that needs), print sharpening for matte or glossy paper, and color management either by the printer or by converting to an installed printer profile (perceptual or relative, through ColorSync). The dialog previews each page with the same drawing the printer and 存储为 PDF… use.
-- **Tethered capture** (目录库 → 联机拍摄…) — shoot straight into the catalog: from a camera on a cable that macOS can control (ImageCaptureCore; `F12` — `fn`-`F12` where the top row controls the Mac — or the bar's 拍摄 releases the shutter when the camera takes pictures on command), or by watching a folder that the maker's tethering software (EOS Utility and the like) saves to — files already there are left alone, a new one is taken once its size holds still. Each shot lands in a folder named for the session (inside an existing source folder it is filed under that folder), named as shot or `Session-0001` with a RAW and its JPEG sharing a number and numbering going on when a session is picked up again, imported one at a time in order, given the session's develop preset (changeable from the bar mid-session) and keywords, and shown in the loupe. Ending the session, or unplugging the camera, leaves the folder watched like any imported one. The folder path and the session are covered by `--pipeline`; the camera path is written against ImageCaptureCore and exercised through a simulated device, not a physical camera.
-- **Slideshow** (照片 → 幻灯片…, or `⌘↩` to play at once) — the selected photos (or the whole list) full screen, as Develop shows them: each for 1–20 s, fading into the next (0–3 s), with a slow pan and zoom that never shows an edge, in list or a repeatable random order, captions (title, file name or caption) that take turns through a fade, a black, gray or white backdrop, and music that loops with the show or sets each photo's time to fill it; `Space` pauses, `←`/`→` go back or on, `Esc` ends. 导出视频… writes the same show as an H.264 MP4 at 720p, 1080p or 4K, rendered from the originals with their develop settings, with the music fading out at the end; progress and cancel in the status bar.
-- **Web gallery** (照片 → 导出网页画廊…) — the selected photos (or the whole list) as a folder that works on any web host: `index.html` (one file, no outside code) with a dark or light grid of square thumbnails and a viewer with arrows, keys and swipes, a title and subtitle, captions (title, caption or file name) and a camera · lens · exposure line; the photos rendered as developed into sRGB JPEGs without metadata at a chosen size (never enlarged), thumbnails sized for the tiles at 2×; captions are escaped, a new gallery never overwrites another, and a cancelled one leaves nothing.
-- **Photo book** (照片 → 制作画册…) — the selected photos (or the whole list) laid out as a book and saved as a PDF: 20 × 20 cm, 25 × 20 cm, 20 × 25 cm or A4 landscape pages; auto layout (a photo shaped like the page alone, two of the other shape side by side or one above the other) or one, two or four a page; no margin (a photo alone fills its page to the edges), narrow or wide margins; a white or black background; a cover with the first photo, a title and subtitle; captions (title, caption or file name) right under each photo; page numbers. Photos are rendered as developed at 300 ppi for the size they print, and the dialog previews each page with the same drawing the PDF uses.
-- **Export** (`⇧⌘E`) — renders the selection with its Develop adjustments to JPEG, HEIC or TIFF (8/16-bit): resize by long/short edge or a box, quality, sRGB / Display P3 / Adobe RGB, file-name templates (`{original}` `{seq}` `{date}` `{time}` `{camera}` `{title}` `{rating}`), output sharpening on the final pixels (for screen, matte or glossy paper — paper takes a wider radius — at low, standard or high; luminance only), metadata (all / copyright only / none, optional location removal, catalog title/caption/keywords/rating included), text watermark, collision handling. Built-in and saved export presets; exports queue and run one after another in the background with progress and cancel in the status bar. `⌘E` still copies untouched originals (preserving mtime) + JSON metadata sidecar.
-- **Backup** — status-bar and automatic catalog snapshots cover SQLite only. Maintenance → Full Backup and Restore creates a verified `.photobackup` containing catalog metadata/history, active originals, XMP, catalog Config and referenced LUT/fill resources. Restore creates a new `.photolibrary`, never overwrites or switches the current library, and does not resume old imports. Missing originals/resources fail the backup; previews, deleted/demo originals, global preferences/preset lists, credentials and uncommitted editing drafts are excluded.
-- **Task Center** — the status-bar task button and Maintenance menu show catalog-scoped import, rendered export, enhancement, preview, backup and restore work, including actual progress and failure details. Controls come from the owning engine; reopening never replays exports or network requests. History keeps the newest 200 finished tasks and up to 100 failure details per task, without dropping active work; interrupted work and history write failures remain visible. Operational history lives in the catalog's Logs folder and is excluded from full backups.
-- **Missing detection** — originals are re-checked on launch and flagged `missing` if gone.
-- **Managed import** — optionally copy originals into `Originals/YYYY/MM/DD` (Settings → 导入模式).
-- **Memory-card import** — cards (any mounted volume with a DCIM folder) appear under 设备 in the sidebar and in the Import menu. Pick photos by day (ones already in the catalog are marked and left unchecked), copy them into dated folders (年 / 年-月-日), optionally rename with a template (RAW+JPEG pairs keep one name), keep a backup copy in a second location, apply keywords / author / copyright, and eject when done. The catalog references the copies, never the card.
-- **People** — 人物 analyses photos on device (from cached previews or a RAW's embedded JPEG; nothing leaves the Mac): Vision finds each face and its landmarks, the face is turned and scaled onto a standard template by its eyes, nose and mouth, and SFace (bundled, running on this Mac) gives it 128 numbers that tell people apart — 99.4% on the LFW face-verification benchmark, where the Vision feature print used before scored 85%. Each person's faces are grouped (on LFW, 0.3% of faces land in someone else's group, nearly all of them the benchmark's own mislabelled photos). Groups are suggestions: untick faces that aren't the person, then name the rest; naming another group the same merges them, 不是此人 takes a face back, and faces new analyses find close to a named person are offered for confirmation. Confirmed people tag their photos with `人物/名字` keywords, so search, smart albums and XMP carry them. Photos an earlier version analysed are offered for analysing again, keeping their names. Look-alikes — siblings above all — can still share a group, so review before naming.
-- **Locations** — 照片 → 设置位置… (or right-click) opens a map: search a place or click to drop the pin, and it applies to every selected photo (RAW+JPEG pairs together), or remove their location. 按 GPX 轨迹匹配位置… reads a GPX track and places photos by capture time, with the camera's time zone to line up clocks, interpolation between close fixes, and a live count before applying. Locations round-trip through XMP sidecars.
-- **Keyword management** — right-click a keyword in the sidebar to rename it (sub-keywords follow; typing an existing keyword merges the two) or delete it from every photo; both are undoable.
-- **Sidecars changed by other apps** — when Lightroom, Bridge or another app edits a photo's `.xmp`, the photo gets a badge and lands in 管理 → 元数据已在外部更改; 照片 → 从文件读取元数据 takes the file's metadata (undoable, without rewriting the sidecar), or turn on 设置 → 自动读取外部修改的 XMP. Our own writes never count as changes (照片 → 将元数据写入文件 writes them on request), and automatic writes never overwrite a sidecar another app changed until it has been read.
+- **Keywords** — right-click a keyword in the sidebar to rename it (sub-keywords follow; typing an existing keyword merges the two) or delete it from every photo; both are undoable.
+- **People** — 人物 analyses photos on device, from cached previews or a RAW's embedded JPEG; nothing leaves the Mac.
+  - Vision finds each face and its landmarks, the face is turned and scaled onto a standard template by its eyes, nose and mouth, and SFace (bundled, running on this Mac) gives it 128 numbers that tell people apart: 99.4% on the LFW face-verification benchmark, where the Vision feature print used before scored 85%.
+  - Each person's faces are grouped; on LFW, 0.3% of faces land in someone else's group, nearly all of them the benchmark's own mislabelled photos.
+  - Groups are suggestions: untick faces that aren't the person, then name the rest. Naming another group the same merges them, 不是此人 takes a face back, and faces new analyses find close to a named person are offered for confirmation. Look-alikes, siblings above all, can still share a group, so review before naming.
+  - Confirmed people tag their photos with `人物/名字` keywords, so search, smart albums and XMP carry them. Photos an earlier version analysed are offered for analysing again, keeping their names.
+- **Places** — 地点 shows GPS-tagged photos on a map. 照片 → 设置位置… (or right-click) opens a map: search a place or click to drop the pin, and it applies to every selected photo (RAW+JPEG pairs together), or remove their location. 按 GPX 轨迹匹配位置… reads a GPX track and places photos by capture time, with the camera's time zone to line up clocks, interpolation between close fixes, and a live count before applying. Locations round-trip through XMP sidecars.
+- **Duplicates** — exact duplicates by size-bucketed SHA-256 content hashing, and similar photos (疑似重复) by perceptual dHash and Hamming distance, resolved by keeping one.
+- **Rename Photos** (照片 menu or right-click) — a name template with tokens (`{original}` `{seq}` `{date}` `{time}` `{camera}` `{title}` `{rating}`) and a start number, previewing old → new names before anything moves. A RAW's paired JPEG and the `.xmp` sidecar are renamed with it and virtual copies follow; a name another file in the folder already has, in any extension, gets `_1` (the preview warns).
+- **Capture times** — Settings → 文件操作 → 批量调整拍摄时间 shifts the selected photos' capture times together (time zone or camera-clock fixes) or sets them to one time.
 - **Metadata template** — author and copyright (with `{year}` from the capture date) applied to every import, alongside post-import keywords, color label and album.
-- **XMP sidecars** — read on import and written on export / on demand (rating, label, keywords, title, caption). Writing merges into an existing sidecar and keeps everything else in it; one that can't be parsed is left alone. A sidecar that doesn't mention a rating or label leaves the photo's as they are. Sidecars move with their originals when photos are renamed or moved.
-- **Similar-photo detection** — perceptual dHash + Hamming distance adds 疑似重复 groups.
-- **FSEvents watching** — referenced folders are watched; new files import and removed files flag missing automatically.
-- **FTS5 search index** + **batch rename** + **catalog health check** + **cache rebuild/clear** (Settings).
-- **Places** — a MapKit view of GPS-tagged photos (sidebar 地点).
-- **Vision (on-device)** — optional scene tagging + face detection on import; a 人物 collection (sidebar).
-- **Offline volumes** — external-drive unmount flags assets `offline` (vs `missing`); remount restores them.
-- **Batch capture-time shift** —整体平移选中照片的拍摄时间 (Settings) for timezone / camera-clock fixes.
-- Security-scoped bookmarks are created for imported source roots (PRD §12.1).
+- **XMP sidecars** — read on import and written on export or on demand (rating, label, keywords, title, caption, location). Writing merges into an existing sidecar and keeps everything else in it; one that can't be parsed is left alone. A sidecar that doesn't mention a rating or label leaves the photo's as they are. Sidecars move with their originals when photos are renamed or moved.
+- **Sidecars changed by other apps** — when Lightroom, Bridge or another app edits a photo's `.xmp`, the photo gets a badge and lands in 管理 → 元数据已在外部更改. 照片 → 从文件读取元数据 takes the file's metadata (undoable, without rewriting the sidecar), or turn on 自动读取外部修改的 XMP in Settings. Our own writes never count as changes (照片 → 将元数据写入文件 writes them on request), and automatic writes never overwrite a sidecar another app changed until it has been read.
 
-Imported real photos coexist with the built-in demo set (demo assets are clearly marked and not persisted).
+### Import
 
-## Architecture
+- **Folders** (toolbar 导入, or drop a folder on the window) — recursive scan → EXIF / GPS metadata (Image I/O) → thumbnails and previews (sharded disk cache) → content and quick hashes → the catalog, with animated scan → import progress, a panel of five running counts and a thumbnail wall. 分析场景与人脸 adds on-device scene tagging and face detection.
+- **Referenced or managed** — photos stay where they are, or are copied into the catalog's `Originals` folder, by date (`YYYY/MM/DD`) or by camera (`<camera>/YYYY/MM`) (Settings → 导入 → 导入模式).
+- **Checkpoints** — the first photo becomes browsable immediately, then files commit in batches of up to 32 or one second. Each transaction saves the assets, initial metadata and develop settings, album membership, source root and per-file checkpoint together. Saved counts reflect committed photos; browsing and editing can continue during import. Restarted managed and referenced imports reuse committed files without overwriting later edits. A persistence failure stops the files after it and keeps earlier batches; originals already copied and caches are not removed automatically.
+- **Memory cards** — cards (any mounted volume with a DCIM folder) appear under 设备 in the sidebar and in the Import menu. Pick photos by day (ones already in the catalog are marked and left unchecked), copy them into dated folders (年 / 年-月-日), optionally rename with a template (RAW+JPEG pairs keep one name), keep a backup copy in a second location, apply keywords, author and copyright, and eject when done. The catalog references the copies, never the card.
+- **Cameras and iPhones** — devices on a cable that speak PTP (ImageCaptureCore) appear under 设备 and in the card-import window and import the same way: pick by day, see what's already imported, and files are filed, renamed and backed up by the card rules as they download. Each download is staged on the destination disk and removed once placed. This path is exercised with a simulated device, not yet with physical hardware.
+- **Videos** — MOV, MP4 and M4V import beside photos (folders, cards). Their length, size as they play (turned by the track's transform), creation time (an instant, kept as this Mac's wall clock like a photo's capture time), camera (QuickTime make/model or MP4 user data) and location are read with AVFoundation, and an early frame makes their thumbnails. In the loupe a video plays in the system player with its inline controls (Space plays or pauses; it stops when you move on or leave); a ▶ badge shows the length in the grid, the inspector shows length, resolution and format. They rate, flag, label, keyword, filter (类型 → 视频, also in smart albums) and stack like photos; develop, merge, enhance, print and outside editors are for photos, and export copies a video's original under the name template. A video beside a photo of the same name (a Live Photo) keeps its own `<name>.<ext>.xmp` sidecar.
+- **Tethered capture** (目录库 → 联机拍摄…) — shoot straight into the catalog, from a camera on a cable that macOS can control (ImageCaptureCore; `F12`, or the bar's 拍摄, releases the shutter when the camera takes pictures on command), or by watching a folder that the maker's tethering software (EOS Utility and the like) saves to; files already there are left alone, and a new one is taken once its size holds still.
+  - Each shot lands in a folder named for the session (inside an existing source folder it is filed under that folder), named as shot or `Session-0001` with a RAW and its JPEG sharing a number and numbering going on when a session is picked up again.
+  - Shots import one at a time in order, get the session's develop preset (changeable from the bar mid-session) and keywords, and show in the loupe.
+  - Ending the session, or unplugging the camera, leaves the folder watched like any imported one. The folder path and the session are covered by `--pipeline`; the camera path is written against ImageCaptureCore and exercised through a simulated device, not a physical camera.
+- **Develop settings on import** — a develop preset chosen in Settings → 导入, the import window or the card window applies to new photos, on top of the per-camera RAW defaults (see [Presets and sync](#develop)).
+- **Watching** — referenced folders are watched with FSEvents: new files import and removed files are flagged missing automatically.
+- **Missing and offline** — originals are re-checked on launch and flagged missing if gone; unmounting an external drive marks its photos offline instead, and remounting restores them.
 
-Mirrors the PRD's layering (§11) with business logic separated from UI:
+### Develop
 
-```
-Sources/PhotoCatalog/
-  Theme/            design tokens (ported from styles.css :root) + SF Symbol icon map
-  Domain/           Asset, Album, SmartRule + matcher  (the assets/albums schema, §10)
-  Data/             deterministic demo dataset (port of data.jsx) + headless self-checks
-  Application/      AppState + ImportCoordinator (scan→meta→thumb→hash pipeline)
-  Infrastructure/   the real backend (PRD §11):
-    Database/        thin SQLite wrapper over the system library
-    Catalog/         .photolibrary package + schema + asset persistence + backup
-    FileAccess/      security-scoped bookmarks
-    Scanner/         recursive enumeration + UTType detection
-    Metadata/        Image I/O EXIF/TIFF/GPS reader + XMP sidecar read/write
-    Thumbnail/       Image I/O thumbnail/preview generation + sharded cache
-    Hash/            quick hash + SHA-256 (exact) + dHash (perceptual)
-    Scanner/         recursive enumeration + FSEvents folder watching
-    Rename/          batch rename of originals
-    Export/ Backup/  copy originals / catalog backup & restore
-  Presentation/
-    Components/      Thumb (remote + local cache + gradient fallback), atoms, flow layout
-    MainWindow/      titlebar, filter bar, status bar, main layout, root + key handling
-    Sidebar/ Grid/ Inspector/ Loupe/ Compare/ Map/ Sheets/ (incl. Settings)
-```
+`D` opens the selected photo in 修图. Development is non-destructive and rendered with the system RAW engine (CIRAWFilter); the original is never modified. Every adjustment previews live while dragging, with an RGB histogram and clipping warnings, and is undoable; double-click a slider's name to reset it.
 
-The demo dataset is a **bit-faithful port** of the prototype's generator: the same Unsplash photo IDs and the exact same seeded-RNG call sequence, so the deterministic counts match the design mock (44 photos; folders 24 / 12 / 8; smart albums 13 & 12; etc.).
+- **Profiles** — 标准 is the RAW engine's own rendering; 中性, 鲜艳, 人像 and 风景 are the app's own base looks (a tone curve, a response per color band and an overall saturation), applied before every other adjustment at an amount of 0–200%. Rest the pointer on one to preview it. Lightroom presets' Adobe and Camera profiles map to the nearest one.
+- **Black and white** — 处理方式 彩色 / 黑白, or the 单色 profile. The color mixer gives way to a black-and-white mix: how light each of the eight color bands turns, scaled by how colorful a pixel is so grays keep their tone. 自动 spreads the photo's main colors apart by their lightness without darkening skin's orange; color grading then tones it, e.g. sepia. Camera Raw's ConvertToGrayscale and GrayMixer settings map both ways.
+- **Basic** — white balance, exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, dehaze, vibrance and saturation.
+  - White balance starts from the as-shot Kelvin and tint read from the RAW. The eyedropper (`W`) sets it from something you click that should be gray.
+  - Auto white balance (`⇧⌘U`, or 自动 beside 白平衡) finds the photo's gray surfaces near neutral on its as-shot rendering, brighter ones counting more, and sets temperature and tint so they render gray: the same answer from any slider position, and none when nothing in the photo is close to gray.
+  - Auto white balance and auto tone (`⌘U`) act on the photo in Develop, or on every selected photo in the grid.
+- **Tone curve** — a point curve, composite and per channel: click to add a point, drag, double-click to remove; linear / medium / strong presets.
+- **Color mixer** — hue, saturation and luminance for eight color bands, weighted by how colorful a pixel is so whites and grays stay put.
+- **Color grading** — a tint and luminance for shadows, midtones, highlights and the whole photo, with blending and balance (positive favors the highlights, as in Lightroom).
+- **LUTs** — import `.cube` 3D LUTs into a library every catalog shares, and apply one with an amount; 33- and 65-point LUTs are resampled.
+- **Calibration** — applied first: a green–magenta shadows tint, and the red, green and blue primaries' hue and saturation through a matrix on linear light that keeps white and grays as they are. Camera Raw's ShadowTint, RedHue … BlueSaturation map both ways.
+- **Detail** — sharpening with radius and edge masking, luminance and color noise reduction.
+- **Lens corrections** — manual distortion and lens vignetting (Apple's RAW engine has no profiles for Canon RF lenses). 删除色差 measures the photo's lateral chromatic aberration on its achromatic edges (red and blue each magnified slightly differently from green) once per file, and rescales red and blue back into place. 紫边去除 / 绿边去除, 0–20 as in Lightroom, take the color out of purple and green fringes along high-contrast edges. Presets carry them as Camera Raw's AutoLateralCA and Defringe amounts.
+- **Effects** — post-crop vignette and film grain.
+- **Lens blur** (镜头模糊) — the background or foreground blurred by how far it lies from the depth in focus, from a depth map Depth Anything V2 (bundled, running on this Mac) makes once per photo and caches. Turning it on focuses on the largest face, else the subject; 点选焦点 sets the focus by clicking the photo, and 显示深度 shows the depth map, near warm and far cool. Amount, focus distance and focus range sliders. Copy and sync leave it behind unless ticked, since its focus belongs to one photo.
+- **Masks** — local adjustments, each mask with its own exposure, contrast, highlights, shadows, whites, blacks, temperature, tint, texture, clarity, dehaze and saturation. Any mask can be inverted, `O` tints the selected mask's coverage red, and masks stay on the same part of the picture when you crop or rotate.
+  - **Gradients** (`M` linear, `⇧M` radial) — drag on the photo to draw one; drag its handles to move, turn or reshape it.
+  - **Brush** (`K`) — paint with size, feather and density; hold `⌥` to erase, `[` / `]` to resize. 用画笔增减 paints onto or erases from any gradient, subject or sky mask.
+  - **选择主体 / 选择天空** — the subject (Vision's foreground segmentation) or the sky (smooth, bright or blue areas grown from the top edge, stopped at the horizon and the subject).
+  - **选择人物** — a whole person or a part of them (face skin, body skin, eyebrows, eye sclera, iris and pupil, lips or teeth) from Vision's person segmentation, person instances and face landmarks, skin told apart by the face's own color. With several people a mask takes everyone or one person (numbered left to right), and its part can be changed later.
+  - **选择物体** (select object) — whatever a box drawn around it, or a click on it, picks out. SAM 2.1 (bundled, running on this Mac) encodes the photo once and decodes each box or click in a few hundredths of a second; click a part it missed to add it, ⌥-click an extra part to take it out, or drag to box it again.
+  - **选择景观** (select landscape) — the water, vegetation, mountains, architecture, natural ground or artificial ground, from the labels DETR (bundled) gives every part of the photo, with edges fitted to the photo's; the category can be changed later.
+  - **颜色范围 / 明亮度范围** — the parts of the photo in sampled colors (click up to five places) or within a range of tones; any other mask can be narrowed to such a range too.
+- **Spot removal** (`Q`) — click a speck to heal it (the source is found automatically among nearby places whose surroundings match) or drag outward to size it; drag a spot or its source to move it, its edge to resize. Heal matches the surrounding color and brightness, clone copies as is. 移除 (remove) paints over an object and, on letting go, fills it with what LaMa (bundled, running on this Mac) makes of its surroundings; the fill is made once from the full-size photo and cached, then matched to the current color and brightness like heal, so later exposure or white-balance changes still blend. 显示污点 shows only fine detail so sensor dust stands out.
+- **Crop and straighten** (`R`) — aspect presets; drag corners or edges or move the crop; draw a line outside it to level the photo, or auto-straighten from the horizon (Vision). Quarter turns (`⌘[` / `⌘]`) and horizontal flip work on a whole selection from the grid too.
+- **Transform** — vertical and horizontal perspective correction, and Upright: 自动 sets verticals upright and turns a clearly visible facade's horizontals most of the way to parallel, 垂直 sets verticals upright only. The crop is kept off the empty corners.
+- **Soft proofing** (`S`, or 软打样 at the top of the panel) — the photo shown through sRGB, Display P3, Adobe RGB or any printer profile installed on this Mac, with a perceptual or relative intent through ColorSync, optionally simulating paper white and ink black. 色域警告 paints red the colors whose hue, saturation or lightness doesn't survive the profile (black that only prints as the ink's black doesn't count). The histogram shows the proof.
+- **Before and after** — `\` toggles the before view; `Y` shows before and after side by side, framed alike, side by side or one above the other, whichever shows the photo larger.
+- **Snapshots and history** — snapshots are named states to come back to (new, rename, update, delete); a per-photo history of every edit is kept in the catalog. Click a step or snapshot to return to it; undo takes a step away, redo puts it back.
+- **Presets and sync** — copy and paste settings (`⇧⌘C` / `⇧⌘V`) or sync them across a selection (`⇧⌘S`) with a per-setting checklist; white balance only travels between photos of the same kind.
+  - Built-in and your own presets apply from the Develop panel, the 照片 menu or the right-click menu. Rest the pointer on one to preview it on the photo. After applying one, an amount slider (0–200%) scales its sliders, white balance, curves, mixer, grading and masks' own adjustments.
+  - Right-click a preset to rename it, update it from the current settings, move it to a group or a new group, or delete it (after confirming).
+  - Presets import and export as `.xmp`: the app's own files round-trip completely, masks and spots included, and also carry Camera Raw's settings so Lightroom can import them. Lightroom and Camera Raw presets bring in the settings the two apps share, and the app says what it left out.
+  - RAW defaults per camera (Settings → 修图): one preset for every camera and one for each camera, or the photo as shot. They apply at import, under the import preset, and resetting a photo returns to them. Right-click a preset to make it the current camera's default.
 
-The built-in demo dataset is a **bit-faithful port** of the prototype's seeded RNG so the deterministic counts match the design mock; it provides an instant, populated UI on first launch. Real imported folders are scanned, persisted, and shown alongside it.
+### Merge, enhance and outside editors
 
-> **Implemented vs. remaining (vs. PRD).** Done: catalog persistence (SQLite + FTS5), folder authorization + recursive scan, referenced **and** managed import, Image I/O metadata, XMP sidecar read/write, thumbnail/preview generation + cache (rebuild/clear), missing **and** offline-volume detection, exact **and** perceptual duplicate detection, on-device Vision scene tagging + face detection (人物 collection), FSEvents incremental watching, batch rename, batch capture-time shift, export, backup + health check, Places (map) view, search/filter/sort, ratings/flags/keywords/albums/smart-albums, and a Settings panel (§17). Deferred product integrations: Apple Photos import bridge, plugin system, Sparkle auto-update, and a fully-normalized keyword table (keywords are stored per-asset + FTS-indexed today).
+- **Photo Merge → HDR** (`⌃H`, 照片 menu or right-click) — 2–9 bracketed exposures lined up by median threshold bitmaps and merged by exposure fusion in Laplacian pyramids, with optional deghosting and a preview. The result is a 16-bit TIFF beside the middle exposure (`name-HDR.tif`), added to the catalog with its metadata.
+- **Photo Merge → Panorama** (`⌃M`) — 2–30 overlapping photos, in order, projected onto a cylinder (focal length from EXIF), lined up by masked normalized correlation, horizontal or vertical, exposure-matched and feathered, and auto-cropped to the largest filled rectangle; a pair that doesn't overlap is named. The result is `name-Pano.tif` beside the first photo.
+- **Enhance** (`⌃⌥I`, 照片 menu or right-click) — AI denoise (SCUNet, amount 0–100) and/or super resolution (Real-ESRGAN, twice the width and height) with Core ML models bundled in the app, running on this Mac, and a 100% before/after preview. Each result is a 16-bit TIFF beside its original (`name-Enhanced.tif`) carrying the original's metadata, added to the catalog with its develop settings (white balance aside). Progress and cancel are in the status bar.
+- **Edit in an external editor** (`⌥⌘E`; pick the app once: Photoshop, Affinity Photo, Pixelmator Pro…) — the photo with its adjustments becomes a 16-bit Adobe RGB TIFF beside the original (`name-编辑.tif`), joins the catalog with the original's rating, labels and keywords, stacks with it, and opens in the editor. The original is never touched, and the editor's saves come back through folder watching.
 
-> **Scalability status.** Measured at 500,000 photos with a synthetic catalog (`--scale`, Release build, Apple silicon, warm file cache): the first photos appear within a second of launch and the whole catalog is usable in ~5 s. Filtering, sorting, searching and switching collections respond in 0.1–0.35 s, and rating a photo in ~50 ms. Asset metadata stays resident in memory in a compact copy-on-write form (~1 GB at 500k photos) rather than being paged from SQLite.
+### Output
+
+- **Export** (`⇧⌘E`) — renders the selection with its Develop adjustments to JPEG, HEIC or TIFF (8/16-bit):
+  - resize by long or short edge or a box; quality; sRGB, Display P3 or Adobe RGB;
+  - file-name templates (`{original}` `{seq}` `{date}` `{time}` `{camera}` `{title}` `{rating}`) and collision handling;
+  - output sharpening on the final pixels, for screen, matte or glossy paper (paper takes a wider radius), at low, standard or high, luminance only;
+  - metadata: all, copyright only or none, optional location removal, and the catalog's title, caption, keywords and rating included; a text watermark.
+
+  Built-in and saved export presets. Exports queue and run one after another in the background, with progress and cancel in the status bar. `⌘E` copies the untouched originals instead (keeping their modification dates), with a JSON metadata sidecar.
+- **Print** (`⌘P`) — the selection on paper:
+  - A3 / A4 / A5 / Letter / Legal / Tabloid / 4×6 / 5×7 / 8×10, portrait or landscape, margins;
+  - one photo per page (fit, or fill and crop) or a contact sheet of rows × columns with spacing; rotate to fit turns a photo a quarter when that fills its place better; captions (file name or title) under each photo;
+  - photos rendered at 150–360 ppi for their size on the paper (never decoded larger than that needs), print sharpening for matte or glossy paper, and color managed either by the printer or by converting to an installed printer profile (perceptual or relative, through ColorSync).
+
+  The dialog previews each page with the same drawing the printer and 存储为 PDF… use.
+- **Slideshow** (照片 → 幻灯片…, or `⌘↩` to play at once) — the selected photos (or the whole list) full screen, as Develop shows them: each for 1–20 s, fading into the next (0–3 s), with a slow pan and zoom that never shows an edge, in list or a repeatable random order; captions (title, file name or caption) that take turns through a fade; a black, gray or white backdrop; and music that loops with the show or sets each photo's time to fill it. `Space` pauses, `←` / `→` go back or on, `Esc` ends. 导出视频… writes the same show as an H.264 MP4 at 720p, 1080p or 4K, rendered from the originals with their develop settings, with the music fading out at the end; progress and cancel in the status bar.
+- **Web gallery** (照片 → 导出网页画廊…) — the selected photos (or the whole list) as a folder that works on any web host: `index.html` (one file, no outside code) with a dark or light grid of square thumbnails and a viewer with arrows, keys and swipes; a title and subtitle, captions (title, caption or file name) and a camera · lens · exposure line. Photos are rendered as developed into sRGB JPEGs without metadata at a chosen size (never enlarged), thumbnails sized for the tiles at 2×. Captions are escaped, a new gallery never overwrites another, and a cancelled one leaves nothing.
+- **Photo book** (照片 → 制作画册…) — the selected photos (or the whole list) laid out as a book and saved as a PDF: 20 × 20 cm, 25 × 20 cm, 20 × 25 cm or A4 landscape pages; auto layout (a photo shaped like the page alone, two of the other shape side by side or one above the other) or one, two or four a page; no margin (a photo alone fills its page to the edges), narrow or wide margins; a white or black background; a cover with the first photo, a title and subtitle; captions (title, caption or file name) right under each photo; page numbers. Photos are rendered as developed at 300 ppi for the size they print, and the dialog previews each page with the same drawing the PDF uses.
+
+### AI assistant
+
+Optional. Settings → AI points these features at a language-model service: Anthropic's Messages API or any OpenAI-compatible chat-completions endpoint (OpenAI, DeepSeek, Qwen, Doubao, Kimi, GLM, or Ollama / LM Studio on this Mac, which need no key), with its address, model and whether it reads images, and a connection test. The API key is kept in the login keychain, one per service. Nothing is sent until a feature is used, and photos go only as JPEG previews reduced to 1024 pixels.
+
+- **Describe photos** (照片 → AI 描述照片…, `⌃⌥D`, or right-click) — confirm the service, model and what will be sent, then generate titles, captions and keywords from the previews, three at a time with progress and cancel in the Task Center.
+  - Capture date, camera, location and existing keywords are sent only if enabled for that batch. The batch keeps the service configuration you consented to even if Settings changes while it runs.
+  - Results are never applied automatically: review the current and proposed values, select photos, then apply. Keywords are appended; titles and captions fill empty fields unless 替换 is on; each application is undoable. Failed items can be resent after confirmation without regenerating the ones that succeeded.
+  - Unapplied results stay in memory until discarded, the catalog is switched or the app quits. Task history persists, but can't restore these proposals or resend photos by itself.
+- **Natural-language search** (视图 → 用自然语言查找…, `⌥⌘F`) — a sentence ("去年夏天在海边拍的、四星以上的照片") becomes the filter bar and the search box: rating, flag, color label, file type, camera, lens, capture dates, location and search words, checked against what the filters accept. Only the sentence and the catalog's camera, lens and keyword names are sent.
+- **AI 调整** (Develop) — a described look ("暖一点的胶片感") becomes new values for the Basic, Presence and Effects sliders, white balance and color grading, each kept within its slider and applied as one undoable step, with the model's one-line explanation. The first time it would send a photo to a service off this Mac, it asks.
+
+Replies are checked rather than trusted: a search filter counts only when the sentence says something about it, slider values are kept within their ranges, and a reply that only repeats the current values changes nothing. They're also read leniently: JSON inside prose or a code fence, single-quoted, or cut off by the token limit. Small local models (a few billion parameters) describe photos well but read search requests and looks less reliably than the hosted ones.
+
+### Catalog and safety
+
+- **Welcome** — the first launch opens a card to create a catalog or open a recent one; 目录库 → 新建目录库… / 打开目录库… (`⌘N` / `⌘O`) switch catalogs later.
+- **Catalog** — a `.photolibrary` package (`catalog.sqlite` + `manifest.json` + `Cache/` + `Backups/`) on the system SQLite library. Edits (rating, flag, color, keywords, title, caption, develop settings) write through and survive relaunch, and `⌘Z` / `⇧⌘Z` undo and redo them.
+- **Backup** — the status bar and automatic snapshots back up the catalog's SQLite database only (维护 → 创建目录库快照 / 恢复目录库快照…). 维护 → 完整备份与恢复… creates a verified `.photobackup` containing catalog metadata and history, active originals, XMP, the catalog's Config and the LUT and fill resources it references. Restore creates a new `.photolibrary`; it never overwrites or switches the current library and doesn't resume old imports. Missing originals or resources fail the backup; previews, deleted originals, global preferences and preset lists, credentials and unsaved editing drafts are left out.
+- **Task Center** (status-bar task button, or 维护 → 任务中心…) — catalog-scoped import, rendered export, enhancement, preview, backup and restore work, with actual progress and failure details. Controls come from the engine that owns the work; reopening never replays exports or network requests. History keeps the newest 200 finished tasks and up to 100 failure details per task without dropping active work; interrupted work and history write failures stay visible. Operational history lives in the catalog's Logs folder and is left out of full backups.
+- **Maintenance** — catalog health check (维护 → 运行健康检查), rescanning the current source, and rebuilding or clearing the thumbnail and preview caches (Settings → 缓存与性能).
+- **Scale** — measured at 500,000 photos with a synthetic catalog (`--scale`, Release build, Apple silicon, warm file cache): the first photos appear within a second of launch and the whole catalog is usable in about 5 s. Filtering, sorting, searching and switching collections respond in 0.1–0.35 s, and rating a photo in about 50 ms. Asset metadata stays resident in memory in a compact copy-on-write form (about 1 GB at 500k photos) rather than being paged from SQLite.
+
+## Keyboard shortcuts
+
+Single-key shortcuts don't apply while you type in a text field.
+
+**Views and navigation**
+
+| Key | Action |
+| --- | --- |
+| `G` / `E` / `C` / `N` / `A` / `D` | Grid / loupe / compare / survey / capture analysis / develop |
+| `Return` · `Space` | Open the loupe (in the loupe, `Space` plays or pauses a video) |
+| Arrows | Move through photos |
+| `Esc` | Close panels and sheets, finish a Develop tool |
+| `Z` or double-click | Zoom to 1:1 (linked across Compare) |
+| `Tab` | Hide the side panels |
+| `F` · `⇧⌘F` | Show or hide the filter bar |
+| `I` | Show or hide the info on thumbnails |
+| `⌘F` | Search |
+| `⌥⌘F` | Search with a sentence (AI) |
+| `⌘I` | Inspector |
+| `⌘+` / `⌘-` / `⌘0` | Thumbnail size |
+| `⌘A` · `⇧⌘A` | Select all in the list · invert the selection |
+| `⌘S` | Save the current filter as a smart album |
+
+**Culling and organizing**
+
+| Key | Action |
+| --- | --- |
+| `1`–`5` · `0` | Rate · clear the rating |
+| `P` / `X` / `U` | Pick / reject / unflag |
+| `6`–`9` | Color label |
+| `Shift` + any of the above | …and move on to the next photo |
+| `B` | Add to or remove from the Quick Collection |
+| `S` | Open or close a stack (outside Develop) |
+| `⌘'` | Virtual copy |
+| `⌘[` / `⌘]` | Rotate left / right |
+| `⌘Z` · `⇧⌘Z` | Undo · redo |
+| `⌫` · `⌘⌫` | Remove from the catalog · move the originals to the Trash |
+
+**Develop**
+
+| Key | Action |
+| --- | --- |
+| `\` · `Y` | Before / after · before and after side by side |
+| `R` | Crop and straighten |
+| `W` | White-balance eyedropper |
+| `M` · `⇧M` | Linear · radial gradient |
+| `K` | Brush (`⌥` erases, `[` / `]` resize) |
+| `O` | Show the selected mask's coverage |
+| `Q` | Spot removal |
+| `S` | Soft proofing |
+| `Delete` | Remove the selected mask or spot |
+| `Return` · `Esc` | Finish the current tool |
+| `⌘U` · `⇧⌘U` | Auto tone · auto white balance |
+| `⇧⌘C` / `⇧⌘V` / `⇧⌘S` | Copy / paste / sync develop settings |
+| `⌥⌘E` | Edit in an external editor |
+
+**Commands**
+
+| Key | Action |
+| --- | --- |
+| `⌘N` · `⌘O` | New · open catalog |
+| `⇧⌘I` | Import |
+| `⇧⌘E` · `⌘E` | Export rendered · export originals |
+| `⌘P` | Print |
+| `⌘↩` | Play a slideshow (`Space` pauses, `←` / `→` go back or on, `Esc` ends) |
+| `⌃H` · `⌃M` | Merge to HDR · panorama |
+| `⌃⌥I` | Enhance |
+| `⌃⌥D` | Describe photos (AI) |
+| `F12` | Release the shutter while tethered (`fn`-`F12` where the top row controls the Mac) |
+| `⌘R` | Rescan the current source |
+| `⌘B` · `⇧⌘B` | Catalog snapshot · restore one |
+| `⌘,` | Settings |
+
+## Privacy
+
+PhotoCatalog has no account, analytics or tracking, and it sends nothing about your library anywhere on its own. The network is used only for:
+
+- **The AI assistant**, when you use it: requests go to the service set in Settings → AI, as described under [AI assistant](#ai-assistant). A service on this Mac (Ollama, LM Studio) keeps everything local.
+- **Maps**: the Places view and the location picker load Apple Maps and search places through MapKit.
+- **Update checks** in the GitHub edition: PhotoCatalog → 检查更新…, or once a day unless Settings → 常规 → 自动检查更新 is off, reads the latest release from GitHub's API. The Mac App Store edition leaves updating to the App Store.
+
+Faces, scene tags, masks and enhancements are computed on this Mac. API keys are kept in the login keychain. Crash reports that macOS saves stay on the Mac. `Resources/PrivacyInfo.xcprivacy` declares no tracking and no collected data.
 
 ## Languages
 
-The interface is available in Simplified Chinese and English. It follows the system language
-(English for every language other than Chinese), or the choice in Settings → General →
-Language, which takes effect after a relaunch.
+The interface is available in Simplified Chinese and English. It follows the system language (English for every language other than Chinese), or the choice in Settings → 常规 → 语言, which takes effect after a relaunch.
 
-UI text is written in Chinese in the source and used as the lookup key. SwiftUI literals
-(`Text("…")`, `Button("…")`) localize by themselves; text built as a `String` goes through
-`L("…")` (`Domain/Localization.swift`), and toasts take a localizable value. The English tables
-live in `Resources/Localization/en.lproj`, which the build script copies into the app.
-`L(…, table: "Context")` carries a second English meaning of the same Chinese text (色调 is
-both Tone and Tint). Stored values such as capture-time sources and smart-album operators stay
-as they are in the catalog; only their display is translated.
+## Building
 
-To add or change UI text:
-
-1. Write it in Chinese in the code, as above.
-2. Add the English to `Resources/Localization/en.lproj/Localizable.strings`, keeping the format
-   specifiers (`%lld` for numbers, `%@` for text; `%1$@`-style positions when English reorders them).
-3. If the English counts something ("%lld photos"), run `script/check_localization.py plurals`.
-4. Run `script/check_localization.py`: it reports text that isn't localized or translated.
-
-## Build & run
-
-Requires a Swift 6 toolchain on macOS 14+. Full Xcode is required to run XCTest;
-the app itself can also build with compatible Command Line Tools.
+Requires a Swift 6 toolchain on macOS 14+ on Apple silicon (the AI code uses `Float16`, which doesn't exist on Intel). Full Xcode is required to run XCTest; the app itself also builds with compatible Command Line Tools. You can also open `Package.swift` in Xcode and run the `PhotoCatalog` scheme.
 
 ```sh
 script/build_and_run.sh build      # compile (Debug) and assemble dist/PhotoCatalog.app
 script/build_and_run.sh run        # build (Release) and launch the app
 script/build_and_run.sh verify     # build (Release), launch, and verify a visible window
-
-script/build_and_run.sh selfcheck  # headless demo dataset checks
-script/build_and_run.sh pipeline   # headless end-to-end import checks
-swift test                        # focused model, AppState, and UI-helper tests (full Xcode)
-swift test --filter SmartMatcherTests  # run one XCTest class
-./.build/debug/PhotoCatalog --full-backup-check      # focused backup/restore checks with temporary fixtures
-./.build/debug/PhotoCatalog --task-center-check      # focused task-history and lifecycle checks
-./.build/debug/PhotoCatalog --description-review-check  # AI consent/review checks using synthetic images and a loopback service
-./.build/debug/PhotoCatalog --selfcheck --benchmark  # optional 100k synthetic metadata benchmark
-./.build/debug/PhotoCatalog --import-memory-check "/path/to/sample.CR3" 200
-./.build/release/PhotoCatalog --scale 500000 /tmp/scale.photolibrary  # large-catalog benchmark
 ```
 
-The scale benchmark generates a synthetic catalog of the given size once (later runs
-reuse it), then times loading, list changes, counts and edits and reports memory.
-Build Release first (`CONFIGURATION=release script/build_and_run.sh build`); it edits
-the benchmark catalog, so never point it at a real library.
+Launch modes (`run`, `verify`, `logs`, `telemetry`) build the optimized Release configuration; `build`, `selfcheck` and `pipeline` use Debug because the checks rely on `assert`. Set `CONFIGURATION=debug` or `CONFIGURATION=release` to override.
 
-The import memory check reads the supplied image through distinct temporary
-symlinks, exercises the real import pipeline without the UI, and removes its
-temporary catalog afterward. It fails above 512 MiB at a file boundary or if
-post-warmup growth reaches 128 MiB. It never imports into an existing catalog or
-changes the original. This is a repeated-input regression check, not a full-library
-or all-RAW-format performance guarantee.
+The script honors `SDKROOT` when set. Otherwise it probes the installed macOS SDKs and selects one compatible with the active Swift compiler, which also handles temporarily out-of-sync Command Line Tools installations.
 
-Launch modes (`run`, `verify`, `logs`, `telemetry`) build the optimized Release
-configuration; `build`, `selfcheck`, and `pipeline` use Debug because the checks rely on
-`assert`. Set `CONFIGURATION=debug` or `CONFIGURATION=release` to override.
+### Tests and checks
 
-The script honors `SDKROOT` when set. Otherwise it probes installed macOS SDKs and
-selects one compatible with the active Swift compiler, which also handles temporarily
-out-of-sync Command Line Tools installations.
-For `swift test`, pass `--sdk /path/to/MacOSX.sdk` when the default SDK is incompatible
-with the active compiler; the SDK must come from a full Xcode installation.
+```sh
+script/build_and_run.sh selfcheck       # headless demo-dataset and per-feature checks
+script/build_and_run.sh pipeline        # headless end-to-end import checks
+script/check_localization.py            # untranslated or unlocalized UI text
+swift test                              # model, AppState and UI-helper tests (full Xcode)
+swift test --filter SmartMatcherTests   # one XCTest class
 
-You can also open `Package.swift` directly in Xcode and run the `PhotoCatalog` scheme.
+./.build/debug/PhotoCatalog --full-backup-check          # backup and restore, with temporary fixtures
+./.build/debug/PhotoCatalog --task-center-check          # task history and lifecycle
+./.build/debug/PhotoCatalog --description-review-check   # AI consent and review, with synthetic images and a loopback service
+./.build/debug/PhotoCatalog --selfcheck --benchmark      # adds a 100k synthetic metadata benchmark
+./.build/debug/PhotoCatalog --import-memory-check "/path/to/sample.CR3" 200
+./.build/release/PhotoCatalog --scale 500000 /tmp/scale.photolibrary   # large-catalog benchmark
+```
+
+For `swift test`, pass `--sdk /path/to/MacOSX.sdk` when the default SDK is incompatible with the active compiler; the SDK must come from a full Xcode installation.
+
+The scale benchmark generates a synthetic catalog of the given size once (later runs reuse it), then times loading, list changes, counts and edits and reports memory. Build Release first (`CONFIGURATION=release script/build_and_run.sh build`). It edits the benchmark catalog, so never point it at a real library.
+
+The import memory check reads the supplied image through distinct temporary symlinks, exercises the real import pipeline without the UI, and removes its temporary catalog afterward. It fails above 512 MiB at a file boundary or if growth after warm-up reaches 128 MiB. It never imports into an existing catalog or changes the original. It is a repeated-input regression check, not a full-library or all-RAW-format performance guarantee.
 
 ### Continuous integration
 
-GitHub Actions runs on pull requests, pushes to `main`, and manual dispatches.
-The workflow uses the standard `macos-26` ARM64 runner with Xcode 26.6 from the
-[runner image](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md).
-It checks localization, builds the Debug app bundle, runs XCTest, then runs the full
-`selfcheck` and `pipeline` commands above. Checks run sequentially because they share
-user defaults and build output. No signing credentials or external AI service is needed.
+GitHub Actions runs on pull requests, pushes to `main` and manual dispatches, on the standard `macos-26` ARM64 runner with Xcode 26.6 from the [runner image](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md). It checks localization, builds the Debug app bundle, runs XCTest, then runs the full `selfcheck` and `pipeline` commands above. Checks run one after another because they share user defaults and build output. No signing credentials or external AI service is needed.
 
-Full selfcheck exercises Metal kernels, bundled Core ML models and video encoding;
-an unsupported runner fails these checks instead of silently skipping them. This is
-headless regression coverage, not interactive UI, physical camera or real-RAW acceptance.
-Failed runs retain check logs for seven days. The workflow does not publish the app.
+The full selfcheck exercises Metal kernels, the bundled Core ML models and video encoding; an unsupported runner fails these checks instead of silently skipping them. This is headless regression coverage, not interactive UI, physical-camera or real-RAW acceptance. Failed runs keep their check logs for seven days. The workflow does not publish the app.
 
-### Language models
+### Adding UI text
 
-Settings → AI points the AI features at a language-model service: Anthropic's Messages API or
-any OpenAI-compatible chat-completions endpoint (OpenAI, DeepSeek, Qwen, Doubao, Kimi, GLM, or
-Ollama / LM Studio on this Mac, which need no key), with its address, model and whether it
-reads images, and a connection test. The API key is kept in the login keychain, one per
-service. Nothing is sent until a feature is used, and photos go only as JPEG previews reduced to
-1024 pixels. Photo description also requires explicit send confirmation; capture date, camera,
-location and existing keywords are opt-in for each batch. The batch keeps its consented service
-configuration even if Settings changes while it runs, and generated text requires review before
-catalog writes. `Infrastructure/AI/LLMClient.swift` holds both protocols (URLSession only).
-Replies are checked rather than trusted: a search filter counts only when the sentence says
-something about it, slider values are kept within their ranges, and a reply that only repeats
-the current values changes nothing. Small local models (a few billion parameters) describe
-photos well but read search requests and looks less reliably than the hosted ones.
+UI text is written in Chinese in the source and used as the lookup key. SwiftUI literals (`Text("…")`, `Button("…")`) localize by themselves; text built as a `String` goes through `L("…")` (`Domain/Localization.swift`), and toasts take a localizable value. The English tables live in `Resources/Localization/en.lproj`, which the build script copies into the app. `L(…, table: "Context")` carries a second English meaning of the same Chinese text (色调 is both Tone and Tint). Stored values such as capture-time sources and smart-album operators stay as they are in the catalog; only their display is translated.
 
-### AI models
+1. Write it in Chinese in the code, as above.
+2. Add the English to `Resources/Localization/en.lproj/Localizable.strings`, keeping the format specifiers (`%lld` for numbers, `%@` for text; `%1$@`-style positions when English reorders them).
+3. If the English counts something ("%lld photos"), run `script/check_localization.py plurals`.
+4. Run `script/check_localization.py`: it reports text that isn't localized or translated.
 
-`Resources/Models` holds the Core ML packages the app bundles (compiled on first use and kept in
-Application Support): `SuperResolution` (Real-ESRGAN, BSD 3-Clause), `Denoise` (SCUNet,
-Apache 2.0), `Inpaint` (LaMa, Apache 2.0; its plain convolutions quantized to 8 bits), `Depth` (Depth Anything V2 Small), `Segmentation` (DETR ResNet-50 semantic segmentation) and `ObjectEncoder` / `ObjectPrompt` / `ObjectDecoder` (SAM 2.1 Tiny) — the last three models Apache 2.0, in Apple's own Core ML conversions used as published; `Resources/Models/LICENSES.md` has their licenses and what was changed.
-`script/models/convert.py` rebuilds them from the authors' released weights, or fetches Apple's packages for `Depth`, `Segmentation` and the `Object` models (each checked by SHA-256),
-with PyTorch and coremltools in a throwaway virtual environment; nothing Python ships. The app
-itself still has no third-party code dependency.
+## Architecture
 
-### Releasing
+PhotoCatalog began as a native re-creation of two inputs: a design exported from Claude Design (`PhotoCatalog Mac.html` and its React/CSS prototype), the source of truth for the visual system and interactions, and the PRD (`docs/macos_photo_manager_prd_tech.md`), which defines the domain model, layering and core scope in the technology it calls for (§8: Swift, SwiftUI + AppKit). It has since grown into the Develop module and delivery features; `docs/roadmap.md` tracks that work.
 
-`script/release.sh <version>` builds the Release app with that version, signs it with the
-hardened runtime, notarizes and staples it, and leaves `dist/PhotoCatalog-<version>.zip` to
-publish as a GitHub release (`gh release create v<version> …`). It needs a Developer ID
-Application certificate (`DEVELOPER_ID`) and a notarytool keychain profile (`NOTARY_PROFILE`);
-the script's header shows the one-time setup. Updates: PhotoCatalog → Check for Updates…, and
-once a day shortly after launch unless Settings → 常规 → 自动检查更新 is off, compares the running
-version with the latest GitHub release. A Developer ID-signed copy offers Install and Relaunch:
-it downloads the release's `PhotoCatalog-<version>.zip`, installs it only if the app inside is
-that version and meets the running app's own designated requirement (same identifier, same
-team; an altered or differently signed app is refused), swaps it in and relaunches. A copy signed
-ad hoc, or one in a folder it can't write, offers the download page instead. `PC_UPDATE_FEED`
-(an https or file URL of a release in GitHub's format) points the check elsewhere for testing;
-Debug builds also take `PC_UPDATE_REQUIREMENT` in place of the running app's requirement. After an unexpected quit, the next launch offers to show the crash report
-macOS saved (it stays on the Mac).
+The code follows the PRD's layering (§11), with business logic separated from the UI:
 
-#### Mac App Store
+```
+Sources/PhotoCatalog/
+  Theme/            design tokens (light / dark pairs, ported from the prototype's styles.css) + SF Symbol icon map
+  Domain/           Asset, Album, SmartAlbumRule + matcher, CaptureTime, DevelopSettings and its parts,
+                    export / print / book / slideshow settings, keyword / stack / folder-tree services
+  Data/             deterministic demo dataset (port of the prototype's data.jsx) + the headless checks
+  Application/      AppState (all UI state), ImportCoordinator (scan → metadata → thumbnail → hash → XMP), undo
+  Infrastructure/   the real backend:
+    Database/         thin wrapper over the system SQLite library
+    Catalog/          .photolibrary package, schema, persistence, health check
+    FileAccess/       security-scoped bookmarks
+    Scanner/          recursive enumeration + FSEvents folder watching
+    Import/           memory cards, cameras and iPhones (ImageCaptureCore), tethering
+    Metadata/         Image I/O EXIF / TIFF / GPS reader + XMP sidecar read / write
+    Thumbnail/        thumbnail and preview generation + sharded disk cache
+    Hash/             quick hash + SHA-256 (exact) + dHash (perceptual)
+    Develop/          Core Image renderer + Metal kernels compiled at run time
+    AI/               language-model client (Anthropic and OpenAI-compatible, URLSession only) + Core ML features
+    Vision/           scene tagging, face recognition
+    Merge/            HDR and panorama
+    Export/ Print/ Book/ Slideshow/ Web/
+    Rename/ Backup/ Updates/ Diagnostics/
+  Presentation/     SwiftUI views:
+    MainWindow/       split view, toolbar, filter bar, status bar, root key handling, menu commands
+    Sidebar/ Grid/ Loupe/ Compare/ Survey/ Develop/ Inspector/ People/ Map/ Analysis/ Slideshow/
+    Components/       Thumb, shared atoms, flow layout
+    Sheets/           dialogs, including Settings
+```
 
-`script/appstore.sh <version>` builds the Mac App Store edition: compiled with `-D APPSTORE`
-(no Check for Updates…, no automatic update check, no crash-report prompt — the App Store does
-both), signed with the App Sandbox entitlements in `Resources/AppStore.entitlements` (folders and
-files the user picks, their bookmarks, ~/Pictures, outgoing network, printing, USB cameras),
-carrying its provisioning profile, and wrapped in an installer package (`dist/PhotoCatalog-<version>.pkg`)
-to upload with Transporter or `xcrun altool --upload-package`. It needs an Apple Distribution and
-a Mac Installer Distribution certificate and a Mac App Store provisioning profile for the bundle
-identifier (`APP_SIGN_IDENTITY`, `INSTALLER_SIGN_IDENTITY`, `PROVISIONING_PROFILE`; `BUNDLE_ID`
-overrides `com.photocatalog.app`); the script's header shows the setup. `AD_HOC=1 script/appstore.sh
-<version>` signs the same sandboxed build ad hoc to try it locally. The build runs on Apple
-silicon only (the AI code's `Float16` doesn't exist on Intel). Every build's Info.plist carries
-the App Store category, export-compliance answer and the Xcode and SDK versions it was built
-with, and `Resources/PrivacyInfo.xcprivacy` declares no tracking and no collected data.
+The demo dataset is a **bit-faithful port** of the prototype's generator: the same Unsplash photo IDs and the exact same seeded-RNG call sequence, so its deterministic counts match the design mock (44 photos; folders 24 / 12 / 8; smart albums 13 & 12; etc.). The headless checks run against it; it is never saved to a catalog.
 
-In the sandbox the app reaches what the user chose and nothing else: photo folders through the
-bookmarks their source roots keep in the catalog (refreshed when a folder is renamed or moved,
-its photos following); catalogs, export, card-copy, tether and music locations, and places
-originals were relocated or moved to, through bookmarks `FileAccessService` keeps in the app's
-settings. A memory card is read once the user allows it in an open panel the import dialog
-offers, and is remembered for the next time it's inserted.
+Still deferred from the PRD: an Apple Photos import bridge, a plugin system, and a fully normalized keyword table (keywords are stored per asset and indexed by FTS5). The optional auto-update it suggests Sparkle for shipped as the app's own updater instead (see [Releasing](#releasing)).
 
-Photos load from the Unsplash CDN; when offline each tile shows its deterministic gradient placeholder (matching the prototype's graceful fallback).
+### Bundled AI models
+
+`Resources/Models` holds the Core ML packages the app bundles, compiled on first use and kept in Application Support:
+
+| Package | Model | License |
+| --- | --- | --- |
+| `SuperResolution` | Real-ESRGAN | BSD 3-Clause |
+| `Denoise` | SCUNet | Apache 2.0 |
+| `Inpaint` | LaMa (plain convolutions quantized to 8 bits) | Apache 2.0 |
+| `Depth` | Depth Anything V2 Small | Apache 2.0 |
+| `Segmentation` | DETR ResNet-50 semantic segmentation | Apache 2.0 |
+| `ObjectEncoder` / `ObjectPrompt` / `ObjectDecoder` | SAM 2.1 Tiny | Apache 2.0 |
+| `FaceRecognition` | SFace | Apache 2.0 |
+
+`Depth`, `Segmentation` and the `Object` models are Apple's own Core ML conversions, used as published; `Resources/Models/LICENSES.md` has the licenses and what was changed. `script/models/convert.py` rebuilds the others from the authors' released weights and fetches Apple's packages (each checked by SHA-256), with PyTorch and coremltools in a throwaway virtual environment; nothing Python ships, and the app still has no third-party code dependency.
+
+## Releasing
+
+### GitHub
+
+`script/release.sh <version>` builds the Release app with that version, signs it with the hardened runtime, notarizes and staples it, and leaves `dist/PhotoCatalog-<version>.zip` to publish as a GitHub release (`gh release create v<version> …`). It needs a Developer ID Application certificate (`DEVELOPER_ID`) and a notarytool keychain profile (`NOTARY_PROFILE`); the script's header shows the one-time setup.
+
+**Updates.** PhotoCatalog → 检查更新…, and once a day shortly after launch unless Settings → 常规 → 自动检查更新 is off, compares the running version with the latest GitHub release. A Developer ID-signed copy offers 安装并重新启动 (install and relaunch): it downloads the release's `PhotoCatalog-<version>.zip`, installs it only if the app inside is that version and meets the running app's own designated requirement (same identifier, same team; an altered or differently signed app is refused), swaps it in and relaunches. A copy signed ad hoc, or one in a folder it can't write, offers the download page instead. `PC_UPDATE_FEED` (an https or file URL of a release in GitHub's format) points the check elsewhere for testing; Debug builds also take `PC_UPDATE_REQUIREMENT` in place of the running app's requirement.
+
+**Crash reports.** After an unexpected quit, the next launch offers to show the crash report macOS saved; it stays on the Mac.
+
+### Mac App Store
+
+`script/appstore.sh <version>` builds the Mac App Store edition:
+
+- compiled with `-D APPSTORE`: no 检查更新…, no automatic update check and no crash-report prompt, since the App Store does both;
+- signed with the App Sandbox entitlements in `Resources/AppStore.entitlements` (folders and files the user picks, their bookmarks, ~/Pictures, outgoing network, printing, USB cameras), carrying its provisioning profile;
+- wrapped in an installer package, `dist/PhotoCatalog-<version>.pkg`, to upload with Transporter or `xcrun altool --upload-package`.
+
+It needs an Apple Distribution and a Mac Installer Distribution certificate and a Mac App Store provisioning profile for the bundle identifier (`APP_SIGN_IDENTITY`, `INSTALLER_SIGN_IDENTITY`, `PROVISIONING_PROFILE`; `BUNDLE_ID` overrides `com.photocatalog.app`); the script's header shows the setup. `AD_HOC=1 script/appstore.sh <version>` signs the same sandboxed build ad hoc to try it locally. Every build's Info.plist carries the App Store category, the export-compliance answer and the Xcode and SDK versions it was built with.
+
+In the sandbox the app reaches what the user chose and nothing else. Photo folders are reached through the security-scoped bookmarks their source roots keep in the catalog (PRD §12.1), refreshed when a folder is renamed or moved, its photos following. Catalogs, export, card-copy, tether and music locations, and places originals were relocated or moved to, are reached through bookmarks `FileAccessService` keeps in the app's settings. A memory card is read once the user allows it in an open panel the import dialog offers, and is remembered for the next time it's inserted.
