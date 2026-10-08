@@ -5639,6 +5639,7 @@ final class AppState {
 
     /// Looks for a newer release on request and offers to install it.
     func checkForUpdates() {
+        guard !Distribution.isAppStore else { return }
         Task { [weak self] in
             let outcome = await UpdateChecker.check(currentVersion: Self.appVersion)
             guard let self else { return }
@@ -5669,7 +5670,7 @@ final class AppState {
 
     /// The daily check: quiet unless there's a newer release the user hasn't chosen to skip.
     func checkForUpdatesAutomatically() {
-        guard autoCheckForUpdates else { return }
+        guard autoCheckForUpdates, !Distribution.isAppStore else { return }
         let defaults = UserDefaults.standard
         let last = defaults.object(forKey: "pc_lastUpdateCheck") as? Date ?? .distantPast
         guard Date().timeIntervalSince(last) > 20 * 3600 else { return }
@@ -5762,7 +5763,8 @@ final class AppState {
     // ---------- crash reports ----------
     /// After an unexpected quit, points to the report macOS saved. Only the app calls this.
     func checkForCrashReport() {
-        guard let bundleID = Bundle.main.bundleIdentifier else { return }
+        // a sandboxed copy can't read the reports; the App Store collects them instead
+        guard !Distribution.isAppStore, let bundleID = Bundle.main.bundleIdentifier else { return }
         // macOS writes the report some seconds after the crash; a quick reopen would miss it
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(15))

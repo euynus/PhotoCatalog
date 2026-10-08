@@ -230,4 +230,20 @@ ad hoc, or one in a folder it can't write, offers the download page instead. `PC
 Debug builds also take `PC_UPDATE_REQUIREMENT` in place of the running app's requirement. After an unexpected quit, the next launch offers to show the crash report
 macOS saved (it stays on the Mac).
 
+#### Mac App Store
+
+`script/appstore.sh <version>` builds the Mac App Store edition: compiled with `-D APPSTORE`
+(no Check for Updates…, no automatic update check, no crash-report prompt — the App Store does
+both), signed with the App Sandbox entitlements in `Resources/AppStore.entitlements` (folders and
+files the user picks, their bookmarks, ~/Pictures, outgoing network, printing, USB cameras),
+carrying its provisioning profile, and wrapped in an installer package (`dist/PhotoCatalog-<version>.pkg`)
+to upload with Transporter or `xcrun altool --upload-package`. It needs an Apple Distribution and
+a Mac Installer Distribution certificate and a Mac App Store provisioning profile for the bundle
+identifier (`APP_SIGN_IDENTITY`, `INSTALLER_SIGN_IDENTITY`, `PROVISIONING_PROFILE`; `BUNDLE_ID`
+overrides `com.photocatalog.app`); the script's header shows the setup. `AD_HOC=1 script/appstore.sh
+<version>` signs the same sandboxed build ad hoc to try it locally. The build runs on Apple
+silicon only (the AI code's `Float16` doesn't exist on Intel). Every build's Info.plist carries
+the App Store category, export-compliance answer and the Xcode and SDK versions it was built
+with, and `Resources/PrivacyInfo.xcprivacy` declares no tracking and no collected data.
+
 Photos load from the Unsplash CDN; when offline each tile shows its deterministic gradient placeholder (matching the prototype's graceful fallback).

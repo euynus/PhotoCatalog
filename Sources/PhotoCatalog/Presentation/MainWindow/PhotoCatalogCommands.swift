@@ -19,7 +19,10 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(!app.canPrint)
         }
         CommandGroup(after: .appInfo) {
-            Button("检查更新…") { perform("应用.检查更新") { app.checkForUpdates() } }
+            // the App Store updates its own copies
+            if !Distribution.isAppStore {
+                Button("检查更新…") { perform("应用.检查更新") { app.checkForUpdates() } }
+            }
         }
 
         CommandMenu("目录库") {

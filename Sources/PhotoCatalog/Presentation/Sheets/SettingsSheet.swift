@@ -111,13 +111,15 @@ struct SettingsSheet: View {
                 Toggle(isOn: $app.openLastCatalogOnLaunch) {
                     Text("启动时打开上次目录库").font(.system(size: 13)).foregroundStyle(Theme.text)
                 }.toggleStyle(TrailingSwitch())
-                Toggle(isOn: $app.autoCheckForUpdates) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("自动检查更新").font(.system(size: 13)).foregroundStyle(Theme.text)
-                        Text("每天最多联网查看一次 GitHub 上的新版本，有新版本时询问是否安装")
-                            .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
-                    }
-                }.toggleStyle(TrailingSwitch())
+                if !Distribution.isAppStore {
+                    Toggle(isOn: $app.autoCheckForUpdates) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("自动检查更新").font(.system(size: 13)).foregroundStyle(Theme.text)
+                            Text("每天最多联网查看一次 GitHub 上的新版本，有新版本时询问是否安装")
+                                .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
+                        }
+                    }.toggleStyle(TrailingSwitch())
+                }
                 HStack(spacing: 12) {
                     Stepper(value: $app.recentImportDays, in: 1...365) {
                         Text("「最近导入」窗口 \(app.recentImportDays) 天")

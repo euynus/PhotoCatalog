@@ -20,7 +20,7 @@ Plain `swift build` / `swift run PhotoCatalog` also work, but if they fail with 
 
 **Tests.** The suite includes two headless modes: `--selfcheck` (`Data/SelfCheck.swift`, which also runs the per-feature checks in `Data/*Check.swift` — develop, undo, faces, export, print, LLM, …) and `--pipeline` (`Data/PipelineCheck.swift`). Run both after changes to import, catalog, the demo dataset or a checked feature; add feature-level coverage as a `Data/<Feature>Check.swift` called from `SelfCheck.run()`. The XCTest target (`Tests/PhotoCatalogTests`) covers focused model, AppState, and UI-helper behavior. Run `swift test` with full Xcode, or one class with `swift test --filter SmartMatcherTests`; pass `--sdk /path/to/MacOSX.sdk` if the default SDK is incompatible with the active compiler.
 
-`script/release.sh <version>` builds, signs (Developer ID, hardened runtime), notarizes and zips a release for GitHub; Check for Updates… looks for the asset `PhotoCatalog-<version>.zip`.
+`script/release.sh <version>` builds, signs (Developer ID, hardened runtime), notarizes and zips a release for GitHub; Check for Updates… looks for the asset `PhotoCatalog-<version>.zip`. `script/appstore.sh <version>` builds the sandboxed Mac App Store edition (`-D APPSTORE` → `Distribution.isAppStore` hides the updater and the crash-report prompt; entitlements in `Resources/AppStore.entitlements`); `AD_HOC=1` signs it ad hoc for local sandbox testing.
 
 ## What this is
 

@@ -3,11 +3,12 @@ set -euo pipefail
 
 MODE="${1:-run}"
 APP_NAME="PhotoCatalog"
-BUNDLE_ID="com.photocatalog.app"
+BUNDLE_ID="${BUNDLE_ID:-com.photocatalog.app}"
 MIN_SYSTEM_VERSION="14.0"
 # release version; the build number counts commits so every build sorts after the one before
 APP_VERSION="${APP_VERSION:-1.0}"
 BUILD_NUMBER="$(git -C "$(dirname "$0")/.." rev-list --count HEAD 2>/dev/null || echo 1)"
+COPYRIGHT="Copyright © 2026 euynus"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -84,13 +85,51 @@ esac
 CONFIGURATION="${CONFIGURATION:-$DEFAULT_CONFIGURATION}"
 echo "Building $CONFIGURATION configuration"
 
-swift build -c "$CONFIGURATION" --sdk "$SDK_PATH"
-BUILD_BINARY="$ROOT_DIR/.build/$CONFIGURATION/$APP_NAME"
+BUILD_ARGS=(-c "$CONFIGURATION" --sdk "$SDK_PATH")
+# the Mac App Store build (script/appstore.sh) leaves the GitHub updater out
+if [[ -n "${APPSTORE:-}" ]]; then BUILD_ARGS+=(-Xswiftc -DAPPSTORE); fi
+# Intel as well; needs the AI code's Float16 replaced first, which Swift lacks on x86_64
+if [[ -n "${UNIVERSAL:-}" ]]; then BUILD_ARGS+=(--arch arm64 --arch x86_64); fi
+swift build "${BUILD_ARGS[@]}"
+BUILD_BINARY="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)/$APP_NAME"
+
+# What Xcode records about the toolchain in the Info.plist; App Store Connect checks the Xcode
+# and SDK versions an upload was built with.
+toolchain_plist_keys() {
+  local xcode_version xcode_build sdk_version sdk_build major minor patch
+  xcode_version="$(xcodebuild -version 2>/dev/null | awk '/^Xcode / {print $2}')" || true
+  [[ -n "$xcode_version" ]] || return 0
+  xcode_build="$(xcodebuild -version | awk '/^Build version / {print $3}')"
+  sdk_version="$(xcrun --sdk "$SDK_PATH" --show-sdk-version)"
+  sdk_build="$(xcrun --sdk "$SDK_PATH" --show-sdk-build-version)"
+  IFS=. read -r major minor patch <<<"$xcode_version"
+  cat <<KEYS
+  <key>BuildMachineOSBuild</key>
+  <string>$(sw_vers -buildVersion)</string>
+  <key>DTCompiler</key>
+  <string>com.apple.compilers.llvm.clang.1_0</string>
+  <key>DTPlatformBuild</key>
+  <string>$sdk_build</string>
+  <key>DTPlatformName</key>
+  <string>macosx</string>
+  <key>DTPlatformVersion</key>
+  <string>$sdk_version</string>
+  <key>DTSDKBuild</key>
+  <string>$sdk_build</string>
+  <key>DTSDKName</key>
+  <string>macosx$sdk_version</string>
+  <key>DTXcode</key>
+  <string>$(printf '%d%d%d' "$major" "${minor:-0}" "${patch:-0}")</string>
+  <key>DTXcodeBuild</key>
+  <string>$xcode_build</string>
+KEYS
+}
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 cp "$ROOT_DIR/Resources/AppIcon.icns" "$APP_RESOURCES/AppIcon.icns"
+cp "$ROOT_DIR/Resources/PrivacyInfo.xcprivacy" "$APP_RESOURCES/PrivacyInfo.xcprivacy"
 # UI translations (keys are the Chinese source strings; see Domain/Localization.swift)
 cp -R "$ROOT_DIR/Resources/Localization/"*.lproj "$APP_RESOURCES/"
 # AI models (Core ML packages the app compiles on first use) and their licenses
@@ -110,6 +149,14 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$BUNDLE_ID</string>
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
+  <key>CFBundleDisplayName</key>
+  <string>$APP_NAME</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleSupportedPlatforms</key>
+  <array>
+    <string>MacOSX</string>
+  </array>
   <key>CFBundleShortVersionString</key>
   <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
@@ -127,6 +174,13 @@ cat >"$INFO_PLIST" <<PLIST
   <string>APPL</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.photography</string>
+  <key>NSHumanReadableCopyright</key>
+  <string>$COPYRIGHT</string>
+  <!-- HTTPS through the system only: exempt from export compliance documentation -->
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSAppTransportSecurity</key>
@@ -135,6 +189,7 @@ cat >"$INFO_PLIST" <<PLIST
     <key>NSAllowsLocalNetworking</key>
     <true/>
   </dict>
+$(toolchain_plist_keys)
 </dict>
 </plist>
 PLIST

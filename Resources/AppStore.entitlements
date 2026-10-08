@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The Mac App Store build's sandbox (script/appstore.sh). Photo folders, catalogs and export
+     destinations outside ~/Pictures are reached only through what the user picks in an open or
+     save panel, kept across launches as security-scoped bookmarks (FileAccessService). -->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <!-- folders and files chosen in panels or dragged in; their bookmarks reopen them later -->
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+  <key>com.apple.security.files.bookmarks.app-scope</key>
+  <true/>
+  <!-- the default catalog and export folder live in ~/Pictures -->
+  <key>com.apple.security.assets.pictures.read-write</key>
+  <true/>
+  <!-- AI services, map tiles and place names -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <key>com.apple.security.print</key>
+  <true/>
+  <!-- importing from cameras and phones, and tethered capture (Image Capture over USB) -->
+  <key>com.apple.security.device.usb</key>
+  <true/>
+</dict>
+</plist>
