@@ -203,7 +203,9 @@ enum CaptureAnalysisCheck {
         await app.loadCaptureStatistics(for: selectedRequest)
         assert(app.captureStatistics(for: selectedRequest)?.totalCount == 1,
                "a new request can run after cancellation")
-        let loading = AppState(arguments: [], deferCatalogLoading: true)
+        // a catalog named at launch is loading whatever this Mac's settings say (a fresh CI
+        // runner has never opened one); the load itself is never started here
+        let loading = AppState(arguments: ["PhotoCatalog", "/nonexistent/check.photolibrary"], deferCatalogLoading: true)
         let loadingRequest = loading.captureStatisticsRequest(selectedOnly: false)
         await loading.loadCaptureStatistics(for: loadingRequest)
         assert(loading.isLoadingCatalog && loading.captureStatistics(for: loadingRequest) == nil,
