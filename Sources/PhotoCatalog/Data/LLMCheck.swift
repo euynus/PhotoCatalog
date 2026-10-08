@@ -301,6 +301,25 @@ extension LLMCheck {
         let settings = app.developSettings[photo.id]
         assert(done && settings?.exposure == 0.5 && settings?.vibrance == 20 && app.developByTextQuery == "提亮一点",
                "a described look is applied to the photo in Develop (\(String(describing: settings)))")
+
+        // a photo goes to a service off this Mac only once the user agrees, asked once per service
+        let savedConsent = UserDefaults.standard.object(forKey: "pc_developByTextConsent")
+        defer { UserDefaults.standard.set(savedConsent, forKey: "pc_developByTextConsent") }
+        UserDefaults.standard.removeObject(forKey: "pc_developByTextConsent")
+        var asked: [String] = []
+        app.confirmSendingPhoto = { _, endpoint in asked.append(endpoint); return endpoint.contains("agreed") }
+        var remote = LLMConfiguration(kind: .openAICompatible, baseURL: "https://agreed.example/v1", model: "m")
+        remote.acceptsImages = true
+        app.llmConfiguration = remote
+        assert(app.mayDevelopByTextSendPhoto() && app.mayDevelopByTextSendPhoto() && asked.count == 1,
+               "a service off this Mac is asked about once (\(asked))")
+        remote.baseURL = "https://declined.example/v1"
+        app.llmConfiguration = remote
+        assert(!app.mayDevelopByTextSendPhoto() && !app.mayDevelopByTextSendPhoto() && asked.count == 3,
+               "a declined service gets nothing, and is asked again next time")
+        configuration.acceptsImages = true
+        app.llmConfiguration = configuration
+        assert(app.mayDevelopByTextSendPhoto() && asked.count == 3, "a service on this Mac isn't asked")
     }
 }
 

@@ -5115,6 +5115,31 @@ final class AppState {
 
     /// Develop → AI 调整: the photo in Develop edited as `description` asks — the model sees its
     /// current values, and the photo when it reads images — as one undoable step.
+    /// Asks before 用文字修图 first sends a photo to an AI service off this Mac, once per service:
+    /// a photo is shared with a third party only with the user's say-so.
+    @ObservationIgnored var confirmSendingPhoto = AppState.confirmSendingPhoto
+    private static let photoSendingConsentKey = "pc_developByTextConsent"
+
+    func mayDevelopByTextSendPhoto() -> Bool {
+        let destination = PhotoDescriber.Destination(configuration: llmConfiguration)
+        guard !destination.isLoopback, let endpoint = destination.endpoint else { return true }
+        var allowed = UserDefaults.standard.stringArray(forKey: Self.photoSendingConsentKey) ?? []
+        guard !allowed.contains(endpoint) else { return true }
+        guard confirmSendingPhoto(destination.provider, endpoint) else { return false }
+        allowed.append(endpoint)
+        UserDefaults.standard.set(allowed, forKey: Self.photoSendingConsentKey)
+        return true
+    }
+
+    private static func confirmSendingPhoto(provider: String, endpoint: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = L("把这张照片发送给 \(provider)？")
+        alert.informativeText = L("用文字修图会把照片的预览图（最长边 1024 像素，不发送原文件）和当前的修图参数发送到 \(endpoint)，由它的模型给出调整。同意后，再发送给这个服务时不再询问。")
+        alert.addButton(withTitle: L("发送"))
+        alert.addButton(withTitle: L("取消"))
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
     func developByText(_ description: String) async -> Bool {
         let description = description.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !description.isEmpty, !developByTextRunning, view == .develop, let asset = primary, canDevelop(asset) else {
@@ -5124,6 +5149,7 @@ final class AppState {
             push(verbatim: (llmConfiguration.isComplete ? LLMError.missingKey : LLMError.notConfigured).message, "warning")
             return false
         }
+        guard !llmConfiguration.acceptsImages || mayDevelopByTextSendPhoto() else { return false }
         developByTextRunning = true
         defer { developByTextRunning = false }
         developByTextQuery = description

@@ -64,7 +64,7 @@ SPEC_OVERRIDES = {
     'error': '%@', 'frames': '%lld',
     'destination.provider': '%@', 'destination.model': '%@', 'outcome.changed': '%lld',
     'successes': '%lld', 'generated': '%lld', 'cancelled': '%lld',
-    'reason': '%@',
+    'reason': '%@', 'provider': '%@', 'endpoint': '%@',
     'unfinished': '%lld',
     'missingOriginals': '%lld', 'missingThumbnails': '%lld', 'missingPreviews': '%lld',
     'unavailableSourceRoots': '%lld', 'activeJobs': '%lld', 'failedJobs': '%lld',

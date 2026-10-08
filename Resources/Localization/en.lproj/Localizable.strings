@@ -1,6 +1,9 @@
 /* English UI text. Keys are the Chinese source strings (see Domain/Localization.swift). */
 
 /* Application/AppState.swift */
+"把这张照片发送给 %@？" = "Send This Photo to %@?";
+"用文字修图会把照片的预览图（最长边 1024 像素，不发送原文件）和当前的修图参数发送到 %@，由它的模型给出调整。同意后，再发送给这个服务时不再询问。" = "Editing by text sends a preview of the photo (1024 pixels on its long side; the original never leaves this Mac) and its current settings to %@, whose model suggests the adjustments. Once you agree, you won’t be asked again for this service.";
+"发送" = "Send";
 "缩略图填满方格" = "Thumbnails Fill Squares";
 "缩略图显示完整画面" = "Thumbnails Show Whole Photos";
 "选择两张或更多照片后按 N 进入筛选视图" = "Select two or more photos, then press N to survey them";
