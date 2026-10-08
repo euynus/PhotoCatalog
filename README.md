@@ -49,3 +49,9 @@ swift test                         # model, AppState and UI-helper tests
 ```
 
 Tests and benchmarks, continuous integration, adding UI text, the architecture, the bundled models and releasing are covered in [docs/development.md](docs/development.md); coding agents start from [AGENTS.md](AGENTS.md).
+
+## License
+
+Copyright © 2026 euynus. PhotoCatalog is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License, version 3, as published by the Free Software Foundation. It comes with no warranty; see [LICENSE](LICENSE) for the full terms.
+
+The Core ML models bundled in `Resources/Models` keep their own licenses (BSD 3-Clause and Apache 2.0); see [Resources/Models/LICENSES.md](Resources/Models/LICENSES.md).
