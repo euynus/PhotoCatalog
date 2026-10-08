@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-Hans" data-lang="zh"
+      data-title-zh="隐私政策 · PhotoCatalog"
+      data-title-en="Privacy Policy · PhotoCatalog">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>隐私政策 · PhotoCatalog</title>
+  <meta name="description" content="PhotoCatalog collects no personal data: no account, analytics, ads or tracking.">
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    (function () {
+      var lang = null;
+      try { lang = new URLSearchParams(location.search).get("lang"); } catch (e) {}
+      if (lang !== "zh" && lang !== "en") { try { lang = localStorage.getItem("pc-lang"); } catch (e) {} }
+      if (lang !== "zh" && lang !== "en") {
+        lang = /^zh/i.test((navigator.languages && navigator.languages[0]) || navigator.language || "") ? "zh" : "en";
+      }
+      document.documentElement.setAttribute("data-lang", lang);
+      document.documentElement.lang = lang === "zh" ? "zh-Hans" : "en";
+    })();
+  </script>
+  <script src="site.js" defer></script>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="icon.png" alt="" width="28" height="28">PhotoCatalog</a>
+    <nav class="nav-links">
+      <a href="./#features"><span lang="zh-Hans">功能</span><span lang="en">Features</span></a>
+      <a href="https://github.com/euynus/PhotoCatalog">GitHub</a>
+    </nav>
+    <div class="lang-switch" role="group" aria-label="Language / 语言">
+      <button type="button" data-set-lang="zh" aria-pressed="true">中文</button>
+      <button type="button" data-set-lang="en" aria-pressed="false">EN</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap doc">
+  <article lang="zh-Hans">
+    <h1>隐私政策</h1>
+    <p class="updated">生效日期：2026 年 10 月 8 日</p>
+
+    <p>PhotoCatalog（以下简称“本应用”）由 euynus 开发，GitHub 版与 Mac App Store 版均适用本政策。本应用不收集、不保存、也不出售任何个人数据：没有账户，没有分析统计，没有广告，也不追踪你。</p>
+
+    <h2>保存在你 Mac 上的数据</h2>
+    <p>目录库（照片的元数据、评分、关键词、修图设置和人脸识别数据）、预览与缓存都只保存在你的 Mac 上，位置由你选择或在本应用自己的文件夹中。备份保存在你选择的位置。人脸识别、AI 蒙版、降噪、超分辨率和 AI 移除都由 App 内置的模型在本机完成。开发者无法访问这些数据。</p>
+
+    <h2>本应用何时联网</h2>
+    <p>本应用只在以下情况联网：</p>
+    <ul>
+      <li><strong>AI 助手（可选）。</strong>只有当你在“设置 → AI”中配置了服务、并使用相关功能时才会发送数据，而且直接发往你配置的服务商，开发者不会收到：
+        <ul>
+          <li>“AI 描述照片”：缩小到 1024 像素的 JPEG 预览，以及你为该批次勾选附带的拍摄日期、相机、位置和已有关键词。发送前会让你确认。</li>
+          <li>“用自然语言查找”：你输入的句子，以及目录库中的相机、镜头和关键词名称。</li>
+          <li>“AI 调整”：你的描述、照片当前的修图数值；如果所选模型能识别图片，还包括一张缩小的预览。第一次把照片发往本机以外的服务前会先征得你同意。</li>
+        </ul>
+        这些数据由该服务商依据其隐私政策处理。使用本机服务（如 Ollama、LM Studio）时，数据不会离开你的 Mac。API 密钥保存在 macOS 钥匙串中。</li>
+      <li><strong>地图。</strong>“地点”视图和位置选择器通过 Apple 的 MapKit 加载地图、搜索地点，相关请求由 Apple 依据其隐私政策处理。</li>
+      <li><strong>检查更新（仅 GitHub 版）。</strong>启动后每天最多一次（可在“设置 → 常规”中关闭），或在你选择“检查更新…”时，向 GitHub 的公开接口查询最新版本；更新文件也从 GitHub 下载。请求中不包含你的照片或目录库信息，由 GitHub 依据其隐私声明处理。Mac App Store 版不检查更新，由 App Store 负责。</li>
+    </ul>
+
+    <h2>崩溃报告</h2>
+    <p>本应用崩溃时，macOS 会把报告保存在你的 Mac 上。GitHub 版只会在下次启动时提出帮你在访达中找到它，不会上传。如果你在 macOS 中选择与开发者共享分析数据，Apple 可能依据其政策向开发者提供 Mac App Store 版的崩溃报告。</p>
+
+    <h2>政策变更与联系方式</h2>
+    <p>本政策如有变更，会更新在本页并修改生效日期。如有问题，请在 <a href="https://github.com/euynus/PhotoCatalog/issues">GitHub</a> 上提交 issue。</p>
+  </article>
+
+  <article lang="en">
+    <h1>Privacy Policy</h1>
+    <p class="updated">Effective October 8, 2026</p>
+
+    <p>PhotoCatalog (“the app”) is developed by euynus. This policy covers both the GitHub edition and the Mac App Store edition. The app collects, stores and sells no personal data: there is no account, no analytics, no advertising and no tracking.</p>
+
+    <h2>Data on your Mac</h2>
+    <p>Your catalog (photo metadata, ratings, keywords, develop settings and face recognition data), previews and caches are kept only on your Mac, in places you choose or in the app's own folders. Backups go where you choose. Face recognition, AI masks, denoise, super resolution and AI remove run on your Mac with models built into the app. The developer has no access to any of this.</p>
+
+    <h2>When the app goes online</h2>
+    <p>The app connects to the internet only for the following:</p>
+    <ul>
+      <li><strong>The AI assistant (optional).</strong> Data is sent only after you set up a service in Settings → AI and use one of its features, and it goes straight to the provider you configured, never to the developer:
+        <ul>
+          <li>Describe photos: JPEG previews reduced to 1024 pixels, plus the capture date, camera, location and existing keywords if you include them for that batch. You confirm before anything is sent.</li>
+          <li>Find with a sentence: the sentence you type, and the names of the cameras, lenses and keywords in your catalog.</li>
+          <li>AI develop: your description and the photo's current develop settings, and a reduced preview if the model reads images. The app asks before it first sends a photo to a service off your Mac.</li>
+        </ul>
+        The provider handles this data under its own privacy policy. With a service on your Mac (such as Ollama or LM Studio), nothing leaves your Mac. API keys are kept in the macOS keychain.</li>
+      <li><strong>Maps.</strong> The Places view and the location picker load maps and search places through Apple's MapKit; Apple handles those requests under its privacy policy.</li>
+      <li><strong>Update checks (GitHub edition only).</strong> At most once a day after launch (you can turn this off in Settings → General), or when you choose Check for Updates…, the app asks GitHub's public API for the latest release, and downloads updates from GitHub. The request carries nothing about your photos or catalog; GitHub handles it under its privacy statement. The Mac App Store edition doesn't check for updates; the App Store does.</li>
+    </ul>
+
+    <h2>Crash reports</h2>
+    <p>When the app crashes, macOS saves a report on your Mac. The GitHub edition only offers to show it to you in Finder at the next launch and never uploads it. If you've chosen in macOS to share analytics with app developers, Apple may provide crash reports of the Mac App Store edition to the developer under its policies.</p>
+
+    <h2>Changes and contact</h2>
+    <p>If this policy changes, the new version will be posted on this page with a new effective date. For questions, open an issue on <a href="https://github.com/euynus/PhotoCatalog/issues">GitHub</a>.</p>
+  </article>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 euynus</span>
+    <span class="grow" lang="zh-Hans">以 GPL-3.0 许可发布</span><span class="grow" lang="en">Licensed under the GPL-3.0</span>
+    <a href="./"><span lang="zh-Hans">首页</span><span lang="en">Home</span></a>
+    <a href="https://github.com/euynus/PhotoCatalog">GitHub</a>
+  </div>
+</footer>
+
+</body>
+</html>
