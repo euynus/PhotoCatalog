@@ -497,7 +497,8 @@ struct DevelopPanel: View {
     // ---- masks: gradients with their own adjustments ----
     @ViewBuilder
     private func masks(_ asset: Asset, _ settings: DevelopSettings) -> some View {
-        HStack(spacing: 6) {
+        // the tool rows wrap rather than truncate (English labels are much longer)
+        FlowRow {
             ForEach(LocalAdjustment.Kind.drawn, id: \.self) { kind in
                 Toggle(isOn: Binding(get: { app.developMaskCreation == kind }, set: { _ in app.armMask(kind) })) {
                     Label(kind.title, systemImage: kind.symbol)
@@ -505,10 +506,10 @@ struct DevelopPanel: View {
                 .toggleStyle(.button)
                 .help(Self.maskHelp(kind))
             }
-            Spacer(minLength: 0)
         }
         .controlSize(.small)
-        HStack(spacing: 6) {
+        .frame(maxWidth: .infinity, alignment: .leading)
+        FlowRow {
             ForEach(LocalAdjustment.Kind.automatic, id: \.self) { kind in
                 Button { app.addAutomaticMask(kind) } label: {
                     Label(kind == .subject ? L("选择主体") : L("选择天空"), systemImage: kind.symbol)
@@ -527,10 +528,10 @@ struct DevelopPanel: View {
             .disabled(app.developDetectingMask != nil)
             .help("找出照片中的人物，为整个人物或面部皮肤、眼睛、嘴唇等部位建立蒙版")
             if app.developDetectingMask != nil { ProgressView().controlSize(.small) }
-            Spacer(minLength: 0)
         }
         .controlSize(.small)
-        HStack(spacing: 6) {
+        .frame(maxWidth: .infinity, alignment: .leading)
+        FlowRow {
             Toggle(isOn: Binding(get: { app.developMaskCreation == .object }, set: { _ in app.armMask(.object) })) {
                 Label("选择物体", systemImage: LocalAdjustment.Kind.object.symbol)
             }
@@ -547,17 +548,17 @@ struct DevelopPanel: View {
             .fixedSize()
             .disabled(app.developDetectingMask != nil)
             .help(Self.maskHelp(.landscape))
-            Spacer(minLength: 0)
         }
         .controlSize(.small)
-        HStack(spacing: 6) {
+        .frame(maxWidth: .infinity, alignment: .leading)
+        FlowRow {
             ForEach(LocalAdjustment.Kind.ranges, id: \.self) { kind in
                 Button { app.addRangeMask(kind) } label: { Label(kind.title, systemImage: kind.symbol) }
                     .help(Self.maskHelp(kind))
             }
-            Spacer(minLength: 0)
         }
         .controlSize(.small)
+        .frame(maxWidth: .infinity, alignment: .leading)
         if settings.masks.isEmpty {
             Text("用渐变、画笔或自动选择只调整照片的一部分，例如压暗天空或提亮主体")
                 .font(.system(size: 11)).foregroundStyle(Theme.text3)
