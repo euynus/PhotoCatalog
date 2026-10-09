@@ -14,6 +14,7 @@ struct ZoomablePhoto: View {
     let onZoomChange: (ImageZoom?) -> Void
 
     @StateObject private var preview = ThumbLoader()
+    @StateObject private var placeholder = ThumbLoader()
     @StateObject private var full = FullResolutionLoader()
 
     /// The loader's image once it holds this photo; until then a decode already in the cache (a
@@ -47,6 +48,27 @@ struct ZoomablePhoto: View {
         loader.load(source, maxPixel: ThumbnailService.Kind.preview2048.maxPixel, cacheGeneration: cacheGeneration)
     }
 
+    /// The photo's thumbnail, scaled up, while its preview loads: a preview pruned from the cache is
+    /// made again from the original, which on a RAW takes a few hundred milliseconds, and the canvas
+    /// was blank until then. The filmstrip's decode of it is usually in the cache already. Only for
+    /// unadjusted photos: an adjusted one's thumbnail can be cropped, and its preview sizes the view.
+    private func placeholderImage(_ app: AppState) -> CGImage? {
+        guard let source = placeholderSource(app) else { return nil }
+        let generation = app.thumbnailCacheGeneration
+        let image = Self.placeholderDecodeSizes.lazy
+            .compactMap { ThumbLoader.cachedImage(forKey: ThumbLoader.key(source, maxPixel: $0, cacheGeneration: generation)) }
+            .first ?? (placeholder.owner == asset.id ? placeholder.image : nil)
+        return image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    }
+
+    /// The filmstrip's decode size first, then the one this view loads itself.
+    private static let placeholderDecodeSizes = [264, ThumbnailService.Kind.thumb512.maxPixel]
+
+    private func placeholderSource(_ app: AppState) -> String? {
+        guard !asset.thumb.isEmpty, app.developSettings[asset.id]?.isNeutral ?? true else { return nil }
+        return asset.thumb
+    }
+
     /// Adjusted photos render their edit at full size; unadjusted paired RAWs read the camera
     /// JPEG, which decodes an order of magnitude faster and shows the same focus.
     private func fullRequest(_ app: AppState) -> FullResolutionLoader.Request? {
@@ -73,11 +95,12 @@ struct ZoomablePhoto: View {
             return CGSize(width: CGFloat(preview.width) * factor, height: CGFloat(preview.height) * factor)
         }
         var size = CGSize(width: asset.width, height: asset.height)
+        let shown = preview ?? placeholderImage(app)
         if size.width <= 0 || size.height <= 0 {
-            return CGSize(width: preview?.width ?? 1, height: preview?.height ?? 1)
+            return CGSize(width: shown?.width ?? 1, height: shown?.height ?? 1)
         }
-        if let preview, preview.width != preview.height,
-           (preview.width > preview.height) != (size.width > size.height) {
+        if let shown, shown.width != shown.height,
+           (shown.width > shown.height) != (size.width > size.height) {
             size = CGSize(width: size.height, height: size.width)   // metadata in sensor orientation
         }
         return size
@@ -92,7 +115,7 @@ struct ZoomablePhoto: View {
     }
 
     private func photo(_ app: AppState) -> some View {
-        ZoomableImageView(image: fullImage(app) ?? previewImage(app), pixelSize: pixelSize(app),
+        ZoomableImageView(image: fullImage(app) ?? previewImage(app) ?? placeholderImage(app), pixelSize: pixelSize(app),
                           zoom: zoom, onZoomChange: onZoomChange)
             .overlay(alignment: .topTrailing) {
                 if let zoom { zoomBadge(zoom, app) }
@@ -103,6 +126,13 @@ struct ZoomablePhoto: View {
                 let resolved = await app.visibleImageSource(for: asset, requestedSource: asset.preview,
                                                             kind: .preview2048)
                 Self.loadPreview(resolved, for: asset.id, cacheGeneration: generation, loader: preview)
+            }
+            .task(id: "\(asset.id)|\(app.thumbnailCacheGeneration)") {
+                // the thumbnail to show until the preview is in, unless that's already there
+                guard previewImage(app) == nil, placeholderImage(app) == nil, let source = placeholderSource(app) else { return }
+                placeholder.owner = asset.id
+                placeholder.load(source, maxPixel: ThumbnailService.Kind.thumb512.maxPixel,
+                                 cacheGeneration: app.thumbnailCacheGeneration)
             }
             .task(id: zoom == nil ? nil : fullRequest(app)) {
                 guard zoom != nil else { return }

@@ -5970,6 +5970,10 @@ final class AppState {
 
     @ObservationIgnored private var attemptedCacheRepairs = Set<String>()
     @ObservationIgnored private var verifiedCacheSources = Set<String>()
+    /// Cache repairs under way, each with the requests waiting for it: the loupe asks for a photo's
+    /// preview while its neighbor prefetch is still making it, and then waits for that instead of
+    /// decoding the same RAW a second time.
+    @ObservationIgnored private var repairsInFlight: [String: [CheckedContinuation<Void, Never>]] = [:]
     @ObservationIgnored private(set) var isBackfilling = false
     @ObservationIgnored private var backfillTask: Task<Void, Never>?
     @ObservationIgnored private var backfillGeneration = 0
@@ -6322,7 +6326,15 @@ final class AppState {
         // One repair per representation per session: a RAW that decodes black again
         // must not cost another multi-second decode every time its cell reappears.
         let repairKey = "\(assetId)|\(resolvedKind)"
+        if repairsInFlight[repairKey] != nil {
+            await withCheckedContinuation { repairsInFlight[repairKey, default: []].append($0) }
+            // that repair is done (or was cancelled before it started): look again
+            return await cachedImageSource(for: asset, requestedSource: requestedSource, kind: resolvedKind,
+                                           original: original, fallbackPreview: fallbackPreview, thumbnails: thumbnails)
+        }
         guard !attemptedCacheRepairs.contains(repairKey) else { return nil }
+        repairsInFlight[repairKey] = []
+        defer { repairsInFlight.removeValue(forKey: repairKey)?.forEach { $0.resume() } }
         guard let restored = await ThumbnailRepairQueue.run(.visible, {
             thumbnails.ensureCached(from: original,
                                     fallbackPreview: fallbackPreview,
@@ -6333,6 +6345,9 @@ final class AppState {
             return nil   // cancelled while queued; retry when shown again
         }
         attemptedCacheRepairs.insert(repairKey)
+        // a remade file is as good as a checked one: the loupe can then show a prefetched
+        // neighbor in the same frame as the arrow key instead of checking the disk first
+        if restored?.path == requestedSource { verifiedCacheSources.insert(verifiedKey) }
         return restored?.path
     }
 

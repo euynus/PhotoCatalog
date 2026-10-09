@@ -5,6 +5,8 @@ import SwiftUI
 
 struct Loupe: View {
     @Environment(AppState.self) var app
+    /// Where the last photo was, for the direction of travel.
+    @State private var lastIndex = 0
 
     var body: some View {
         let list = app.list
@@ -26,9 +28,13 @@ struct Loupe: View {
             .background(Theme.canvas)
             .environment(\.colorScheme, .dark)
             .task(id: "\(asset.id)|\(app.thumbnailCacheGeneration)") {
-                // warm the neighbors so arrow-key navigation lands on a cache hit
+                // warm the neighbors so arrow-key navigation lands on a cache hit: the next two in
+                // the direction of travel first (a missing preview is made from the original, and
+                // one ahead isn't enough when the arrow keys outrun that), then the one behind
                 let cacheGeneration = app.thumbnailCacheGeneration
-                for neighbor in [idx - 1, idx + 1] where neighbor >= 0 && neighbor < list.count {
+                let step = idx < lastIndex ? -1 : 1
+                lastIndex = idx
+                for neighbor in [idx + step, idx + 2 * step, idx - step] where neighbor >= 0 && neighbor < list.count {
                     let a = list[neighbor]
                     guard !a.preview.isEmpty else { continue }
                     let resolved = await app.visibleImageSource(for: a, requestedSource: a.preview,
