@@ -79,6 +79,7 @@ private actor ThumbDecodeLimiter {
     }
 }
 
+
 /// Shared in-memory image cache so grid scrolling doesn't refetch.
 @MainActor
 final class ThumbLoader: ObservableObject {
@@ -247,9 +248,13 @@ final class ThumbLoader: ObservableObject {
         }
     }
 
+    /// The decoded bitmap's bytes. Not the representation's pixel count: for an image made from a
+    /// CGImage that reports twice the width and height on a Retina screen, so a 2048 px preview
+    /// counted 45 MB instead of 11, the cache held under three, and a prefetched loupe neighbor
+    /// was evicted again before its arrow key.
     private static func cost(of image: NSImage) -> Int {
-        if let rep = image.representations.first, rep.pixelsWide > 0 {
-            return rep.pixelsWide * rep.pixelsHigh * 4
+        if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            return max(1, cg.bytesPerRow * cg.height)
         }
         return max(1, Int(image.size.width * image.size.height) * 4)
     }
