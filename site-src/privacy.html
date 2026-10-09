@@ -1,25 +1,36 @@
 <!doctype html>
-<html lang="zh-Hans" data-lang="zh"
-      data-title-zh="隐私政策 · PhotoCatalog"
-      data-title-en="Privacy Policy · PhotoCatalog">
+<html lang="{{lang}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>隐私政策 · PhotoCatalog</title>
-  <meta name="description" content="PhotoCatalog collects no personal data: no account, analytics, ads or tracking.">
+  <title lang="zh-Hans">隐私政策 · PhotoCatalog</title>
+  <title lang="en">Privacy Policy · PhotoCatalog</title>
+  <meta lang="zh-Hans" name="description" content="PhotoCatalog 不收集任何个人数据：没有账户、统计、广告或追踪。本页说明 App 在什么情况下联网、会发送什么。">
+  <meta lang="en" name="description" content="PhotoCatalog collects no personal data: no account, analytics, ads or tracking. This page explains when the app goes online and what it sends.">
+  <meta lang="zh-Hans" property="og:image" content="{{site}}/shots/zh/grid-dark.jpg">
+  <meta lang="en" property="og:image" content="{{site}}/shots/en/grid-dark.jpg">
+  <meta property="og:image:width" content="1800">
+  <meta property="og:image:height" content="1125">
+{{seo}}
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="stylesheet" href="style.css">
   <script>
     (function () {
-      var lang = null;
-      try { lang = new URLSearchParams(location.search).get("lang"); } catch (e) {}
-      if (lang !== "zh" && lang !== "en") { try { lang = localStorage.getItem("pc-lang"); } catch (e) {} }
-      if (lang !== "zh" && lang !== "en") {
-        lang = /^zh/i.test((navigator.languages && navigator.languages[0]) || navigator.language || "") ? "zh" : "en";
+      var root = document.documentElement, saved = null;
+      try { saved = localStorage.getItem("pc-lang"); } catch (e) {}
+      // The English page is the default. A visitor whose browser prefers Chinese and who hasn't chosen
+      // English goes to the Chinese page; the language switch saves the choice (site.js).
+      if (root.lang === "en" && saved !== "en"
+          && (saved === "zh" || /^zh/i.test((navigator.languages && navigator.languages[0]) || navigator.language || ""))) {
+        location.replace("{{switch:zh}}" + location.hash);
+        return;
       }
-      document.documentElement.setAttribute("data-lang", lang);
-      document.documentElement.lang = lang === "zh" ? "zh-Hans" : "en";
+      // animations, unless reduced motion is asked for; if site.js never runs, everything shows after 3 s
+      if (!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) && "IntersectionObserver" in window) {
+        root.classList.add("motion");
+        setTimeout(function () { if (!root.hasAttribute("data-motion-ready")) root.classList.remove("motion"); }, 3000);
+      }
     })();
   </script>
   <script src="site.js" defer></script>
@@ -33,10 +44,10 @@
       <a href="./#features"><span lang="zh-Hans">功能</span><span lang="en">Features</span></a>
       <a href="https://github.com/euynus/PhotoCatalog">GitHub</a>
     </nav>
-    <div class="lang-switch" role="group" aria-label="Language / 语言">
-      <button type="button" data-set-lang="zh" aria-pressed="true">中文</button>
-      <button type="button" data-set-lang="en" aria-pressed="false">EN</button>
-    </div>
+    <nav class="lang-switch" aria-label="Language / 语言">
+      <a href="{{switch:zh}}" hreflang="zh-Hans" lang="zh-Hans">中文</a>
+      <a href="{{switch:en}}" hreflang="en" lang="en">EN</a>
+    </nav>
   </div>
 </header>
 

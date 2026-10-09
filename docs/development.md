@@ -41,7 +41,7 @@ The import memory check reads the supplied image through distinct temporary syml
 
 ### Continuous integration
 
-GitHub Actions runs on pull requests, pushes to `main` and manual dispatches, on the standard `macos-26` ARM64 runner with Xcode 26.6 from the [runner image](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md). It checks localization, builds the Debug app bundle, runs XCTest, then runs the full `selfcheck` and `pipeline` commands above. Checks run one after another because they share user defaults and build output. No signing credentials or external AI service is needed.
+GitHub Actions runs on pull requests, pushes to `main` and manual dispatches, on the standard `macos-26` ARM64 runner with Xcode 26.6 from the [runner image](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md). It checks localization and that the product site is built, builds the Debug app bundle, runs XCTest, then runs the full `selfcheck` and `pipeline` commands above. Checks run one after another because they share user defaults and build output. No signing credentials or external AI service is needed.
 
 The full selfcheck exercises Metal kernels, the bundled Core ML models and video encoding; an unsupported runner fails these checks instead of silently skipping them. This is headless regression coverage, not interactive UI, physical-camera or real-RAW acceptance. Failed runs keep their check logs for seven days. The workflow does not publish the app.
 
@@ -108,6 +108,12 @@ Still deferred from the PRD: an Apple Photos import bridge, a plugin system, and
 | `FaceRecognition` | SFace | Apache 2.0 |
 
 `Depth`, `Segmentation` and the `Object` models are Apple's own Core ML conversions, used as published; `Resources/Models/LICENSES.md` has the licenses and what was changed. `script/models/convert.py` rebuilds the others from the authors' released weights and fetches Apple's packages (each checked by SHA-256), with PyTorch and coremltools in a throwaway virtual environment; nothing Python ships, and the app still has no third-party code dependency.
+
+## Product site
+
+The product page and privacy policy, served at https://photocatalog.gooday.dev, are static files in `site/`; the host needs no build step. The pages are written once in `site-src/` with both languages side by side, each element marked `lang="en"` or `lang="zh-Hans"`. `script/build_site.py` writes one page per language: English at the root (the default), Chinese under `zh/`, each in a directory of its own (`privacy/`). It also writes each page's canonical and hreflang links and Open Graph tags, plus `robots.txt`, `sitemap.xml` and `llms.txt` (from `site-src/llms.txt`). The domain is `SITE` at the top of the script. Run it after editing `site-src/`; CI runs `--check`. Preview with `python3 -m http.server --directory site`.
+
+On a first visit, the English page sends a browser that prefers Chinese to the Chinese page; the language switch remembers the visitor's choice. Search engines crawl without that preference, so they get each page as served.
 
 ## Releasing
 

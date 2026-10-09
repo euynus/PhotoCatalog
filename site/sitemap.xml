@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://photocatalog.gooday.dev/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://photocatalog.gooday.dev/"/>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://photocatalog.gooday.dev/zh/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://photocatalog.gooday.dev/"/>
+  </url>
+  <url>
+    <loc>https://photocatalog.gooday.dev/zh/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://photocatalog.gooday.dev/"/>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://photocatalog.gooday.dev/zh/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://photocatalog.gooday.dev/"/>
+  </url>
+  <url>
+    <loc>https://photocatalog.gooday.dev/privacy/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://photocatalog.gooday.dev/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://photocatalog.gooday.dev/zh/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://photocatalog.gooday.dev/privacy/"/>
+  </url>
+  <url>
+    <loc>https://photocatalog.gooday.dev/zh/privacy/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://photocatalog.gooday.dev/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://photocatalog.gooday.dev/zh/privacy/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://photocatalog.gooday.dev/privacy/"/>
+  </url>
+</urlset>

@@ -1,0 +1,30 @@
+# PhotoCatalog
+
+> PhotoCatalog is a free, open-source (GPL-3.0) photo manager and RAW editor for macOS, in the style of Adobe Lightroom Classic. It runs on Macs with Apple silicon and macOS 14 or later, its interface is in English and Simplified Chinese, and your photos are processed on your Mac.
+
+Key facts:
+
+- Price: free, with no account, subscription or in-app purchases. Source code: https://github.com/euynus/PhotoCatalog
+- Library: grid, loupe, compare and survey views; ratings, flags, color labels, keywords, albums, smart albums and album sets; stacks, virtual copies and RAW+JPEG pairs.
+- Organizing: on-device face recognition (99.4% on the LFW benchmark), maps and GPX location matching, exact and similar duplicate detection, batch rename.
+- Lightroom compatibility: reads and writes XMP sidecars (ratings, labels, keywords, titles, captions, locations) that Lightroom and Bridge use, and imports and exports develop presets as .xmp files. It does not open Lightroom catalogs (.lrcat).
+- Import: folders (referenced in place or copied into the catalog), memory cards, cameras and iPhones over a cable, videos, and tethered capture.
+- Develop: non-destructive RAW development with the RAW engine built into macOS; profiles, black and white, tone curve, color mixer, color grading, LUTs, detail, lens corrections, lens blur, Upright and soft proofing; history, snapshots and presets.
+- AI on the Mac: subject, sky, people, object and landscape masks, spot healing and AI object removal, HDR and panorama merges, AI denoise and super resolution, using models bundled with the app.
+- Optional AI assistant: writes titles, captions and keywords, finds photos from a sentence, and develops from a described look, using Anthropic, any OpenAI-compatible service, or a local Ollama / LM Studio.
+- Output: export with presets, sharpening and watermarks; print; slideshows exported as MP4; web galleries; PDF photo books.
+- Formats: RAW from Canon (CR2, CR3), Nikon (NEF), Sony (ARW), Fujifilm (RAF), Olympus / OM System (ORF), Panasonic (RW2), Pentax (PEF), Samsung (SRW) and DNG, as far as macOS supports the camera; JPEG, HEIC, PNG, TIFF, GIF, WebP and BMP; MOV, MP4 and M4V video.
+- Scale: a 500,000-photo catalog is ready about five seconds after launch; filtering, sorting and searching take 0.1–0.35 s.
+- Privacy: no account, analytics, ads or tracking. The app goes online only for the optional AI assistant, maps and update checks. Originals are never modified.
+
+## Pages
+
+- [Product page](https://photocatalog.gooday.dev/): overview, screenshots and questions and answers
+- [产品页（中文）](https://photocatalog.gooday.dev/zh/): the same page in Simplified Chinese
+- [Privacy policy](https://photocatalog.gooday.dev/privacy/): what the app sends, and when
+
+## Documentation
+
+- [Features](https://github.com/euynus/PhotoCatalog/blob/main/docs/features.md): every feature and keyboard shortcut
+- [README](https://github.com/euynus/PhotoCatalog#readme): overview, requirements and building from source
+- [License](https://github.com/euynus/PhotoCatalog/blob/main/LICENSE): GNU General Public License, version 3

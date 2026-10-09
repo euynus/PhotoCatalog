@@ -48,6 +48,10 @@ jobs:
         timeout-minutes: 5
         run: python3 script/check_localization.py 2>&1 | tee "$RUNNER_TEMP/photocatalog-ci-logs/localization.log"
 
+      - name: Check the product site is built
+        timeout-minutes: 2
+        run: python3 script/build_site.py --check
+
       - name: Build Debug app bundle
         timeout-minutes: 15
         run: script/build_and_run.sh build 2>&1 | tee "$RUNNER_TEMP/photocatalog-ci-logs/build.log"

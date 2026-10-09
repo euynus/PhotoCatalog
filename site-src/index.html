@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="{{lang}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title lang="zh-Hans">PhotoCatalog：免费开源的 Mac 照片管理与 RAW 修图应用</title>
+  <title lang="en">PhotoCatalog: free photo manager and RAW editor for the Mac</title>
+  <meta lang="zh-Hans" name="description" content="PhotoCatalog 是一款免费开源的 macOS 照片管理与 RAW 修图应用，用法接近 Lightroom Classic：导入、选片、关键词与人脸、非破坏性修图、AI 蒙版，再到导出、打印和画册。照片只在你的 Mac 上处理。">
+  <meta lang="en" name="description" content="PhotoCatalog is a free, open-source photo manager and RAW editor for macOS in the style of Lightroom Classic: import, cull, keywords and faces, non-destructive editing, AI masks, export, print and books. Your photos stay on your Mac.">
+  <meta lang="zh-Hans" property="og:image" content="{{site}}/shots/zh/grid-dark.jpg">
+  <meta lang="en" property="og:image" content="{{site}}/shots/en/grid-dark.jpg">
+  <meta property="og:image:width" content="1800">
+  <meta property="og:image:height" content="1125">
+{{seo}}
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+  <script type="application/ld+json" lang="zh-Hans">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "PhotoCatalog",
+    "url": "{{site}}/zh/",
+    "description": "免费开源的 macOS 照片管理与 RAW 修图应用，用法接近 Lightroom Classic。照片只在你的 Mac 上处理。",
+    "applicationCategory": "MultimediaApplication",
+    "applicationSubCategory": "照片管理与 RAW 修图",
+    "operatingSystem": "macOS 14 或更高版本，Apple 芯片",
+    "isAccessibleForFree": true,
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+    "author": { "@type": "Person", "name": "euynus", "url": "https://github.com/euynus" },
+    "sameAs": "https://github.com/euynus/PhotoCatalog",
+    "inLanguage": ["zh-Hans", "en"],
+    "image": "{{site}}/icon.png",
+    "screenshot": ["{{site}}/shots/zh/grid-dark.jpg", "{{site}}/shots/zh/develop-dark.jpg", "{{site}}/shots/zh/masks.jpg"],
+    "featureList": [
+      "网格、单张、比较和筛选视图",
+      "评分、旗标、颜色标签、关键词、相册与智能相册",
+      "本机人脸识别",
+      "地图与 GPX 轨迹匹配位置",
+      "查找完全相同和相似的照片",
+      "与 Lightroom、Bridge 互通的 XMP 附属文件",
+      "非破坏性 RAW 修图：色调曲线、混色器、颜色分级、LUT",
+      "AI 蒙版：主体、天空、人物、物体和景观",
+      "污点去除与 AI 移除",
+      "HDR 与全景合并、AI 降噪与超分辨率",
+      "导出、打印、幻灯片视频、网页画廊和 PDF 画册",
+      "可选的 AI 助手，支持云端或本机模型"
+    ]
+  }
+  </script>
+  <script type="application/ld+json" lang="en">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "PhotoCatalog",
+    "url": "{{site}}/",
+    "description": "A free, open-source photo manager and RAW editor for macOS in the style of Lightroom Classic. Your photos stay on your Mac.",
+    "applicationCategory": "MultimediaApplication",
+    "applicationSubCategory": "Photo management and RAW editing",
+    "operatingSystem": "macOS 14 or later, Apple silicon",
+    "isAccessibleForFree": true,
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+    "author": { "@type": "Person", "name": "euynus", "url": "https://github.com/euynus" },
+    "sameAs": "https://github.com/euynus/PhotoCatalog",
+    "inLanguage": ["en", "zh-Hans"],
+    "image": "{{site}}/icon.png",
+    "screenshot": ["{{site}}/shots/en/grid-dark.jpg", "{{site}}/shots/en/develop-dark.jpg", "{{site}}/shots/en/masks.jpg"],
+    "featureList": [
+      "Grid, loupe, compare and survey views",
+      "Ratings, flags, color labels, keywords, albums and smart albums",
+      "On-device face recognition",
+      "Maps and GPX location matching",
+      "Exact and similar duplicate detection",
+      "XMP sidecars that round-trip with Lightroom and Bridge",
+      "Non-destructive RAW development: tone curve, color mixer, color grading, LUTs",
+      "AI masks: subject, sky, people, objects and landscape",
+      "Spot healing and AI object removal",
+      "HDR and panorama merges, AI denoise and super resolution",
+      "Export, print, slideshow video, web galleries and PDF photo books",
+      "Optional AI assistant with cloud or local models"
+    ]
+  }
+  </script>
+  <script>
+    (function () {
+      var root = document.documentElement, saved = null;
+      try { saved = localStorage.getItem("pc-lang"); } catch (e) {}
+      // The English page is the default. A visitor whose browser prefers Chinese and who hasn't chosen
+      // English goes to the Chinese page; the language switch saves the choice (site.js).
+      if (root.lang === "en" && saved !== "en"
+          && (saved === "zh" || /^zh/i.test((navigator.languages && navigator.languages[0]) || navigator.language || ""))) {
+        location.replace("{{switch:zh}}" + location.hash);
+        return;
+      }
+      // animations, unless reduced motion is asked for; if site.js never runs, everything shows after 3 s
+      if (!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) && "IntersectionObserver" in window) {
+        root.classList.add("motion");
+        setTimeout(function () { if (!root.hasAttribute("data-motion-ready")) root.classList.remove("motion"); }, 3000);
+      }
+    })();
+  </script>
+  <script src="site.js" defer></script>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="icon.png" alt="" width="28" height="28">PhotoCatalog</a>
+    <nav class="nav-links">
+      <a href="#features"><span lang="zh-Hans">功能</span><span lang="en">Features</span></a>
+      <a href="#privacy"><span lang="zh-Hans">隐私</span><span lang="en">Privacy</span></a>
+      <a href="https://github.com/euynus/PhotoCatalog">GitHub</a>
+    </nav>
+    <nav class="lang-switch" aria-label="Language / 语言">
+      <a href="{{switch:zh}}" hreflang="zh-Hans" lang="zh-Hans">中文</a>
+      <a href="{{switch:en}}" hreflang="en" lang="en">EN</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <img class="hero-icon" src="icon.png" alt="" width="104" height="104">
+      <h1 lang="zh-Hans">照片管理与 RAW 修图，<br>都在你的 Mac 上。</h1>
+      <h1 lang="en">Your photo library and RAW editor, right on your Mac.</h1>
+      <p class="lead" lang="zh-Hans">PhotoCatalog 是一款免费开源的 macOS 照片管理与 RAW 修图应用，用法接近 Lightroom Classic：导入、选片、整理、非破坏性修图，再到导出、打印和画册。照片不离开你的 Mac，原片从不改动。</p>
+      <p class="lead" lang="en">PhotoCatalog is a free, open-source photo manager and RAW editor for macOS in the style of Lightroom Classic: import, cull, organize and develop your photos, then share them as exports, prints and books. Your photos stay on your Mac, and your originals are never modified.</p>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/euynus/PhotoCatalog/releases/latest">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>
+          <span lang="zh-Hans">下载 Mac 版</span><span lang="en">Download for Mac</span>
+        </a>
+        <a class="button secondary" href="https://github.com/euynus/PhotoCatalog">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 8-4 4 4 4m8-8 4 4-4 4m-2.5-11-3 14"/></svg>
+          <span lang="zh-Hans">在 GitHub 查看源码</span><span lang="en">View on GitHub</span>
+        </a>
+      </div>
+      <p class="meta" lang="zh-Hans">免费 · macOS 14 或更高版本 · Apple 芯片 · 即将登陆 Mac App Store</p>
+      <p class="meta" lang="en">Free · macOS 14 or later · Apple silicon · Coming to the Mac App Store</p>
+
+      <div class="hero-shot">
+        <picture lang="zh-Hans">
+          <source media="(prefers-color-scheme: light)" srcset="shots/zh/grid-light.jpg">
+          <img class="shot" src="shots/zh/grid-dark.jpg" width="1800" height="1125" fetchpriority="high"
+               alt="PhotoCatalog 的图库：网格中是带评分、旗标和颜色标签的风光照片，左侧是相册与文件夹">
+        </picture>
+        <picture lang="en">
+          <source media="(prefers-color-scheme: light)" srcset="shots/en/grid-light.jpg">
+          <img class="shot" src="shots/en/grid-dark.jpg" width="1800" height="1125" fetchpriority="high"
+               alt="The PhotoCatalog library: a grid of landscape photos with ratings, flags and color labels, albums and folders in the sidebar">
+        </picture>
+      </div>
+
+      <div class="highlights reveal">
+        <div><strong lang="zh-Hans">本机处理</strong><strong lang="en">On your Mac</strong>
+          <span lang="zh-Hans">人脸识别、AI 蒙版与降噪都在本机运行</span><span lang="en">Faces, AI masks and denoise run locally</span></div>
+        <div><strong lang="zh-Hans">原片不动</strong><strong lang="en">Non-destructive</strong>
+          <span lang="zh-Hans">修图只记录在目录库和 XMP 里</span><span lang="en">Edits live in the catalog and XMP</span></div>
+        <div><strong lang="zh-Hans">50 万张</strong><strong lang="en">500,000 photos</strong>
+          <span lang="zh-Hans">打开后约 5 秒即可使用</span><span lang="en">Ready about 5 s after launch</span></div>
+        <div><strong lang="zh-Hans">免费开源</strong><strong lang="en">Free</strong>
+          <span lang="zh-Hans">以 GPL-3.0 许可发布</span><span lang="en">Open source under the GPL-3.0</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" class="features">
+    <div class="wrap">
+
+      <div class="row">
+        <div class="copy reveal">
+          <p class="eyebrow"><span lang="zh-Hans">选片</span><span lang="en">Cull</span></p>
+          <h2 lang="zh-Hans">快速选片，留下最好的那张</h2>
+          <h2 lang="en">Cull fast, keep the best shot</h2>
+          <ul lang="zh-Hans">
+            <li>网格、单张、比较和筛选视图，把连拍并排对比</li>
+            <li>数字键评分，P / X 标记精选或拒绝，并自动跳到下一张</li>
+            <li>RAW+JPEG 合并成一张显示，按拍摄时间自动叠放连拍</li>
+            <li>智能相册、相册集和快捷收藏，随时找到要用的照片</li>
+          </ul>
+          <ul lang="en">
+            <li>Grid, loupe, compare and survey views put a burst side by side</li>
+            <li>Rate with the number keys, pick or reject with P and X, and move on automatically</li>
+            <li>RAW+JPEG pairs show as one photo, and bursts stack by capture time</li>
+            <li>Smart albums, album sets and a Quick Collection keep the keepers close</li>
+          </ul>
+        </div>
+        <div class="media reveal">
+          <img class="shot" lang="zh-Hans" src="shots/zh/survey.jpg" width="1800" height="1125" loading="lazy" alt="筛选视图：四张山湖照片并排对比">
+          <img class="shot" lang="en" src="shots/en/survey.jpg" width="1800" height="1125" loading="lazy" alt="Survey view: four mountain-lake photos side by side">
+        </div>
+      </div>
+
+      <div class="row flip">
+        <div class="copy reveal">
+          <p class="eyebrow"><span lang="zh-Hans">修图</span><span lang="en">Develop</span></p>
+          <h2 lang="zh-Hans">非破坏性的 RAW 修图</h2>
+          <h2 lang="en">Non-destructive RAW development</h2>
+          <p lang="zh-Hans">以 macOS 的 RAW 引擎为基础：配置文件与黑白、色调曲线、混色器、颜色分级、LUT、细节与镜头校正、镜头模糊、透视校正和软打样。每一步都记入历史，可以随时回到任何一步；预设能与 Lightroom 互通。</p>
+          <p lang="en">Built on the macOS RAW engine: profiles and black and white, tone curve, color mixer, color grading, LUTs, detail and lens corrections, lens blur, Upright and soft proofing. Every step goes into the history so you can return to it, and presets exchange with Lightroom.</p>
+        </div>
+        <div class="media reveal">
+          <picture lang="zh-Hans">
+            <source media="(prefers-color-scheme: light)" srcset="shots/zh/develop-light.jpg">
+            <img class="shot" src="shots/zh/develop-dark.jpg" width="1800" height="1125" loading="lazy" alt="修图模块：湖上小船的照片，右侧是直方图和基本调整滑块">
+          </picture>
+          <picture lang="en">
+            <source media="(prefers-color-scheme: light)" srcset="shots/en/develop-light.jpg">
+            <img class="shot" src="shots/en/develop-dark.jpg" width="1800" height="1125" loading="lazy" alt="The Develop module: a boat on a lake, with the histogram and basic sliders on the right">
+          </picture>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="copy reveal">
+          <p class="eyebrow"><span lang="zh-Hans">AI 蒙版</span><span lang="en">AI masks</span></p>
+          <h2 lang="zh-Hans">一键选中天空、主体或人物</h2>
+          <h2 lang="en">Select the sky, the subject or a person in one click</h2>
+          <p lang="zh-Hans">主体、天空、人物、物体和景观蒙版由 App 内置的模型在本机算出，此外还有渐变、画笔以及颜色和明亮度范围。AI 移除、降噪和超分辨率同样在本机完成。</p>
+          <p lang="en">Subject, sky, people, object and landscape masks come from models built into the app and run on your Mac, alongside gradients, brushes and color and luminance ranges. AI remove, denoise and super resolution run on your Mac too.</p>
+        </div>
+        <div class="media reveal">
+          <img class="shot" lang="zh-Hans" src="shots/zh/masks.jpg" width="1800" height="1125" loading="lazy" alt="天空蒙版：天空以红色叠加标出，右侧是蒙版的曝光与去朦胧调整">
+          <img class="shot" lang="en" src="shots/en/masks.jpg" width="1800" height="1125" loading="lazy" alt="A sky mask shown as a red overlay, with the mask's exposure and dehaze settings on the right">
+        </div>
+      </div>
+
+      <div class="row flip">
+        <div class="copy reveal">
+          <p class="eyebrow"><span lang="zh-Hans">整理</span><span lang="en">Organize</span></p>
+          <h2 lang="zh-Hans">整理照片，随时找回</h2>
+          <h2 lang="en">Organize everything, find anything</h2>
+          <ul lang="zh-Hans">
+            <li>关键词、相册与智能相册，按日期、相机、镜头筛选</li>
+            <li>本机人脸识别，在 LFW 基准上准确率 99.4%</li>
+            <li>地图视图与 GPX 轨迹匹配位置</li>
+            <li>找出完全相同和相似的照片</li>
+            <li>评分、关键词和标题写入 XMP，Lightroom 与 Bridge 都能读取</li>
+          </ul>
+          <ul lang="en">
+            <li>Keywords, albums and smart albums; filter by date, camera and lens</li>
+            <li>On-device face recognition, 99.4% on the LFW benchmark</li>
+            <li>A map view, and locations matched from GPX tracks</li>
+            <li>Exact and similar duplicates found for you</li>
+            <li>Ratings, keywords and titles in XMP sidecars that Lightroom and Bridge read</li>
+          </ul>
+        </div>
+        <div class="media reveal">
+          <img class="shot" lang="zh-Hans" src="shots/zh/loupe.jpg" width="1800" height="1125" loading="lazy" alt="单张视图：雪山上空的银河，下方是胶片栏">
+          <img class="shot" lang="en" src="shots/en/loupe.jpg" width="1800" height="1125" loading="lazy" alt="Loupe view: the Milky Way over snowy mountains, with the filmstrip below">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="copy reveal">
+          <p class="eyebrow"><span lang="zh-Hans">输出</span><span lang="en">Share</span></p>
+          <h2 lang="zh-Hans">从导出到画册</h2>
+          <h2 lang="en">From export to photo book</h2>
+          <p lang="zh-Hans">导出时可以用预设、输出锐化和水印；打印支持打印机色彩配置文件；幻灯片能导出成 MP4 视频；网页画廊和 PDF 画册一步生成，对话框里逐页预览。</p>
+          <p lang="en">Export with presets, output sharpening and watermarks; print through your printer's color profile; turn a slideshow into an MP4 video; and make web galleries and PDF photo books, previewed page by page.</p>
+        </div>
+        <div class="media reveal">
+          <img class="shot sheet" lang="zh-Hans" src="shots/zh/book.jpg" width="1300" height="924" loading="lazy" alt="制作画册对话框：封面是湖与雪山，标题“山与湖”">
+          <img class="shot sheet" lang="en" src="shots/en/book.jpg" width="1300" height="924" loading="lazy" alt="The photo book dialog: a cover of a lake and mountains titled Mountains &amp; Lakes">
+        </div>
+      </div>
+
+      <div class="cards">
+        <div class="card reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11m0 0-4-4m4 4 4-4"/><rect x="3" y="15" width="18" height="6" rx="2"/></svg>
+          <h3><span lang="zh-Hans">导入</span><span lang="en">Import</span></h3>
+          <p lang="zh-Hans">文件夹、存储卡、相机与 iPhone、视频和联机拍摄。导入中断了，下次打开会接着完成。</p>
+          <p lang="en">Folders, memory cards, cameras and iPhones, videos and tethered shooting. An interrupted import picks up where it stopped.</p>
+        </div>
+        <div class="card reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+          <h3><span lang="zh-Hans">合并与增强</span><span lang="en">Merge and enhance</span></h3>
+          <p lang="zh-Hans">HDR 与全景合并，AI 降噪，以及把宽高各放大一倍的超分辨率。</p>
+          <p lang="en">HDR and panorama merges, AI denoise, and super resolution that doubles the width and height.</p>
+        </div>
+        <div class="card reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z"/><path d="M19 16v4m-2-2h4"/></svg>
+          <h3><span lang="zh-Hans">AI 助手（可选）</span><span lang="en">AI assistant (optional)</span></h3>
+          <p lang="zh-Hans">生成标题、说明和关键词，用一句话查找照片，用文字描述想要的效果来修图。可用 Anthropic、兼容 OpenAI 的服务，或本机的 Ollama / LM Studio。</p>
+          <p lang="en">Write titles, captions and keywords, find photos with a sentence, and develop from a described look, with Anthropic, any OpenAI-compatible service, or Ollama / LM Studio on your Mac.</p>
+        </div>
+        <div class="card reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 20 6v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6l8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+          <h3><span lang="zh-Hans">安心可靠</span><span lang="en">Safe by design</span></h3>
+          <p lang="zh-Hans">每次编辑都能撤销；目录库快照，以及经过校验、可恢复成新目录库的完整备份。</p>
+          <p lang="en">Every edit can be undone. Catalog snapshots, and verified full backups that restore into a new library.</p>
+        </div>
+        <div class="card reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+          <h3><span lang="zh-Hans">为大型图库而生</span><span lang="en">Built for big libraries</span></h3>
+          <p lang="zh-Hans">50 万张照片的目录库，打开后约 5 秒即可使用；筛选、排序和搜索在 0.1–0.35 秒内完成。</p>
+          <p lang="en">A 500,000-photo catalog is ready about five seconds after launch; filtering, sorting and searching take 0.1–0.35 s.</p>
+        </div>
+        <div class="card reveal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h9M8.5 3v2m3.5 0c-1 4-4 7-7.5 8.5M7 9c1.5 2.5 3.5 4 6 5"/><path d="m13 21 4-9 4 9m-6.6-3h5.2"/></svg>
+          <h3><span lang="zh-Hans">中文与英文</span><span lang="en">Chinese and English</span></h3>
+          <p lang="zh-Hans">界面提供简体中文和英文，跟随系统语言，也可以在设置中切换。</p>
+          <p lang="en">The interface comes in Simplified Chinese and English, following your Mac's language or the one you choose in Settings.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq" class="faq">
+    <div class="wrap">
+      <h2 lang="zh-Hans">常见问题</h2>
+      <h2 lang="en">Questions and answers</h2>
+      <div class="qa-list reveal">
+        <div class="qa">
+          <h3 lang="zh-Hans">PhotoCatalog 是免费的吗？</h3>
+          <h3 lang="en">Is PhotoCatalog free?</h3>
+          <p lang="zh-Hans">是。PhotoCatalog 免费开源，以 GPL-3.0 许可发布；不需要账户，没有订阅，也没有内购。即将上架的 Mac App Store 版同样免费。</p>
+          <p lang="en">Yes. PhotoCatalog is free and open source under the GPL-3.0, with no account, subscription or in-app purchases. The upcoming Mac App Store edition is free too.</p>
+        </div>
+        <div class="qa">
+          <h3 lang="zh-Hans">支持哪些 Mac？</h3>
+          <h3 lang="en">Which Macs does it run on?</h3>
+          <p lang="zh-Hans">搭载 Apple 芯片（M 系列）、运行 macOS 14 Sonoma 或更高版本的 Mac。不支持 Intel 芯片的 Mac。</p>
+          <p lang="en">Macs with Apple silicon (M-series) running macOS 14 Sonoma or later. Intel Macs aren't supported.</p>
+        </div>
+        <div class="qa">
+          <h3 lang="zh-Hans">我的照片会被上传吗？</h3>
+          <h3 lang="en">Are my photos uploaded anywhere?</h3>
+          <p lang="zh-Hans">不会。目录库、预览和修图记录都在你的 Mac 上，人脸识别、AI 蒙版和降噪也在本机运行。只有使用可选的 AI 助手、查看地图或检查更新时才会联网，详见<a href="privacy/">隐私政策</a>。</p>
+          <p lang="en">No. The catalog, previews and edits stay on your Mac, and face recognition, AI masks and denoise run on it. The app goes online only for the optional AI assistant, maps and update checks; see the <a href="privacy/">privacy policy</a>.</p>
+        </div>
+        <div class="qa">
+          <h3 lang="zh-Hans">能和 Lightroom 一起用吗？</h3>
+          <h3 lang="en">Does it work with Lightroom?</h3>
+          <p lang="zh-Hans">不能直接打开 Lightroom 目录库（.lrcat），但会读写 Lightroom 和 Bridge 都能识别的 XMP 附属文件（评分、颜色标签、关键词、标题、说明和位置），修图预设也能以 .xmp 文件导入和导出。</p>
+          <p lang="en">It can't open Lightroom catalogs (.lrcat), but it reads and writes the XMP sidecars Lightroom and Bridge use (ratings, labels, keywords, titles, captions and locations), and it imports and exports develop presets as .xmp files.</p>
+        </div>
+        <div class="qa">
+          <h3 lang="zh-Hans">支持哪些 RAW 格式？</h3>
+          <h3 lang="en">Which RAW formats does it open?</h3>
+          <p lang="zh-Hans">佳能（CR2、CR3）、尼康（NEF）、索尼（ARW）、富士（RAF）、奥林巴斯 / OM System（ORF）、松下（RW2）、宾得（PEF）、三星（SRW）和 DNG。RAW 由 macOS 自带的 RAW 引擎解码，所以某款相机能否打开取决于 macOS 是否支持它。另外支持 JPEG、HEIC、PNG、TIFF、GIF、WebP、BMP，以及 MOV、MP4、M4V 视频。</p>
+          <p lang="en">Canon (CR2, CR3), Nikon (NEF), Sony (ARW), Fujifilm (RAF), Olympus / OM System (ORF), Panasonic (RW2), Pentax (PEF), Samsung (SRW) and DNG. RAW files are decoded by the RAW engine built into macOS, so a camera works once macOS supports it. JPEG, HEIC, PNG, TIFF, GIF, WebP and BMP open too, as do MOV, MP4 and M4V videos.</p>
+        </div>
+        <div class="qa">
+          <h3 lang="zh-Hans">会改动原始照片吗？</h3>
+          <h3 lang="en">Does it change my original files?</h3>
+          <p lang="zh-Hans">不会。修图只记录在目录库里，导出时生成新文件。评分、关键词等元数据可以写入原片旁边的 XMP 附属文件，原片本身保持不变。</p>
+          <p lang="en">No. Edits are recorded in the catalog, and exports are new files. Metadata such as ratings and keywords can be written to XMP sidecars beside your originals; the originals themselves are left as they are.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="privacy" class="band">
+    <div class="wrap reveal">
+      <p class="eyebrow"><span lang="zh-Hans">隐私</span><span lang="en">Privacy</span></p>
+      <h2 lang="zh-Hans">你的照片只属于你</h2>
+      <h2 lang="en">Your photos stay yours</h2>
+      <p lang="zh-Hans">没有账户、统计或追踪，也不会主动上传你的照片库。只有在你使用 AI 助手、查看地图或检查更新时才会联网；选择本机的 AI 服务，照片就完全不离开你的 Mac。</p>
+      <p lang="en">No account, analytics or tracking, and nothing about your library is sent anywhere on its own. The app goes online only when you use the AI assistant, view a map or check for updates, and with an AI service on your Mac, your photos never leave it.</p>
+      <p><a href="privacy/"><span lang="zh-Hans">阅读隐私政策 →</span><span lang="en">Read the privacy policy →</span></a></p>
+    </div>
+  </section>
+
+  <section class="download">
+    <div class="wrap reveal">
+      <img class="hero-icon" src="icon.png" alt="" width="80" height="80">
+      <h2 lang="zh-Hans">免费下载 PhotoCatalog</h2>
+      <h2 lang="en">Get PhotoCatalog for free</h2>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/euynus/PhotoCatalog/releases/latest">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>
+          <span lang="zh-Hans">下载 Mac 版</span><span lang="en">Download for Mac</span>
+        </a>
+      </div>
+      <ul lang="zh-Hans">
+        <li>macOS 14 或更高版本，Apple 芯片（M 系列）</li>
+        <li>经过 Apple 公证，可在 App 内一键更新</li>
+        <li>即将登陆 Mac App Store</li>
+      </ul>
+      <ul lang="en">
+        <li>macOS 14 or later on Apple silicon</li>
+        <li>Notarized by Apple, and updates itself from inside the app</li>
+        <li>Coming to the Mac App Store</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 euynus</span>
+    <span lang="zh-Hans">以 GPL-3.0 许可发布</span><span lang="en">Licensed under the GPL-3.0</span>
+    <span class="grow" lang="zh-Hans">示例照片来自 Unsplash</span><span class="grow" lang="en">Sample photos from Unsplash</span>
+    <a href="privacy/"><span lang="zh-Hans">隐私政策</span><span lang="en">Privacy policy</span></a>
+    <a href="https://github.com/euynus/PhotoCatalog/issues"><span lang="zh-Hans">支持与反馈</span><span lang="en">Support</span></a>
+    <a href="https://github.com/euynus/PhotoCatalog">GitHub</a>
+  </div>
+</footer>
+
+</body>
+</html>
