@@ -11,12 +11,9 @@
   --accent: #2764d6;
   --accent-fill: #2764d6;
   --accent-fill-hover: #1f5bc9;
-  --glow: rgba(39, 100, 214, 0.16);
-  --shadow: 0 24px 70px rgba(15, 20, 30, 0.22), 0 2px 8px rgba(15, 20, 30, 0.08);
-  --lift: 0 18px 44px rgba(15, 20, 30, 0.12);
+  --shadow: 0 10px 30px rgba(15, 20, 30, 0.14), 0 1px 3px rgba(15, 20, 30, 0.08);
   --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
   --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --radius: 18px;
   --page: 1180px;
   --gutter: 24px;
   color-scheme: light dark;
@@ -33,9 +30,7 @@
     --accent: #5a98f8;
     --accent-fill: #2f6fe0;
     --accent-fill-hover: #2a63cf;
-    --glow: rgba(90, 152, 248, 0.18);
-    --shadow: 0 30px 90px rgba(0, 0, 0, 0.6), 0 2px 10px rgba(0, 0, 0, 0.4);
-    --lift: 0 18px 44px rgba(0, 0, 0, 0.5);
+    --shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
   }
 }
 
@@ -91,86 +86,64 @@ html[lang="en"] .lang-switch::before { transform: translateX(100%); }
 .lang-switch a[aria-current] { color: var(--text); }
 
 /* ---- hero ---- */
-/* clip sideways only: the drifting glow must not widen the page, but it still reaches up under the bar */
-.hero { position: relative; padding: 88px 0 40px; text-align: center; overflow-x: clip; }
-.hero::before {
-  content: ""; position: absolute; inset: -120px 0 auto; height: 720px; z-index: -1;
-  background: radial-gradient(50% 55% at 50% 40%, var(--glow), transparent 70%);
-}
-.hero-icon { width: 104px; height: 104px; margin: 0 auto 26px; filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.18)); }
+.hero { padding: 72px 0 32px; }
+.hero-icon { width: 72px; height: 72px; margin: 0 0 24px; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.15)); }
 h1 {
-  font-size: clamp(1.75rem, 5vw + 0.4rem, 4.1rem); line-height: 1.08; letter-spacing: -0.025em;
-  margin: 0 auto 22px; max-width: 15em; font-weight: 700;
+  font-size: clamp(1.9rem, 3.4vw + 0.6rem, 3.2rem); line-height: 1.12; letter-spacing: -0.02em;
+  margin: 0 0 18px; max-width: 18em; font-weight: 700;
 }
-h1:lang(zh-Hans), h2:lang(zh-Hans) { letter-spacing: 0; line-height: 1.2; }
-.lead { font-size: clamp(1.05rem, 1.6vw, 1.25rem); color: var(--text-2); max-width: 40em; margin: 0 auto 32px; }
-.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+h1:lang(zh-Hans), h2:lang(zh-Hans) { letter-spacing: 0; line-height: 1.25; }
+.lead { font-size: clamp(1.05rem, 1.5vw, 1.2rem); color: var(--text-2); max-width: 40em; margin: 0 0 28px; }
+p, li, dd { text-wrap: pretty; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .button {
-  display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 980px;
-  font-size: 16px; font-weight: 500; border: 1px solid transparent;
-  transition: background-color 0.15s, transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
+  display: inline-flex; align-items: center; padding: 10px 18px; border-radius: 8px;
+  font-size: 15px; font-weight: 500; border: 1px solid transparent;
+  transition: background-color 0.15s, transform 0.25s var(--ease-out);
 }
 .button:hover { text-decoration: none; }
 .button.primary { background: var(--accent-fill); color: #fff; }
 .button.primary:hover { background: var(--accent-fill-hover); }
 .button.secondary { color: var(--text); border-color: var(--line); background: var(--surface); }
 .button.secondary:hover { background: var(--surface-2); }
-.button svg { width: 18px; height: 18px; }
-.meta { margin-top: 18px; font-size: 14px; color: var(--text-3); }
+.meta { margin: 16px 0 0; font-size: 14px; color: var(--text-3); }
 
-.hero-shot { margin: 56px auto 0; max-width: 1180px; }
+.hero-shot { margin-top: 48px; }
 
 /* window screenshots: rounded like the macOS window they were taken from (35 px at 2880 × 1800) */
 .shot { border-radius: 1.215% / 1.944%; box-shadow: var(--shadow); background: #1c1d1f; }
-.shot.sheet { border-radius: 1.944% / 2.734%; }
+/* a dialog is smaller than a window: keep it near its own size */
+.shot.sheet { border-radius: 1.944% / 2.734%; max-width: 860px; }
 
-/* ---- highlights ---- */
-.highlights { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin: 80px 0 0;
-  background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.highlights div { background: var(--surface); padding: 26px 24px; }
-.highlights strong { display: block; font-size: 1.6rem; letter-spacing: -0.02em; margin-bottom: 4px; }
-.highlights span { color: var(--text-2); font-size: 15px; }
-
-/* ---- feature rows ---- */
+/* ---- features: each a heading and its text side by side, then the screenshot ---- */
 section { scroll-margin-top: 72px; }
-.features { padding: 40px 0; }
-.row { display: grid; grid-template-columns: 5fr 7fr; gap: 56px; align-items: center; padding: 64px 0; }
-.row.flip { grid-template-columns: 7fr 5fr; }
-.row.flip .copy { order: 2; }
-.eyebrow { color: var(--accent); font-size: 14px; font-weight: 600; letter-spacing: 0.02em; margin: 0 0 10px; }
-h2 { font-size: clamp(1.7rem, 3vw, 2.4rem); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 16px; }
-.copy p { color: var(--text-2); margin: 0 0 14px; }
-.copy ul { margin: 0; padding: 0; list-style: none; color: var(--text-2); }
-.copy li { position: relative; padding-left: 18px; margin: 6px 0; }
-.copy li::before { content: ""; position: absolute; left: 0; top: 0.68em; width: 6px; height: 6px; border-radius: 2px; background: var(--accent); }
-
-/* ---- cards ---- */
-.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 24px 0 80px; }
-.card {
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px;
-  transition: transform 0.4s var(--ease-out), box-shadow 0.4s var(--ease-out), border-color 0.4s;
+h2 { font-size: clamp(1.45rem, 2.2vw, 1.85rem); line-height: 1.2; letter-spacing: -0.015em; margin: 0 0 14px; }
+.features { padding: 24px 0 0; }
+.feature { padding: 56px 0; border-top: 1px solid var(--line); }
+.feature-text {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 8px 48px; margin-bottom: 36px;
 }
-.card svg { width: 30px; height: 30px; color: var(--accent); margin-bottom: 14px; transition: transform 0.4s var(--spring); }
-.card h3 { font-size: 1.12rem; margin: 0 0 8px; }
-.card p { margin: 0; color: var(--text-2); font-size: 15px; }
+.feature-text h2 { margin: 0; }
+.feature-text p, .feature-text ul { margin: 0; color: var(--text-2); max-width: 44em; }
+.feature-text ul { padding-left: 1.15em; }
+.feature-text li { margin: 4px 0; }
+.feature-text li::marker { color: var(--text-3); }
 
-/* ---- questions and answers ---- */
-.faq { padding: 8px 0 88px; }
-.faq h2 { text-align: center; margin-bottom: 36px; }
+/* the smaller features, as a plain list */
+.more { padding: 56px 0 72px; border-top: 1px solid var(--line); }
+.more dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px 48px; margin: 28px 0 0; }
+.more dt { font-weight: 600; margin: 0 0 4px; }
+.more dd { margin: 0; color: var(--text-2); font-size: 15px; }
+
+/* ---- questions, privacy, download ---- */
+.faq > .wrap, .privacy > .wrap, .download > .wrap { border-top: 1px solid var(--line); padding: 56px 0 72px; }
+.faq h2 { margin-bottom: 28px; }
 .qa-list { display: grid; grid-template-columns: 1fr 1fr; gap: 28px 56px; }
-.qa h3 { font-size: 1.08rem; margin: 0 0 8px; }
+.qa h3 { font-size: 1.05rem; margin: 0 0 8px; }
 .qa p { margin: 0; color: var(--text-2); font-size: 15px; }
-
-/* ---- privacy band ---- */
-.band { background: var(--surface); border-block: 1px solid var(--line); padding: 80px 0; text-align: center; }
-.band h2 { max-width: 18em; margin-inline: auto; }
-.band p { color: var(--text-2); max-width: 40em; margin: 0 auto 10px; }
-
-/* ---- download ---- */
-.download { text-align: center; padding: 96px 0; }
-.download .hero-icon { width: 80px; height: 80px; }
-.download h2 { margin-bottom: 26px; }
-.download ul { list-style: none; padding: 0; margin: 22px 0 0; color: var(--text-3); font-size: 14px; }
+.privacy p { color: var(--text-2); max-width: 44em; margin: 0 0 10px; }
+.download h2 { margin-bottom: 20px; }
+.download ul { list-style: none; padding: 0; margin: 18px 0 0; color: var(--text-3); font-size: 14px; }
 
 /* ---- footer ---- */
 footer { border-top: 1px solid var(--line); padding: 28px 0 40px; font-size: 13px; color: var(--text-3); }
@@ -193,11 +166,7 @@ footer .grow { flex: 1; }
    so once they end, hover transitions own transform again. Only opacity and transform move. */
 @keyframes rise { from { opacity: 0; transform: translateY(var(--rise, 28px)); } }
 @keyframes pop { from { opacity: 0; transform: scale(0.8); } }
-@keyframes from-right { from { opacity: 0; transform: translateX(56px) scale(0.98); } }
-@keyframes from-left { from { opacity: 0; transform: translateX(-56px) scale(0.98); } }
-@keyframes drift { 50% { transform: translate(3%, 4%) scale(1.08); } }
 
-.motion .hero::before { animation: drift 16s ease-in-out infinite; }
 .motion .hero .hero-icon { animation: pop 0.9s var(--spring) backwards; }
 .motion .hero h1 { animation: rise 0.9s var(--ease-out) 0.08s backwards; }
 .motion .hero .lead { animation: rise 0.9s var(--ease-out) 0.16s backwards; }
@@ -208,20 +177,10 @@ footer .grow { flex: 1; }
 /* site.js adds .in as each one scrolls into view */
 .motion .reveal:not(.in) { opacity: 0; }
 .motion .reveal.in { animation: rise 0.9s var(--ease-out) var(--d, 0s) backwards; }
-.motion .row .media.in { --d: 0.12s; animation-name: from-right; }
-.motion .row.flip .media.in { animation-name: from-left; }
-.cards > :nth-child(3n + 2) { --d: 0.08s; }
-.cards > :nth-child(3n) { --d: 0.16s; }
-.motion .download .wrap.in .hero-icon { animation: pop 0.9s var(--spring) 0.15s backwards; }
+.motion .feature .media.in { --d: 0.1s; }
 
-.motion .button:hover { transform: translateY(-2px); }
-.motion .button.primary:hover { box-shadow: 0 10px 28px color-mix(in srgb, var(--accent-fill) 40%, transparent); }
+.motion .button:hover { transform: translateY(-1px); }
 .motion .button:active { transform: scale(0.98); transition-duration: 0.08s; }
-.motion .card:hover {
-  transform: translateY(-4px); box-shadow: var(--lift);
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
-}
-.motion .card:hover svg { transform: translateY(-2px) scale(1.1); }
 
 /* where scroll-driven animations exist: the hero screenshot leans back and settles flat as the page
    scrolls, and the bar's edge appears once the page has moved */
@@ -239,20 +198,16 @@ footer .grow { flex: 1; }
 }
 
 @media (max-width: 900px) {
-  .row, .row.flip { grid-template-columns: 1fr; gap: 28px; padding: 44px 0; }
-  .row.flip .copy { order: 0; }
-  .motion .row .media.in, .motion .row.flip .media.in { animation-name: rise; }
-  .cards { grid-template-columns: 1fr 1fr; }
+  .feature-text { grid-template-columns: 1fr; }
+  .more dl { grid-template-columns: 1fr 1fr; }
   .qa-list { grid-template-columns: 1fr; }
-  .highlights { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 600px) {
   :root { --gutter: 16px; }
   .nav-links { display: none; }
   .lang-switch { margin-left: auto; }
-  .hero { padding-top: 56px; }
-  .hero-icon { width: 84px; height: 84px; }
-  .cards { grid-template-columns: 1fr; }
-  .highlights div { padding: 20px 16px; }
-  .highlights strong { font-size: 1.3rem; }
+  .hero { padding-top: 48px; }
+  .hero-icon { width: 60px; height: 60px; }
+  .feature { padding: 40px 0; }
+  .more dl { grid-template-columns: 1fr; }
 }

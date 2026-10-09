@@ -100,21 +100,14 @@
 <main>
   <section class="hero">
     <div class="wrap">
-      <img class="hero-icon" src="icon.png" alt="" width="104" height="104">
-      <h1>Your photo library and RAW editor, right on your Mac.</h1>
-      <p class="lead">PhotoCatalog is a free, open-source photo manager and RAW editor for macOS in the style of Lightroom Classic: import, cull, organize and develop your photos, then share them as exports, prints and books. Your photos stay on your Mac, and your originals are never modified.</p>
+      <img class="hero-icon" src="icon.png" alt="" width="72" height="72">
+      <h1>PhotoCatalog is a photo manager and RAW editor for the Mac.</h1>
+      <p class="lead">It's free and open source, and works in the style of Lightroom Classic: import photos into a catalog, cull and keyword them, develop RAW files without changing the originals, then export, print or make a book. Your photos are processed on your Mac, with no account or subscription.</p>
       <div class="actions">
-        <a class="button primary" href="https://github.com/euynus/PhotoCatalog/releases/latest">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>
-          <span>Download for Mac</span>
-        </a>
-        <a class="button secondary" href="https://github.com/euynus/PhotoCatalog">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 8-4 4 4 4m8-8 4 4-4 4m-2.5-11-3 14"/></svg>
-          <span>View on GitHub</span>
-        </a>
+        <a class="button primary" href="https://github.com/euynus/PhotoCatalog/releases/latest"><span>Download for Mac</span></a>
+        <a class="button secondary" href="https://github.com/euynus/PhotoCatalog"><span>View on GitHub</span></a>
       </div>
       <p class="meta">Free · macOS 14 or later · Apple silicon · Coming to the Mac App Store</p>
-
       <div class="hero-shot">
         <picture>
           <source media="(prefers-color-scheme: light)" srcset="shots/en/grid-light.jpg">
@@ -122,130 +115,111 @@
                alt="The PhotoCatalog library: a grid of landscape photos with ratings, flags and color labels, albums and folders in the sidebar">
         </picture>
       </div>
-
-      <div class="highlights reveal">
-        <div><strong>On your Mac</strong>
-          <span>Faces, AI masks and denoise run locally</span></div>
-        <div><strong>Non-destructive</strong>
-          <span>Edits live in the catalog and XMP</span></div>
-        <div><strong>500,000 photos</strong>
-          <span>Ready about 5 s after launch</span></div>
-        <div><strong>Free</strong>
-          <span>Open source under the GPL-3.0</span></div>
-      </div>
     </div>
   </section>
 
   <section id="features" class="features">
     <div class="wrap">
 
-      <div class="row">
-        <div class="copy reveal">
-          <p class="eyebrow"><span>Cull</span></p>
-          <h2>Cull fast, keep the best shot</h2>
+      <div class="feature">
+        <div class="feature-text reveal">
+          <h2><span>Culling</span></h2>
           <ul>
-            <li>Grid, loupe, compare and survey views put a burst side by side</li>
-            <li>Rate with the number keys, pick or reject with P and X, and move on automatically</li>
-            <li>RAW+JPEG pairs show as one photo, and bursts stack by capture time</li>
-            <li>Smart albums, album sets and a Quick Collection keep the keepers close</li>
+            <li>Grid, loupe, compare and survey views; survey puts a burst side by side.</li>
+            <li>Rate with the number keys and pick or reject with P and X, optionally moving to the next photo after each.</li>
+            <li>RAW+JPEG pairs show as one photo, and bursts stack by capture time.</li>
+            <li>Smart albums, album sets and a Quick Collection.</li>
           </ul>
         </div>
         <div class="media reveal">
-          <img class="shot" src="shots/en/survey.jpg" width="1800" height="1125" loading="lazy" alt="Survey view: four mountain-lake photos side by side">
+        <img class="shot" src="shots/en/survey.jpg" width="1800" height="1125" loading="lazy" alt="Survey view: four mountain-lake photos side by side">
         </div>
       </div>
 
-      <div class="row flip">
-        <div class="copy reveal">
-          <p class="eyebrow"><span>Develop</span></p>
-          <h2>Non-destructive RAW development</h2>
-          <p>Built on the macOS RAW engine: profiles and black and white, tone curve, color mixer, color grading, LUTs, detail and lens corrections, lens blur, Upright and soft proofing. Every step goes into the history so you can return to it, and presets exchange with Lightroom.</p>
+      <div class="feature">
+        <div class="feature-text reveal">
+          <h2><span>Developing</span></h2>
+          <p>Development uses the RAW engine built into macOS, and edits are saved as settings, so the original file never changes. There are profiles and black and white, tone curve, color mixer, color grading, LUTs, detail, lens corrections, lens blur, Upright and soft proofing. Every step goes into the history, and presets import from and export to Lightroom.</p>
         </div>
         <div class="media reveal">
-          <picture>
-            <source media="(prefers-color-scheme: light)" srcset="shots/en/develop-light.jpg">
-            <img class="shot" src="shots/en/develop-dark.jpg" width="1800" height="1125" loading="lazy" alt="The Develop module: a boat on a lake, with the histogram and basic sliders on the right">
-          </picture>
+        <picture>
+          <source media="(prefers-color-scheme: light)" srcset="shots/en/develop-light.jpg">
+          <img class="shot" src="shots/en/develop-dark.jpg" width="1800" height="1125" loading="lazy" alt="The Develop module: a boat on a lake, with the histogram and basic sliders on the right">
+        </picture>
         </div>
       </div>
 
-      <div class="row">
-        <div class="copy reveal">
-          <p class="eyebrow"><span>AI masks</span></p>
-          <h2>Select the sky, the subject or a person in one click</h2>
-          <p>Subject, sky, people, object and landscape masks come from models built into the app and run on your Mac, alongside gradients, brushes and color and luminance ranges. AI remove, denoise and super resolution run on your Mac too.</p>
+      <div class="feature">
+        <div class="feature-text reveal">
+          <h2><span>Masks</span></h2>
+          <p>Subject, sky, people, object and landscape masks are computed on your Mac by models that ship with the app, and there are gradient, brush, color range and luminance range masks too. AI removal, denoise and super resolution also run locally.</p>
         </div>
         <div class="media reveal">
-          <img class="shot" src="shots/en/masks.jpg" width="1800" height="1125" loading="lazy" alt="A sky mask shown as a red overlay, with the mask's exposure and dehaze settings on the right">
+        <img class="shot" src="shots/en/masks.jpg" width="1800" height="1125" loading="lazy" alt="A sky mask shown as a red overlay, with the mask's exposure and dehaze settings on the right">
         </div>
       </div>
 
-      <div class="row flip">
-        <div class="copy reveal">
-          <p class="eyebrow"><span>Organize</span></p>
-          <h2>Organize everything, find anything</h2>
+      <div class="feature">
+        <div class="feature-text reveal">
+          <h2><span>Organizing</span></h2>
           <ul>
-            <li>Keywords, albums and smart albums; filter by date, camera and lens</li>
-            <li>On-device face recognition, 99.4% on the LFW benchmark</li>
-            <li>A map view, and locations matched from GPX tracks</li>
-            <li>Exact and similar duplicates found for you</li>
-            <li>Ratings, keywords and titles in XMP sidecars that Lightroom and Bridge read</li>
+            <li>Keywords, albums and smart albums; filter by date, camera and lens.</li>
+            <li>Face recognition on your Mac, 99.4% accurate on the LFW benchmark.</li>
+            <li>A map view, and locations matched from GPX tracks.</li>
+            <li>Finds exact and similar duplicates.</li>
+            <li>Ratings, keywords and titles go into XMP sidecars that Lightroom and Bridge read.</li>
           </ul>
         </div>
         <div class="media reveal">
-          <img class="shot" src="shots/en/loupe.jpg" width="1800" height="1125" loading="lazy" alt="Loupe view: the Milky Way over snowy mountains, with the filmstrip below">
+        <img class="shot" src="shots/en/loupe.jpg" width="1800" height="1125" loading="lazy" alt="Loupe view: the Milky Way over snowy mountains, with the filmstrip below">
         </div>
       </div>
 
-      <div class="row">
-        <div class="copy reveal">
-          <p class="eyebrow"><span>Share</span></p>
-          <h2>From export to photo book</h2>
-          <p>Export with presets, output sharpening and watermarks; print through your printer's color profile; turn a slideshow into an MP4 video; and make web galleries and PDF photo books, previewed page by page.</p>
+      <div class="feature">
+        <div class="feature-text reveal">
+          <h2><span>Output</span></h2>
+          <p>Export with presets, output sharpening and watermarks. Print through your printer's color profile. Save a slideshow as an MP4 video, build a web gallery, or lay out a PDF photo book and preview it page by page.</p>
         </div>
         <div class="media reveal">
-          <img class="shot sheet" src="shots/en/book.jpg" width="1300" height="924" loading="lazy" alt="The photo book dialog: a cover of a lake and mountains titled Mountains &amp; Lakes">
+        <img class="shot sheet" src="shots/en/book.jpg" width="1300" height="924" loading="lazy" alt="The photo book dialog: a cover of a lake and mountains titled Mountains &amp; Lakes">
         </div>
       </div>
 
-      <div class="cards">
-        <div class="card reveal">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11m0 0-4-4m4 4 4-4"/><rect x="3" y="15" width="18" height="6" rx="2"/></svg>
-          <h3><span>Import</span></h3>
-          <p>Folders, memory cards, cameras and iPhones, videos and tethered shooting. An interrupted import picks up where it stopped.</p>
-        </div>
-        <div class="card reveal">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
-          <h3><span>Merge and enhance</span></h3>
-          <p>HDR and panorama merges, AI denoise, and super resolution that doubles the width and height.</p>
-        </div>
-        <div class="card reveal">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z"/><path d="M19 16v4m-2-2h4"/></svg>
-          <h3><span>AI assistant (optional)</span></h3>
-          <p>Write titles, captions and keywords, find photos with a sentence, and develop from a described look, with Anthropic, any OpenAI-compatible service, or Ollama / LM Studio on your Mac.</p>
-        </div>
-        <div class="card reveal">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 20 6v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6l8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
-          <h3><span>Safe by design</span></h3>
-          <p>Every edit can be undone. Catalog snapshots, and verified full backups that restore into a new library.</p>
-        </div>
-        <div class="card reveal">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-          <h3><span>Built for big libraries</span></h3>
-          <p>A 500,000-photo catalog is ready about five seconds after launch; filtering, sorting and searching take 0.1–0.35 s.</p>
-        </div>
-        <div class="card reveal">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h9M8.5 3v2m3.5 0c-1 4-4 7-7.5 8.5M7 9c1.5 2.5 3.5 4 6 5"/><path d="m13 21 4-9 4 9m-6.6-3h5.2"/></svg>
-          <h3><span>Chinese and English</span></h3>
-          <p>The interface comes in Simplified Chinese and English, following your Mac's language or the one you choose in Settings.</p>
-        </div>
+      <div class="more reveal">
+        <h2><span>Also in the app</span></h2>
+        <dl>
+          <div>
+            <dt><span>Import</span></dt>
+            <dd>Folders, memory cards, cameras and iPhones on a cable, videos, and tethered shooting. An interrupted import finishes at the next launch.</dd>
+          </div>
+          <div>
+            <dt><span>Merge and enhance</span></dt>
+            <dd>HDR and panorama merges, AI denoise, and super resolution at twice the width and height.</dd>
+          </div>
+          <div>
+            <dt><span>AI assistant (optional)</span></dt>
+            <dd>Writes titles, captions and keywords, finds photos from a sentence, and develops from a described look, using Anthropic, any OpenAI-compatible service, or Ollama / LM Studio on your Mac.</dd>
+          </div>
+          <div>
+            <dt><span>Undo and backups</span></dt>
+            <dd>Every edit can be undone. Catalog snapshots, and verified full backups that restore into a new catalog.</dd>
+          </div>
+          <div>
+            <dt><span>Large libraries</span></dt>
+            <dd>A 500,000-photo catalog is ready about five seconds after launch; filtering, sorting and searching take 0.1–0.35 s.</dd>
+          </div>
+          <div>
+            <dt><span>Languages</span></dt>
+            <dd>Simplified Chinese and English, following your Mac's language or the one you choose in Settings.</dd>
+          </div>
+        </dl>
       </div>
     </div>
   </section>
 
   <section id="faq" class="faq">
     <div class="wrap">
-      <h2>Questions and answers</h2>
+      <h2>Common questions</h2>
       <div class="qa-list reveal">
         <div class="qa">
           <h3>Is PhotoCatalog free?</h3>
@@ -275,24 +249,19 @@
     </div>
   </section>
 
-  <section id="privacy" class="band">
+  <section id="privacy" class="privacy">
     <div class="wrap reveal">
-      <p class="eyebrow"><span>Privacy</span></p>
-      <h2>Your photos stay yours</h2>
-      <p>No account, analytics or tracking, and nothing about your library is sent anywhere on its own. The app goes online only when you use the AI assistant, view a map or check for updates, and with an AI service on your Mac, your photos never leave it.</p>
-      <p><a href="privacy/"><span>Read the privacy policy →</span></a></p>
+      <h2><span>Privacy</span></h2>
+      <p>The app has no account, analytics or tracking, and never uploads your library on its own. It goes online only when you use the AI assistant, view a map or check for updates, and with an AI service running on your Mac, your photos don't leave it.</p>
+      <p><a href="privacy/"><span>Read the privacy policy</span></a></p>
     </div>
   </section>
 
   <section class="download">
     <div class="wrap reveal">
-      <img class="hero-icon" src="icon.png" alt="" width="80" height="80">
-      <h2>Get PhotoCatalog for free</h2>
+      <h2><span>Download</span></h2>
       <div class="actions">
-        <a class="button primary" href="https://github.com/euynus/PhotoCatalog/releases/latest">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>
-          <span>Download for Mac</span>
-        </a>
+        <a class="button primary" href="https://github.com/euynus/PhotoCatalog/releases/latest"><span>Download for Mac</span></a>
       </div>
       <ul>
         <li>macOS 14 or later on Apple silicon</li>
