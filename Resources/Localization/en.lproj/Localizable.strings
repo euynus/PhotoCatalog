@@ -1417,6 +1417,9 @@
 "移动选中原件" = "Move Selected Originals";
 "立即备份" = "Back Up Now";
 "缓存上限 %lld MB" = "Cache limit %lld MB";
+"缓存上限 %lld MB（自动）" = "Cache limit %lld MB (automatic)";
+"恢复自动上限" = "Use Automatic Limit";
+"自动上限按照片数量估算，每张约 0.5 MB，不少于 2 GB，也不超过磁盘可用空间的四分之一。" = "The automatic limit allows about 0.5 MB per photo: at least 2 GB, and at most a quarter of the disk's free space.";
 "缓存与性能" = "Cache & Performance";
 "编辑时自动写入 XMP 附属文件" = "Write XMP sidecars automatically when editing";
 "缩略图与缓存" = "Thumbnails & Cache";

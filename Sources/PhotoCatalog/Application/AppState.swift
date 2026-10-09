@@ -602,11 +602,29 @@ final class AppState {
     var visionEnabled = UserDefaults.standard.bool(forKey: "pc_vision") {
         didSet { UserDefaults.standard.set(visionEnabled, forKey: "pc_vision") }
     }
-    var cacheLimitMB: Int = {
-        let saved = UserDefaults.standard.integer(forKey: "pc_cacheLimitMB")
-        return saved > 0 ? saved : 2_048
-    }() {
-        didSet { UserDefaults.standard.set(cacheLimitMB, forKey: "pc_cacheLimitMB") }
+    /// The cache limit chosen in Settings, in MB; 0 until one is chosen, and then the limit follows
+    /// the catalog (`automaticCacheLimitMB`).
+    var cacheLimitMB: Int = max(0, UserDefaults.standard.integer(forKey: "pc_cacheLimitMB")) {
+        didSet {
+            if cacheLimitMB > 0 { UserDefaults.standard.set(cacheLimitMB, forKey: "pc_cacheLimitMB") }
+            else { UserDefaults.standard.removeObject(forKey: "pc_cacheLimitMB") }
+        }
+    }
+    /// The limit that applies: the chosen one, or the automatic one.
+    var effectiveCacheLimitMB: Int { cacheLimitMB > 0 ? cacheLimitMB : automaticCacheLimitMB }
+    /// Room for a thumbnail and a preview of every photo (about 0.5 MB together at 2048 px), so
+    /// previews aren't pruned and made again from the originals each time a photo is opened; a flat
+    /// 2 GB held a quarter of a 14,000-photo catalog's. Never under 2 GB, never over a quarter of the
+    /// free space on the catalog's volume.
+    var automaticCacheLimitMB: Int {
+        var photos = assets.reduce(0) { $1.isDemo || $1.deleted ? $0 : $0 + 1 }
+        // while a catalog is still loading, `assets` holds only part of it
+        if isLoadingCatalog, let total = loadingCatalogTotalCount { photos = max(photos, total) }
+        let needed = photos * (previewMaxPixel >= 2_048 ? 512 : 384) / 1_024
+        let free = (try? store?.packageURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
+            .volumeAvailableCapacityForImportantUsage
+        let room = free.map { Int($0 / 4 / 1_048_576) } ?? needed
+        return max(2_048, min(needed, room))
     }
     var previewMaxPixel: Int = {
         let saved = UserDefaults.standard.integer(forKey: "pc_previewMaxPixel")
@@ -6385,7 +6403,7 @@ final class AppState {
         let packageURL = store.packageURL
         let snapshot = assets
         let maxBytes = cacheLimitBytes
-        let limitMB = cacheLimitMB
+        let limitMB = effectiveCacheLimitMB
         Task { [weak self, store, packageURL, snapshot, maxBytes, limitMB] in
             let result = await Task.detached(priority: .utility) {
                 let report = CacheService.prune(store.cacheURL, maxBytes: maxBytes)
@@ -6403,7 +6421,7 @@ final class AppState {
     }
 
     private var cacheLimitBytes: Int64 {
-        Int64(cacheLimitMB) * 1024 * 1024
+        Int64(effectiveCacheLimitMB) * 1024 * 1024
     }
 
     private func enforceCacheLimitIfNeeded() {

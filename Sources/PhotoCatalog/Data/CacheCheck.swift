@@ -36,6 +36,11 @@ enum CacheCheck {
         check(files(in: previews).count == count, "cache: import made a preview of every photo")
         for file in files(in: store.cacheURL) { try? fm.removeItem(at: file.url) }
 
+        // unset, the limit follows the catalog and is never under 2 GB
+        app.cacheLimitMB = 0
+        check(UserDefaults.standard.object(forKey: "pc_cacheLimitMB") == nil && app.effectiveCacheLimitMB >= 2_048,
+              "cache: no chosen limit means the automatic one, at least 2 GB")
+
         // room for the thumbnails and about half the previews
         app.cacheLimitMB = Int((previewBytes / 2) >> 20) + 2
         let limit = Int64(app.cacheLimitMB) << 20
