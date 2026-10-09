@@ -1,4 +1,5 @@
-/* PhotoCatalog site: no build step, no outside fonts or scripts. Colors follow the app's tokens. */
+/* PhotoCatalog site: no build step, no outside fonts; the one outside script is Cloudflare Web Analytics.
+   Colors follow the app's tokens. */
 :root {
   --bg: #f5f5f7;
   --surface: #ffffff;
