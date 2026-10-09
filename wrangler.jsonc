@@ -1,0 +1,8 @@
+// Cloudflare Workers Builds deploys the product site from this file on each push to main: the files in
+// site/ (built by script/build_site.py) served as static assets at https://photocatalog.gooday.dev.
+// There is no Worker code. "name" must match the Worker's name in the Cloudflare dashboard.
+{
+  "name": "photocatalog",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "./site" }
+}
