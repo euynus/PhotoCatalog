@@ -3,6 +3,7 @@
 (function () {
   var root = document.documentElement;
   var titles = { zh: root.getAttribute("data-title-zh"), en: root.getAttribute("data-title-en") };
+  var motion = root.classList.contains("motion");
 
   function apply(lang) {
     root.setAttribute("data-lang", lang);
@@ -26,5 +27,27 @@
       if (url.searchParams.has("lang")) { url.searchParams.set("lang", lang); history.replaceState(null, "", url); }
     } catch (e) {}
     apply(lang);
+    // the newly shown language fades in
+    var main = document.querySelector("main");
+    if (motion && main) {
+      main.classList.remove("lang-fade");
+      void main.offsetWidth;
+      main.classList.add("lang-fade");
+    }
   });
+
+  // Scroll reveal. The head script set .motion before the first paint, which keeps each .reveal hidden
+  // until it comes into view; marking the page ready stops that script from taking .motion back.
+  if (motion) {
+    root.setAttribute("data-motion-ready", "");
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add("in");
+        observer.unobserve(entry.target);
+      });
+    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.12 });
+    var targets = document.querySelectorAll(".reveal");
+    for (var i = 0; i < targets.length; i++) observer.observe(targets[i]);
+  }
 })();
