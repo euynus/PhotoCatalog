@@ -95,8 +95,13 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
     /// Perspective (Lightroom's Transform), -100…100, between the mirror and the straighten
     /// angle: Vertical turns the camera up or down (negative widens the top, setting converging
     /// verticals upright), Horizontal turns it sideways (positive enlarges the right side).
-    var perspectiveVertical: Double = 0
-    var perspectiveHorizontal: Double = 0
+    var perspectiveVertical: Double = 0 { didSet { if !hasPerspective { perspectiveYawFirst = false } } }
+    var perspectiveHorizontal: Double = 0 { didSet { if !hasPerspective { perspectiveYawFirst = false } } }
+    /// The order of the two camera turns the Transform stands for: false tilts, then turns
+    /// sideways. A quarter turn swaps which slider tilts and which turns sideways, and the turns
+    /// don't commute, so it swaps their order too (see `DevelopGeometry.rotated`) and the photo
+    /// turns without changing. Always false without a Transform.
+    var perspectiveYawFirst = false
     var straighten: Double = 0
     var crop: DevelopCrop?
 
@@ -187,7 +192,9 @@ struct DevelopSettings: Codable, Equatable, Hashable, Sendable {
         if hasGeometry {   // appended only when set, so earlier edits keep their cache names
             let crop = self.crop.map { String(format: "%.4f,%.4f,%.4f,%.4f", $0.x, $0.y, $0.width, $0.height) } ?? "-"
             text += String(format: "|%d,%d,%.2f,", rotation, flipped ? 1 : 0, straighten) + crop
-            if hasPerspective { text += String(format: "|t%.1f,%.1f", perspectiveVertical, perspectiveHorizontal) }
+            if hasPerspective {
+                text += String(format: "|t%.1f,%.1f", perspectiveVertical, perspectiveHorizontal) + (perspectiveYawFirst ? "y" : "")
+            }
         }
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         for byte in text.utf8 { hash = (hash ^ UInt64(byte)) &* 0x100_0000_01b3 }
@@ -253,6 +260,7 @@ extension DevelopSettings {
         flipped = try container.decodeIfPresent(Bool.self, forKey: .flipped) ?? false
         perspectiveVertical = try container.decodeIfPresent(Double.self, forKey: .perspectiveVertical) ?? 0
         perspectiveHorizontal = try container.decodeIfPresent(Double.self, forKey: .perspectiveHorizontal) ?? 0
+        perspectiveYawFirst = try container.decodeIfPresent(Bool.self, forKey: .perspectiveYawFirst) ?? false
         straighten = try container.decodeIfPresent(Double.self, forKey: .straighten) ?? 0
         crop = try container.decodeIfPresent(DevelopCrop.self, forKey: .crop)
     }
@@ -441,10 +449,12 @@ enum DevelopGeometry {
         // quarter turns apply before the mirror, so a mirrored photo turns the other way
         let step = (clockwise != settings.flipped) ? 1 : 3
         next.rotation = (settings.rotation + step) % 4
-        // the perspective stays on the content: turned clockwise, its top is at the right
+        // the perspective stays on the content: turned clockwise, its top is at the right; the
+        // camera turns its sliders stand for swap their order too, as they don't commute
         (next.perspectiveVertical, next.perspectiveHorizontal) = clockwise
             ? (settings.perspectiveHorizontal, -settings.perspectiveVertical)
             : (-settings.perspectiveHorizontal, settings.perspectiveVertical)
+        next.perspectiveYawFirst = settings.hasPerspective && !settings.perspectiveYawFirst
         next.crop = settings.crop.map { crop in
             clockwise
                 ? DevelopCrop(x: 1 - crop.y - crop.height, y: crop.x, width: crop.height, height: crop.width)

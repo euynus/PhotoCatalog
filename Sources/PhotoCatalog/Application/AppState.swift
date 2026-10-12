@@ -1596,9 +1596,7 @@ final class AppState {
             }
             let asset = self.assetIndex[id].map { self.assets[$0] }
             self.commitDevelopChange([id], undoName: mode == .auto ? L("自动透视") : L("垂直透视")) { _, settings in
-                settings.perspectiveVertical = found.vertical
-                settings.perspectiveHorizontal = found.horizontal
-                settings.straighten = found.straighten
+                settings = found.applied(to: settings)
                 if let asset {
                     settings.crop = DevelopGeometry.refit(settings, frame: self.developFrame(for: asset, settings: settings))
                 }

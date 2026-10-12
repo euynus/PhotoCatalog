@@ -142,6 +142,7 @@ private struct DevelopCanvas: View {
         before.flipped = after.flipped
         before.perspectiveVertical = after.perspectiveVertical
         before.perspectiveHorizontal = after.perspectiveHorizontal
+        before.perspectiveYawFirst = after.perspectiveYawFirst
         before.straighten = after.straighten
         before.crop = after.crop
         before.distortion = after.distortion

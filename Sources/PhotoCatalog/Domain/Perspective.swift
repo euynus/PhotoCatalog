@@ -35,9 +35,10 @@ struct Homography: Equatable, Sendable {
             c01, a[0] * a[8] - a[2] * a[6], a[2] * a[3] - a[0] * a[5],
             c02, a[1] * a[6] - a[0] * a[7], a[0] * a[4] - a[1] * a[3],
         ]
-        // keep w positive for points in front, so `apply` can tell them from ones behind
-        let scale = (inv[8] >= 0 ? 1 : -1) / det
-        return Homography(m: inv.map { $0 * scale })
+        // exactly the inverse, not just up to scale: what came from in front (w > 0) goes back
+        // with w > 0, so `apply` can tell it from what's behind — even where a strong correction
+        // leaves the frame's (0, 0) corner beyond the horizon
+        return Homography(m: inv.map { $0 / det })
     }
 
     static func translation(_ dx: Double, _ dy: Double) -> Homography { Homography(m: [1, 0, dx, 0, 1, dy, 0, 0, 1]) }
@@ -60,14 +61,19 @@ extension DevelopGeometry {
     }
 
     /// The re-projection for a camera turn in a frame of `frame` pixels, about its center: K·R·K⁻¹.
-    static func rotation(pitch: Double, yaw: Double, frame: CGSize) -> Homography {
+    /// The pitch turns first, unless `yawFirst` (see `DevelopSettings.perspectiveYawFirst`).
+    static func rotation(pitch: Double, yaw: Double, yawFirst: Bool = false, frame: CGSize) -> Homography {
         let w = Double(frame.width), h = Double(frame.height)
         let f = perspectiveFocal * hypot(w, h) / 2
         let (cp, sp, cy, sy) = (cos(pitch), sin(pitch), cos(yaw), sin(yaw))
-        // R = Ry(yaw)·Rx(pitch), with y pointing down and z into the scene
-        let r = [cy, sy * sp, sy * cp,
-                 0, cp, -sp,
-                 -sy, cy * sp, cy * cp]
+        // R = Ry(yaw)·Rx(pitch), or Rx(pitch)·Ry(yaw), with y pointing down and z into the scene
+        let r = yawFirst
+            ? [cy, 0, sy,
+               sp * sy, cp, -sp * cy,
+               -cp * sy, sp, cp * cy]
+            : [cy, sy * sp, sy * cp,
+               0, cp, -sp,
+               -sy, cy * sp, cy * cp]
         let k = Homography(m: [f, 0, 0, 0, f, 0, 0, 0, 1])
         let kInverse = Homography(m: [1 / f, 0, 0, 0, 1 / f, 0, 0, 0, 1])
         let centered = Homography.translation(-w / 2, -h / 2)
@@ -82,7 +88,7 @@ extension DevelopGeometry {
             return nil
         }
         let angles = perspectiveAngles(vertical: s.perspectiveVertical, horizontal: s.perspectiveHorizontal)
-        let turn = rotation(pitch: angles.pitch, yaw: angles.yaw, frame: frame)
+        let turn = rotation(pitch: angles.pitch, yaw: angles.yaw, yawFirst: s.perspectiveYawFirst, frame: frame)
         let w = Double(frame.width), h = Double(frame.height)
         let corners = [CGPoint(x: 0, y: 0), CGPoint(x: w, y: 0), CGPoint(x: w, y: h), CGPoint(x: 0, y: h)]
         let mapped = corners.compactMap(turn.apply)

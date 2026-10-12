@@ -150,6 +150,8 @@ extension DevelopSettings {
             case .perspective:
                 next.perspectiveVertical = source.perspectiveVertical
                 next.perspectiveHorizontal = source.perspectiveHorizontal
+                // in the order the source photo shows them, so the photos match
+                next.perspectiveYawFirst = source.perspectiveYawFirst
             case .crop:
                 next.straighten = source.straighten
                 next.crop = source.crop

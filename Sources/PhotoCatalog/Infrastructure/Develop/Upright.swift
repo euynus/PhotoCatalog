@@ -20,6 +20,16 @@ enum Upright {
         var vertical: Double
         var horizontal: Double
         var straighten: Double
+
+        /// `settings` with this correction for their Transform and straighten angle.
+        func applied(to settings: DevelopSettings) -> DevelopSettings {
+            var next = settings
+            next.perspectiveVertical = vertical
+            next.perspectiveHorizontal = horizontal
+            next.perspectiveYawFirst = false   // found for the camera tilted, then turned sideways
+            next.straighten = straighten
+            return next
+        }
     }
 
     /// A straight line found in the photo: x = c + (y - height/2)·t for near-vertical lines,
