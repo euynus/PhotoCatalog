@@ -155,14 +155,15 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
     }
 
     func folder(for date: Date) -> URL {
+        subfolders(for: date).reduce(options.destination) { $0.appendingPathComponent($1, isDirectory: true) }
+    }
+
+    /// The dated folders a photo taken at `date` goes in, under the destination and the backup.
+    private func subfolders(for date: Date) -> [String] {
         switch options.organize {
-        case .yearDay:
-            options.destination.appendingPathComponent(FileNameTemplate.format(date, "yyyy"), isDirectory: true)
-                .appendingPathComponent(FileNameTemplate.format(date, "yyyy-MM-dd"), isDirectory: true)
-        case .day:
-            options.destination.appendingPathComponent(FileNameTemplate.format(date, "yyyy-MM-dd"), isDirectory: true)
-        case .flat:
-            options.destination
+        case .yearDay: [FileNameTemplate.format(date, "yyyy"), FileNameTemplate.format(date, "yyyy-MM-dd")]
+        case .day: [FileNameTemplate.format(date, "yyyy-MM-dd")]
+        case .flat: []
         }
     }
 
@@ -175,11 +176,15 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
         let directory = folder(for: meta.captureDate)
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         let size = (try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? -1
-        let base = baseName(for: source, date: meta.captureDate, camera: meta.camera, in: directory, size: size)
+        let base = baseName(for: source, date: meta.captureDate, camera: meta.camera, in: directory)
         let destination = directory.appendingPathComponent(base).appendingPathExtension(source.pathExtension)
-        if !Self.isSameFile(destination, size: size) {
+        if fm.fileExists(atPath: destination.path) {
+            // the base name leaves a file there only when it's this very photo, copied before —
+            // not a copy an earlier attempt cut short
+            guard Self.hasSize(destination, size) else { throw CocoaError(.fileWriteFileExists) }
+        } else {
             try fm.copyItem(at: source, to: destination)
-            guard Self.isSameFile(destination, size: size) else {
+            guard Self.hasSize(destination, size) else {
                 try? fm.removeItem(at: destination)
                 throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: L("复制后大小不一致")])
             }
@@ -190,20 +195,28 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
             try? fm.copyItem(at: sidecar, to: copiedSidecar)
         }
         if options.backupEnabled, let backup = options.backup {
-            let folder = backup.appendingPathComponent(L("导入于 \(importDay)"), isDirectory: true)
+            // laid out like the copies under the import day's folder, so photos by one name
+            // taken on different days don't meet
+            let folder = subfolders(for: meta.captureDate)
+                .reduce(backup.appendingPathComponent(L("导入于 \(importDay)"), isDirectory: true)) {
+                    $0.appendingPathComponent($1, isDirectory: true)
+                }
             try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-            let copy = folder.appendingPathComponent(destination.lastPathComponent)
-            if !Self.isSameFile(copy, size: size) {
-                try? fm.removeItem(at: copy)
-                try fm.copyItem(at: source, to: copy)
+            var copy = folder.appendingPathComponent(destination.lastPathComponent)
+            var counter = 1
+            // never over another photo's backup (one an import into another destination left)
+            while fm.fileExists(atPath: copy.path), !Self.holdsSameFile(copy, as: source) {
+                copy = folder.appendingPathComponent("\(base)-\(counter)").appendingPathExtension(source.pathExtension)
+                counter += 1
             }
+            if !fm.fileExists(atPath: copy.path) { try fm.copyItem(at: source, to: copy) }
         }
         return destination
     }
 
     /// One base name per pair and folder, free for every extension in the pair — unless the
     /// very same file is already there (an import picked up again after an interruption).
-    private func baseName(for source: URL, date: Date, camera: String, in directory: URL, size: Int64) -> String {
+    private func baseName(for source: URL, date: Date, camera: String, in directory: URL) -> String {
         let key = CardFile(url: source, size: 0, modified: date, isRaw: false).pairKey
         let cacheKey = key + "|" + directory.path
         return lock.withLock {
@@ -219,8 +232,9 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
             var counter = 1
             while extensions.contains(where: { ext in
                 let url = directory.appendingPathComponent(candidate).appendingPathExtension(ext)
+                // another photo by this name takes it, even one of the same size
                 return FileManager.default.fileExists(atPath: url.path)
-                    && !(ext == source.pathExtension && Self.isSameFile(url, size: size))
+                    && !Self.holdsSameFile(url, as: source.deletingPathExtension().appendingPathExtension(ext))
             }) {
                 candidate = "\(wanted)-\(counter)"
                 counter += 1
@@ -230,8 +244,15 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
         }
     }
 
-    private static func isSameFile(_ url: URL, size: Int64) -> Bool {
+    private static func hasSize(_ url: URL, _ size: Int64) -> Bool {
         guard let existing = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else { return false }
         return Int64(existing) == size
+    }
+
+    /// Whether `url` holds the very file `source` is: the same size, then the same bytes.
+    private static func holdsSameFile(_ url: URL, as source: URL) -> Bool {
+        guard let size = try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              hasSize(url, Int64(size)), let hash = HashService.contentHash(url) else { return false }
+        return hash == HashService.contentHash(source)
     }
 }

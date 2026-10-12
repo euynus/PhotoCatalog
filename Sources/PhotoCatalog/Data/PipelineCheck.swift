@@ -1445,8 +1445,12 @@ enum PipelineCheck {
         check(cardAssets.count == 2 && cardAssets.allSatisfy { $0.localPath?.hasPrefix(dayFolder.path) == true },
               "the catalog references the copies, never the card")
         let backedUp = (try? fm.contentsOfDirectory(atPath: cardBackup.path))?.first
-            .flatMap { try? fm.contentsOfDirectory(atPath: cardBackup.appendingPathComponent($0).path) } ?? []
-        check(Set(backedUp) == ["20240309_0005.JPG", "20240309_0005.TIF"], "a backup copy is written alongside")
+            .flatMap { day in
+                try? fm.contentsOfDirectory(atPath: cardBackup.appendingPathComponent(day)
+                    .appendingPathComponent("2024/2024-03-09").path)
+            } ?? []
+        check(Set(backedUp) == ["20240309_0005.JPG", "20240309_0005.TIF"],
+              "a backup copy is written alongside, in the copies' folders under the import day")
         let again = CardCopier(options: cardOptions, files: toImport)
         let recopied = try? again.copy(card.appendingPathComponent("IMG_7001.JPG"))
         check(recopied?.lastPathComponent == "20240309_0005.JPG"
