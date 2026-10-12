@@ -3314,7 +3314,7 @@ final class AppState {
     func importFromCard(_ card: CardVolume?, files: [CardFile], options: CardImportOptions) {
         guard let root = prepareCopyImport(files: files, options: options) else { return }
         runCopyImport(from: card?.name ?? L("存储卡"), urls: files.map(\.url), root: root,
-                      preparer: CardCopier(options: options, files: files)) { [weak self] failed in
+                      preparer: CardCopier(options: options, files: files), retriesThroughPreparer: true) { [weak self] failed in
             guard let self, options.ejectAfter, let card, failed == 0 else { return }
             do {
                 try NSWorkspace.shared.unmountAndEjectDevice(at: card.url)
@@ -3609,15 +3609,23 @@ final class AppState {
         return options.destination
     }
 
+    /// The copy import whose failed files Retry Failed sends through its preparer again: they
+    /// are a card's files, to be copied off it (renamed, backed up), never cataloged on it.
+    @ObservationIgnored private var copyImportRetry: (runId: UUID, preparer: any ImportFilePreparer)?
+
     /// Imports files that `preparer` copies into `root`, cataloging the copies as a referenced
-    /// source; `finished` gets the number of files that failed.
+    /// source; `finished` gets the number of files that failed. `retriesThroughPreparer`: Retry
+    /// Failed can copy the failed files with `preparer` again (a card's can; a camera's session
+    /// ends with the import).
     private func runCopyImport(from sourceName: String, urls: [URL], root: URL, preparer: any ImportFilePreparer,
+                               retriesThroughPreparer: Bool = false,
                                finished: @escaping @MainActor (Int) -> Void) {
         guard let coordinator, let store else { return }
         let sourceId = coordinator.sourceId(forFolder: root)
         // an interrupted import resumes from the copies, never from a card or camera that may be gone
         let run = ImportRun(source: root, mode: .referenced)
         guard startPersistedImport(run, store: store), let control = importControl else { return }
+        copyImportRetry = retriesThroughPreparer ? (run.id, preparer) : nil
         let vision = visionEnabled
         let previewSize = previewMaxPixel
         let readXMP = readXMPSidecar
@@ -4184,22 +4192,27 @@ final class AppState {
             return
         }
         let files = run.failures.map { URL(fileURLWithPath: $0.path) }
+        // a card import's failures are the card's files: copied off it again, as the import would have
+        let preparer = copyImportRetry?.runId == run.id ? copyImportRetry?.preparer : nil
         let retry = ImportRun(source: folder, mode: run.mode)
         guard startPersistedImport(retry, store: store, configuration: configuration.payload), let control = importControl else {
             importRun?.failures = run.failures
             return
         }
+        copyImportRetry = preparer.map { (retry.id, $0) }
         let vision = configuration.payload.autoTag
         let previewSize = configuration.payload.previewMaxPixel ?? previewMaxPixel
         let archiveRule = recoveredArchiveRule(configuration.payload)
         let readXMP = configuration.payload.readSidecar ?? readXMPSidecar
         push("正在重试 \(files.count) 个失败文件…", "refresh")
-        Task { [weak self, coordinator, store, folder, files, retry, vision, archiveRule, readXMP, previewSize, control] in
+        Task { [weak self, coordinator, store, folder, files, retry, vision, archiveRule, readXMP, previewSize, control,
+                preparer] in
             guard let self else { return }
             let imported = await self.runImportWorker(retry, store: store) { progress in
                 coordinator.importFiles(files, from: folder, mode: retry.mode, autoTag: vision,
                                         archiveRule: archiveRule, readSidecar: readXMP,
-                                        previewMaxPixel: previewSize, control: control, progress: progress)
+                                        previewMaxPixel: previewSize, control: control,
+                                        preparer: preparer, progress: progress)
             }
             self.finishImport(folder: folder, imported: imported,
                               store: store, mode: retry.mode, runId: retry.id)

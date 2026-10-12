@@ -41,6 +41,23 @@ extension CatalogTestCase {
 
 /// Copying photos off a memory card (or a camera) into the destination folders.
 final class CardImportTests: CatalogTestCase {
+    /// A card import saves its options as the next one's: the user's are put back afterwards.
+    private var savedOptions: Any?
+
+    override func setUp() {
+        super.setUp()
+        savedOptions = UserDefaults.standard.object(forKey: "pc_cardImportOptions")
+    }
+
+    override func tearDown() {
+        if let savedOptions {
+            UserDefaults.standard.set(savedOptions, forKey: "pc_cardImportOptions")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "pc_cardImportOptions")
+        }
+        super.tearDown()
+    }
+
     private func cardFile(_ url: URL) -> CardFile {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         return CardFile(url: url, size: Int64(size), modified: .now, isRaw: false)
@@ -162,5 +179,41 @@ final class CardImportTests: CatalogTestCase {
         XCTAssertEqual(again.path, copy.path)
         XCTAssertEqual(contentsOfFiles(under: scratch.appendingPathComponent("Photos")).count, 1)
         XCTAssertEqual(contentsOfFiles(under: scratch.appendingPathComponent("Backup")).count, 1)
+    }
+
+    /// A card photo that couldn't be read fails the import; Retry Failed copies it off the card
+    /// (and backs it up) like the others, rather than cataloging it on the card.
+    @MainActor
+    func testRetryFailedAfterCardImportCopiesThePhotoOffTheCard() async throws {
+        let card = scratch.appendingPathComponent("Card/DCIM/100CANON")
+        let first = card.appendingPathComponent("IMG_0001.JPG")
+        let late = card.appendingPathComponent("IMG_0002.JPG")
+        try makeShot(at: first, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:00", shade: 1)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        _ = try CatalogStore(packageURL: package)
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        let destination = scratch.appendingPathComponent("Photos")
+        let backup = scratch.appendingPathComponent("Backup")
+        var options = CardImportOptions(destination: destination)
+        options.backupEnabled = true
+        options.backup = backup
+
+        // the second photo can't be read this time (a card read error)
+        app.importFromCard(nil, files: [cardFile(first), CardFile(url: late, size: 0, modified: .now, isRaw: false)],
+                           options: options)
+        try await waitUntil("card import finished") { !app.importing }
+        XCTAssertEqual(app.importRun?.failures.map(\.filename), ["IMG_0002.JPG"])
+
+        try makeShot(at: late, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:05", shade: 4)
+        app.retryFailedImport()
+        try await waitUntil("retry finished") { !app.importing }
+
+        let retried = try XCTUnwrap(app.assets.first { !$0.isDemo && !$0.deleted && $0.filename == "IMG_0002.JPG" })
+        let path = try XCTUnwrap(retried.localPath)
+        XCTAssertTrue(path.hasPrefix(destination.path + "/"), "the photo is copied off the card: \(path)")
+        XCTAssertFalse(app.assets.contains { $0.localPath?.hasPrefix(card.path) == true }, "nothing is cataloged on the card")
+        XCTAssertTrue(contentsOfFiles(under: backup).contains(try Data(contentsOf: late)), "the photo is backed up")
     }
 }
