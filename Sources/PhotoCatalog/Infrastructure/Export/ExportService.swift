@@ -269,7 +269,8 @@ enum ExportService {
     }
 
     private static func jsonGPS(_ value: Double, asset: Asset) -> Any {
-        hasGPS(asset) ? value : NSNull()
+        // JSON has no infinity or NaN (writing one throws); such a location isn't one anyway
+        hasGPS(asset) && value.isFinite ? value : NSNull()
     }
 
     private static func csvGPS(_ value: Double, asset: Asset) -> String {

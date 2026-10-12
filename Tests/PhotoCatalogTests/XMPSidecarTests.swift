@@ -66,6 +66,67 @@ final class XMPSidecarTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: other, encoding: .utf8), "<notes><note>not XMP</note></notes>")
     }
 
+    private func description(_ attributes: String) throws -> URL {
+        try sidecar("\(UUID().uuidString).xmp", """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+         <rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+           xmlns:exif="http://ns.adobe.com/exif/1.0/" \(attributes)/>
+        </rdf:RDF></x:xmpmeta>
+        """)
+    }
+
+    /// A rating that isn't a number from -1 (rejected) to 5 is ignored, not trusted.
+    func testMalformedRatingIsIgnored() throws {
+        for value in ["1e20", "-1e20", "nan", "inf", "7", "-2"] {
+            let read = XMPSidecar.read(try description(#"xmp:Rating="\#(value)""#))
+            XCTAssertNotNil(read, value)
+            XCTAssertNil(read?.rating, "rating \(value) is ignored")
+        }
+        XCTAssertEqual(XMPSidecar.read(try description(#"xmp:Rating="5.0""#))?.rating, 5)
+        XCTAssertEqual(XMPSidecar.read(try description(#"xmp:Rating="-1""#))?.rating, 0, "rejected reads as unrated")
+        XCTAssertEqual(XMPSidecar.read(try description(#"xmp:Rating="3""#))?.rating, 3)
+    }
+
+    /// A location that isn't on Earth — not finite, or past the poles or the date line — is
+    /// ignored, and the rest of the sidecar is still read.
+    func testMalformedLocationIsIgnored() throws {
+        for (latitude, longitude) in [("inf,0N", "10,0E"), ("1e300,0N", "10,0E"), ("nan,0N", "10,0E"),
+                                      ("91,0N", "10,0E"), ("10,0N", "181,0E"), ("10,0N", "0,1e300W")] {
+            let read = XMPSidecar.read(try description(
+                #"exif:GPSLatitude="\#(latitude)" exif:GPSLongitude="\#(longitude)" xmp:Rating="2""#))
+            XCTAssertNil(read?.gps, "\(latitude) \(longitude) is ignored")
+            XCTAssertEqual(read?.rating, 2)
+        }
+        let valid = XMPSidecar.read(try description(#"exif:GPSLatitude="30,30.0N" exif:GPSLongitude="122,15.0W""#))
+        XCTAssertEqual(valid?.gps?.0, 30.5)
+        XCTAssertEqual(valid?.gps?.1, -122.25)
+    }
+
+    /// A photo whose location isn't on Earth (from a sidecar an older version read) is written
+    /// without one rather than stopping the app.
+    func testImpossibleLocationIsNotWritten() throws {
+        for gps in [(Double.infinity, 10.0), (1e300, 10), (10, -.nan), (95, 10), (10, 200)] {
+            var asset = sample()
+            asset.gps = gps
+            let url = scratch.appendingPathComponent("\(UUID().uuidString).xmp")
+            XCTAssertTrue(XMPSidecar.write(asset, to: url))
+            let read = XMPSidecar.read(url)
+            XCTAssertNil(read?.gps, "\(gps) isn't written")
+            XCTAssertEqual(read?.rating, 4)
+        }
+    }
+
+    /// The metadata JSON exported beside originals leaves such a location out too.
+    func testImpossibleLocationIsLeftOutOfExportedMetadata() throws {
+        var asset = sample()
+        asset.gps = (.nan, .infinity)
+        let url = scratch.appendingPathComponent("metadata.json")
+        XCTAssertTrue(ExportService.exportMetadataJSON([asset], to: url))
+        let rows = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [[String: Any]])
+        XCTAssertTrue(rows.first?["gpsLatitude"] is NSNull)
+        XCTAssertTrue(rows.first?["gpsLongitude"] is NSNull)
+    }
+
     /// Another app's titles in several languages and its several creators: the photo's title is
     /// the default-language one and its author the first creator, and writing changes just
     /// those, keeping the other languages and creators.

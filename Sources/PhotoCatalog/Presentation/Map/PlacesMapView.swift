@@ -10,7 +10,7 @@ struct PlacesMapView: View {
     /// Camera height in meters — drives the clustering grid size.
     @State private var cameraDistance: Double = 10_000_000
 
-    private struct Cluster: Identifiable {
+    struct Cluster: Identifiable {
         let id: String
         let representative: Asset
         let count: Int
@@ -30,11 +30,17 @@ struct PlacesMapView: View {
         let lng: Int
     }
 
-    private func clusters(of located: [Asset]) -> [Cluster] {
-        let step = gridStep
+    /// Whether a photo's location is a place on the map: one that isn't (not finite, or past
+    /// the poles, read by an older version from a malformed sidecar) can't be put in a cell.
+    static func isOnMap(_ asset: Asset) -> Bool {
+        CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: asset.gps.0, longitude: asset.gps.1))
+    }
+
+    /// `located` grouped into cells `step` degrees wide, each shown as one pin.
+    static func clusters(of located: [Asset], step: Double) -> [Cluster] {
         var buckets: [Cell: (rep: Int, count: Int, latSum: Double, lngSum: Double)] = [:]
         var order: [Cell] = []
-        for (offset, a) in located.enumerated() {
+        for (offset, a) in located.enumerated() where isOnMap(a) {
             let cell = Cell(lat: Int((a.gps.0 / step).rounded()), lng: Int((a.gps.1 / step).rounded()))
             if var b = buckets[cell] {
                 b.count += 1
@@ -56,7 +62,7 @@ struct PlacesMapView: View {
 
     var body: some View {
         // once a body: it runs again with every move of the map's camera
-        let located = app.list.filter(\.hasGPS)
+        let located = app.list.filter { $0.hasGPS && Self.isOnMap($0) }
         Group {
             if located.isEmpty {
                 ContentUnavailableView {
@@ -67,7 +73,7 @@ struct PlacesMapView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Map(position: $position) {
-                    ForEach(clusters(of: located)) { c in
+                    ForEach(Self.clusters(of: located, step: gridStep)) { c in
                         Annotation("", coordinate: c.coordinate) {
                             Button {
                                 if c.count == 1 {

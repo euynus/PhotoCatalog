@@ -81,22 +81,31 @@ enum XMPSidecar {
     /// XMP's GPS form: degrees, decimal minutes and a hemisphere letter ("30,30.500000N").
     static func gpsCoordinate(_ degrees: Double, positive: Character, negative: Character) -> String {
         let value = abs(degrees)
-        let whole = Int(value)
-        return String(format: "%d,%.6f", whole, (value - Double(whole)) * 60) + String(degrees < 0 ? negative : positive)
+        // whole degrees as a Double: converting a value that isn't a place on Earth to Int traps
+        let whole = value.rounded(.towardZero)
+        return String(format: "%.0f,%.6f", whole, (value - whole) * 60) + String(degrees < 0 ? negative : positive)
     }
 
-    /// Parses "DDD,MM.mmk" or "DDD,MM,SSk"; nil when malformed.
+    /// Parses "DDD,MM.mmk" or "DDD,MM,SSk"; nil when malformed, or when it isn't a latitude
+    /// (N, S) within 90° or a longitude (E, W) within 180°.
     static func parseGPSCoordinate(_ text: String) -> Double? {
         guard let reference = text.last?.uppercased(), "NSEW".contains(reference) else { return nil }
         let parts = text.dropLast().split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
         guard (2...3).contains(parts.count) else { return nil }
         let degrees = parts[0] + parts[1] / 60 + (parts.count == 3 ? parts[2] / 3600 : 0)
+        guard degrees.isFinite, abs(degrees) <= (reference == "N" || reference == "S" ? 90 : 180) else { return nil }
         return reference == "S" || reference == "W" ? -degrees : degrees
+    }
+
+    /// Whether `gps` (latitude, longitude) is a place on Earth: finite, and within 90° and 180°.
+    static func isValidLocation(_ gps: (Double, Double)) -> Bool {
+        gps.0.isFinite && gps.1.isFinite && abs(gps.0) <= 90 && abs(gps.1) <= 180
     }
 
     static func xmp(for a: Asset) -> String {
         let label = a.colorLabel.map { $0.rawValue.capitalized } ?? ""
-        let gps = a.hasGPS && !(a.gps.0 == 0 && a.gps.1 == 0)
+        // a location that isn't on Earth (read by an older version from a malformed sidecar) is left out
+        let gps = a.hasGPS && !(a.gps.0 == 0 && a.gps.1 == 0) && isValidLocation(a.gps)
             ? "\n            exif:GPSLatitude=\"\(gpsCoordinate(a.gps.0, positive: "N", negative: "S"))\""
                 + "\n            exif:GPSLongitude=\"\(gpsCoordinate(a.gps.1, positive: "E", negative: "W"))\""
             : ""
@@ -305,17 +314,17 @@ private final class SidecarParser: NSObject, XMLParserDelegate {
     private func property(_ name: String, _ value: String) {
         switch name {
         case "xmp:Rating", "xap:Rating", "Rating":
-            // Lightroom/Bridge may write "5.0" (Int("5.0") is nil) or "-1" (rejected);
-            // parse leniently and clamp into the app's 0…5 range.
-            guard !value.isEmpty else { return }
-            result.rating = min(5, max(0, Int(value) ?? Int(Double(value) ?? 0)))
+            // Lightroom/Bridge may write "5.0" (Int("5.0") is nil) or "-1" (rejected, unrated
+            // here); anything that isn't a number from -1 to 5 is another app's mistake, ignored
+            guard let number = Double(value), number.isFinite, (-1...5).contains(number) else { return }
+            result.rating = max(0, Int(number))
         case "xmp:Label", "xap:Label", "Label":
             result.label = value
         case "exif:DateTimeOriginal", "DateTimeOriginal":
             // a wall-clock time; any fraction or zone after the seconds doesn't move it
             if let date = XMPSidecar.exifDateFormatter.date(from: String(value.prefix(19))) { result.captureDate = date }
         case "exif:GPSLatitude", "GPSLatitude":
-            latitude = XMPSidecar.parseGPSCoordinate(value)
+            latitude = XMPSidecar.parseGPSCoordinate(value).flatMap { abs($0) <= 90 ? $0 : nil }
         case "exif:GPSLongitude", "GPSLongitude":
             longitude = XMPSidecar.parseGPSCoordinate(value)
         default:
