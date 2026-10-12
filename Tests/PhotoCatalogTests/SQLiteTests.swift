@@ -41,6 +41,44 @@ final class SQLiteTests: XCTestCase {
         XCTAssertEqual(try db.query("SELECT COUNT(*) AS count FROM child;").first?.int("count"), 0)
     }
 
+    /// An empty BLOB is a value, not a missing one: it reads back as empty data, however it was
+    /// written (bound from empty `Data`, or as SQL's `X''`).
+    func testZeroLengthBlobReadsBackAsEmptyData() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-sqlite-blob-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let db = try Database(path: dir.appendingPathComponent("test.sqlite").path)
+        try db.run("CREATE TABLE t(id INTEGER PRIMARY KEY, v BLOB NOT NULL);")
+        try db.run("INSERT INTO t(id, v) VALUES(1, ?);", [.blob(Data())])
+        try db.run("INSERT INTO t(id, v) VALUES(2, X'');")
+
+        let rows = try db.query("SELECT id, v, typeof(v) AS kind FROM t ORDER BY id;")
+        XCTAssertEqual(rows.map { $0.text("kind") }, ["blob", "blob"])
+        XCTAssertEqual(rows.map { $0.blob("v") }, [Data(), Data()])
+    }
+
+    /// A face named without a vector (none could be made for it) is still there after a relaunch.
+    func testNamedFaceWithoutVectorSurvivesReload() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-face-blob-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        var asset = DemoData.assets[0]
+        asset.isDemo = false
+        let face = FaceRecord(id: "face-1", assetId: asset.id, box: CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.4),
+                              quality: 0.5, vector: [], person: "Alice", confirmed: true)
+        do {
+            let store = try CatalogStore(packageURL: package)
+            try store.upsert([asset])
+            try store.saveFaceScans([asset.id: [face]])
+        }
+
+        let reopened = try CatalogStore(packageURL: package)
+        XCTAssertEqual(try reopened.loadFaces(), [face])
+    }
+
     func testManualAlbumRenameAndDeletePreserveAssets() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-album-crud-\(UUID().uuidString)")

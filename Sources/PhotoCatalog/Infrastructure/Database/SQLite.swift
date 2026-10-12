@@ -152,9 +152,11 @@ final class Database: @unchecked Sendable {
                         case SQLITE_FLOAT: row[name] = .double(sqlite3_column_double(stmt, i))
                         case SQLITE_TEXT: row[name] = .text(String(cString: sqlite3_column_text(stmt, i)))
                         case SQLITE_BLOB:
+                            // an empty BLOB has no bytes to point at (the pointer is NULL), but
+                            // it's still a value: a face kept without a vector, say
                             if let bytes = sqlite3_column_blob(stmt, i) {
                                 row[name] = .blob(Data(bytes: bytes, count: Int(sqlite3_column_bytes(stmt, i))))
-                            } else { row[name] = .null }
+                            } else { row[name] = .blob(Data()) }
                         default: row[name] = .null
                         }
                     }
@@ -231,6 +233,9 @@ final class Database: @unchecked Sendable {
             case .int(let v): sqlite3_bind_int64(stmt, idx, Int64(v))
             case .double(let v): sqlite3_bind_double(stmt, idx, v)
             case .text(let v): sqlite3_bind_text(stmt, idx, v, -1, SQLITE_TRANSIENT)
+            case .blob(let d) where d.isEmpty:
+                // empty data may have no address, and a NULL pointer would bind NULL, not an empty BLOB
+                sqlite3_bind_zeroblob(stmt, idx, 0)
             case .blob(let d):
                 _ = d.withUnsafeBytes { sqlite3_bind_blob(stmt, idx, $0.baseAddress, Int32(d.count), SQLITE_TRANSIENT) }
             case .null: sqlite3_bind_null(stmt, idx)
