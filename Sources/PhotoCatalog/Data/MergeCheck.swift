@@ -194,7 +194,7 @@ enum MergeCheck {
         let urls = [bracket(-2), bracket(0), bracket(2, shift: (5, 3))]
         defer { for url in urls { try? FileManager.default.removeItem(at: url) } }
         let frames = zip(urls, [0.25, 1, 4]).map { PhotoMerge.Frame(url: $0, isRaw: false, brightness: $1) }
-        guard let merged = PhotoMerge.hdr(frames, options: .init(), maxPixel: nil),
+        guard case .success(let merged) = PhotoMerge.hdr(frames, options: .init(), maxPixel: nil),
               let result = DevelopRenderer.render(merged.image) else {
             preconditionFailure("brackets merge")
         }
@@ -228,7 +228,8 @@ enum MergeCheck {
         let patch = CGRect(x: 230, y: 270, width: 40, height: 40)
         let middleFrame = DevelopRenderer.render(PhotoMerge.decode(ghostFrames[1], maxPixel: nil)!)!
         func likeness(deghost: Bool) -> Double {
-            guard let merged = PhotoMerge.hdr(ghostFrames, options: .init(align: false, deghost: deghost), maxPixel: nil),
+            guard case .success(let merged) = PhotoMerge.hdr(ghostFrames, options: .init(align: false, deghost: deghost),
+                                                             maxPixel: nil),
                   let image = DevelopRenderer.render(merged.image) else { return 0 }
             return correlation(image, middleFrame, patch, offset: 1)   // the merge leaves out a pixel all round
         }

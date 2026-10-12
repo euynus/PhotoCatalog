@@ -42,8 +42,9 @@ enum PhotoMerge {
     /// HDR (one scene at several exposures) or a panorama (overlapping frames).
     enum Kind: String, Sendable { case hdr, panorama }
 
-    /// Why frames didn't merge: one couldn't be read, or they don't make a panorama.
-    enum Failure: Error { case unreadable, panorama(PanoramaFailure) }
+    /// Why frames didn't merge: one couldn't be read, the frame at this index isn't the size
+    /// and orientation of the first (HDR), or they don't make a panorama.
+    enum Failure: Error, Equatable { case unreadable, mismatchedFrame(Int), panorama(PanoramaFailure) }
 
     /// The frames merged as `kind`, no larger than `maxPixel` (nil: full size): the image, and the
     /// frame it was aligned to. For the dialog's preview and the merge itself alike.
@@ -51,8 +52,7 @@ enum PhotoMerge {
         -> Result<(image: CIImage, reference: Int), Failure> {
         switch kind {
         case .hdr:
-            guard let merged = hdr(frames, options: options, maxPixel: maxPixel) else { return .failure(.unreadable) }
-            return .success(merged)
+            return hdr(frames, options: options, maxPixel: maxPixel)
         case .panorama:
             switch panorama(frames, maxPixel: maxPixel) {
             case .success(let image): return .success((image, 0))
@@ -65,14 +65,20 @@ enum PhotoMerge {
     private static let analysisPixel = 1024
 
     // ---- HDR ----
-    /// The HDR merge of `frames` at `maxPixel` (nil: full size), in the working space; nil
-    /// when a frame can't be read. Also the index of the reference frame, the middle exposure.
-    static func hdr(_ frames: [Frame], options: HDROptions, maxPixel: Int?) -> (image: CIImage, reference: Int)? {
-        guard frames.count >= 2 else { return nil }
+    /// The HDR merge of `frames` at `maxPixel` (nil: full size), in the working space, and the
+    /// index of the reference frame, the middle exposure. Fails when a frame can't be read, or
+    /// isn't the size and orientation of the others: brackets share one framing, and a frame
+    /// that doesn't could be neither lined up nor merged without cutting the photo down.
+    static func hdr(_ frames: [Frame], options: HDROptions, maxPixel: Int?)
+        -> Result<(image: CIImage, reference: Int), Failure> {
+        guard frames.count >= 2 else { return .failure(.unreadable) }
+        // by the files first: the preview's small decodes can make two sizes look alike
+        if let index = mismatchedFrame(frames.map(pixelSize)) { return .failure(.mismatchedFrame(index)) }
         let small = frames.map { decode($0, maxPixel: analysisPixel) }
-        guard small.allSatisfy({ $0 != nil }) else { return nil }
+        guard small.allSatisfy({ $0 != nil }) else { return .failure(.unreadable) }
+        if let index = mismatchedFrame(small.map { $0?.extent.size }) { return .failure(.mismatchedFrame(index)) }
         let previews = small.compactMap { $0 }.map { DevelopRenderer.render($0) }
-        guard previews.allSatisfy({ $0 != nil }) else { return nil }
+        guard previews.allSatisfy({ $0 != nil }) else { return .failure(.unreadable) }
         let thumbnails = previews.compactMap { $0 }
         let reference = middleExposure(frames, thumbnails)
 
@@ -91,7 +97,8 @@ enum PhotoMerge {
 
         // the full-size frames, moved into line and cut to the part they all cover
         let full = maxPixel == analysisPixel ? small.compactMap { $0 } : frames.compactMap { decode($0, maxPixel: maxPixel) }
-        guard full.count == frames.count else { return nil }
+        guard full.count == frames.count else { return .failure(.unreadable) }
+        if let index = mismatchedFrame(full.map(\.extent.size)) { return .failure(.mismatchedFrame(index)) }
         let scale = full[reference].extent.width / max(small[reference]!.extent.width, 1)
         var common = full[reference].extent
         let moved = full.indices.map { index -> CIImage in
@@ -102,9 +109,29 @@ enum PhotoMerge {
             return image
         }
         let area = common.integral.insetBy(dx: 1, dy: 1)
-        guard area.width > 16, area.height > 16 else { return nil }
+        guard area.width > 16, area.height > 16 else { return .failure(.unreadable) }
         let aligned = moved.map { atOrigin($0.cropped(to: area)) }
-        return (fuse(aligned, reference: reference, ratios: ratios, deghost: options.deghost), reference)
+        return .success((fuse(aligned, reference: reference, ratios: ratios, deghost: options.deghost), reference))
+    }
+
+    /// The first of `sizes` more than a pixel off the first's either way; nil when they match
+    /// (a size that isn't known matches).
+    static func mismatchedFrame(_ sizes: [CGSize?]) -> Int? {
+        guard let first = sizes.first ?? nil else { return nil }
+        return sizes.indices.dropFirst().first { index in
+            guard let size = sizes[index] else { return false }
+            return abs(size.width - first.width) > 1 || abs(size.height - first.height) > 1
+        }
+    }
+
+    /// A frame's pixel size as shown (its orientation applied), from the file's metadata.
+    static func pixelSize(_ frame: Frame) -> CGSize? {
+        guard let source = CGImageSourceCreateWithURL(frame.url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else { return nil }
+        let turned = (5...8).contains(properties[kCGImagePropertyOrientation] as? Int ?? 1)
+        return turned ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
     }
 
     /// Exposure fusion (Mertens, Kautz and Van Reeth): each frame weighted by its detail, color

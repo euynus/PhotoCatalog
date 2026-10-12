@@ -5043,7 +5043,14 @@ final class AppState {
         case merged(url: URL, reference: Int, asset: Asset?)
         case unreadable
         case readOnly
+        case mismatchedFrame(Int)
         case panorama(PhotoMerge.PanoramaFailure)
+    }
+
+    /// Why bracketed photos couldn't be merged to HDR: the frame at `index` isn't the size and
+    /// orientation of the first.
+    nonisolated static func hdrMismatchMessage(_ index: Int) -> String {
+        L("HDR 合并需要尺寸和方向相同的照片：第 \(index + 1) 张与第 1 张不同")
     }
 
     /// Why a panorama couldn't be made, for the dialog and the toast.
@@ -5078,6 +5085,7 @@ final class AppState {
                     switch PhotoMerge.merge(frames, kind: kind, options: options, maxPixel: nil) {
                     case .success(let found): merged = found
                     case .failure(.unreadable): return continuation.resume(returning: .unreadable)
+                    case .failure(.mismatchedFrame(let index)): return continuation.resume(returning: .mismatchedFrame(index))
                     case .failure(.panorama(let failure)): return continuation.resume(returning: .panorama(failure))
                     }
                     let original = frames[merged.reference].url
@@ -5102,6 +5110,8 @@ final class AppState {
                 self.push(kind == .hdr ? "HDR 合并失败：有照片无法读取" : "全景合并失败：有照片无法读取", "warning")
             case .readOnly:
                 self.push("参考照片所在的文件夹是只读的，无法保存合并结果", "warning")
+            case .mismatchedFrame(let index):
+                self.push(verbatim: Self.hdrMismatchMessage(index), "warning")
             case .panorama(let failure):
                 self.push(verbatim: Self.panoramaFailureMessage(failure), "warning")
             case .merged(let url, let reference, let asset):

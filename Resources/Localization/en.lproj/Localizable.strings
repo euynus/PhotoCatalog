@@ -833,6 +833,7 @@
 "用了这个 LUT 的照片将不再显示它的效果。" = "Photos using this LUT will no longer show its look.";
 "选择 3D LUT 文件（.cube）" = "Choose 3D LUT files (.cube)";
 "HDR 合并失败：有照片无法读取" = "HDR merge failed: a photo couldn’t be read";
+"HDR 合并需要尺寸和方向相同的照片：第 %lld 张与第 1 张不同" = "HDR merge needs photos of one size and orientation: photo %lld differs from the first";
 "HDR 合并最多 9 张照片" = "HDR merge takes up to 9 photos";
 "参考照片所在的文件夹是只读的，无法保存合并结果" = "The reference photo’s folder is read-only, so the merge can’t be saved";
 "合并" = "Merge";
