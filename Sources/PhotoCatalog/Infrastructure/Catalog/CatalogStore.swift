@@ -1049,17 +1049,39 @@ final class CatalogStore: @unchecked Sendable {
     }
 
     // ---------- source roots ----------
+    /// Adds a source folder, or updates the one with this id as an import of it again: its name,
+    /// path, access and volume are the import's, while it keeps its place in the sidebar (when
+    /// it was added) and its mode as `managementMode(keeping:importing:)` gives it.
     func addSourceRoot(id: String, displayName: String, path: String, bookmark: Data?,
                        mode: ImportMode = .referenced,
                        volumeIdentifier: String? = nil) throws {
+        let kept = Self.managementMode(keeping: try existingManagementMode(id: id), importing: mode)
         try db.run("""
-        INSERT OR REPLACE INTO source_roots(
+        INSERT INTO source_roots(
           id, display_name, path_hint, bookmark_data, management_mode, status, created_at, volume_identifier)
-        VALUES(?,?,?,?,?,?,?,?);
+        VALUES(?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET
+          display_name=excluded.display_name, path_hint=excluded.path_hint, bookmark_data=excluded.bookmark_data,
+          management_mode=excluded.management_mode, status=excluded.status,
+          volume_identifier=excluded.volume_identifier;
         """, [.text(id), .text(displayName), .text(path),
-              bookmark.map { SQLValue.blob($0) } ?? .null, .text(mode.rawValue),
+              bookmark.map { SQLValue.blob($0) } ?? .null, .text(kept),
               .text("online"), .text(Self.iso(Date())),
               volumeIdentifier.map { SQLValue.text($0) } ?? .null])
+    }
+
+    /// The mode a source folder has after an import of it in `mode`. Once it holds photos in
+    /// place it stays referenced — watched, and opened through its bookmark — whatever later
+    /// imports copy from it; a folder only copied from becomes referenced when photos are added
+    /// in place.
+    static func managementMode(keeping existing: String?, importing mode: ImportMode) -> String {
+        existing == ImportMode.referenced.rawValue ? ImportMode.referenced.rawValue : mode.rawValue
+    }
+
+    /// The stored mode of source folder `id` (nil: no such folder), a missing one read as referenced.
+    private func existingManagementMode(id: String) throws -> String? {
+        try db.query("SELECT management_mode FROM source_roots WHERE id=?;", [.text(id)]).first
+            .map { $0.text("management_mode") ?? ImportMode.referenced.rawValue }
     }
 
     /// Drop all stored security-scoped bookmarks, forcing re-authorization (§17.6).
@@ -1591,8 +1613,10 @@ final class CatalogStore: @unchecked Sendable {
                 let folder = URL(fileURLWithPath: run.sourcePath)
                 let bookmark = try db.query("SELECT bookmark_data FROM source_roots WHERE id=?;", [.text(rootId)])
                     .first?.blob("bookmark_data")
+                // the mode the folder keeps (addSourceRoot's), not just this import's
+                let mode = Self.managementMode(keeping: try existingManagementMode(id: rootId), importing: run.mode)
                 source = SourceRootRecord(id: rootId, displayName: folder.lastPathComponent, pathHint: folder.path,
-                                          bookmarkData: bookmark ?? options.bookmark, managementMode: run.mode.rawValue,
+                                          bookmarkData: bookmark ?? options.bookmark, managementMode: mode,
                                           status: "online", volumeIdentifier: volume)
             }
             committedRun.sourceId = rootId
