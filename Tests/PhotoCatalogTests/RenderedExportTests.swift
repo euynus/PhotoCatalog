@@ -149,4 +149,40 @@ final class RenderedExportTests: CatalogTestCase {
         XCTAssertEqual(gps[kCGImagePropertyGPSLongitude] as? Double ?? 0, 151.2153, accuracy: 0.0001)
         XCTAssertEqual(gps[kCGImagePropertyGPSLongitudeRef] as? String, "E")
     }
+
+    /// Under Skip, a photo whose name an earlier photo of the same export had just written was
+    /// skipped as if that file had been there before — or numbered, if the two ran at once.
+    func testSkipNumbersANameThisExportWroteAndSkipsOnlyFilesThatWereThere() throws {
+        let folder = scratch.appendingPathComponent("Shoot", isDirectory: true)
+        let output = scratch.appendingPathComponent("Out", isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let first = folder.appendingPathComponent("first.jpg"), second = folder.appendingPathComponent("second.jpg")
+        try writeImage(at: first, type: .jpeg, shade: 4)
+        try writeImage(at: second, type: .jpeg, shade: 12)
+        try Data("there before".utf8).write(to: output.appendingPathComponent("earlier.jpg"))
+        func item(_ url: URL) -> RenderedExportItem {
+            RenderedExportItem(assetId: url.lastPathComponent, sourcePath: url.path, isRaw: false, develop: .neutral,
+                               originalSize: CGSize(width: 80, height: 60),
+                               baseName: url.deletingPathExtension().lastPathComponent, date: .now, camera: "",
+                               title: "", caption: "", keywords: [], rating: 0, author: "", copyright: "")
+        }
+        var settings = ExportSettings()
+        settings.collision = .skip
+        settings.fileNameTemplate = "same"
+        let names = ExportNames()
+
+        let one = RenderedExportService.export(item(first), sequence: 1, settings: settings, to: output, names: names)
+        let two = RenderedExportService.export(item(second), sequence: 2, settings: settings, to: output, names: names)
+        guard case .written(let firstURL) = one else { return XCTFail("the first photo is written: \(one)") }
+        guard case .written(let secondURL) = two else {
+            return XCTFail("a name this export wrote is numbered, not skipped: \(two)")
+        }
+        XCTAssertEqual(firstURL.lastPathComponent, "same.jpg")
+        XCTAssertEqual(secondURL.lastPathComponent, "same-1.jpg")
+
+        settings.fileNameTemplate = "earlier"
+        let three = RenderedExportService.export(item(first), sequence: 3, settings: settings, to: output, names: names)
+        guard case .skipped = three else { return XCTFail("a file there before the export is skipped: \(three)") }
+        XCTAssertEqual(try Data(contentsOf: output.appendingPathComponent("earlier.jpg")), Data("there before".utf8))
+    }
 }

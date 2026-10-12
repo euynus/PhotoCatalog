@@ -220,7 +220,10 @@ enum RenderedExportService {
                 || (collision != .overwrite && FileManager.default.fileExists(atPath: candidate.path))
         }
         var candidate = url("")
-        if collision == .skip, FileManager.default.fileExists(atPath: candidate.path) { return nil }
+        // Skip passes over files that were there before the export: a name an earlier photo of
+        // this one took is numbered below, like any other
+        if collision == .skip, !reserved.contains(candidate.lastPathComponent.lowercased()),
+           FileManager.default.fileExists(atPath: candidate.path) { return nil }
         var counter = 1
         while taken(candidate) {   // photos of one export never overwrite each other
             candidate = url("-\(counter)")
