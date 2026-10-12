@@ -27,6 +27,7 @@
 " · %lld 失败" = " · %lld failed";
 " · %lld 张失败（%@）" = " · %lld failed (%@)";
 " · %lld 张已存在而跳过" = " · %lld skipped because they already exist";
+" · %lld 张与目录中的原件同名，已加编号而未覆盖原件" = " · %lld numbered so as not to overwrite an original in the catalog";
 " · %lld 跳过" = " · %lld skipped";
 " · 任务失败状态也未保存：%@" = " · The job's failed state wasn't saved either: %@";
 " · 元数据失败" = " · metadata failed";

@@ -32,10 +32,22 @@ struct RenderedExportItem: Sendable {
 final class ExportNames: @unchecked Sendable {
     private let lock = NSLock()
     private var reserved = Set<String>()
+    /// The names (lower-cased) of the catalog's originals in the export folder.
+    private let originals: Set<String>
+    private var spared = 0
+
+    init(originals: Set<String> = []) {
+        self.originals = originals
+    }
+
+    /// Photos that would have overwritten an original under Overwrite and took a numbered name.
+    var sparedOriginals: Int { lock.withLock { spared } }
 
     func destination(in folder: URL, name: String, ext: String, collision: ExportSettings.Collision) -> URL? {
         lock.withLock {
-            RenderedExportService.destinationURL(in: folder, name: name, ext: ext, collision: collision, reserved: &reserved)
+            if collision == .overwrite, originals.contains("\(name).\(ext)".lowercased()) { spared += 1 }
+            return RenderedExportService.destinationURL(in: folder, name: name, ext: ext, collision: collision,
+                                                        reserved: &reserved, originals: originals)
         }
     }
 }
@@ -189,11 +201,14 @@ enum RenderedExportService {
         return .written(destination)
     }
 
+    /// Where a photo named `name` goes in `folder`. `originals` are the names (lower-cased) of the
+    /// catalog's originals there: never written over, even under Overwrite — the name is numbered.
     static func destinationURL(in folder: URL, name: String, ext: String, collision: ExportSettings.Collision,
-                               reserved: inout Set<String>) -> URL? {
+                               reserved: inout Set<String>, originals: Set<String> = []) -> URL? {
         func url(_ suffix: String) -> URL { folder.appendingPathComponent("\(name)\(suffix).\(ext)") }
         func taken(_ candidate: URL) -> Bool {
-            reserved.contains(candidate.lastPathComponent.lowercased())
+            let key = candidate.lastPathComponent.lowercased()
+            return reserved.contains(key) || originals.contains(key)
                 || (collision != .overwrite && FileManager.default.fileExists(atPath: candidate.path))
         }
         var candidate = url("")

@@ -6623,6 +6623,8 @@ final class AppState {
         let settings: ExportSettings
         let folder: URL
         let history: BackgroundTaskHistory?
+        /// The names (lower-cased) of the catalog's originals in `folder`, which it never writes over.
+        var originals: Set<String> = []
     }
     struct RenderedExportProgress: Equatable {
         var done: Int
@@ -6656,6 +6658,30 @@ final class AppState {
                                       caption: asset.caption, keywords: asset.keywords, rating: asset.rating,
                                       author: asset.author, copyright: asset.copyright, isVideo: asset.isVideo)
         }
+    }
+
+    /// The names (lower-cased) of the originals the catalog has in `folder` — a photo's own file,
+    /// a RAW's paired JPEG, a photo removed from the catalog but still on disk — which an export
+    /// into it never writes over. Compares bytes: it runs over every photo, and catalog paths are
+    /// absolute and standardized.
+    func originalNames(in folder: URL) -> Set<String> {
+        let directory = PathString.standardized(folder.path)
+        let spelled = directory.hasSuffix("/") ? directory : directory + "/"
+        var prefixes = [Array(spelled.utf8)]
+        // /var, /tmp and /etc are firmlinks into /private: a catalog path may be spelled either way
+        for firmlink in ["/var/", "/tmp/", "/etc/"] where spelled.hasPrefix(firmlink) {
+            prefixes.append(Array(("/private" + spelled).utf8))
+        }
+        var names = Set<String>()
+        for asset in assets {
+            guard let path = asset.localPath else { continue }
+            for prefix in prefixes where path.utf8.starts(with: prefix) {
+                let name = path.utf8.dropFirst(prefix.count)
+                guard !name.isEmpty, !name.contains(UInt8(ascii: "/")) else { continue }
+                names.insert(String(decoding: name, as: UTF8.self).lowercased())
+            }
+        }
+        return names
     }
 
     // ----- slideshow (Lightroom's Slideshow module) -----
@@ -7041,7 +7067,8 @@ final class AppState {
         let subfolder = settings.subfolder.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "/", with: "-")
         let destination = subfolder.isEmpty ? folder : folder.appendingPathComponent(subfolder, isDirectory: true)
-        let job = RenderedExportJob(items: items, settings: settings, folder: destination, history: taskHistory)
+        let job = RenderedExportJob(items: items, settings: settings, folder: destination, history: taskHistory,
+                                    originals: originalNames(in: destination))
         renderedExportJobs.append(job)
         recordRenderedExportTask(job, state: .queued)
         if renderedExportJobs.count == 1 {
@@ -7072,7 +7099,7 @@ final class AppState {
         let cancellation = renderedExportCancellation
         cancellation.reset()
         Self.renderedExportQueue.async { [weak self] in
-            let names = ExportNames()
+            let names = ExportNames(originals: job.originals)
             var written: [URL] = [], skipped = 0, failedCount = 0
             var failures: [BackgroundTask.Failure] = []
             var folderReady = true
@@ -7126,16 +7153,17 @@ final class AppState {
                 }
             }
             let cancelled = cancellation.isCancelled
+            let spared = names.sparedOriginals
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    self?.finishRenderedExport(job, done: done, written: written, skipped: skipped,
+                    self?.finishRenderedExport(job, done: done, written: written, skipped: skipped, spared: spared,
                                                failedCount: failedCount, failures: failures, cancelled: cancelled)
                 }
             }
         }
     }
 
-    private func finishRenderedExport(_ job: RenderedExportJob, done: Int, written: [URL], skipped: Int,
+    private func finishRenderedExport(_ job: RenderedExportJob, done: Int, written: [URL], skipped: Int, spared: Int,
                                       failedCount: Int, failures: [BackgroundTask.Failure], cancelled: Bool) {
         let state: BackgroundTask.State = cancelled ? .cancelled : (failedCount > 0 ? .failed : .completed)
         recordRenderedExportTask(job, state: state, done: done, written: written.count,
@@ -7144,6 +7172,7 @@ final class AppState {
         renderedExportJobs.removeFirst()
         var message = cancelled ? L("导出已取消 · 已写入 \(written.count) 张") : L("已导出 \(written.count) 张照片")
         if skipped > 0 { message += L(" · \(skipped) 张已存在而跳过") }
+        if spared > 0 { message += L(" · \(spared) 张与目录中的原件同名，已加编号而未覆盖原件") }
         if let first = failures.first { message += L(" · \(failedCount) 项失败（\(first.message)）") }
         push(verbatim: message, failures.isEmpty ? "export" : "warning")
         if job.settings.revealInFinder, !written.isEmpty, !cancelled {

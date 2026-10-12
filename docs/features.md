@@ -102,7 +102,7 @@ The full reference to what PhotoCatalog does; [README](../README.md) has the ove
 
 - **Export** (`⇧⌘E`) — renders the selection with its Develop adjustments to JPEG, HEIC or TIFF (8/16-bit):
   - resize by long or short edge or a box; quality; sRGB, Display P3 or Adobe RGB;
-  - file-name templates (`{original}` `{seq}` `{date}` `{time}` `{camera}` `{title}` `{rating}`) and collision handling;
+  - file-name templates (`{original}` `{seq}` `{date}` `{time}` `{camera}` `{title}` `{rating}`) and collision handling (Overwrite never writes over a photo's original or any other original the catalog has in that folder, such as a RAW's paired JPEG: that photo gets a numbered name, and the finished export says how many did);
   - output sharpening on the final pixels, for screen, matte or glossy paper (paper takes a wider radius), at low, standard or high, luminance only;
   - metadata: all, copyright only or none, optional location removal, and the catalog's title, caption, keywords and rating included; a text watermark.
 

@@ -73,6 +73,7 @@ SPEC_OVERRIDES = {
     'shiftMinutes': '%lld', 'shiftHours': '%lld', 'pair': '%@', 'app.recentImportDays': '%lld',
     'singles': '%lld', 'unconfirmed': '%lld', 'person.unconfirmed': '%lld', 'k': '%@', 'active': '%lld',
     'app.cacheLimitMB': '%lld', 'app.effectiveCacheLimitMB': '%lld', 'person': '%@', 'plan.clashes': '%lld', 'plan.taken': '%lld', 'result.added': '%lld', 'gap + 1': '%lld', 'gap + 2': '%lld', 'person + 1': '%lld', 'readOnly': '%lld', 'status': '%lld', 'excerpt': '%@', 'applied': '%lld', 'query': '%@', 'unreadable': '%lld', 'roundedSeconds': '%lld', 'minutes': '%lld', 'editor': '%@', 'settings.rows': '%lld', 'settings.columns': '%lld', 'preview.stacks': '%lld', 'preview.photos': '%lld', 'status.shots': '%lld', 'Self.duration(slide * Double(count))': '%@', 'Self.duration($0)': '%@',
+    'spared': '%lld',
 }
 # English plurals: "%lld <noun>" gets a singular form in the .stringsdict. Nouns and the words before
 # them match in any case, as in titles ("Print %lld Photos"); the singular keeps the noun's capital.
