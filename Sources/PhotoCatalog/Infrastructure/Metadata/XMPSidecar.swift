@@ -154,6 +154,11 @@ enum XMPSidecar {
         "dc:subject", "dc:title", "dc:description", "dc:creator", "dc:rights",
     ]
 
+    /// Properties that hold several items, of which the photo has one: a title, caption or
+    /// copyright in several languages (the photo's is the default language's), and a list of
+    /// creators (the photo's author is the first). Writing replaces that one and keeps the rest.
+    private static let singleItemProperties: Set<String> = ["dc:title", "dc:description", "dc:rights", "dc:creator"]
+
     /// `existing` with this app's properties replaced by the photo's, everything else kept;
     /// nil when it isn't XMP that can be edited (it's then written afresh).
     static func merged(_ a: Asset, into existing: Data) -> String? {
@@ -162,10 +167,16 @@ enum XMPSidecar {
               let ourDescription = (try? ours.nodes(forXPath: "//*[local-name()='Description']"))?.first as? XMLElement,
               let descriptions = (try? document.nodes(forXPath: "//*[local-name()='Description']")) as? [XMLElement],
               let target = descriptions.first ?? emptyDescription(in: document) else { return nil }
-        // take our properties out wherever another description carries them, attribute or element
+        // take our properties out wherever another description carries them, attribute or element,
+        // keeping the items of theirs the photo doesn't have (other languages, other creators)
+        var otherItems: [String: [XMLNode]] = [:]
         for description in descriptions {
             for name in managedProperties { description.removeAttribute(forName: name) }
             for child in description.children ?? [] where managedProperties.contains(child.name ?? "") {
+                if let name = child.name, singleItemProperties.contains(name), otherItems[name] == nil,
+                   let element = child as? XMLElement {
+                    otherItems[name] = itemsBesideThePhotos(in: element)
+                }
                 child.detach()
             }
         }
@@ -178,9 +189,25 @@ enum XMPSidecar {
             target.addAttribute(attribute.copy() as! XMLNode)
         }
         for child in ourDescription.children ?? [] where child.kind == .element {
-            target.addChild(child.copy() as! XMLNode)
+            let copy = child.copy() as! XMLNode
+            if let items = otherItems[child.name ?? ""], !items.isEmpty,
+               let container = copy.children?.first(where: { $0.kind == .element }) as? XMLElement {
+                for item in items { container.addChild(item) }
+            }
+            target.addChild(copy)
         }
         return document.xmlString(options: [.nodePreserveAll])
+    }
+
+    /// Copies of the items of `property` (an rdf:Alt or rdf:Seq) other than the one the photo
+    /// has: every language but the default, or every creator but the first.
+    private static func itemsBesideThePhotos(in property: XMLElement) -> [XMLNode] {
+        guard let container = property.children?.first(where: { $0.kind == .element }) as? XMLElement else { return [] }
+        let items = (container.children ?? []).compactMap { $0 as? XMLElement }.filter { $0.localName == "li" }
+        let others = container.localName == "Alt"
+            ? items.filter { $0.attribute(forName: "xml:lang")?.stringValue?.lowercased() != "x-default" }
+            : Array(items.dropFirst())
+        return others.map { $0.copy() as! XMLNode }
     }
 
     /// A new, empty rdf:Description for XMP that has none yet (an empty rdf:RDF, or an
@@ -268,6 +295,12 @@ private final class SidecarParser: NSObject, XMLParserDelegate {
     private var text = ""
     private var latitude: Double?
     private var longitude: Double?
+    /// The language of the rdf:li being read, and the text properties already read: from a
+    /// language alternative the default language's item counts (else the first), from a list of
+    /// creators the first.
+    private var language: String?
+    private var readFromDefault: Set<String> = []
+    private var read: Set<String> = []
 
     private func property(_ name: String, _ value: String) {
         switch name {
@@ -295,6 +328,7 @@ private final class SidecarParser: NSObject, XMLParserDelegate {
                 qualifiedName qName: String?, attributes attrs: [String: String]) {
         path.append(name)
         text = ""
+        if name.hasSuffix("li") { language = attrs["xml:lang"] }
         if name == "rdf:Description" || name == "Description" {
             for (key, value) in attrs { property(key, value) }
         }
@@ -308,14 +342,27 @@ private final class SidecarParser: NSObject, XMLParserDelegate {
         let inside = { (tag: String) in self.path.contains { $0.hasSuffix(tag) } }
         // a property written as an element of the description
         if path.count >= 2, path[path.count - 2].hasSuffix("Description") { property(name, trimmed) }
-        if name.hasSuffix("li") && !trimmed.isEmpty {
-            if inside("subject") { result.keywords.append(trimmed) }
-            else if inside("title") { result.title = trimmed }
-            else if inside("description") { result.caption = trimmed }
-            else if inside("creator") { result.author = trimmed }
-            else if inside("rights") { result.copyright = trimmed }
+        if name.hasSuffix("li") {
+            if inside("subject") {
+                if !trimmed.isEmpty { result.keywords.append(trimmed) }
+            } else if let property = ["title", "description", "creator", "rights"].first(where: inside) {
+                textItem(trimmed, of: property)
+            }
         }
         path.removeLast()
         text = ""
+    }
+
+    private func textItem(_ value: String, of property: String) {
+        let isDefault = property != "creator" && language?.lowercased() == "x-default"
+        guard isDefault ? !readFromDefault.contains(property) : !read.contains(property) else { return }
+        if isDefault { readFromDefault.insert(property) }
+        read.insert(property)
+        switch property {
+        case "title": result.title = value
+        case "description": result.caption = value
+        case "creator": result.author = value
+        default: result.copyright = value
+        }
     }
 }

@@ -65,4 +65,56 @@ final class XMPSidecarTests: XCTestCase {
         XCTAssertFalse(XMPSidecar.write(sample(), to: other), "XML that isn't XMP is still left alone")
         XCTAssertEqual(try String(contentsOf: other, encoding: .utf8), "<notes><note>not XMP</note></notes>")
     }
+
+    /// Another app's titles in several languages and its several creators: the photo's title is
+    /// the default-language one and its author the first creator, and writing changes just
+    /// those, keeping the other languages and creators.
+    func testOtherLanguagesAndCreatorsSurviveAWrite() throws {
+        let url = try sidecar("languages.xmp", """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+         <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">
+          <dc:title><rdf:Alt>
+           <rdf:li xml:lang="x-default">Hallo</rdf:li>
+           <rdf:li xml:lang="de">Titel</rdf:li>
+           <rdf:li xml:lang="en">Title in English</rdf:li>
+          </rdf:Alt></dc:title>
+          <dc:description><rdf:Alt>
+           <rdf:li xml:lang="x-default">Beschreibung</rdf:li>
+           <rdf:li xml:lang="ja">キャプション</rdf:li>
+          </rdf:Alt></dc:description>
+          <dc:creator><rdf:Seq><rdf:li>Alice</rdf:li><rdf:li>Bob</rdf:li></rdf:Seq></dc:creator>
+          <dc:rights><rdf:Alt>
+           <rdf:li xml:lang="fr">Tous droits réservés</rdf:li>
+           <rdf:li xml:lang="x-default">All rights reserved</rdf:li>
+          </rdf:Alt></dc:rights>
+         </rdf:Description></rdf:RDF></x:xmpmeta>
+        """)
+        let read = try XCTUnwrap(XMPSidecar.read(url))
+        XCTAssertEqual(read.title, "Hallo", "the default-language title")
+        XCTAssertEqual(read.caption, "Beschreibung")
+        XCTAssertEqual(read.author, "Alice", "the first creator")
+        XCTAssertEqual(read.copyright, "All rights reserved", "the default language, wherever it's listed")
+
+        var edited = sample()
+        edited.title = "New title"
+        edited.caption = "Beschreibung"
+        edited.author = "Carol"
+        edited.copyright = "All rights reserved"
+        XCTAssertTrue(XMPSidecar.write(edited, to: url))
+        let text = try String(contentsOf: url, encoding: .utf8)
+        for kept in ["Titel", "Title in English", "キャプション", "Bob", "Tous droits réservés"] {
+            XCTAssertTrue(text.contains(kept), "\(kept) is kept")
+        }
+        XCTAssertFalse(text.contains("Hallo"), "the default-language title is replaced")
+        XCTAssertFalse(text.contains("Alice"), "the first creator is replaced")
+        let again = try XCTUnwrap(XMPSidecar.read(url))
+        XCTAssertEqual(again.title, "New title")
+        XCTAssertEqual(again.author, "Carol")
+        XCTAssertEqual(again.copyright, "All rights reserved")
+
+        XCTAssertTrue(XMPSidecar.write(edited, to: url))
+        let rewritten = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(rewritten.components(separatedBy: "Title in English").count, 2, "a second write adds nothing")
+        XCTAssertEqual(rewritten.components(separatedBy: "Bob").count, 2)
+    }
 }
