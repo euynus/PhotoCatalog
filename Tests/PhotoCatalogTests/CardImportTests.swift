@@ -92,6 +92,61 @@ final class CardImportTests: CatalogTestCase {
         XCTAssertTrue(backedUp.contains(try Data(contentsOf: second)))
     }
 
+    /// A Canon IMG_1234.CR3 is in the day's folder; an iPhone's IMG_1234.HEIC from that day
+    /// joins it under a name of its own, so it never passes for the RAW's JPEG.
+    func testAnotherCamerasPhotoByTheSameNameGetsItsOwnName() throws {
+        let day = scratch.appendingPathComponent("Photos/2026/2026-10-12")
+        // a TIFF under a RAW's name: Image I/O reads it by its content
+        try makeShot(at: day.appendingPathComponent("IMG_1234.CR3"), type: .tiff,
+                     make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:00", shade: 1)
+        let phone = scratch.appendingPathComponent("iPhone/DCIM/100APPLE/IMG_1234.HEIC")
+        try makeShot(at: phone, type: .heic, make: "Apple", model: "iPhone 15 Pro", taken: "2026:10:12 18:30:00",
+                     shade: 7)
+
+        let options = CardImportOptions(destination: scratch.appendingPathComponent("Photos"))
+        let copy = try CardCopier(options: options, files: [cardFile(phone)]).copy(phone)
+
+        XCTAssertEqual(copy.deletingLastPathComponent().path, day.path)
+        XCTAssertNotEqual(copy.deletingPathExtension().lastPathComponent.lowercased(), "img_1234",
+                          "the iPhone photo doesn't share the Canon RAW's name")
+    }
+
+    /// Renamed {date}_{seq}: a second camera's import that day numbers from the start again,
+    /// and its first photo mustn't take the name of the first camera's first RAW.
+    func testRenamedPhotoFromAnotherCameraGetsItsOwnName() throws {
+        let canon = scratch.appendingPathComponent("Card/DCIM/100CANON/IMG_0007.CR3")
+        try makeShot(at: canon, type: .tiff, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:00",
+                     shade: 1)
+        let phone = scratch.appendingPathComponent("iPhone/DCIM/100APPLE/IMG_4410.HEIC")
+        try makeShot(at: phone, type: .heic, make: "Apple", model: "iPhone 15 Pro", taken: "2026:10:12 18:30:00",
+                     shade: 7)
+        var options = CardImportOptions(destination: scratch.appendingPathComponent("Photos"))
+        options.rename = true
+        options.renameTemplate = "{date}_{seq}"
+
+        let raw = try CardCopier(options: options, files: [cardFile(canon)]).copy(canon)
+        let other = try CardCopier(options: options, files: [cardFile(phone)]).copy(phone)
+
+        XCTAssertEqual(raw.lastPathComponent, "20261012_0001.CR3")
+        XCTAssertNotEqual(other.deletingPathExtension().lastPathComponent, "20261012_0001",
+                          "the iPhone photo doesn't share the Canon RAW's name")
+    }
+
+    /// The JPEG of a RAW already in the destination (the same camera, the same second) keeps
+    /// the RAW's name, so the two still make one photo.
+    func testJpegOfARawAlreadyCopiedKeepsItsName() throws {
+        let day = scratch.appendingPathComponent("Photos/2026/2026-10-12")
+        try makeShot(at: day.appendingPathComponent("IMG_1234.CR3"), type: .tiff,
+                     make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:00", shade: 1)
+        let jpeg = scratch.appendingPathComponent("Card/DCIM/100CANON/IMG_1234.JPG")
+        try makeShot(at: jpeg, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:00", shade: 1)
+
+        let options = CardImportOptions(destination: scratch.appendingPathComponent("Photos"))
+        let copy = try CardCopier(options: options, files: [cardFile(jpeg)]).copy(jpeg)
+
+        XCTAssertEqual(copy.path, day.appendingPathComponent("IMG_1234.JPG").path)
+    }
+
     /// The same photo copied again (an import picked up after an interruption) reuses its copy
     /// and its backup rather than making second ones.
     func testSamePhotoCopiedAgainReusesItsCopyAndBackup() throws {

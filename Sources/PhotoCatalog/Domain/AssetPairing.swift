@@ -29,9 +29,19 @@ struct AssetPairing: Sendable {
         return result
     }
 
+    /// Whether two files are one exposure: taken within a second or two of each other, by the
+    /// same camera when both name theirs. Files that only share a name — another camera's
+    /// IMG_1234, the same camera's counter come round again — are two photos.
+    static func isSameShot(_ a: (camera: String, date: Date), _ b: (camera: String, date: Date)) -> Bool {
+        guard abs(a.date.timeIntervalSince(b.date)) < 2 else { return false }
+        let left = a.camera.trimmingCharacters(in: .whitespaces)
+        let right = b.camera.trimmingCharacters(in: .whitespaces)
+        return left.isEmpty || right.isEmpty || left.caseInsensitiveCompare(right) == .orderedSame
+    }
+
     /// Pairs live assets sharing a folder and base name, when exactly one is a RAW and the
-    /// others are JPEG/HEIC. Ambiguous groups (two RAWs, other formats) stay separate, and
-    /// virtual copies always stand alone.
+    /// others are JPEG/HEIC of the same shot. Ambiguous groups (two RAWs, other formats) stay
+    /// separate, and virtual copies always stand alone.
     static func rawJpeg(_ assets: [Asset]) -> AssetPairing {
         // Candidates sorted by a hash of their case-folded folder + base name, computed from
         // UTF-8 without allocating: a string and an array per photo made this ~0.7 s at 500k.
@@ -60,8 +70,13 @@ struct AssetPairing: Sendable {
                 for group in byStem.values where group.count > 1 {
                     let raws = group.filter { assets[$0].isRaw }
                     guard raws.count == 1 else { continue }
-                    let primary = assets[raws[0]].id
-                    let companions = group.filter { !assets[$0].isRaw }.map { assets[$0].id }
+                    let raw = assets[raws[0]]
+                    let primary = raw.id
+                    // a same-named file from another camera or another moment is another photo
+                    let companions = group.filter {
+                        !assets[$0].isRaw && isSameShot((raw.camera, raw.date), (assets[$0].camera, assets[$0].date))
+                    }.map { assets[$0].id }
+                    guard !companions.isEmpty else { continue }
                     companionsByPrimary[primary] = companions
                     for id in companions { primaryByCompanion[id] = primary }
                 }

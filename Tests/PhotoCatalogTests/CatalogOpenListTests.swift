@@ -9,13 +9,15 @@ final class CatalogOpenListTests: CatalogTestCase {
         UserDefaults.standard.set(true, forKey: "pc_pairRawJpeg")
         let folder = scratch.appendingPathComponent("Shoot")
         var raw = try XCTUnwrap(DemoData.assets.first { $0.isRaw })
-        var jpeg = try XCTUnwrap(DemoData.assets.first { !$0.isRaw && !$0.isVideo })
+        raw.date = Date(timeIntervalSince1970: 1_700_000_000)
+        // the RAW's own JPEG: its camera, its shot
+        var jpeg = PairingCheck.sameShot(try XCTUnwrap(DemoData.assets.first { !$0.isRaw && !$0.isVideo }), as: raw)
         raw.filename = "IMG_0001.CR3"
         raw.localPath = folder.appendingPathComponent(raw.filename).path
         jpeg.filename = "IMG_0001.JPG"
         jpeg.localPath = folder.appendingPathComponent(jpeg.filename).path
-        // the JPEG sorts first, so a list that shows it also makes it the photo selected on open
-        raw.date = Date(timeIntervalSince1970: 1_700_000_000)
+        // the JPEG sorts first (stamped a second later, still the same shot), so a list that
+        // shows it also makes it the photo selected on open
         jpeg.date = Date(timeIntervalSince1970: 1_700_000_001)
         raw.isDemo = false
         jpeg.isDemo = false

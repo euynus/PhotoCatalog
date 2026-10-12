@@ -426,7 +426,8 @@ final class CatalogLifecycleTests: XCTestCase {
         let folder = root.appendingPathComponent("Pair")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var raw = try XCTUnwrap(DemoData.assets.first { $0.isRaw })
-        var jpeg = try XCTUnwrap(DemoData.assets.first { !$0.isRaw && !$0.isVideo })
+        // the RAW's own JPEG: one shot, by its camera at its moment
+        var jpeg = PairingCheck.sameShot(try XCTUnwrap(DemoData.assets.first { !$0.isRaw && !$0.isVideo }), as: raw)
         raw.localPath = folder.appendingPathComponent("IMG_0001.CR3").path
         jpeg.localPath = folder.appendingPathComponent("IMG_0001.JPG").path
         for asset in [raw, jpeg] { try Data("x".utf8).write(to: URL(fileURLWithPath: asset.localPath ?? "")) }

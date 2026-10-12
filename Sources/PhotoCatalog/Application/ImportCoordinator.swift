@@ -361,17 +361,27 @@ final class ImportCoordinator: @unchecked Sendable {
                 .appendingPathComponent(year).appendingPathComponent(month)
         }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let base = url.deletingPathExtension().lastPathComponent
         var dest = dir.appendingPathComponent(url.lastPathComponent)
         var i = 1
         lazy var sourceHash = HashService.contentHash(url)   // read once, and only on a name clash
-        while FileManager.default.fileExists(atPath: dest.path) {
-            // An identical original is already here — e.g. an import resumed after a crash
-            // re-scans files already copied. Reuse it (the photo cataloged at this path keeps
-            // its id and dedups) instead of writing a duplicate "name (1).ext" + duplicate asset.
-            if let existing = HashService.contentHash(dest), existing == sourceHash {
-                return dest
+        // A name is free when no other photo has it in any extension: an iPhone's IMG_1234.HEIC
+        // beside a Canon's IMG_1234.CR3 would pass for the RAW's JPEG. Another file of the same
+        // shot (this JPEG's RAW, copied a moment ago) shares it.
+        nameSearch: while true {
+            var free = true
+            for existing in CopyNaming.files(named: dest.deletingPathExtension().lastPathComponent, in: dir) {
+                if existing.pathExtension.caseInsensitiveCompare(url.pathExtension) == .orderedSame {
+                    // An identical original is already here — e.g. an import resumed after a crash
+                    // re-scans files already copied. Reuse it (the photo cataloged at this path keeps
+                    // its id and dedups) instead of writing a duplicate "name (1).ext" + duplicate asset.
+                    if let hash = HashService.contentHash(existing), hash == sourceHash { return existing }
+                    free = false
+                } else if !CopyNaming.isSameShot(existing, camera: camera, date: date) {
+                    free = false
+                }
             }
-            let base = url.deletingPathExtension().lastPathComponent
+            if free { break nameSearch }
             dest = dir.appendingPathComponent("\(base) (\(i)).\(url.pathExtension)")
             i += 1
         }

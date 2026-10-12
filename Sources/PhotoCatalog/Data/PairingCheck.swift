@@ -21,6 +21,25 @@ enum PairingCheck {
         print("--- RAW+JPEG pairing assertions passed ---")
     }
 
+    /// `file` as another file of `raw`'s shot — its JPEG — taken by the RAW's camera at the RAW's
+    /// moment, as a pair needs; everything else stays `file`'s.
+    static func sameShot(_ file: Asset, as raw: Asset) -> Asset {
+        Asset(id: file.id, pid: file.pid, ori: file.ori, thumb: file.thumb, preview: file.preview,
+              filename: file.filename, type: file.type, isRaw: file.isRaw, folderId: file.folderId,
+              folderName: file.folderName, date: raw.date, width: file.width, height: file.height,
+              orientation: file.orientation, camera: raw.camera, lens: file.lens, focal: file.focal,
+              aperture: file.aperture, shutter: file.shutter, iso: file.iso, colorSpace: file.colorSpace,
+              hasICCProfile: file.hasICCProfile, fileMB: file.fileMB, fileModifiedAt: file.fileModifiedAt,
+              fileCreatedAt: file.fileCreatedAt, rating: file.rating, flag: file.flag, colorLabel: file.colorLabel,
+              keywords: file.keywords, title: file.title, caption: file.caption, author: file.author,
+              copyright: file.copyright, makerNotes: file.makerNotes, project: file.project, client: file.client,
+              location: file.location, gps: file.gps, gpsAltitude: file.gpsAltitude, status: file.status,
+              importedAt: file.importedAt, deleted: file.deleted, localPath: file.localPath,
+              captureDateSource: file.captureDateSource, contentHash: file.contentHash, quickHash: file.quickHash,
+              isDemo: file.isDemo, faces: file.faces, perceptualHash: file.perceptualHash,
+              masterId: file.masterId, copyName: file.copyName, duration: file.duration)
+    }
+
     @MainActor
     private static func checkPairingChanges() {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
@@ -202,7 +221,7 @@ enum PairingCheck {
             return copy
         }
         let raw = asset(raws[0], "/tmp/pc-pairing/IMG_0001.CR3")
-        let jpeg = asset(jpegs[0], "/tmp/pc-pairing/img_0001.jpg")
+        let jpeg = sameShot(asset(jpegs[0], "/tmp/pc-pairing/img_0001.jpg"), as: raw)
         let solo = asset(raws[1], "/tmp/pc-pairing/IMG_0002.CR3")
         let twinRaw = asset(raws[2], "/tmp/pc-pairing/IMG_0003.CR3")
         let twinOther = asset(raws[3], "/tmp/pc-pairing/IMG_0003.NEF")
@@ -289,7 +308,7 @@ enum PairingCheck {
                   status: .ready, importedAt: base.importedAt, localPath: path, isDemo: false)
         }
         let raw = real(raws[0], "/tmp/pc-edit/IMG_1.CR3")
-        let jpeg = real(jpegs[0], "/tmp/pc-edit/IMG_1.jpg")
+        let jpeg = sameShot(real(jpegs[0], "/tmp/pc-edit/IMG_1.jpg"), as: raw)
         let edit = real(jpegs[1], "/tmp/pc-edit/IMG_1-编辑.tif")
         let second = real(jpegs[2], "/tmp/pc-edit/IMG_1-Edit-2.tif")
         let alone = real(raws[1], "/tmp/pc-edit/IMG_2.CR3")
@@ -326,7 +345,7 @@ enum PairingCheck {
                   contentHash: nil, quickHash: nil, isDemo: false, faces: 0, perceptualHash: nil)
         }
         let offlineRaw = real(raws[0], "/tmp/pc-summary/IMG_0001.CR3", status: .offline)
-        let companion = real(jpegs[0], "/tmp/pc-summary/IMG_0001.jpg")
+        let companion = sameShot(real(jpegs[0], "/tmp/pc-summary/IMG_0001.jpg"), as: offlineRaw)
         let solo = real(raws[1], "/tmp/pc-summary/IMG_0002.CR3")
         let previewOnly = real(raws[2], "/tmp/pc-summary/IMG_0003.CR3", status: .missing,
                                preview: "/tmp/pc-summary/cache/IMG_0003.jpg")

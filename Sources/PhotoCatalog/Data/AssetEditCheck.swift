@@ -119,7 +119,7 @@ enum AssetEditCheck {
             return asset
         }
         let raw = photo(raws[0], "Paired.CR3")
-        let jpeg = photo(DemoData.assets.first { !$0.isRaw }!, "Paired.JPG")
+        let jpeg = PairingCheck.sameShot(photo(DemoData.assets.first { !$0.isRaw }!, "Paired.JPG"), as: raw)
         let solo = photo(raws[1], "Solo.CR3")
         let store = try CatalogStore(packageURL: directory.appendingPathComponent("Review.photolibrary"))
         try store.upsert([raw, jpeg, solo])

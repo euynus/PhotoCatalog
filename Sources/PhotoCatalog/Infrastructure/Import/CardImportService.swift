@@ -127,6 +127,31 @@ enum CardImportService {
     }
 }
 
+/// Names for photos copied into a folder that may hold photos already (card and managed
+/// imports): a RAW and a JPEG/HEIC by one name in one folder make one photo, so a name is
+/// shared only within a shot.
+enum CopyNaming {
+    /// The files in `directory` named `stem`, in any case and with any extension; sidecars
+    /// go with their photos and aren't counted.
+    static func files(named stem: String, in directory: URL) -> [URL] {
+        let wanted = stem.lowercased()
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        return names.compactMap { name in
+            let url = directory.appendingPathComponent(name)
+            guard url.pathExtension.lowercased() != "xmp",
+                  url.deletingPathExtension().lastPathComponent.lowercased() == wanted else { return nil }
+            return url
+        }
+    }
+
+    /// Whether `existing` is another file of the shot `camera` took at `date` — its RAW or its
+    /// JPEG — rather than some other photo by the same name.
+    static func isSameShot(_ existing: URL, camera: String, date: Date) -> Bool {
+        let meta = MetadataReader.read(existing)
+        return AssetPairing.isSameShot((meta.camera, meta.captureDate), (camera, date))
+    }
+}
+
 /// Copies card photos into the destination as the import reaches them: dated folders, the
 /// rename template (one sequence number per RAW+JPEG pair), XMP sidecars, and a backup copy.
 /// Used from the import's single worker thread; the lock only guards the name cache.
@@ -214,8 +239,10 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
         return destination
     }
 
-    /// One base name per pair and folder, free for every extension in the pair — unless the
-    /// very same file is already there (an import picked up again after an interruption).
+    /// One base name per pair and folder that no other photo in the folder has, in any
+    /// extension: the files already there by that name are the pair's own (the very same files —
+    /// an import picked up again after an interruption) or other files of the same shot. An
+    /// iPhone's IMG_1234.HEIC beside a Canon's IMG_1234.CR3 would pass for the RAW's JPEG.
     private func baseName(for source: URL, date: Date, camera: String, in directory: URL) -> String {
         let key = CardFile(url: source, size: 0, modified: date, isRaw: false).pairKey
         let cacheKey = key + "|" + directory.path
@@ -230,11 +257,14 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
             let extensions = extensionsByPair[key] ?? [source.pathExtension]
             var candidate = wanted
             var counter = 1
-            while extensions.contains(where: { ext in
-                let url = directory.appendingPathComponent(candidate).appendingPathExtension(ext)
-                // another photo by this name takes it, even one of the same size
-                return FileManager.default.fileExists(atPath: url.path)
-                    && !Self.holdsSameFile(url, as: source.deletingPathExtension().appendingPathExtension(ext))
+            while !CopyNaming.files(named: candidate, in: directory).allSatisfy({ existing in
+                if let own = extensions.first(where: {
+                    $0.caseInsensitiveCompare(existing.pathExtension) == .orderedSame
+                }) {
+                    // another photo by this name takes it, even one of the same size
+                    return Self.holdsSameFile(existing, as: source.deletingPathExtension().appendingPathExtension(own))
+                }
+                return CopyNaming.isSameShot(existing, camera: camera, date: date)
             }) {
                 candidate = "\(wanted)-\(counter)"
                 counter += 1
