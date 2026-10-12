@@ -105,14 +105,22 @@ struct KeyCatcher: NSViewRepresentable {
 
     @MainActor
     static func isEditingText() -> Bool {
-        if let responder = NSApp.keyWindow?.firstResponder, responder is NSTextView { return true }
+        if isTextInput(NSApp.keyWindow?.firstResponder) { return true }
         // A system panel can hold key status for a moment once typing starts (SPRoundedWindow, the
         // indicator beside the caret); the field being typed into is still the main window's, and
         // reading only the key window turned the next letters into shortcuts (x rejected the photo).
         // A sheet answers for itself so Escape still closes it.
         let key = NSApp.keyWindow
         guard key?.sheetParent == nil, let main = NSApp.mainWindow, key !== main else { return false }
-        return main.firstResponder is NSTextView
+        return isTextInput(main.firstResponder)
+    }
+
+    /// Whether `responder` takes typed text: a text view (every text field edits in one), or a date
+    /// picker, which reads digits itself with no field editor (the filter bar's custom range: typing
+    /// a date rated the photo).
+    @MainActor
+    static func isTextInput(_ responder: NSResponder?) -> Bool {
+        responder is NSTextView || responder is NSDatePicker
     }
 
     nonisolated static func keyString(keyCode: UInt16, charactersIgnoringModifiers: String?) -> String {

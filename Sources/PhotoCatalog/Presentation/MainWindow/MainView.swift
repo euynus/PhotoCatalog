@@ -266,7 +266,7 @@ struct ContentColumn: View {
 enum TextEditing {
     static func end() {
         // the main window too: a system panel can hold key status for a moment (see KeyCatcher)
-        for window in [NSApp.keyWindow, NSApp.mainWindow].compactMap({ $0 }) where window.firstResponder is NSTextView {
+        for window in [NSApp.keyWindow, NSApp.mainWindow].compactMap({ $0 }) where KeyCatcher.isTextInput(window.firstResponder) {
             window.makeFirstResponder(nil)
         }
     }

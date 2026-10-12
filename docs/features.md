@@ -141,7 +141,7 @@ Replies are checked rather than trusted: a search filter counts only when the se
 
 ## Keyboard shortcuts
 
-Single-key shortcuts don't apply while you type in a text field.
+Single-key shortcuts don't apply while you type in a text field or a date (the filter bar's custom range).
 
 **Views and navigation**
 

@@ -16,6 +16,17 @@ final class KeyboardShortcutTests: XCTestCase {
         XCTAssertEqual(KeyCatcher.keyString(keyCode: 0, charactersIgnoringModifiers: "A"), "a")
     }
 
+    /// The filter bar's custom range is a pair of date pickers: an NSDatePicker takes typed digits
+    /// itself, with no field editor, and they must not reach the grid as rating keys.
+    @MainActor
+    func testDatePickerCountsAsTextInput() {
+        XCTAssertTrue(KeyCatcher.isTextInput(NSTextView()))
+        XCTAssertTrue(KeyCatcher.isTextInput(NSDatePicker()), "a focused date picker is typed into")
+        XCTAssertFalse(KeyCatcher.isTextInput(NSView()))
+        XCTAssertFalse(KeyCatcher.isTextInput(NSButton()))
+        XCTAssertFalse(KeyCatcher.isTextInput(nil))
+    }
+
     func testInspectorToggleLabelDescribesAvailableAction() {
         XCTAssertEqual(inspectorToggleLabel(isVisible: true), "隐藏简介 (⌘I)")
         XCTAssertEqual(inspectorToggleLabel(isVisible: false), "显示简介 (⌘I)")
