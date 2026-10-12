@@ -305,14 +305,17 @@ struct SettingsSheet: View {
                     ], value: "\(app.previewMaxPixel)",
                        onChange: { app.previewMaxPixel = Int($0) ?? 2_048 }, size: "sm")
                 }
-                // stepping from the automatic limit chooses one
-                Stepper(value: Binding(get: { app.effectiveCacheLimitMB }, set: { app.cacheLimitMB = $0 }),
-                        in: 256...102_400, step: 256) {
+                // stepping from the automatic limit chooses one; that limit stays in the Stepper's
+                // range, so a step starts from the limit shown
+                Stepper(value: Binding(get: { min(max(app.effectiveCacheLimitMB, CacheLimit.rangeMB.lowerBound),
+                                                  CacheLimit.rangeMB.upperBound) },
+                                       set: { app.cacheLimitMB = $0 }),
+                        in: CacheLimit.rangeMB, step: 256) {
                     (app.cacheLimitMB > 0 ? Text("缓存上限 \(app.effectiveCacheLimitMB) MB")
                                           : Text("缓存上限 \(app.effectiveCacheLimitMB) MB（自动）"))
                         .font(.system(size: 13)).foregroundStyle(Theme.text)
                 }
-                .help("自动上限按照片数量估算，每张约 0.5 MB，不少于 2 GB，也不超过磁盘可用空间的四分之一。")
+                .help("自动上限按照片数量估算，每张约 0.5 MB：不少于 2 GB，不超过 100 GB，也不超过磁盘可用空间与缓存已占空间之和的四分之一。")
                 HStack(spacing: 9) {
                     ghostButton("refresh", L("重建缩略图"), small: true) { app.rebuildThumbnails() }
                     ghostButton("trash", L("清理缓存"), small: true) { app.confirmClearCache() }

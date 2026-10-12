@@ -33,6 +33,16 @@
         <string>C617.1</string>
       </array>
     </dict>
+    <!-- free space on the catalog's disk, which the automatic thumbnail and preview cache limit
+         stays under (the cache is pruned to it) -->
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>E174.1</string>
+      </array>
+    </dict>
     <!-- elapsed time between events inside the app (progress throttling, responsiveness) -->
     <dict>
       <key>NSPrivacyAccessedAPIType</key>

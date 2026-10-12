@@ -621,28 +621,25 @@ final class AppState {
         didSet { UserDefaults.standard.set(visionEnabled, forKey: "pc_vision") }
     }
     /// The cache limit chosen in Settings, in MB; 0 until one is chosen, and then the limit follows
-    /// the catalog (`automaticCacheLimitMB`).
-    var cacheLimitMB: Int = max(0, UserDefaults.standard.integer(forKey: "pc_cacheLimitMB")) {
+    /// the catalog (`CacheLimit.automaticMB`). Never over what Settings offers: stepping down from an
+    /// automatic limit above that used to save one over it.
+    var cacheLimitMB: Int = min(max(0, UserDefaults.standard.integer(forKey: "pc_cacheLimitMB")),
+                                CacheLimit.rangeMB.upperBound) {
         didSet {
             if cacheLimitMB > 0 { UserDefaults.standard.set(cacheLimitMB, forKey: "pc_cacheLimitMB") }
             else { UserDefaults.standard.removeObject(forKey: "pc_cacheLimitMB") }
         }
     }
-    /// The limit that applies: the chosen one, or the automatic one.
-    var effectiveCacheLimitMB: Int { cacheLimitMB > 0 ? cacheLimitMB : automaticCacheLimitMB }
-    /// Room for a thumbnail and a preview of every photo (about 0.5 MB together at 2048 px), so
-    /// previews aren't pruned and made again from the originals each time a photo is opened; a flat
-    /// 2 GB held a quarter of a 14,000-photo catalog's. Never under 2 GB, never over a quarter of the
-    /// free space on the catalog's volume.
-    var automaticCacheLimitMB: Int {
+    /// The limit that applies, as Settings shows it: the chosen one, or the automatic one for the
+    /// cache's last measured size.
+    var effectiveCacheLimitMB: Int { cacheLimit.megabytes(cacheBytes: statusMetrics.cacheBytes ?? 0) }
+    /// What the limit is worked out from; a backfill or a prune does that once, as it starts.
+    var cacheLimit: CacheLimit {
         var photos = assets.reduce(0) { $1.isDemo || $1.deleted ? $0 : $0 + 1 }
         // while a catalog is still loading, `assets` holds only part of it
         if isLoadingCatalog, let total = loadingCatalogTotalCount { photos = max(photos, total) }
-        let needed = photos * (previewMaxPixel >= 2_048 ? 512 : 384) / 1_024
-        let free = (try? store?.packageURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
-            .volumeAvailableCapacityForImportantUsage
-        let room = free.map { Int($0 / 4 / 1_048_576) } ?? needed
-        return max(2_048, min(needed, room))
+        return CacheLimit(chosenMB: cacheLimitMB, photos: photos, previewMaxPixel: previewMaxPixel,
+                          volume: store?.packageURL)
     }
     var previewMaxPixel: Int = {
         let saved = UserDefaults.standard.integer(forKey: "pc_previewMaxPixel")
@@ -6163,9 +6160,7 @@ final class AppState {
         let generation = backfillGeneration
         let previewSize = previewMaxPixel
         let lowPowerSensitive = reduceBackgroundOnLowPower
-        // stopping a twentieth short of the limit leaves the end-of-pass prune nothing to take
-        // back, so the next launch finds the cache full and makes nothing
-        let budget = cacheLimitBytes - cacheLimitBytes / 20
+        let limit = cacheLimit
         let cacheURL = store.cacheURL, thumbnailsURL = store.thumb512URL.deletingLastPathComponent()
         let thumbnails: [(Asset, ThumbnailService.Kind)] = real.map { ($0, .thumb512) }
         let previews: [(Asset, ThumbnailService.Kind)] = real.sorted { $0.date > $1.date }.map {
@@ -6185,6 +6180,7 @@ final class AppState {
         }
         backfillTask = Task { [weak self, coordinator, thumbnails, previews, originHistory, initial] in
             var task = initial
+            var passLimit: Int64?
             defer {
                 if cancellation.isSet || Task.isCancelled {
                     task.state = .cancelled
@@ -6203,7 +6199,7 @@ final class AppState {
                     self.isBackfilling = false
                     self.backfillTask = nil
                     self.backfillCancellation = nil
-                    self.enforceCacheLimitIfNeeded()
+                    self.enforceCacheLimitIfNeeded(automaticLimitBytes: passLimit)
                 }
             }
             // Let the initial window and visible thumbnails settle before
@@ -6213,13 +6209,22 @@ final class AppState {
             task.state = .running
             if let originHistory { self?.recordBackgroundTask(task, originHistory: originHistory) }
             let measured = await ThumbnailRepairQueue.run(.background) {
-                (CatalogHealth.directorySize(cacheURL), CatalogHealth.directorySize(thumbnailsURL))
+                () -> (used: Int64, thumbnails: Int64, limit: Int64) in
+                let used = CatalogHealth.directorySize(cacheURL)
+                return (used, CatalogHealth.directorySize(thumbnailsURL), limit.bytes(cacheBytes: used))
             }
-            guard var (used, thumbnailsUsed) = measured else {
+            guard let measured else {
                 task.state = .interrupted
                 task.errorMessage = L("预览任务未能开始")
                 return
             }
+            var (used, thumbnailsUsed) = (measured.used, measured.thumbnails)
+            // the pass ends by pruning to the automatic limit it started with
+            let limitBytes = measured.limit
+            if limit.chosenMB <= 0 { passLimit = limitBytes }
+            // stopping a twentieth short of the limit leaves the end-of-pass prune nothing to take
+            // back, so the next launch finds the cache full and makes nothing
+            let budget = limitBytes - limitBytes / 20
             let chunkSize = 8
             passes: for (work, isThumbnail) in [(thumbnails, true), (previews, false)] {
                 task.detail = isThumbnail ? L("正在生成缩略图") : L("正在生成预览")
@@ -6530,17 +6535,17 @@ final class AppState {
         guard let store else { push("无目录库", "warning"); return }
         let packageURL = store.packageURL
         let snapshot = assets
-        let maxBytes = cacheLimitBytes
-        let limitMB = effectiveCacheLimitMB
-        Task { [weak self, store, packageURL, snapshot, maxBytes, limitMB] in
+        let limit = cacheLimit
+        Task { [weak self, store, packageURL, snapshot, limit] in
             let result = await Task.detached(priority: .utility) {
-                let report = CacheService.prune(store.cacheURL, maxBytes: maxBytes)
+                let report = CacheService.prune(store.cacheURL) { limit.bytes(cacheBytes: $0) }
                 return (report, CatalogHealth.check(store, assets: snapshot))
             }.value
             guard let self, self.store?.packageURL == packageURL else { return }
             if result.0.removedFiles > 0 { self.verifiedCacheSources.removeAll() }
             self.applyHealthReport(result.1)
             if result.0.removedFiles == 0 {
+                let limitMB = Int(result.0.maxBytes / 1_048_576)
                 self.push("缓存已在 \(limitMB) MB 上限内", "check")
             } else {
                 self.push("已清理缓存 \(self.formatCacheMB(result.0.removedBytes)) · \(result.0.removedFiles) 个文件", "trash")
@@ -6548,18 +6553,18 @@ final class AppState {
         }
     }
 
-    private var cacheLimitBytes: Int64 {
-        Int64(effectiveCacheLimitMB) * 1024 * 1024
-    }
-
-    private func enforceCacheLimitIfNeeded() {
+    /// Prunes the cache to its limit. A background pass that just ended passes the automatic limit
+    /// it started with: worked out again, the limit could come out lower than the one the pass
+    /// filled the cache to, and the prune would take back what it made.
+    private func enforceCacheLimitIfNeeded(automaticLimitBytes: Int64? = nil) {
         guard let store else { return }
         let packageURL = store.packageURL
         let snapshot = assets
-        let maxBytes = cacheLimitBytes
-        Task { [weak self, store, packageURL, snapshot, maxBytes] in
+        let limit = cacheLimit
+        let passLimit = limit.chosenMB > 0 ? nil : automaticLimitBytes
+        Task { [weak self, store, packageURL, snapshot, limit, passLimit] in
             let result = await Task.detached(priority: .utility) {
-                let report = CacheService.prune(store.cacheURL, maxBytes: maxBytes)
+                let report = CacheService.prune(store.cacheURL) { passLimit ?? limit.bytes(cacheBytes: $0) }
                 let health = report.removedFiles > 0 ? CatalogHealth.check(store, assets: snapshot) : nil
                 let cacheBytes = health?.cacheBytes ?? CatalogHealth.directorySize(store.cacheURL)
                 return (health, cacheBytes)
