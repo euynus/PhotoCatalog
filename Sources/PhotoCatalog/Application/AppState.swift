@@ -9942,11 +9942,23 @@ final class AppState {
     func renamePerson(_ old: String, to new: String) {
         let name = FaceClustering.cleanName(new)
         guard !name.isEmpty, name != old else { return }
-        renameKeyword(FaceClustering.keyword(for: old), to: FaceClustering.keyword(for: name))
+        let oldKeyword = FaceClustering.keyword(for: old), newKeyword = FaceClustering.keyword(for: name)
+        // someone only suggested, or whose keyword was taken off every photo, has no photo to
+        // rename the keyword on: their faces are renamed alone
+        guard photoIds(withKeyword: oldKeyword).isEmpty else {
+            renameKeyword(oldKeyword, to: newKeyword)
+            return
+        }
+        syncFacesAfterKeywordChange(old: oldKeyword, new: newKeyword, undoName: L("重命名关键词"))
     }
 
     func deletePerson(_ name: String) {
-        deleteKeyword(FaceClustering.keyword(for: name))
+        let keyword = FaceClustering.keyword(for: name)
+        guard photoIds(withKeyword: keyword).isEmpty else {
+            deleteKeyword(keyword)
+            return
+        }
+        syncFacesAfterKeywordChange(old: keyword, new: nil, undoName: L("删除关键词"))
     }
 
     /// Photos carrying `keyword` or anything under it, across the whole catalog.
