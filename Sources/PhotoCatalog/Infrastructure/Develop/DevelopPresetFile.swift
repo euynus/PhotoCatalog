@@ -233,7 +233,10 @@ enum DevelopPresetFile {
         for case let child as XMLElement in description.children ?? [] {
             if isCRS(child), let key = child.localName {
                 elements[key] = child
-                if child.childCount == 0 { values[key] = child.stringValue ?? "" }
+                // a value is the element's text; one holding elements (a name, a curve) is a structure
+                if !(child.children ?? []).contains(where: { $0.kind == .element }) {
+                    values[key] = (child.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                }
             }
             if isOwn(child) { own = child.stringValue }
         }

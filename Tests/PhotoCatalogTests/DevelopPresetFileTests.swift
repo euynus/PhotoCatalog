@@ -102,4 +102,34 @@ final class DevelopPresetFileTests: XCTestCase {
         XCTAssertEqual(transfer?.settings.sharpening, 25)
         XCTAssertEqual(transfer?.settings.colorNoise, 15)
     }
+
+    // ---- values written as elements (#68) ----
+    func testValuesWrittenAsElementsAreRead() throws {
+        let text = """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/">
+         <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+          <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/">
+           <crs:PresetType>Normal</crs:PresetType>
+           <crs:WhiteBalance>As Shot</crs:WhiteBalance>
+           <crs:Exposure2012>+0.50</crs:Exposure2012>
+           <crs:Contrast2012>
+            -10
+           </crs:Contrast2012>
+           <crs:SplitToningShadowHue>220</crs:SplitToningShadowHue>
+           <crs:Name><rdf:Alt><rdf:li xml:lang="x-default">Elements</rdf:li></rdf:Alt></crs:Name>
+           <crs:ToneCurvePV2012><rdf:Seq><rdf:li>0, 20</rdf:li><rdf:li>255, 255</rdf:li></rdf:Seq></crs:ToneCurvePV2012>
+          </rdf:Description>
+         </rdf:RDF>
+        </x:xmpmeta>
+        """
+        let reading = try XCTUnwrap(DevelopPresetFile.read(Data(text.utf8), fileName: "e.xmp"))
+        let transfer = reading.preset.transfer
+        XCTAssertEqual(reading.preset.name, "Elements")
+        XCTAssertEqual(transfer.settings.exposure, 0.5)
+        XCTAssertEqual(transfer.settings.contrast, -10)
+        XCTAssertEqual(transfer.settings.grading.shadows.hue, 220)
+        XCTAssertEqual(transfer.settings.temperature, nil)
+        XCTAssertEqual(transfer.fields, [.whiteBalance, .exposure, .contrast, .colorGrading, .toneCurve])
+        XCTAssertEqual(ToneCurve.evaluate(transfer.settings.curve.editablePoints(for: .rgb), at: 0), 20.0 / 255, accuracy: 0.001)
+    }
 }
