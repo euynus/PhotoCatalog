@@ -1444,8 +1444,7 @@ final class AppState {
         Task { [weak self] in
             let map = await ThumbnailRepairQueue.run(.visible) { DepthMap.map(for: source.url, isRaw: source.isRaw) } ?? nil
             guard let self, let map else { return }
-            let pixel = DevelopGeometry.sourcePoint(fromFinished: point, settings: settings, sourceSize: size)
-            let depth = map.depth(at: CGPoint(x: pixel.x / max(size.width, 1), y: pixel.y / max(size.height, 1)))
+            let depth = map.depth(atFinished: point, settings: settings, sourceSize: size)
             self.commitDevelopChange([id], undoName: L("镜头模糊焦点")) { _, settings in
                 settings.lensBlur.enabled = true
                 settings.lensBlur.focus = (depth * 100).rounded() / 100

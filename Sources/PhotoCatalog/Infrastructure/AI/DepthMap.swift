@@ -29,6 +29,13 @@ enum DepthMap {
             return Double(top * (1 - fy) + bottom * fy)
         }
 
+        /// The depth under `point` of the finished photo (fractions, top-left origin) as
+        /// `settings` develop it; `sourceSize` is the decoded photo's size (any scale).
+        func depth(atFinished point: CGPoint, settings: DevelopSettings, sourceSize: CGSize) -> Double {
+            // already fractions of the source photo, as the map is
+            depth(at: DevelopGeometry.sourcePoint(fromFinished: point, settings: settings, sourceSize: sourceSize))
+        }
+
         /// The depth below which `fraction` of the photo lies.
         func percentile(_ fraction: Double) -> Double {
             let sorted = values.sorted()
