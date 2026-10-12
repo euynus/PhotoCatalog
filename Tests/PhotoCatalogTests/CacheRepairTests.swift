@@ -68,6 +68,48 @@ final class CacheRepairTests: CatalogTestCase {
         XCTAssertTrue(exists(preview), "the pruned preview is made again")
     }
 
+    private func modified(_ path: String) -> Date? {
+        try? URL(fileURLWithPath: path).resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    }
+
+    /// A virtual copy shows its master's preview; with that pruned, the copy's own is made, and
+    /// that's the one shown from then on.
+    @MainActor
+    func testVirtualCopyKeepsThePreviewMadeForIt() async throws {
+        let (app, master, _) = try openCatalogWithPhoto()
+        let copy = master.virtualCopy(id: "copy-1", name: "Copy 1")
+        XCTAssertEqual(copy.preview, master.preview)
+        try FileManager.default.removeItem(atPath: master.preview)
+
+        let shown = await app.visibleImageSource(for: copy, requestedSource: copy.preview, kind: .preview2048)
+        XCTAssertTrue(exists(shown), "the copy's preview is made")
+        let madeAt = modified(shown)
+        XCTAssertEqual(app.verifiedImageSource(for: copy, requestedSource: copy.preview, kind: .preview2048), shown,
+                       "the next arrow key finds it without a look at the disk")
+
+        let again = await app.visibleImageSource(for: copy, requestedSource: copy.preview, kind: .preview2048)
+        XCTAssertEqual(again, shown, "shown again, not the placeholder")
+        XCTAssertEqual(modified(again), madeAt, "and not made a second time")
+    }
+
+    /// A catalog moved since its photos' cache paths were stored finds the files in its own cache.
+    @MainActor
+    func testMovedCatalogFindsPreviewsInItsOwnCache() async throws {
+        let (app, asset, _) = try openCatalogWithPhoto()
+        // the path stored before the move
+        let stored = asset.preview.replacingOccurrences(of: "/Library.photolibrary/", with: "/Old.photolibrary/")
+        XCTAssertNotEqual(stored, asset.preview)
+        let madeAt = modified(asset.preview)
+
+        let shown = await app.visibleImageSource(for: asset, requestedSource: stored, kind: .preview2048)
+        XCTAssertEqual(shown, asset.preview)
+        XCTAssertEqual(app.verifiedImageSource(for: asset, requestedSource: stored, kind: .preview2048),
+                       asset.preview)
+        let again = await app.visibleImageSource(for: asset, requestedSource: stored, kind: .preview2048)
+        XCTAssertEqual(again, asset.preview, "shown again, not the placeholder")
+        XCTAssertEqual(modified(asset.preview), madeAt, "the preview there is used, not made again")
+    }
+
     @MainActor
     func testThumbnailDeletedByRemoveIsMadeAgainAfterUndo() async throws {
         let (app, asset, _) = try openCatalogWithPhoto()

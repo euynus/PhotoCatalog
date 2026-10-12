@@ -6450,8 +6450,15 @@ final class AppState {
             let edited = coordinator.thumbnails.editedCachePath(assetId: asset.id, kind: resolvedKind, settings: settings).path
             return isVerified(edited, for: asset.id) ? edited : nil
         }
-        let verifiedKey = "\(requestedSource)|\(asset.fileModifiedAt?.timeIntervalSince1970 ?? 0)"
-        return isVerified(verifiedKey, for: asset.id) ? requestedSource : nil
+        if isVerified(Self.cacheCheckKey(requestedSource, asset), for: asset.id) { return requestedSource }
+        let own = coordinator.thumbnails.cachePath(assetId: asset.id, kind: resolvedKind).path
+        return isVerified(Self.cacheCheckKey(own, asset), for: asset.id) ? own : nil
+    }
+
+    /// A checked cache file, as of the original's modification date: one the original has
+    /// changed since is checked again.
+    private static func cacheCheckKey(_ source: String, _ asset: Asset) -> String {
+        "\(source)|\(asset.fileModifiedAt?.timeIntervalSince1970 ?? 0)"
     }
 
     /// The ordinary (unadjusted) cached image, repaired from the original when missing or damaged.
@@ -6462,19 +6469,25 @@ final class AppState {
         let localPath = original.path
         // A cache file already checked this session (exists, fresh, not a black RAW render)
         // skips the stat + decode hops every time its cell scrolls back into view.
-        let verifiedKey = "\(requestedSource)|\(asset.fileModifiedAt?.timeIntervalSince1970 ?? 0)"
-        if isVerified(verifiedKey, for: assetId) { return requestedSource }
-        let cachedIsUsable = await Task.detached(priority: .userInitiated) {
-            guard !requestedSource.isEmpty, FileManager.default.fileExists(atPath: requestedSource) else {
-                return false
+        if isVerified(Self.cacheCheckKey(requestedSource, asset), for: assetId) { return requestedSource }
+        // The photo's own cache file, where a repair writes. The stored path can be another: a
+        // virtual copy's is its master's, and a catalog moved since keeps the old place. With that
+        // gone, the photo's own file is the one to look for, or a remade one would show once
+        // and then the placeholder.
+        let own = thumbnails.cachePath(assetId: assetId, kind: resolvedKind).path
+        if own != requestedSource, isVerified(Self.cacheCheckKey(own, asset), for: assetId) { return own }
+        let candidates = own == requestedSource ? [own] : [requestedSource, own]
+        let usable = await Task.detached(priority: .userInitiated) { () -> String? in
+            candidates.first { source in
+                guard !source.isEmpty, FileManager.default.fileExists(atPath: source) else { return false }
+                let cached = URL(fileURLWithPath: source)
+                return !ThumbnailService.cacheIsStale(cache: cached, originalModificationDate: asset.fileModifiedAt)
+                    && !thumbnails.cachedRepresentationNeedsRegeneration(at: cached, original: original, kind: resolvedKind)
             }
-            let cached = URL(fileURLWithPath: requestedSource)
-            return !ThumbnailService.cacheIsStale(cache: cached, originalModificationDate: asset.fileModifiedAt)
-                && !thumbnails.cachedRepresentationNeedsRegeneration(at: cached, original: original, kind: resolvedKind)
         }.value
-        if cachedIsUsable {
-            markVerified(verifiedKey, for: assetId)
-            return requestedSource
+        if let usable {
+            markVerified(Self.cacheCheckKey(usable, asset), for: assetId)
+            return usable
         }
         // Only touch a referenced original after the local cache is missing, stale, or damaged.
         let (originalExists, previewExists) = await Task.detached(priority: .userInitiated) {
@@ -6514,8 +6527,8 @@ final class AppState {
         }
         // a remade file is as good as a checked one: the loupe can then show a prefetched
         // neighbor in the same frame as the arrow key instead of checking the disk first
-        if restored.usable, restored.url?.path == requestedSource {
-            markVerified(verifiedKey, for: assetId)
+        if restored.usable, let path = restored.url?.path {
+            markVerified(Self.cacheCheckKey(path, asset), for: assetId)
         } else {
             failedCacheRepairs.insert(repairKey)
         }
