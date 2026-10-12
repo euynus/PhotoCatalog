@@ -6423,7 +6423,7 @@ final class AppState {
             : kind
         if let settings = developSettings[assetId], !settings.isNeutral {
             let edited = thumbnails.editedCachePath(assetId: assetId, kind: resolvedKind, settings: settings).path
-            if isVerified(edited, for: assetId) { return edited }
+            if isVerified(Self.cacheCheckKey(edited, asset), for: assetId) { return edited }
             // Rotation and crop alone start from the ordinary cached image, not a full RAW render.
             let base = settings.withoutGeometry.isNeutral
                 ? await cachedImageSource(for: asset, requestedSource: requestedSource, kind: resolvedKind,
@@ -6448,7 +6448,7 @@ final class AppState {
             : kind
         if let settings = developSettings[asset.id], !settings.isNeutral {
             let edited = coordinator.thumbnails.editedCachePath(assetId: asset.id, kind: resolvedKind, settings: settings).path
-            return isVerified(edited, for: asset.id) ? edited : nil
+            return isVerified(Self.cacheCheckKey(edited, asset), for: asset.id) ? edited : nil
         }
         if isVerified(Self.cacheCheckKey(requestedSource, asset), for: asset.id) { return requestedSource }
         let own = coordinator.thumbnails.cachePath(assetId: asset.id, kind: resolvedKind).path
@@ -6542,7 +6542,7 @@ final class AppState {
                                    thumbnails: ThumbnailService, base: String? = nil) async -> String? {
         let edited = thumbnails.editedCachePath(assetId: asset.id, kind: kind, settings: settings)
         let key = edited.path
-        if isVerified(key, for: asset.id) { return key }
+        if isVerified(Self.cacheCheckKey(key, asset), for: asset.id) { return key }
         let preview = asset.preview
         let source: (url: URL, isRaw: Bool)?
         if let base {
@@ -6558,9 +6558,9 @@ final class AppState {
         let assetId = asset.id
         guard let rendered = await ThumbnailRepairQueue.run(.visible, {
             thumbnails.ensureEdited(from: source.url, isRaw: source.isRaw, settings: settings,
-                                    assetId: assetId, kind: kind)
+                                    assetId: assetId, kind: kind, originalModificationDate: asset.fileModifiedAt)
         }), let rendered else { return nil }
-        markVerified(rendered.path, for: assetId)
+        markVerified(Self.cacheCheckKey(rendered.path, asset), for: assetId)
         return rendered.path
     }
 

@@ -41,7 +41,7 @@ struct Loupe: View {
                                                                 kind: .preview2048)
                     guard !Task.isCancelled else { return }
                     await ThumbLoader.prefetch(resolved, maxPixel: ThumbnailService.Kind.preview2048.maxPixel,
-                                               cacheGeneration: cacheGeneration)
+                                               cacheGeneration: cacheGeneration, version: a.imageVersion)
                 }
             }
         }

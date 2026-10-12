@@ -80,6 +80,13 @@ private actor ThumbDecodeLimiter {
 }
 
 
+extension Asset {
+    /// The state of the photo's file that its cached images show. A rescan that reads an original
+    /// changed elsewhere (an external editor's save) makes its thumbnail and preview again at the
+    /// same paths, so a decode of the old ones is told apart by this, not by the path.
+    var imageVersion: String { "\(fileModifiedAt?.timeIntervalSince1970 ?? 0)-\(quickHash ?? "")" }
+}
+
 /// Shared in-memory image cache so grid scrolling doesn't refetch.
 @MainActor
 final class ThumbLoader: ObservableObject {
@@ -107,8 +114,10 @@ final class ThumbLoader: ObservableObject {
         cache.removeAllObjects()
     }
 
-    static func key(_ source: String, maxPixel: Int, cacheGeneration: Int = 0) -> String {
-        "\(source)|\(maxPixel)|\(cacheGeneration)"
+    /// `version` tells apart what a file held before and after it was made again at the same path
+    /// (`Asset.imageVersion`).
+    static func key(_ source: String, maxPixel: Int, cacheGeneration: Int = 0, version: String = "") -> String {
+        "\(source)|\(maxPixel)|\(cacheGeneration)|\(version)"
     }
 
     /// An image already decoded for this key (by a loader or a prefetch), without loading.
@@ -116,8 +125,8 @@ final class ThumbLoader: ObservableObject {
         cache.object(forKey: key as NSString)
     }
 
-    func load(_ source: String, maxPixel: Int, cacheGeneration: Int = 0) {
-        let key = Self.key(source, maxPixel: maxPixel, cacheGeneration: cacheGeneration)
+    func load(_ source: String, maxPixel: Int, cacheGeneration: Int = 0, version: String = "") {
+        let key = Self.key(source, maxPixel: maxPixel, cacheGeneration: cacheGeneration, version: version)
         // already showing / fetching this exact source
         if key == loadedKey { return }
         loadedKey = key
@@ -161,8 +170,8 @@ final class ThumbLoader: ObservableObject {
 
     /// Warm the shared cache (e.g. loupe neighbors) without touching any
     /// loader's published state — a failed warm-up stays silent.
-    static func prefetch(_ source: String, maxPixel: Int, cacheGeneration: Int = 0) async {
-        let key = Self.key(source, maxPixel: maxPixel, cacheGeneration: cacheGeneration)
+    static func prefetch(_ source: String, maxPixel: Int, cacheGeneration: Int = 0, version: String = "") async {
+        let key = Self.key(source, maxPixel: maxPixel, cacheGeneration: cacheGeneration, version: version)
         guard !source.isEmpty, cache.object(forKey: key as NSString) == nil else { return }
         let image: NSImage?
         if source.hasPrefix("http") {
@@ -290,9 +299,10 @@ struct Thumb: View {
     }
     private func loadKey(_ app: AppState) -> String {
         let previewConfiguration = cacheKind.isPreview ? app.previewMaxPixel : 0
-        // the develop fingerprint reloads the tile when the photo's adjustments change
+        // the develop fingerprint reloads the tile when the photo's adjustments change, and the
+        // image version when its file does
         return "\(asset.id)|\(source)|\(decodeMaxPixel)|\(previewConfiguration)|\(app.thumbnailCacheGeneration)|"
-            + (app.developFingerprint(for: asset.id) ?? "")
+            + "\(asset.imageVersion)|" + (app.developFingerprint(for: asset.id) ?? "")
     }
 
     /// The loader's image when it's of this photo; for a view that has just come to show another
@@ -302,7 +312,8 @@ struct Thumb: View {
         if loader.owner == asset.id { return loader.image }
         guard urlString == nil, app.developSettings[asset.id] == nil else { return nil }
         return ThumbLoader.cachedImage(forKey: ThumbLoader.key(source, maxPixel: decodeMaxPixel,
-                                                               cacheGeneration: app.thumbnailCacheGeneration))
+                                                               cacheGeneration: app.thumbnailCacheGeneration,
+                                                               version: asset.imageVersion))
     }
 
     var body: some View {
@@ -338,7 +349,8 @@ struct Thumb: View {
             let resolved = await app.visibleImageSource(for: asset, requestedSource: source, kind: cacheKind)
             guard !Task.isCancelled else { return }
             loader.owner = asset.id
-            loader.load(resolved, maxPixel: decodeMaxPixel, cacheGeneration: cacheGeneration)
+            loader.load(resolved, maxPixel: decodeMaxPixel, cacheGeneration: cacheGeneration,
+                        version: asset.imageVersion)
         }
         .onDisappear { loader.cancelAndRelease() }
     }

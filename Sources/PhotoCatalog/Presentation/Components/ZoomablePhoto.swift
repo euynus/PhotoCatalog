@@ -23,7 +23,8 @@ struct ZoomablePhoto: View {
     private func previewImage(_ app: AppState) -> CGImage? {
         let maxPixel = ThumbnailService.Kind.preview2048.maxPixel
         let key = app.verifiedImageSource(for: asset, requestedSource: asset.preview, kind: .preview2048).map {
-            ThumbLoader.key($0, maxPixel: maxPixel, cacheGeneration: app.thumbnailCacheGeneration)
+            ThumbLoader.key($0, maxPixel: maxPixel, cacheGeneration: app.thumbnailCacheGeneration,
+                            version: asset.imageVersion)
         }
         return Self.previewImage(for: asset.id, verifiedKey: key, loader: preview)?
             .cgImage(forProposedRect: nil, context: nil, hints: nil)
@@ -39,13 +40,15 @@ struct ZoomablePhoto: View {
     }
 
     @MainActor
-    static func loadPreview(_ source: String, for assetId: String, cacheGeneration: Int, loader: ThumbLoader) {
+    static func loadPreview(_ source: String, for assetId: String, cacheGeneration: Int, version: String = "",
+                            loader: ThumbLoader) {
         guard !Task.isCancelled else { return }
         // Ownership changes with the load, never while the new source is still resolving.
         // Loading the same key is a no-op, but a new owner must still redraw the view.
         if loader.owner != assetId { loader.objectWillChange.send() }
         loader.owner = assetId
-        loader.load(source, maxPixel: ThumbnailService.Kind.preview2048.maxPixel, cacheGeneration: cacheGeneration)
+        loader.load(source, maxPixel: ThumbnailService.Kind.preview2048.maxPixel, cacheGeneration: cacheGeneration,
+                    version: version)
     }
 
     /// The photo's thumbnail, scaled up, while its preview loads: a preview pruned from the cache is
@@ -56,7 +59,8 @@ struct ZoomablePhoto: View {
         guard let source = placeholderSource(app) else { return nil }
         let generation = app.thumbnailCacheGeneration
         let image = Self.placeholderDecodeSizes.lazy
-            .compactMap { ThumbLoader.cachedImage(forKey: ThumbLoader.key(source, maxPixel: $0, cacheGeneration: generation)) }
+            .compactMap { ThumbLoader.cachedImage(forKey: ThumbLoader.key(source, maxPixel: $0, cacheGeneration: generation,
+                                                                          version: asset.imageVersion)) }
             .first ?? (placeholder.owner == asset.id ? placeholder.image : nil)
         return image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
@@ -75,12 +79,14 @@ struct ZoomablePhoto: View {
         let settings = app.developSettings[asset.id]
         if let settings, !settings.isNeutral {
             guard asset.status == .ready, let path = asset.localPath else { return nil }
-            return .init(path: path, isRaw: asset.isRaw, settings: settings)
+            return .init(path: path, isRaw: asset.isRaw, settings: settings, version: asset.imageVersion)
         }
         let jpeg = app.companions(of: asset).first { $0.status == .ready && $0.localPath != nil }
-        if let path = jpeg?.localPath { return .init(path: path, isRaw: false, settings: nil) }
+        if let jpeg, let path = jpeg.localPath {
+            return .init(path: path, isRaw: false, settings: nil, version: jpeg.imageVersion)
+        }
         guard asset.status == .ready, let path = asset.localPath else { return nil }
-        return .init(path: path, isRaw: asset.isRaw, settings: nil)
+        return .init(path: path, isRaw: asset.isRaw, settings: nil, version: asset.imageVersion)
     }
 
     private func fullImage(_ app: AppState) -> CGImage? { full.image(for: fullRequest(app)) }
@@ -121,18 +127,19 @@ struct ZoomablePhoto: View {
                 if let zoom { zoomBadge(zoom, app) }
             }
             .task(id: "\(asset.id)|\(asset.preview)|\(app.previewMaxPixel)|\(app.thumbnailCacheGeneration)|"
-                  + (app.developFingerprint(for: asset.id) ?? "")) {
+                  + "\(asset.imageVersion)|" + (app.developFingerprint(for: asset.id) ?? "")) {
                 let generation = app.thumbnailCacheGeneration
                 let resolved = await app.visibleImageSource(for: asset, requestedSource: asset.preview,
                                                             kind: .preview2048)
-                Self.loadPreview(resolved, for: asset.id, cacheGeneration: generation, loader: preview)
+                Self.loadPreview(resolved, for: asset.id, cacheGeneration: generation, version: asset.imageVersion,
+                                 loader: preview)
             }
-            .task(id: "\(asset.id)|\(app.thumbnailCacheGeneration)") {
+            .task(id: "\(asset.id)|\(app.thumbnailCacheGeneration)|\(asset.imageVersion)") {
                 // the thumbnail to show until the preview is in, unless that's already there
                 guard previewImage(app) == nil, placeholderImage(app) == nil, let source = placeholderSource(app) else { return }
                 placeholder.owner = asset.id
                 placeholder.load(source, maxPixel: ThumbnailService.Kind.thumb512.maxPixel,
-                                 cacheGeneration: app.thumbnailCacheGeneration)
+                                 cacheGeneration: app.thumbnailCacheGeneration, version: asset.imageVersion)
             }
             .task(id: zoom == nil ? nil : fullRequest(app)) {
                 guard zoom != nil else { return }
@@ -169,7 +176,9 @@ final class FullResolutionLoader: ObservableObject {
         let path: String
         let isRaw: Bool
         let settings: DevelopSettings?
-        var key: String { settings.map { "\(path)|\($0.fingerprint)" } ?? path }
+        /// The file's `Asset.imageVersion`: saved over elsewhere, it's decoded again.
+        let version: String
+        var key: String { "\(path)|\(version)" + (settings.map { "|\($0.fingerprint)" } ?? "") }
     }
 
     @Published private var loaded: (key: String, image: CGImage)?

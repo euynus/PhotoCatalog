@@ -44,6 +44,30 @@ final class ThumbLoaderTests: XCTestCase {
         XCTAssertGreaterThan(pixelWidth(large), pixelWidth(small))
     }
 
+    /// A file rewritten at the same path (a cache file made again after its original changed)
+    /// is decoded again once the version it's loaded with changes.
+    func testFileVersionForcesReload() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-thumb-loader-version-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("image.jpg")
+        try writeJPEG(to: url, size: 32)
+
+        let loader = ThumbLoader()
+        loader.load(url.path, maxPixel: 128, version: "1")
+        let small = try await image(from: loader, minPixels: 1)
+
+        try writeJPEG(to: url, size: 128)
+        loader.load(url.path, maxPixel: 128, version: "2")
+        let large = try await image(from: loader, minPixels: 80)
+
+        XCTAssertGreaterThan(pixelWidth(large), pixelWidth(small))
+        XCTAssertGreaterThan(pixelWidth(ThumbLoader.cachedImage(forKey: ThumbLoader.key(url.path, maxPixel: 128,
+                                                                                       version: "2")) ?? small),
+                             pixelWidth(small))
+    }
+
     func testCancelAndReleaseDropsImageAndAllowsReload() async throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-thumb-loader-release-\(UUID().uuidString)")

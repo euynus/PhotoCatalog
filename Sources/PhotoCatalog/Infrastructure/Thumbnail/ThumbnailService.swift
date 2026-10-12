@@ -99,12 +99,16 @@ final class ThumbnailService: @unchecked Sendable {
     }
 
     /// Returns the developed rendering at the kind's size, rendering it from `source`
-    /// (the original, or a cached preview when the original is unavailable) if missing.
+    /// (the original, or a cached preview when the original is unavailable) if missing, or
+    /// older than the original's modification date (saved over in another app since).
     @discardableResult
     func ensureEdited(from source: URL, isRaw: Bool, settings: DevelopSettings, assetId: String,
-                      kind: Kind) -> URL? {
+                      kind: Kind, originalModificationDate: Date? = nil) -> URL? {
         let out = editedCachePath(assetId: assetId, kind: kind, settings: settings)
-        if FileManager.default.fileExists(atPath: out.path) { return out }
+        if FileManager.default.fileExists(atPath: out.path),
+           !Self.cacheIsStale(cache: out, originalModificationDate: originalModificationDate) {
+            return out
+        }
         try? FileManager.default.createDirectory(at: out.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
         let rendered = autoreleasepool {
