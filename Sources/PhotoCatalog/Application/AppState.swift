@@ -131,6 +131,7 @@ final class AppState {
     }
     var duplicateGroupsCache: [DuplicateGroup] = DemoData.duplicateGroups {
         didSet {
+            currentDuplicateGroupsCache = nil
             photoStacksCache = nil
             stackByAssetCache = nil
             stackInputsVersion &+= 1
@@ -7573,7 +7574,21 @@ final class AppState {
     }
 
     // ---------- duplicate groups (§6.10): exact (content) + similar (perceptual) ----------
-    var duplicateGroups: [DuplicateGroup] { duplicateGroupsCache }
+    /// The groups as last found, each photo as it is now: a rename or a capture-time change
+    /// since then shows at once (the groups are found again only as photos come and go).
+    var duplicateGroups: [DuplicateGroup] {
+        let found = duplicateGroupsCache
+        let version = structureVersion   // both read even on a cache hit, to register them
+        if let cache = currentDuplicateGroupsCache, cache.version == version { return cache.groups }
+        let index = assetIndex
+        let current = found.map { group in
+            DuplicateGroup(id: group.id, method: group.method, score: group.score,
+                           items: group.items.map { index[$0.id].map { assets[$0] } ?? $0 })
+        }
+        currentDuplicateGroupsCache = (version, current)
+        return current
+    }
+    @ObservationIgnored private var currentDuplicateGroupsCache: (version: Int, groups: [DuplicateGroup])?
     var isAutomaticSimilarityAnalysisLimited: Bool {
         let liveCount = assets.lazy.filter { !$0.isDemo && !$0.deleted }.count
         return !PerceptualHash.canRunAutomaticAnalysis(assetCount: liveCount)

@@ -64,3 +64,82 @@ final class DuplicateGroupTests: XCTestCase {
               quickHash: quickHash, isDemo: false, perceptualHash: perceptualHash)
     }
 }
+
+/// The Duplicates view shows each photo as it is now, not as it was when the groups were found.
+final class DuplicateGroupMemberTests: CatalogTestCase {
+    private static let defaultsKeys = ["pc_renameTemplate", "pc_autoWriteXMP"]
+    private var savedDefaults: [String: Any] = [:]
+
+    override func setUp() {
+        super.setUp()
+        for key in Self.defaultsKeys {
+            if let value = UserDefaults.standard.object(forKey: key) { savedDefaults[key] = value }
+        }
+    }
+
+    override func tearDown() {
+        for key in Self.defaultsKeys {
+            if let value = savedDefaults[key] {
+                UserDefaults.standard.set(value, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        savedDefaults = [:]
+        super.tearDown()
+    }
+
+    @MainActor
+    func testARenamedPhotoShowsItsNewName() throws {
+        let (app, ids) = try appWithDuplicatePair()
+        let photo = try XCTUnwrap(app.asset(id: ids[0]))
+
+        app.renameOriginals(template: "Renamed", targets: [photo])
+
+        let renamed = try XCTUnwrap(app.asset(id: ids[0]))
+        XCTAssertEqual(renamed.filename, "Renamed_0001.jpg")
+        let shown = app.duplicateGroups.first?.items.first { $0.id == ids[0] }
+        XCTAssertEqual(shown?.filename, renamed.filename, "the group shows the new name")
+        XCTAssertEqual(shown?.localPath, renamed.localPath, "and the new path")
+    }
+
+    @MainActor
+    func testAShiftedPhotoShowsItsNewCaptureTime() throws {
+        let (app, ids) = try appWithDuplicatePair()
+        let before = try XCTUnwrap(app.asset(id: ids[1])?.date)
+        app.selectedIds = [ids[1]]
+        app.primaryId = ids[1]
+
+        app.shiftCaptureTime(hours: 2)
+
+        let shifted = try XCTUnwrap(app.asset(id: ids[1])?.date)
+        XCTAssertNotEqual(shifted, before)
+        XCTAssertEqual(app.duplicateGroups.first?.items.first { $0.id == ids[1] }?.date, shifted,
+                       "the group shows the shifted capture time")
+    }
+
+    /// Two identical photos on disk, cataloged and found as one group of identical files.
+    @MainActor
+    private func appWithDuplicatePair() throws -> (AppState, [String]) {
+        let photos = try (0..<2).map { index -> Asset in
+            let url = scratch.appendingPathComponent("Source/copy-\(index).jpg")
+            try makeTestJPEG(at: url, shade: 3)
+            return Asset(id: "dup-member-\(index)", pid: 1, ori: "l", thumb: "", preview: "",
+                         filename: url.lastPathComponent, type: "JPG", isRaw: false, folderId: "src-dup",
+                         folderName: "Source", date: Date(timeIntervalSince1970: 1_700_000_000), width: 80, height: 60,
+                         orientation: 1, camera: "", lens: "", focal: 0, aperture: 0, shutter: "", iso: 0,
+                         colorSpace: "sRGB", fileMB: 0.01, rating: 0, flag: .none, keywords: [], title: "",
+                         caption: "", location: "", gps: (0, 0), status: .ready, importedAt: .now,
+                         localPath: url.path, contentHash: "same", isDemo: false)
+        }
+        let store = try CatalogStore(packageURL: scratch.appendingPathComponent("Library.photolibrary"))
+        try store.upsert(photos)
+        let app = AppState.selfCheckFixture(store: store)
+        app.runsBackgroundMaintenance = false   // the groups stay as found: nothing recomputes them
+        app.autoWriteXMPSidecar = false
+        app.assets = photos
+        app.duplicateGroupsCache = HashService.exactDuplicateGroups(photos)
+        XCTAssertEqual(app.duplicateGroups.count, 1)
+        return (app, photos.map(\.id))
+    }
+}
