@@ -704,6 +704,8 @@ final class AppState {
     }
     private var sourceManagementModesById: [String: String] = [:]
     @ObservationIgnored private var volumeMonitor: VolumeMonitor?
+    /// Where drives are mounted and which is which: the system's answers, or a test's.
+    @ObservationIgnored var volumeProbe = VolumeProbe.system
     @ObservationIgnored private var availabilityScanTask: Task<Void, Never>?
     @ObservationIgnored private var availabilityScanGeneration = 0
     private(set) var isCheckingOriginals = false
@@ -2839,10 +2841,12 @@ final class AppState {
                     path: url.path,
                     bookmark: resolved.bookmark,
                     status: resolved.status,
-                    volumeIdentifier: VolumeMonitor.volumeIdentifier(for: url) ?? root.volumeIdentifier
+                    volumeIdentifier: volumeProbe.identifier(url) ?? root.volumeIdentifier
                 )
-                // a stale bookmark that found the folder elsewhere: it was renamed or moved
-                if url.path != root.pathHint, resolved.bookmark != root.bookmarkData {
+                // found elsewhere — renamed or moved (a stale bookmark), or its drive mounted under
+                // another name: its photos move with it, before anything at their old paths (on
+                // another drive of the old name, say) is taken for them
+                if url.path != root.pathHint {
                     movedSourceRoots.append((root.id, root.pathHint, url.path))
                 }
             } else {
@@ -2872,6 +2876,10 @@ final class AppState {
         if root.managementMode == ImportMode.managed.rawValue {
             return (nil, "online", root.bookmarkData)
         }
+        // its drive isn't mounted: whatever has that drive's name now (another drive) isn't it
+        if volumeProbe.placement(of: root.pathHint, onVolume: root.volumeIdentifier) == .absent {
+            return (nil, "offline", root.bookmarkData)
+        }
         guard var bookmark = root.bookmarkData else {
             let fallback = fallbackSourceRoot(root, preferredStatus: nil)
             return (fallback.url, fallback.status, nil)
@@ -2889,33 +2897,32 @@ final class AppState {
             }
             bookmark = fresh
         }
-        guard FileManager.default.fileExists(atPath: resolved.url.path) else {
-            if let relocated = VolumeMonitor.relocatedURL(for: resolved.url.path,
-                                                          volumeIdentifier: root.volumeIdentifier) {
-                return (relocated, "online", bookmark)
-            }
-            return (resolved.url, VolumeMonitor.status(
-                forInaccessible: resolved.url.path,
-                volumeIdentifier: root.volumeIdentifier
-            ).rawValue, bookmark)
+        // on its own drive, wherever that's mounted now
+        guard let path = volumeProbe.currentPath(of: resolved.url.path, onVolume: root.volumeIdentifier) else {
+            return (nil, "offline", bookmark)
         }
-        guard FileAccessService.canRead(resolved.url.path) else {
-            return (resolved.url, "permissionLost", bookmark)
+        let url = path == resolved.url.path ? resolved.url : URL(fileURLWithPath: path, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return (url, volumeProbe.status(forInaccessible: url.path, volumeIdentifier: root.volumeIdentifier).rawValue,
+                    bookmark)
         }
-        return (resolved.url, "online", bookmark)
+        guard FileAccessService.canRead(url.path) else {
+            return (url, "permissionLost", bookmark)
+        }
+        return (url, "online", bookmark)
     }
 
     private func fallbackSourceRoot(_ root: SourceRootRecord, preferredStatus: String?) -> (url: URL?, status: String) {
-        let url = URL(fileURLWithPath: root.pathHint)
+        // on its own drive, wherever that's mounted now
+        guard let path = volumeProbe.currentPath(of: root.pathHint, onVolume: root.volumeIdentifier) else {
+            return (nil, "offline")
+        }
+        let url = URL(fileURLWithPath: path)
         if FileManager.default.fileExists(atPath: url.path) {
             return (url, preferredStatus ?? (FileAccessService.canRead(url.path) ? "online" : "permissionLost"))
         }
-        if let relocated = VolumeMonitor.relocatedURL(for: root.pathHint,
-                                                      volumeIdentifier: root.volumeIdentifier) {
-            return (relocated, preferredStatus ?? "online")
-        }
-        return (nil, preferredStatus ?? VolumeMonitor.status(
-            forInaccessible: root.pathHint,
+        return (nil, preferredStatus ?? volumeProbe.status(
+            forInaccessible: path,
             volumeIdentifier: root.volumeIdentifier
         ).rawValue)
     }
@@ -4370,7 +4377,10 @@ final class AppState {
                 sourceInfoByPath[alias] = (id, name)
             }
         }
-        Task { [weak self, coordinator, store, roots, snapshot, vision, previewSize, readXMP, sourceInfoByPath] in
+        let volumesById = sourceRootRecordsById(from: store).compactMapValues(\.volumeIdentifier)
+        let probe = volumeProbe
+        Task { [weak self, coordinator, store, roots, snapshot, vision, previewSize, readXMP, sourceInfoByPath,
+                volumesById, probe] in
             let delta = await Task.detached(priority: .utility) {
                 // build the path index off the main thread (resolvingSymlinksInPath stats each asset)
                 var knownAssetsByPath: [String: Asset] = [:]
@@ -4395,6 +4405,10 @@ final class AppState {
                 var claimed: Set<String> = []
                 for root in roots {
                     let sourceInfo = PathIdentity.aliases(for: root).lazy.compactMap { sourceInfoByPath[$0] }.first
+                    // a folder whose drive isn't the one mounted at its path now (another drive
+                    // took that drive's name) isn't read: its files aren't the folder's
+                    if let id = sourceInfo?.id, let volume = volumesById[id],
+                       ![.mounted, .unchecked].contains(probe.placement(of: root.path, onVolume: volume)) { continue }
                     let scanned = ImportCoordinator.scanWithAliases(root).filter { $0.aliases.isDisjoint(with: claimed) }
                     for file in scanned { claimed.formUnion(file.aliases) }
                     fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
@@ -4510,13 +4524,15 @@ final class AppState {
         let packageURL = store.packageURL
         let snapshot = assets
         let sourceRootsById = sourceRootRecordsById(from: store)
+        let probe = volumeProbe
         isCheckingOriginals = true
 
-        availabilityScanTask = Task { [weak self, store, snapshot, sourceRootsById] in
+        availabilityScanTask = Task { [weak self, store, snapshot, sourceRootsById, probe] in
             let worker = Task.detached(priority: .utility) { () -> ([AssetAvailabilityUpdate]?, Bool) in
                 guard let changes = AssetAvailabilityService.changes(
                     in: snapshot,
-                    sourceRootsById: sourceRootsById
+                    sourceRootsById: sourceRootsById,
+                    probe: probe
                 ) else { return (nil, true) }
                 guard !Task.isCancelled else { return (nil, true) }
                 do {
