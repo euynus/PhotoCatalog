@@ -58,4 +58,48 @@ final class DevelopPresetFileTests: XCTestCase {
         XCTAssertEqual(grading?.highlights, ColorGrading.Grade(hue: 40, saturation: 20, luminance: 0))
         XCTAssertEqual(grading?.balance, 30)
     }
+
+    // ---- sharpening and color noise reduction (#67) ----
+    private var detailed: DevelopSettings {
+        var settings = DevelopSettings()
+        settings.sharpening = 30
+        settings.colorNoise = 10
+        settings.temperature = 5   // a shift: the preset is for photos other than RAW
+        return settings
+    }
+
+    func testRawPresetCountsTheRawEnginesOwnSharpening() {
+        var settings = detailed
+        settings.temperature = 5600
+        let text = DevelopPresetFile.xmp(for: preset(settings, [.whiteBalance, .sharpening, .noiseReduction]))
+        XCTAssertTrue(text.contains(#"crs:Sharpness="70""#) && text.contains(#"crs:ColorNoiseReduction="35""#), text)
+        let back = read(crsOnly(text))
+        XCTAssertEqual(back?.sourceIsRaw, true)
+        XCTAssertEqual(back?.settings.sharpening, 30)
+        XCTAssertEqual(back?.settings.colorNoise, 10)
+    }
+
+    func testPresetForOtherPhotosWritesItsOwnSharpening() {
+        let text = DevelopPresetFile.xmp(for: preset(detailed, [.whiteBalance, .sharpening, .noiseReduction], raw: false))
+        XCTAssertTrue(text.contains(#"crs:Sharpness="30""#), "no RAW engine sharpens a JPEG")
+        XCTAssertTrue(text.contains(#"crs:ColorNoiseReduction="10""#))
+        let back = read(crsOnly(text))
+        XCTAssertEqual(back?.sourceIsRaw, false)
+        XCTAssertEqual(back?.settings.sharpening, 30)
+        XCTAssertEqual(back?.settings.colorNoise, 10)
+    }
+
+    func testLightroomPresetForOtherPhotosKeepsItsSharpening() {
+        let text = """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+         <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+          crs:IncrementalTemperature="+5" crs:IncrementalTint="0" crs:Sharpness="25" crs:ColorNoiseReduction="15"
+          crs:HasSettings="True"/>
+        </rdf:RDF></x:xmpmeta>
+        """
+        let transfer = read(text)
+        XCTAssertEqual(transfer?.sourceIsRaw, false)
+        XCTAssertEqual(transfer?.settings.sharpening, 25)
+        XCTAssertEqual(transfer?.settings.colorNoise, 15)
+    }
 }

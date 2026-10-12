@@ -41,14 +41,15 @@ enum DevelopPresetFile {
         let path: WritableKeyPath<DevelopSettings, Double>
         let field: DevelopField
         let format: String
-        /// Lightroom's value minus this is ours (see `detailOffsets`).
+        /// Lightroom's value minus this is ours, in a preset for RAW files (see `scalars`).
         var offset: Double = 0
         /// Keys read when `key` isn't there: what earlier versions of this app wrote.
         var aliases: [String] = []
     }
 
     /// Detail here sits on top of the RAW engine's own sharpening and color noise reduction,
-    /// which Lightroom counts in its absolute values (40 and 25 by default for RAW files).
+    /// which Lightroom counts in its absolute values (40 and 25 by default for RAW files). Other
+    /// photos have none: their values are the same in both apps.
     private static let scalars: [Scalar] = {
         var list: [Scalar] = [
             Scalar(key: "Exposure2012", path: \.exposure, field: .exposure, format: "%+.2f"),
@@ -151,7 +152,7 @@ enum DevelopPresetFile {
             }
         }
         for scalar in scalars where fields.contains(scalar.field) {
-            let value = settings[keyPath: scalar.path] + scalar.offset
+            let value = settings[keyPath: scalar.path] + (preset.transfer.sourceIsRaw ? scalar.offset : 0)
             attributes.append(("crs:" + scalar.key, String(format: scalar.format, value)))
         }
         if fields.contains(.lensCorrections) {
@@ -271,7 +272,7 @@ enum DevelopPresetFile {
         }
         for scalar in scalars {
             guard let value = number(scalar.key) ?? scalar.aliases.lazy.compactMap(number).first else { continue }
-            settings[keyPath: scalar.path] = scalar.offset > 0 ? max(0, value - scalar.offset) : value
+            settings[keyPath: scalar.path] = scalar.offset > 0 && sourceIsRaw ? max(0, value - scalar.offset) : value
             fields.insert(scalar.field)
         }
         if let lateral = values["AutoLateralCA"] {
