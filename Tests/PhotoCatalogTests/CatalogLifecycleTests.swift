@@ -230,4 +230,26 @@ final class CatalogLifecycleTests: XCTestCase {
         XCTAssertTrue(inSession(app.assets).isEmpty, "a shot of the previous catalog's session shows in the next")
         XCTAssertTrue(inSession(try second.store.loadAssets()).isEmpty, "a shot of the previous catalog's session is saved in the next")
     }
+
+    // MARK: - #61 sidecars changed elsewhere
+
+    @MainActor
+    func testNewOrClosedCatalogForgetsSidecarChanges() throws {
+        let first = try makeCatalog("First", assets: [0])
+        let id = DemoData.assets[0].id
+        let app = makeApp()
+
+        XCTAssertTrue(app.openCatalog(at: first.url))
+        app.applyExternalXMPCheck(seeded: [id: 100], changed: [:])
+        app.externallyChangedXMPIds = [id]
+        XCTAssertTrue(app.createCatalog(at: root.appendingPathComponent("New.photolibrary")))
+        XCTAssertTrue(app.externallyChangedXMPIds.isEmpty, "New Catalog still lists the previous catalog's changed sidecars")
+        XCTAssertNil(app.xmpSyncTime(for: id), "New Catalog keeps the previous catalog's sidecar baselines")
+
+        XCTAssertTrue(app.openCatalog(at: first.url))
+        app.externallyChangedXMPIds = [id]
+        app.closeCatalog()
+        XCTAssertTrue(app.externallyChangedXMPIds.isEmpty, "Close Catalog still lists the catalog's changed sidecars")
+        XCTAssertNil(app.xmpSyncTime(for: id), "Close Catalog keeps the catalog's sidecar baselines")
+    }
 }

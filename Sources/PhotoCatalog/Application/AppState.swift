@@ -7382,6 +7382,9 @@ final class AppState {
         developSettings = [:]
         clearDevelopRecordCaches()
         clearFaces()
+        // sidecar state is the catalog's (a loaded one reads its own)
+        xmpSyncTimes = [:]
+        externallyChangedXMPIds = []
         sourceRootPathsById = [:]
         sourceManagementModesById = [:]
         duplicateGroupsCache = demo ? DemoData.duplicateGroups : []
