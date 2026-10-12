@@ -8529,9 +8529,24 @@ final class AppState {
             }
         }
         if meta {
-            if selectedIds.contains(id) { selectedIds.remove(id) } else { selectedIds.insert(id) }
-            primaryId = id
-            anchorId = id
+            guard selectedIds.contains(id) else {
+                selectedIds.insert(id)
+                primaryId = id
+                anchorId = id
+                return
+            }
+            selectedIds.remove(id)
+            // A photo ⌘-clicked off is no longer active: left so, the inspector showed it while
+            // edits went to the others (or, with none left, to it). The nearest one selected takes over.
+            if let primaryId, primaryId != id, selectedIds.contains(primaryId) {
+                anchorId = primaryId
+                return
+            }
+            let positions = listPositions(of: selectedIds.union([id]))
+            let from = positions[id] ?? 0
+            let byPosition = selectedIds.sorted { (positions[$0] ?? .max) < (positions[$1] ?? .max) }
+            primaryId = byPosition.first { (positions[$0] ?? .max) > from } ?? byPosition.last
+            anchorId = primaryId
             return
         }
         selectedIds = [id]

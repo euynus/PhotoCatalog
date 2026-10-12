@@ -43,4 +43,30 @@ final class SelectionSafetyTests: XCTestCase {
             XCTAssertEqual(app.showsSelection, library == "places")
         }
     }
+
+    /// ⌘-clicking the active photo off the selection left it active: the inspector showed it while
+    /// edits went to the photos still selected.
+    @MainActor
+    func testCommandClickingTheActivePhotoOffHandsOverToAnotherSelectedOne() throws {
+        let app = makeApp()
+        let ids = app.list.map(\.id)
+        app.selectCell(ids[1], shift: false, meta: false)
+        app.selectCell(ids[3], shift: false, meta: true)
+        app.selectCell(ids[5], shift: false, meta: true)
+        XCTAssertEqual(app.primaryId, ids[5])
+
+        app.selectCell(ids[5], shift: false, meta: true)
+        XCTAssertEqual(app.selectedIds, [ids[1], ids[3]])
+        XCTAssertEqual(app.primaryId, ids[3], "the nearest photo still selected becomes active")
+
+        app.selectCell(ids[1], shift: false, meta: true)
+        XCTAssertEqual(app.selectedIds, [ids[3]])
+        XCTAssertEqual(app.primaryId, ids[3], "⌘-clicking another photo off leaves the active one")
+
+        app.selectCell(ids[3], shift: false, meta: true)
+        XCTAssertTrue(app.selectedIds.isEmpty)
+        XCTAssertNil(app.primaryId, "with nothing selected nothing is active")
+        XCTAssertFalse(app.handleKey("5", hasCommand: false))
+        XCTAssertTrue(app.assets.allSatisfy { $0.rating == 0 }, "a rating key then rates nothing")
+    }
 }
