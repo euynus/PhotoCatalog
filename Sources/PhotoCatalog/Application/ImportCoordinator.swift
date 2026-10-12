@@ -54,8 +54,9 @@ final class ImportCoordinator: @unchecked Sendable {
     /// id when renamed or moved, so the path's id may already be another photo's: then the path
     /// is hashed again with a counter until the id is free. A photo already cataloged at this
     /// path is this file and keeps its id — a removed one too, so importing it again brings it
-    /// back in place.
-    func newAssetId(forPath path: String) -> String {
+    /// back in place, unless `reusingRemoved` is false: a file the app has just written where a
+    /// removed (trashed) one was is a new photo.
+    func newAssetId(forPath path: String, reusingRemoved: Bool = true) -> String {
         var removed: String?
         for attempt in 0... {
             let id = "r" + shortHash(attempt == 0 ? path : path + "\u{0}" + String(attempt))
@@ -64,7 +65,7 @@ final class ImportCoordinator: @unchecked Sendable {
             guard samePath else { continue }
             // a live photo at this path wins over a removed one
             if !row.deleted { return id }
-            if removed == nil { removed = id }
+            if reusingRemoved, removed == nil { removed = id }
         }
         return removed ?? "r" + shortHash(path)
     }
@@ -88,7 +89,8 @@ final class ImportCoordinator: @unchecked Sendable {
     /// Retry/import a known file list while preserving the original source folder identity.
     /// `preparer` turns each file into the one to catalog first — a card import's copy of it.
     /// `sourceRootId` and `folderName` file the photos under a source folder that contains
-    /// `folder` rather than under `folder` itself.
+    /// `folder` rather than under `folder` itself. `reusingRemovedIds` false: the files are new
+    /// output (an edit, merge or enhance), never a removed photo coming back.
     func importFiles(_ files: [URL], from folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
                      archiveRule: ManagedArchiveRule = .date, readSidecar: Bool = true,
                      previewMaxPixel: Int = 2048,
@@ -97,13 +99,14 @@ final class ImportCoordinator: @unchecked Sendable {
                      checkpoints: [String: ImportFileCheckpoint] = [:],
                      sourceRootId: String? = nil, folderName: String? = nil,
                      preparer: (any ImportFilePreparer)? = nil,
+                     reusingRemovedIds: Bool = true,
                      progress: ((ImportProgress) -> Void)? = nil) -> [Asset] {
         progress?(ImportProgress(total: files.count, processed: 0, failed: 0))
         return process(files, folder: folder, mode: mode, autoTag: autoTag, archiveRule: archiveRule,
                        readSidecar: readSidecar, previewMaxPixel: previewMaxPixel, control: control,
                        knownAssetsById: knownAssetsById, checkpoints: checkpoints,
                        sourceRootId: sourceRootId, folderName: folderName,
-                       preparer: preparer, progress: progress)
+                       preparer: preparer, reusingRemovedIds: reusingRemovedIds, progress: progress)
     }
 
     /// A folder's files with each one's path aliases: walked and resolved once for both
@@ -186,7 +189,7 @@ final class ImportCoordinator: @unchecked Sendable {
                          checkpoints: [String: ImportFileCheckpoint] = [:],
                          sourceRootId: String? = nil, folderName: String? = nil,
                          preparer: (any ImportFilePreparer)? = nil,
-                         refreshingIds: [String: String] = [:],
+                         refreshingIds: [String: String] = [:], reusingRemovedIds: Bool = true,
                          progress: ((ImportProgress) -> Void)?) -> [Asset] {
         let folderId = sourceRootId ?? sourceId(forFolder: folder)
         let folderName = folderName ?? folder.lastPathComponent
@@ -221,7 +224,8 @@ final class ImportCoordinator: @unchecked Sendable {
                 if let asset = try makeAsset(source: target, folderId: folderId, folderName: folderName,
                                             mode: mode, autoTag: autoTag, archiveRule: archiveRule,
                                             readSidecar: readSidecar, previewMaxPixel: previewMaxPixel,
-                                            assetId: refreshingId, copying: copying) {
+                                            assetId: refreshingId, reusingRemovedIds: reusingRemovedIds,
+                                            copying: copying) {
                     return .imported(asset)
                 }
                 return .failed(ImportFailure(url: url, reason: L("无法读取图片元数据或像素尺寸")))
@@ -283,7 +287,7 @@ final class ImportCoordinator: @unchecked Sendable {
     private func makeAsset(source url: URL, folderId: String, folderName: String,
                            mode: ImportMode, autoTag: Bool, archiveRule: ManagedArchiveRule = .date,
                            readSidecar: Bool = true, previewMaxPixel: Int, assetId knownId: String? = nil,
-                           copying: NSLock) throws -> Asset? {
+                           reusingRemovedIds: Bool = true, copying: NSLock) throws -> Asset? {
         let meta = MetadataReader.read(url)
         guard meta.width > 0, meta.height > 0 else { return nil }
         let finalURL: URL
@@ -295,7 +299,7 @@ final class ImportCoordinator: @unchecked Sendable {
             finalURL = url
         }
 
-        let assetId = knownId ?? newAssetId(forPath: finalURL.path)
+        let assetId = knownId ?? newAssetId(forPath: finalURL.path, reusingRemoved: reusingRemovedIds)
         let pid = (Int(assetId.dropFirst().prefix(6), radix: 16) ?? 0) % 100000
         let quick = HashService.quickHash(finalURL, fileSize: meta.fileSize)
         let content = HashService.contentHash(finalURL)

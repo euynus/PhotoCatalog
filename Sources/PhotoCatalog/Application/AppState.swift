@@ -4893,7 +4893,7 @@ final class AppState {
                                                                         to: job.folder, names: ExportNames())
             else { return nil }
             let imported = coordinator.importFiles([url], from: job.folder, readSidecar: false,
-                                                   previewMaxPixel: previewMaxPixel).first
+                                                   previewMaxPixel: previewMaxPixel, reusingRemovedIds: false).first
             return (url, job.source, imported)
         }
     }
@@ -5086,7 +5086,8 @@ final class AppState {
                                            + (kind == .hdr ? "-HDR" : "-Pano"), extension: "tif")
                     guard PhotoMerge.writeTIFF(merged.image, to: url) else { return continuation.resume(returning: .unreadable) }
                     let imported = coordinator.importFiles([url], from: folder, readSidecar: false,
-                                                           previewMaxPixel: previewSize).first
+                                                           previewMaxPixel: previewSize,
+                                                           reusingRemovedIds: false).first
                     continuation.resume(returning: .merged(url: url, reference: merged.reference, asset: imported))
                 }
             }
@@ -5386,7 +5387,8 @@ final class AppState {
                             return continuation.resume(returning: .unreadable)
                         }
                         let imported = coordinator.importFiles([url], from: folder, readSidecar: false,
-                                                               previewMaxPixel: previewSize).first
+                                                               previewMaxPixel: previewSize,
+                                                               reusingRemovedIds: false).first
                         continuation.resume(returning: .made(url: url, asset: imported))
                     }
                 }

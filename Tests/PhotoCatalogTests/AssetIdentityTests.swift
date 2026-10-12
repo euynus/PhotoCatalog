@@ -120,6 +120,43 @@ final class AssetIdentityTests: CatalogTestCase {
         XCTAssertEqual(row?.bool("deleted"), false)
     }
 
+    /// Edit In makes `a-Edit.tif`; it's moved to the Trash; Edit In again writes a new
+    /// `a-Edit.tif` at the same path, which joins the catalog as a new photo.
+    @MainActor
+    func testEditAgainAfterTrashingTheResultJoinsTheCatalog() throws {
+        let source = scratch.appendingPathComponent("Source")
+        let original = source.appendingPathComponent("a.jpg")
+        try makeTestJPEG(at: original, shade: 8)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        let master = try XCTUnwrap(ImportCoordinator(store: store).importFiles([original], from: source).first)
+        try store.upsert([master])
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        func editAgain() throws -> (url: URL, ids: Set<String>) {
+            let made = AppState.renderEditedCopies(app.externalEditJobs([master]),
+                                                   coordinator: ImportCoordinator(store: store), previewMaxPixel: 256)
+            let url = try XCTUnwrap(made.first?.url)
+            return (url, app.finishExternalEdit(made, editor: nil, expected: 1).importedIDs)
+        }
+        let first = try editAgain()
+        let firstId = try XCTUnwrap(first.ids.first)
+        // Move to Trash: the file goes, the photo leaves the catalog
+        try FileManager.default.removeItem(at: first.url)
+        XCTAssertTrue(app.mutate([firstId], writingSidecars: false) { $0.deleted = true })
+
+        let second = try editAgain()
+
+        XCTAssertEqual(second.url.path, first.url.path, "the new result takes the trashed one's name")
+        XCTAssertEqual(second.ids.count, 1, "the new result joins the catalog")
+        let added = try XCTUnwrap(app.assets.first { !$0.deleted && $0.localPath == second.url.path })
+        XCTAssertNotEqual(added.id, firstId)
+        XCTAssertEqual(app.assets.first { $0.id == firstId }?.deleted, true)
+        XCTAssertTrue(try store.loadAssets().contains { $0.id == added.id })
+    }
+
     func testImportOfRemovedPhotoAtItsPathKeepsItsId() throws {
         let source = scratch.appendingPathComponent("Source")
         let photo = source.appendingPathComponent("removed.jpg")
