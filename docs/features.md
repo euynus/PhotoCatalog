@@ -62,7 +62,7 @@ The full reference to what PhotoCatalog does; [README](../README.md) has the ove
   - White balance starts from the as-shot Kelvin and tint read from the RAW. The eyedropper (`W`) sets it from something you click that should be gray.
   - Auto white balance (`⇧⌘U`, or Auto beside White Balance) finds the photo's gray surfaces near neutral on its as-shot rendering, brighter ones counting more, and sets temperature and tint so they render gray: the same answer from any slider position, and none when nothing in the photo is close to gray.
   - Auto white balance and auto tone (`⌘U`) act on the photo in Develop, or on every selected photo in the grid.
-- **Tone curve** — a point curve, composite and per channel: click to add a point, drag, double-click to remove; linear / medium / strong presets.
+- **Tone curve** — a point curve, composite and per channel: click to add a point on the curve, drag a point to move it, double-click to remove; linear / medium / strong presets.
 - **Color mixer** — hue, saturation and luminance for eight color bands, weighted by how colorful a pixel is so whites and grays stay put.
 - **Color grading** — a tint and luminance for shadows, midtones, highlights and the whole photo, with blending and balance (positive favors the highlights, as in Lightroom).
 - **LUTs** — import `.cube` 3D LUTs into a library every catalog shares, and apply one with an amount; 33- and 65-point LUTs are resampled.

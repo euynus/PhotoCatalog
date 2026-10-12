@@ -15,6 +15,8 @@ struct ToneCurveEditor: View {
     /// The channel's points while a drag is in progress, so indices stay put as it moves.
     @State private var working: [CurvePoint]?
     @State private var dragged: Int?
+    /// The channel's points when the drag began: it moves a point from where it was.
+    @State private var dragStart: [CurvePoint]?
 
     private static let hitRadius: CGFloat = 9
 
@@ -135,48 +137,60 @@ struct ToneCurveEditor: View {
         CGPoint(x: CGFloat(point.x) * side, y: (1 - CGFloat(point.y)) * side)
     }
 
-    private func curvePoint(_ location: CGPoint, side: CGFloat) -> CurvePoint {
-        CurvePoint(x: min(1, max(0, Double(location.x / side))), y: min(1, max(0, Double(1 - location.y / side))))
+    /// The channel's points during a drag that began at `start` on `points` (view points in a
+    /// `side`-point square, top-left origin) and has moved by `translation`, and which point is
+    /// dragged: the one within reach of `start`, or else a new one on the curve at its input. It
+    /// moves as far as the pointer has, from where it was, so a click moves nothing. The ends
+    /// move up and down only, the rest stay between their neighbors. Nil when nothing is within
+    /// reach and a new point would sit too close to another.
+    static func dragging(_ points: [CurvePoint], from start: CGPoint, by translation: CGSize,
+                         side: CGFloat) -> (points: [CurvePoint], index: Int)? {
+        func distance(_ point: CurvePoint) -> CGFloat {
+            hypot(CGFloat(point.x) * side - start.x, (1 - CGFloat(point.y)) * side - start.y)
+        }
+        var current = points
+        let index: Int
+        if let nearest = current.indices.min(by: { distance(current[$0]) < distance(current[$1]) }),
+           distance(current[nearest]) <= hitRadius {
+            index = nearest
+        } else {
+            // a new point on the curve at the clicked input: a click adds it without bending the curve
+            let x = min(1, max(0, Double(start.x / side)))
+            guard let next = current.firstIndex(where: { $0.x > x }), next > 0,
+                  x - current[next - 1].x >= ToneCurve.minimumGap,
+                  current[next].x - x >= ToneCurve.minimumGap else { return nil }
+            current.insert(CurvePoint(x: x, y: ToneCurve.evaluate(current, at: x)), at: next)
+            index = next
+        }
+        let origin = current[index]
+        var moved = CurvePoint(x: min(1, max(0, origin.x + Double(translation.width / side))),
+                               y: min(1, max(0, origin.y - Double(translation.height / side))))
+        if index == 0 || index == current.count - 1 {
+            moved.x = current[index].x   // the ends stay at black and white input
+        } else {
+            moved.x = min(current[index + 1].x - ToneCurve.minimumGap,
+                          max(current[index - 1].x + ToneCurve.minimumGap, moved.x))
+        }
+        current[index] = moved
+        return (current, index)
     }
 
     private func dragGesture(side: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                var current = points
-                if dragged == nil {
-                    let start = value.startLocation
-                    let nearest = current.indices.min {
-                        hypot(view(current[$0], side: side).x - start.x, view(current[$0], side: side).y - start.y)
-                            < hypot(view(current[$1], side: side).x - start.x, view(current[$1], side: side).y - start.y)
-                    }
-                    if let nearest,
-                       hypot(view(current[nearest], side: side).x - start.x,
-                             view(current[nearest], side: side).y - start.y) <= Self.hitRadius {
-                        dragged = nearest
-                    } else {
-                        // a new point on the curve at the clicked input, so a click alone changes nothing
-                        let x = curvePoint(start, side: side).x
-                        guard let index = current.firstIndex(where: { $0.x > x }), index > 0,
-                              x - current[index - 1].x >= ToneCurve.minimumGap,
-                              current[index].x - x >= ToneCurve.minimumGap else { return }
-                        current.insert(CurvePoint(x: x, y: ToneCurve.evaluate(current, at: x)), at: index)
-                        dragged = index
-                    }
+                let start = dragStart ?? points
+                if dragStart == nil { dragStart = start }
+                guard let drag = Self.dragging(start, from: value.startLocation, by: value.translation, side: side) else {
+                    return
                 }
-                guard let index = dragged, current.indices.contains(index) else { return }
-                var moved = curvePoint(value.location, side: side)
-                if index == 0 || index == current.count - 1 {
-                    moved.x = current[index].x   // the ends stay at black and white input
-                } else {
-                    moved.x = min(current[index + 1].x - ToneCurve.minimumGap,
-                                  max(current[index - 1].x + ToneCurve.minimumGap, moved.x))
-                }
-                current[index] = moved
-                working = current
-                publish(current)
+                dragged = drag.index
+                // a click on a point leaves the curve, and the undo history, as they are
+                guard drag.points != start || working != nil else { return }
+                working = drag.points
+                publish(drag.points)
             }
             .onEnded { value in
-                defer { working = nil; dragged = nil }
+                defer { working = nil; dragged = nil; dragStart = nil }
                 let isClick = hypot(value.translation.width, value.translation.height) < 2
                 if isClick, ClickEvent.clickCount >= 2, let index = dragged, index > 0, index < points.count - 1 {
                     var current = points
