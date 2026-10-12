@@ -161,7 +161,7 @@ enum XMPSidecar {
               let ours = try? XMLDocument(xmlString: xmp(for: a), options: []),
               let ourDescription = (try? ours.nodes(forXPath: "//*[local-name()='Description']"))?.first as? XMLElement,
               let descriptions = (try? document.nodes(forXPath: "//*[local-name()='Description']")) as? [XMLElement],
-              let target = descriptions.first else { return nil }
+              let target = descriptions.first ?? emptyDescription(in: document) else { return nil }
         // take our properties out wherever another description carries them, attribute or element
         for description in descriptions {
             for name in managedProperties { description.removeAttribute(forName: name) }
@@ -181,6 +181,26 @@ enum XMPSidecar {
             target.addChild(child.copy() as! XMLNode)
         }
         return document.xmlString(options: [.nodePreserveAll])
+    }
+
+    /// A new, empty rdf:Description for XMP that has none yet (an empty rdf:RDF, or an
+    /// x:xmpmeta with nothing in it); nil when `document` isn't XMP at all.
+    private static func emptyDescription(in document: XMLDocument) -> XMLElement? {
+        let rdfURI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+        var rdf = (try? document.nodes(forXPath: "//*[local-name()='RDF']"))?.first as? XMLElement
+        if rdf == nil, let root = document.rootElement(), root.localName == "xmpmeta" {
+            let created = XMLElement(name: "rdf:RDF", uri: rdfURI)
+            created.addNamespace(XMLNode.namespace(withName: "rdf", stringValue: rdfURI) as! XMLNode)
+            root.addChild(created)
+            rdf = created
+        }
+        guard let rdf else { return nil }
+        // the prefix the document gives the RDF namespace (rdf: almost always)
+        let prefix = rdf.resolvePrefix(forNamespaceURI: rdfURI).map { $0.isEmpty ? "" : $0 + ":" } ?? "rdf:"
+        let description = XMLElement(name: prefix + "Description", uri: rdfURI)
+        description.addAttribute(XMLNode.attribute(withName: prefix + "about", uri: rdfURI, stringValue: "") as! XMLNode)
+        rdf.addChild(description)
+        return description
     }
 
     /// Applies a sidecar's metadata to `asset`: the sidecar's rating, label, text, credits,
