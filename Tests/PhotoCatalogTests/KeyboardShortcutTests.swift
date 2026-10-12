@@ -14,6 +14,40 @@ final class KeyboardShortcutTests: XCTestCase {
     func testKeyCatcherRecognizesAByHardwareKeyCode() {
         XCTAssertEqual(KeyCatcher.keyString(keyCode: 0, charactersIgnoringModifiers: nil), "a")
         XCTAssertEqual(KeyCatcher.keyString(keyCode: 0, charactersIgnoringModifiers: "A"), "a")
+        // a layout without Latin letters there still has A at that key
+        XCTAssertEqual(KeyCatcher.keyString(keyCode: 0, charactersIgnoringModifiers: "ф"), "a")
+        XCTAssertEqual(KeyCatcher.keyString(keyCode: 0, charactersIgnoringModifiers: "ㅁ"), "a")
+    }
+
+    /// On French AZERTY the key at that position is Q: ⌘Q selected all instead of quitting, and Q
+    /// opened capture analysis.
+    @MainActor
+    func testKeyCatcherUsesTheLayoutsLetterAtKeyCodeZero() throws {
+        XCTAssertEqual(KeyCatcher.keyString(keyCode: 0, charactersIgnoringModifiers: "q"), "q")
+        XCTAssertEqual(KeyCatcher.keyString(keyCode: 0, charactersIgnoringModifiers: "Q"), "q")
+
+        let app = AppState.selfCheckFixture()
+        app.assets = Array(DemoData.assets.prefix(6))
+        app.select(Selection(type: .lib, id: "all", name: "AZERTY"))
+        let frame = NSRect(x: 0, y: 0, width: 1, height: 1)
+        let host = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+        host.isReleasedWhenClosed = false
+        defer { host.close() }
+        func route(_ flags: NSEvent.ModifierFlags) throws -> (sent: NSEvent, routed: NSEvent?) {
+            let event = try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: host.windowNumber,
+                context: nil, characters: "q", charactersIgnoringModifiers: "q", isARepeat: false, keyCode: 0))
+            let routed = KeyCatcher.routeEvent(event, hostWindow: host, isMenuTracking: false, isEditingText: false) {
+                app.handleKey($0, hasCommand: $1, hasShift: $2)
+            }
+            return (event, routed)
+        }
+        let selected = app.selectedIds
+        let quit = try route(.command)
+        XCTAssertTrue(quit.routed === quit.sent, "⌘Q goes on to the app menu's Quit")
+        XCTAssertEqual(app.selectedIds, selected, "⌘Q doesn't select all")
+        _ = try route([])
+        XCTAssertNotEqual(app.view, .analysis, "Q isn't A")
     }
 
     /// The filter bar's custom range is a pair of date pickers: an NSDatePicker takes typed digits

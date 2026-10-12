@@ -125,7 +125,11 @@ struct KeyCatcher: NSViewRepresentable {
 
     nonisolated static func keyString(keyCode: UInt16, charactersIgnoringModifiers: String?) -> String {
         switch keyCode {
-        case 0: return "a"
+        case 0:
+            // A on QWERTY even where the layout types no Latin letter there (⌘A selects all), but the
+            // layout's own letter where it has one: on AZERTY that key is Q, and ⌘Q quits
+            let typed = (charactersIgnoringModifiers ?? "").lowercased()
+            return typed.count == 1 && typed.allSatisfy { ("a"..."z").contains($0) } ? typed : "a"
         case 123: return "left"
         case 124: return "right"
         case 125: return "down"
