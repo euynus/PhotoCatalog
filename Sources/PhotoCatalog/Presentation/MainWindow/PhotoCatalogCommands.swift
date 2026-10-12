@@ -202,7 +202,10 @@ struct PhotoCatalogCommands: Commands {
             Button("从目录库移除…") { perform("照片.从目录库移除") { app.confirmDeleteSelected() } }
                 .disabled(app.sheet != nil || !app.hasSelection || app.view == .analysis)
             Button("将原件移到废纸篓…") {
-                perform("照片.将原件移到废纸篓") { app.trashSelectedOriginals() }
+                perform("照片.将原件移到废纸篓") {
+                    KeyCatcher.performMenuCommand({ app.trashSelectedOriginals() },
+                                                  textAction: #selector(NSResponder.deleteToBeginningOfLine(_:)))
+                }
             }
                 .keyboardShortcut(.delete, modifiers: .command)
                 .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals || app.view == .analysis)

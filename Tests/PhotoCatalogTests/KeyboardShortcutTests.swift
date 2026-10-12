@@ -132,6 +132,28 @@ final class KeyboardShortcutTests: XCTestCase {
         XCTAssertTrue(app.describeTargets.isEmpty, "the photos taken for describing are let go")
     }
 
+    /// The menu sees ⌘⌫ before the field being typed in: it opened Move Originals to Trash, whose
+    /// default button then trashed on Return, instead of deleting to the start of the line.
+    @MainActor
+    func testCommandDeleteWhileTypingDeletesTextInsteadOfTrashing() {
+        let deleteLine = #selector(NSResponder.deleteToBeginningOfLine(_:))
+        var trashed = 0
+        var sent: [Selector] = []
+        KeyCatcher.performMenuCommand({ trashed += 1 }, textAction: deleteLine, isEditingText: true,
+                                      byShortcut: true, sendTextAction: { sent.append($0) })
+        XCTAssertEqual(trashed, 0, "typing ⌘⌫ in a text field never trashes originals")
+        XCTAssertEqual(sent, [deleteLine], "it deletes to the start of the line")
+
+        sent = []
+        KeyCatcher.performMenuCommand({ trashed += 1 }, textAction: deleteLine, isEditingText: true,
+                                      byShortcut: false, sendTextAction: { sent.append($0) })
+        XCTAssertEqual(trashed, 1, "the menu item clicked with a field focused still does its command")
+        KeyCatcher.performMenuCommand({ trashed += 1 }, textAction: deleteLine, isEditingText: false,
+                                      byShortcut: true, sendTextAction: { sent.append($0) })
+        XCTAssertEqual(trashed, 2, "⌘⌫ outside a text field moves the originals to the Trash")
+        XCTAssertTrue(sent.isEmpty)
+    }
+
     func testInspectorToggleLabelDescribesAvailableAction() {
         XCTAssertEqual(inspectorToggleLabel(isVisible: true), "隐藏简介 (⌘I)")
         XCTAssertEqual(inspectorToggleLabel(isVisible: false), "显示简介 (⌘I)")

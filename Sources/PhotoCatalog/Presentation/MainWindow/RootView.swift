@@ -91,6 +91,23 @@ struct KeyCatcher: NSViewRepresentable {
         ].contains(key)
     }
 
+    /// A menu shortcut that is also a text-editing key (⌘⌫) reaches the menu before the field being
+    /// typed in, so the monitor's pass-through for typing didn't help: typed while text is being
+    /// edited it does the field's `textAction`. Chosen from the menu, it's still the command.
+    @MainActor
+    static func performMenuCommand(_ command: () -> Void, textAction: Selector,
+                                   isEditingText editing: Bool? = nil, byShortcut: Bool? = nil,
+                                   sendTextAction: @MainActor (Selector) -> Void = { NSApp.sendAction($0, to: nil, from: nil) }) {
+        let typed = byShortcut ?? NSApp.currentEvent.map {
+            $0.type == .keyDown && $0.modifierFlags.contains(.command)
+        } ?? false
+        if typed, editing ?? isEditingText() {
+            sendTextAction(textAction)
+        } else {
+            command()
+        }
+    }
+
     /// SwiftUI writes a command's enabled state into its menu item only when that menu opens,
     /// so a shortcut is matched against whatever the item showed last: ⇧⌘E stayed disabled
     /// from launch (no selection yet) until the 照片 menu was opened by hand.
