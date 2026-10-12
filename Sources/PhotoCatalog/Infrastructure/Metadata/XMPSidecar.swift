@@ -145,22 +145,20 @@ enum XMPSidecar {
     /// the first file of the pair takes along.
     @discardableResult
     static func moveSidecar(from original: URL, to moved: URL) -> Bool {
+        moveSidecar(at: sidecarURL(for: original), to: sidecarURL(for: moved))
+    }
+
+    /// Moves the sidecar at `source` to `target`; true when it moved or there was none. Another
+    /// file's sidecar at `target` is never replaced.
+    @discardableResult
+    static func moveSidecar(at source: URL, to target: URL) -> Bool {
         let fm = FileManager.default
-        let source = sidecarURL(for: original), target = sidecarURL(for: moved)
         guard source.path != target.path, fm.fileExists(atPath: source.path) else { return true }
         // another file's sidecar is never replaced (a change of case only is the same file)
         guard !fm.fileExists(atPath: target.path) || source.path.lowercased() == target.path.lowercased() else {
             return false
         }
         return (try? fm.moveItem(at: source, to: target)) != nil
-    }
-
-    /// Copies an original's sidecar beside a copy of it, unless one is already there.
-    static func copySidecar(from original: URL, to copy: URL) {
-        let fm = FileManager.default
-        let source = sidecarURL(for: original), target = sidecarURL(for: copy)
-        guard fm.fileExists(atPath: source.path), !fm.fileExists(atPath: target.path) else { return }
-        try? fm.copyItem(at: source, to: target)
     }
 
     /// XMP's GPS form: degrees, decimal minutes and a hemisphere letter ("30,30.500000N").
