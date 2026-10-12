@@ -9585,12 +9585,16 @@ final class AppState {
         }
     }
     var facesRevision = 0
-    /// Unnamed faces in likely-one-person groups, largest first.
-    var faceClusters: [FaceCluster] = []
+    /// Unnamed faces in likely-one-person groups, largest first, those in photos removed from
+    /// the catalog included (`faceClusters` leaves them out).
+    private var allFaceClusters: [FaceCluster] = [] {
+        didSet { faceClustersCache = nil }
+    }
+    @ObservationIgnored private var faceClustersCache: (structure: Int, clusters: [FaceCluster])?
     /// Progress while photos are being analysed.
     var faceAnalysis: (done: Int, total: Int)?
     @ObservationIgnored private var faceAnalysisGeneration = 0
-    @ObservationIgnored private var peopleCache: (revision: Int, people: [PersonSummary])?
+    @ObservationIgnored private var peopleCache: (revision: Int, structure: Int, people: [PersonSummary])?
     /// Off the cooperative pool (originals without a preview may be RAWs), a few photos at a
     /// time: on 217 photos four at once took 2.5 s instead of 6.7 s, finding the same faces.
     private static let faceQueue = DispatchQueue(label: "PhotoCatalog.faces", qos: .utility)
@@ -9614,7 +9618,7 @@ final class AppState {
         // reads them again (keeping their names)
         faceOutdatedAssetIds = Set(loaded.filter { !$0.vector.isEmpty && !FaceClustering.isComparable($0) }.map(\.assetId))
         faceScannedAssetIds = ((try? store.loadFaceScannedAssetIds()) ?? []).subtracting(faceOutdatedAssetIds)
-        faceClusters = []
+        allFaceClusters = []
         facesRevision &+= 1
         refreshFaceClusters()
     }
@@ -9626,16 +9630,28 @@ final class AppState {
         faceAssetIds = []
         faceScannedAssetIds = []
         faceOutdatedAssetIds = []
-        faceClusters = []
+        allFaceClusters = []
         facesRevision &+= 1
+    }
+
+    /// Whether People shows a face: its photo is in the catalog, not removed from it. Faces in
+    /// removed photos are kept, so undoing the removal brings them back.
+    private var faceIsShown: (FaceRecord) -> Bool {
+        let index = assetIndex
+        let assets = assets
+        return { face in index[face.assetId].map { !assets[$0].deleted } ?? false }
     }
 
     /// Named people, most photographed first.
     var people: [PersonSummary] {
         _ = facesRevision
-        if let cache = peopleCache, cache.revision == facesRevision { return cache.people }
+        let structure = structureVersion   // removing a photo, or undoing that, changes who shows
+        if let cache = peopleCache, cache.revision == facesRevision, cache.structure == structure {
+            return cache.people
+        }
+        let shown = faceIsShown
         var byPerson: [String: [FaceRecord]] = [:]
-        for face in faces.values {
+        for face in faces.values where shown(face) {
             if let person = face.person { byPerson[person, default: []].append(face) }
         }
         let result = byPerson.map { name, faces in
@@ -9645,7 +9661,22 @@ final class AppState {
                                  coverFaceId: best.id, unconfirmed: faces.filter { !$0.confirmed }.count)
         }
         .sorted { ($0.photoCount, $1.name) > ($1.photoCount, $0.name) }
-        peopleCache = (facesRevision, result)
+        peopleCache = (facesRevision, structure, result)
+        return result
+    }
+
+    /// Unnamed faces in likely-one-person groups, in the order grouped, without the faces in
+    /// photos removed from the catalog.
+    var faceClusters: [FaceCluster] {
+        let clusters = allFaceClusters
+        let structure = structureVersion   // both read even on a cache hit, to register them
+        if let cache = faceClustersCache, cache.structure == structure { return cache.clusters }
+        let shown = faceIsShown
+        let result = clusters.compactMap { cluster -> FaceCluster? in
+            let rest = cluster.faceIds.filter { faces[$0].map(shown) ?? false }
+            return rest.isEmpty ? nil : FaceCluster(id: rest.contains(cluster.id) ? cluster.id : rest[0], faceIds: rest)
+        }
+        faceClustersCache = (structure, result)
         return result
     }
 
@@ -9687,7 +9718,8 @@ final class AppState {
         view = .grid
     }
 
-    /// Re-groups unnamed faces off the main thread.
+    /// Re-groups unnamed faces off the main thread (those in removed photos too, so they're in
+    /// their group again when the removal is undone).
     private func refreshFaceClusters() {
         let unnamed = faces.values.filter { $0.person == nil }
         let revision = facesRevision
@@ -9695,7 +9727,7 @@ final class AppState {
             let clusters = FaceClustering.clusters(unnamed)
             await MainActor.run { [weak self] in
                 guard let self, self.facesRevision == revision else { return }
-                self.faceClusters = clusters
+                self.allFaceClusters = clusters
             }
         }
     }
@@ -9798,8 +9830,9 @@ final class AppState {
     private func finishFaceAnalysis(generation: Int) {
         guard generation == faceAnalysisGeneration else { return }
         faceAnalysis = nil
-        let unnamed = faces.values.filter { $0.person == nil }
-        let matches = FaceClustering.matches(for: unnamed, named: Array(faces.values))
+        let shown = faces.values.filter(faceIsShown)
+        let unnamed = shown.filter { $0.person == nil }
+        let matches = FaceClustering.matches(for: unnamed, named: shown)
         if !matches.isEmpty {
             applyFaceNames(matches.mapValues { ($0, false) }, undoName: nil)
             push("找到 \(matches.count) 张可能是已命名人物的人脸，请在“人物”中确认", "person")
@@ -9829,10 +9862,13 @@ final class AppState {
     }
 
     /// Person names on faces, plus the matching `人物/…` keywords on their photos; one undo step.
+    /// Faces in photos removed from the catalog are left as they are, as their photos' keywords are.
     private func applyFaceNames(_ changes: [String: (String, Bool)], undoName: String?) {
+        let shown = faceIsShown
+        let changes = changes.filter { faces[$0.key].map(shown) ?? false }
         guard !changes.isEmpty else { return }
         setFaceStates(changes.mapValues { (person: Optional($0.0), confirmed: $0.1) }, undoName: undoName)
-        faceClusters = faceClusters.compactMap { cluster in
+        allFaceClusters = allFaceClusters.compactMap { cluster in
             let rest = cluster.faceIds.filter { changes[$0] == nil }
             return rest.isEmpty ? nil : FaceCluster(id: rest.contains(cluster.id) ? cluster.id : rest[0], faceIds: rest)
         }
@@ -9860,8 +9896,10 @@ final class AppState {
         guard let store else { return }
         let before = faceStates(states.keys)
         guard writeFaceStates(states, to: store) != nil else { return }
-        if !keywords.isEmpty {
-            mutate(Set(keywords.keys)) { asset in
+        // a photo removed from the catalog since keeps the keywords it had
+        let live = Set(keywords.keys.filter { asset(id: $0).map { !$0.deleted } ?? false })
+        if !live.isEmpty {
+            mutate(live) { asset in
                 guard let change = keywords[asset.id] else { return }
                 let (add, remove) = takingBack ? (change.removed, change.added) : (change.added, change.removed)
                 asset.keywords = KeywordService.normalize(asset.keywords.filter { !remove.contains($0) } + add)
@@ -9933,7 +9971,8 @@ final class AppState {
         let managed = Set(names.map(FaceClustering.keyword))
         let root = FaceClustering.keywordRoot
         let changed = Set(wanted.keys.filter { id in
-            guard let index = assetIndex[id] else { return false }
+            // a photo removed from the catalog keeps the keywords it had
+            guard let index = assetIndex[id], !assets[index].deleted else { return false }
             let keywords = assets[index].keywords
             let current = Set(keywords).intersection(managed)
             let orphanedRoot = keywords.contains(root) && !keywords.contains { $0.hasPrefix(root + "/") }
@@ -9963,12 +10002,14 @@ final class AppState {
     }
 
     /// Keeps face names in step when a `人物/…` keyword is renamed or deleted from the sidebar.
+    /// Faces in photos removed from the catalog keep their names, as the photos keep the keyword.
     private func syncFacesAfterKeywordChange(old: String, new: String?, undoName: String) {
+        let shown = faceIsShown
         guard let oldPerson = FaceClustering.person(fromKeyword: old) else {
             // renaming or deleting the whole 人物 branch touches every person
             guard old == FaceClustering.keywordRoot else { return }
             var changes: [String: (person: String?, confirmed: Bool)] = [:]
-            for face in faces.values {
+            for face in faces.values where shown(face) {
                 guard let person = face.person else { continue }
                 let renamed = new.flatMap { FaceClustering.person(fromKeyword: $0 + "/" + person) }
                 changes[face.id] = (renamed, renamed == nil ? false : face.confirmed)
@@ -9978,7 +10019,7 @@ final class AppState {
         }
         let newPerson = new.flatMap(FaceClustering.person(fromKeyword:))
         var changes: [String: (person: String?, confirmed: Bool)] = [:]
-        for face in faces.values where face.person == oldPerson {
+        for face in faces.values where face.person == oldPerson && shown(face) {
             changes[face.id] = (newPerson, newPerson == nil ? false : face.confirmed)
         }
         guard !changes.isEmpty else { return }

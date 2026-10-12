@@ -138,6 +138,55 @@ final class PeopleTests: CatalogTestCase {
         XCTAssertEqual(try store.loadAssets().first { $0.id == ids[1] }?.keywords, ["人物", "人物/明明"])
     }
 
+    // ---------- photos removed from the catalog ----------
+
+    @MainActor
+    func testFacesOfRemovedPhotosLeavePeopleUntilTheRemovalIsUndone() async throws {
+        let (app, _, ids) = try appWithFaces([face("a0", on: 0, person: "小明", confirmed: true),
+                                              face("a1", on: 1, person: "小明", confirmed: true),
+                                              face("c2", on: 2, axis: 4), face("c3", on: 3, axis: 4)],
+                                             keywords: [0: ["人物/小明"], 1: ["人物/小明"]])
+        try await waitUntil("the unnamed faces are grouped") { app.faceClusters.map(\.faceIds.count) == [2] }
+        XCTAssertEqual(app.people.first?.photoCount, 2)
+
+        app.selectedIds = [ids[1], ids[3]]
+        app.primaryId = ids[1]
+        step { app.removeSelected() }
+
+        XCTAssertEqual(app.people.first?.photoCount, 1, "a removed photo no longer counts for its people")
+        XCTAssertEqual(app.people.first?.faceIds, ["a0"], "nor shows its faces")
+        try await waitUntil("a removed photo's faces leave the unnamed groups", timeout: 2) {
+            app.faceClusters.map(\.faceIds) == [["c2"]]
+        }
+
+        undo.undo()
+
+        XCTAssertEqual(app.people.first?.photoCount, 2, "undoing the removal brings the faces back")
+        try await waitUntil("and puts them back in their group", timeout: 2) {
+            app.faceClusters.map { Set($0.faceIds) } == [["c2", "c3"]]
+        }
+    }
+
+    @MainActor
+    func testNamingLeavesFacesAndKeywordsOfRemovedPhotosAlone() throws {
+        let (app, _, ids) = try appWithFaces([face("c2", on: 2, axis: 4), face("c3", on: 3, axis: 4)])
+        app.selectedIds = [ids[3]]
+        app.primaryId = ids[3]
+        step { app.removeSelected() }
+
+        // the faces of a group as a view listed them before the removal
+        step { app.nameFaces(["c2", "c3"], as: "小红") }
+
+        XCTAssertEqual(app.face("c2")?.person, "小红")
+        XCTAssertEqual(app.asset(id: ids[2])?.keywords, ["人物", "人物/小红"])
+        XCTAssertNil(app.face("c3")?.person, "a face in a removed photo isn't named")
+        XCTAssertEqual(app.asset(id: ids[3])?.keywords, [], "and its photo isn't tagged")
+
+        step { app.confirmFaces(of: "小红", ids: ["c3"]) }
+        XCTAssertNil(app.face("c3")?.person, "nor confirmed")
+        XCTAssertEqual(app.asset(id: ids[3])?.keywords, [])
+    }
+
     // ---------- fixture ----------
 
     /// One undo step, as one user action makes.
