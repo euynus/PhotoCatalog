@@ -378,9 +378,12 @@ final class ImportCoordinator: @unchecked Sendable {
     /// `refreshed`, an original read again after it changed on disk, with everything the catalog
     /// keeps about the photo taken from `known` (the same photo): only what the file itself holds
     /// is refreshed — size and dates on disk, pixels, camera data, hashes and caches. The capture
-    /// time, location, author and copyright first read from the file may have been edited since.
+    /// time, location, author and copyright first read from the file may have been edited since,
+    /// and the file is where the catalog has it (renamed since the read, it's the same file).
     static func preservingCatalogMetadata(from known: Asset, in refreshed: Asset, autoTag: Bool) -> Asset {
         var asset = refreshed
+        asset.filename = known.filename
+        asset.localPath = known.localPath
         asset.folderId = known.folderId
         asset.folderName = known.folderName
         asset.date = known.date

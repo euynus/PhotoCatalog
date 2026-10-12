@@ -4412,7 +4412,13 @@ final class AppState {
             let indexById = self.assetIndex
             var freshIds: Set<String> = []
             let trulyNew = delta.fresh.filter { indexById[$0.id] == nil && freshIds.insert($0.id).inserted }
-            let changedAssets = delta.changed.filter { indexById[$0.id] != nil }
+            // read against the snapshot: what the files hold goes onto the photos as they are now,
+            // so an edit made meanwhile stays and a photo removed meanwhile stays removed
+            let current = self.assets
+            let changedAssets = delta.changed.compactMap { refreshed -> Asset? in
+                guard let index = indexById[refreshed.id], !current[index].deleted else { return nil }
+                return ImportCoordinator.preservingCatalogMetadata(from: current[index], in: refreshed, autoTag: vision)
+            }
             if !trulyNew.isEmpty || !changedAssets.isEmpty {
                 do {
                     try store.upsert(trulyNew + changedAssets)

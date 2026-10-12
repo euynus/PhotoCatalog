@@ -114,6 +114,49 @@ final class FolderWatchTests: CatalogTestCase {
         }
     }
 
+    /// A rating and a removal made while a rescan runs, on photos whose originals it reads again,
+    /// outlast the rescan.
+    @MainActor
+    func testEditsMadeDuringRescanSurviveIt() async throws {
+        let source = scratch.appendingPathComponent("Source")
+        let rated = source.appendingPathComponent("rated.jpg")
+        let removed = source.appendingPathComponent("removed.jpg")
+        try makeTestJPEG(at: rated, shade: 1)
+        try makeTestJPEG(at: removed, shade: 2)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+        let imported = ImportCoordinator(store: store)
+            .importFiles([rated, removed], from: source, sourceRootId: "source-1", folderName: "Source")
+        try store.upsert(imported)
+        let ratedId = try XCTUnwrap(imported.first { $0.localPath == rated.path }).id
+        let removedId = try XCTUnwrap(imported.first { $0.localPath == removed.path }).id
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        for (index, url) in [rated, removed].enumerated() {
+            try makeTestJPEG(at: url, shade: 12 + index)
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_900_000_000)],
+                                                  ofItemAtPath: url.path)
+        }
+
+        app.rescanCurrentSource()
+        XCTAssertTrue(app.isIncrementalRescanning)
+        // while the rescan reads the changed files
+        XCTAssertTrue(app.mutateAsset(ratedId) { $0.rating = 5 })
+        XCTAssertTrue(app.mutate([removedId], writingSidecars: false) { $0.deleted = true })
+        try await waitUntil("rescan finished") { !app.isIncrementalRescanning }
+
+        let ratedNow = try XCTUnwrap(app.assets.first { $0.id == ratedId })
+        XCTAssertNotEqual(ratedNow.quickHash, imported.first { $0.id == ratedId }?.quickHash, "the file was read again")
+        XCTAssertEqual(ratedNow.rating, 5)
+        XCTAssertEqual(app.assets.first { $0.id == removedId }?.deleted, true)
+        let rows = try store.db.query("SELECT id, rating, deleted FROM assets;")
+        XCTAssertEqual(rows.first { $0.text("id") == ratedId }?.int("rating"), 5)
+        XCTAssertEqual(rows.first { $0.text("id") == removedId }?.bool("deleted"), true)
+    }
+
     /// A photo listed twice (as the nested-folder rescan used to leave it) whose original goes
     /// missing is flagged, not a crash.
     @MainActor
