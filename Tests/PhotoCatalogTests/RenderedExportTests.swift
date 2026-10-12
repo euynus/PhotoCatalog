@@ -100,4 +100,53 @@ final class RenderedExportTests: CatalogTestCase {
         XCTAssertTrue(app.toastCenter.toasts.last?.message.contains("2 张与目录中的原件同名") ?? false,
                       "the export says why: \(app.toastCenter.toasts.last?.message ?? "no toast")")
     }
+
+    /// The export copied GPS and the capture time from the file: a location removed in the app
+    /// still went out, and a location or time set in the app never did.
+    @MainActor
+    func testExportCarriesTheCatalogsLocationAndCaptureTime() async throws {
+        let folder = scratch.appendingPathComponent("Shoot", isDirectory: true)
+        let output = scratch.appendingPathComponent("Out", isDirectory: true)
+        let fileMetadata: [CFString: Any] = [
+            kCGImagePropertyExifDictionary: [kCGImagePropertyExifDateTimeOriginal: "2020:01:02 03:04:05"],
+            kCGImagePropertyGPSDictionary: [
+                kCGImagePropertyGPSLatitude: 48.8584, kCGImagePropertyGPSLatitudeRef: "N",
+                kCGImagePropertyGPSLongitude: 2.2945, kCGImagePropertyGPSLongitudeRef: "E",
+            ],
+        ]
+        let removed = folder.appendingPathComponent("removed.jpg")
+        let moved = folder.appendingPathComponent("moved.jpg")
+        try writeImage(at: removed, type: .jpeg, shade: 3, properties: fileMetadata)
+        try writeImage(at: moved, type: .jpeg, shade: 9, properties: fileMetadata)
+
+        let catalogTime = try XCTUnwrap(ISO8601DateFormatter().date(from: "2024-06-15T12:30:00Z"))
+        let app = AppState.selfCheckFixture()
+        app.assets = [asset("removed", at: removed, date: catalogTime),
+                      asset("moved", at: moved, date: catalogTime, gps: (-33.8568, 151.2153))]
+        var settings = ExportSettings()
+        settings.metadata = .all
+        settings.removeLocation = false
+        try await export(["removed", "moved"], from: app, settings: settings, to: output)
+
+        func properties(_ name: String) throws -> [CFString: Any] {
+            let url = output.appendingPathComponent(name)
+            let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil), "\(name) was written")
+            return try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        }
+        let withoutLocation = try properties("removed.jpg")
+        let gone = withoutLocation[kCGImagePropertyGPSDictionary] as? [CFString: Any]
+        XCTAssertNil(gone?[kCGImagePropertyGPSLatitude], "a location removed in the catalog stays out of the export")
+        XCTAssertNil(gone?[kCGImagePropertyGPSLongitude])
+        let exif = withoutLocation[kCGImagePropertyExifDictionary] as? [CFString: Any]
+        XCTAssertEqual(exif?[kCGImagePropertyExifDateTimeOriginal] as? String, "2024:06:15 12:30:00",
+                       "the capture time is the catalog's")
+
+        let withLocation = try properties("moved.jpg")
+        let gps = try XCTUnwrap(withLocation[kCGImagePropertyGPSDictionary] as? [CFString: Any],
+                                "the catalog's location is written")
+        XCTAssertEqual(gps[kCGImagePropertyGPSLatitude] as? Double ?? 0, 33.8568, accuracy: 0.0001)
+        XCTAssertEqual(gps[kCGImagePropertyGPSLatitudeRef] as? String, "S")
+        XCTAssertEqual(gps[kCGImagePropertyGPSLongitude] as? Double ?? 0, 151.2153, accuracy: 0.0001)
+        XCTAssertEqual(gps[kCGImagePropertyGPSLongitudeRef] as? String, "E")
+    }
 }

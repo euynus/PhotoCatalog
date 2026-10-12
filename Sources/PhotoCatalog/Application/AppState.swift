@@ -4875,7 +4875,8 @@ final class AppState {
                                               + EditedVersions.suffix,
                                           date: asset.date, camera: asset.camera, title: asset.title,
                                           caption: asset.caption, keywords: asset.keywords, rating: asset.rating,
-                                          author: asset.author, copyright: asset.copyright)
+                                          author: asset.author, copyright: asset.copyright,
+                                          gps: RenderedExportItem.location(of: asset), gpsAltitude: asset.gpsAltitude)
             return (item, original.deletingLastPathComponent(), asset)
         }
     }
@@ -6656,7 +6657,8 @@ final class AppState {
                                           + (asset.copyName.map { "-" + $0.replacingOccurrences(of: " ", with: "") } ?? ""),
                                       date: asset.date, camera: asset.camera, title: asset.title,
                                       caption: asset.caption, keywords: asset.keywords, rating: asset.rating,
-                                      author: asset.author, copyright: asset.copyright, isVideo: asset.isVideo)
+                                      author: asset.author, copyright: asset.copyright, isVideo: asset.isVideo,
+                                      gps: RenderedExportItem.location(of: asset), gpsAltitude: asset.gpsAltitude)
         }
     }
 

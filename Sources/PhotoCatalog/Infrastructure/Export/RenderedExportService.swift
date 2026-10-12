@@ -25,6 +25,14 @@ struct RenderedExportItem: Sendable {
     let copyright: String
     /// A video exports as its original file, renamed by the template.
     var isVideo = false
+    /// The catalog's location (nil: none) and altitude in meters, written instead of the file's.
+    var gps: (latitude: Double, longitude: Double)? = nil
+    var gpsAltitude: Double? = nil
+
+    /// `asset`'s coordinates for `gps`: none when the catalog has no location (stored as 0, 0).
+    static func location(of asset: Asset) -> (latitude: Double, longitude: Double)? {
+        asset.gps.0 == 0 && asset.gps.1 == 0 ? nil : (asset.gps.0, asset.gps.1)
+    }
 }
 
 /// The file names one export has taken, shared by the photos it writes at once, so two photos
@@ -223,7 +231,9 @@ enum RenderedExportService {
     }
 
     /// Properties for the new file: pixels are already upright, so orientation is reset; the
-    /// catalog's title, caption, keywords, rating and copyright ride along per `settings`.
+    /// catalog's title, caption, keywords, rating and copyright ride along per `settings`, and
+    /// with all metadata its capture time and location too — never the file's, which may be
+    /// one the catalog has changed or removed.
     static func metadata(for item: RenderedExportItem, settings: ExportSettings, source: [CFString: Any],
                          size: CGSize) -> [CFString: Any] {
         var properties: [CFString: Any] = [kCGImagePropertyOrientation: 1]
@@ -241,14 +251,25 @@ enum RenderedExportService {
             iptc[kCGImagePropertyIPTCCopyrightNotice] = item.copyright
         }
         if settings.metadata == .all {
-            if var exif = source[kCGImagePropertyExifDictionary] as? [CFString: Any] {
-                exif[kCGImagePropertyExifPixelXDimension] = Int(size.width)
-                exif[kCGImagePropertyExifPixelYDimension] = Int(size.height)
-                properties[kCGImagePropertyExifDictionary] = exif
-            }
+            var exif = source[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
+            exif[kCGImagePropertyExifPixelXDimension] = Int(size.width)
+            exif[kCGImagePropertyExifPixelYDimension] = Int(size.height)
+            // the capture wall clock, as the catalog has it (EXIF times carry no zone)
+            exif[kCGImagePropertyExifDateTimeOriginal] = FileNameTemplate.format(item.date, "yyyy:MM:dd HH:mm:ss")
+            properties[kCGImagePropertyExifDictionary] = exif
             if let aux = source[kCGImagePropertyExifAuxDictionary] { properties[kCGImagePropertyExifAuxDictionary] = aux }
-            if !settings.removeLocation, let gps = source[kCGImagePropertyGPSDictionary] {
-                properties[kCGImagePropertyGPSDictionary] = gps
+            if !settings.removeLocation, let gps = item.gps {
+                var location: [CFString: Any] = [
+                    kCGImagePropertyGPSLatitude: abs(gps.latitude),
+                    kCGImagePropertyGPSLatitudeRef: gps.latitude < 0 ? "S" : "N",
+                    kCGImagePropertyGPSLongitude: abs(gps.longitude),
+                    kCGImagePropertyGPSLongitudeRef: gps.longitude < 0 ? "W" : "E",
+                ]
+                if let altitude = item.gpsAltitude {
+                    location[kCGImagePropertyGPSAltitude] = abs(altitude)
+                    location[kCGImagePropertyGPSAltitudeRef] = altitude < 0 ? 1 : 0
+                }
+                properties[kCGImagePropertyGPSDictionary] = location
             }
             let sourceTIFF = source[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]
             tiff = sourceTIFF.merging(tiff) { _, catalog in catalog }
