@@ -63,13 +63,13 @@ enum VideoMetadata {
         m.colorSpace = ""
         m.camera = MetadataReader.cameraName(make: info.make, model: info.model)
         if let created = info.created {
-            m.captureDate = created.addingTimeInterval(Double(TimeZone.current.secondsFromGMT(for: created)))
+            m.captureDate = created.captureWallClock()
             m.captureDateSource = "视频创建时间"
         } else if let created = m.fileCreatedAt {
-            m.captureDate = created
+            m.captureDate = created.captureWallClock()
             m.captureDateSource = "文件创建时间"
         } else {
-            m.captureDate = m.fileModifiedAt ?? .now
+            m.captureDate = (m.fileModifiedAt ?? .now).captureWallClock()
             m.captureDateSource = "文件修改时间"
         }
         if let place = info.location.flatMap(iso6709) {

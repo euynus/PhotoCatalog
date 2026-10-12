@@ -47,14 +47,14 @@ enum MetadataReader {
 
         // a movie: AVFoundation, not Image I/O (left at width 0 when it can't be read)
         if VideoMetadata.isVideo(url) {
-            if !VideoMetadata.read(url, into: &m) { m.captureDate = fileModified }
+            if !VideoMetadata.read(url, into: &m) { m.captureDate = fileModified.captureWallClock() }
             return m
         }
 
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
         else {
-            m.captureDate = fileModified
+            m.captureDate = fileModified.captureWallClock()
             return m
         }
 
@@ -99,15 +99,15 @@ enum MetadataReader {
             m.gpsAltitude = ref == 1 ? -altitude : altitude
         }
 
-        // capture-date priority (§12.4)
+        // capture-date priority (§12.4); a file's dates are instants, kept as this Mac's wall clock then
         if let d = exifDate(exif[kCGImagePropertyExifDateTimeOriginal] as? String) {
             m.captureDate = d; m.captureDateSource = "EXIF · DateTimeOriginal"
         } else if let d = exifDate(exif[kCGImagePropertyExifDateTimeDigitized] as? String) {
             m.captureDate = d; m.captureDateSource = "EXIF · CreateDate"
         } else if let d = fileCreated {
-            m.captureDate = d; m.captureDateSource = "文件创建时间"
+            m.captureDate = d.captureWallClock(); m.captureDateSource = "文件创建时间"
         } else {
-            m.captureDate = fileModified; m.captureDateSource = "文件修改时间"
+            m.captureDate = fileModified.captureWallClock(); m.captureDateSource = "文件修改时间"
         }
         return m
     }
