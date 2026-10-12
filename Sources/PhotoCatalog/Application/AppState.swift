@@ -4393,7 +4393,6 @@ final class AppState {
                                                                        knownAssetsByPath: knownAssetsByPath,
                                                                        mode: .referenced,
                                                                        autoTag: vision,
-                                                                       readSidecar: readXMP,
                                                                        previewMaxPixel: previewSize,
                                                                        sourceRootId: sourceInfo?.id,
                                                                        folderName: sourceInfo?.name,

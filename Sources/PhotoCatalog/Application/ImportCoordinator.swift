@@ -129,9 +129,11 @@ final class ImportCoordinator: @unchecked Sendable {
                        folderName: folderName, progress: nil)
     }
 
-    /// Incremental: reprocess known originals whose quick hash changed so metadata and caches stay fresh.
+    /// Incremental: reprocess known originals whose quick hash changed so what the files hold and
+    /// the caches stay fresh. Their sidecars aren't read: a changed sidecar is the external-XMP
+    /// check's to report, and an old one mustn't undo the catalog's edits.
     func scanChanged(in folder: URL, knownAssetsByPath: [String: Asset], mode: ImportMode = .referenced,
-                     autoTag: Bool = false, readSidecar: Bool = true, previewMaxPixel: Int = 2048,
+                     autoTag: Bool = false, previewMaxPixel: Int = 2048,
                      sourceRootId: String? = nil, folderName: String? = nil,
                      scanned: [(url: URL, aliases: Set<String>)]? = nil) -> [Asset] {
         // each changed file is made again as the photo whose file it is, under that photo's id —
@@ -153,25 +155,16 @@ final class ImportCoordinator: @unchecked Sendable {
             let quickHashChanged = HashService.quickHash(url, fileSize: size) != known.quickHash
             return sizeChanged || modifiedChanged || quickHashChanged ? url : nil
         }
-        let refreshed = process(files, folder: folder, mode: mode, autoTag: autoTag, readSidecar: readSidecar,
+        let refreshed = process(files, folder: folder, mode: mode, autoTag: autoTag, readSidecar: false,
                                 previewMaxPixel: previewMaxPixel, control: nil, sourceRootId: sourceRootId,
                                 folderName: folderName, refreshingIds: knownIdByPath, progress: nil)
         var knownById: [String: Asset] = [:]
         for asset in knownAssetsByPath.values where knownById[asset.id] == nil {
             knownById[asset.id] = asset
         }
-        var hasSidecarById: [String: Bool] = [:]
-        if readSidecar {
-            for url in files {
-                guard let id = knownIdByPath[url.path] else { continue }
-                hasSidecarById[id] = FileManager.default.fileExists(atPath: XMPSidecar.sidecarURL(for: url).path)
-            }
-        }
         return refreshed.map { asset in
             guard let known = knownById[asset.id] else { return asset }
-            return preservingCatalogMetadata(from: known, in: asset,
-                                             hasSidecar: hasSidecarById[asset.id] == true,
-                                             autoTag: autoTag)
+            return Self.preservingCatalogMetadata(from: known, in: asset, autoTag: autoTag)
         }
     }
 
@@ -382,20 +375,35 @@ final class ImportCoordinator: @unchecked Sendable {
         return dest
     }
 
-    private func preservingCatalogMetadata(from known: Asset, in refreshed: Asset,
-                                           hasSidecar: Bool, autoTag: Bool) -> Asset {
+    /// `refreshed`, an original read again after it changed on disk, with everything the catalog
+    /// keeps about the photo taken from `known` (the same photo): only what the file itself holds
+    /// is refreshed — size and dates on disk, pixels, camera data, hashes and caches. The capture
+    /// time, location, author and copyright first read from the file may have been edited since.
+    static func preservingCatalogMetadata(from known: Asset, in refreshed: Asset, autoTag: Bool) -> Asset {
         var asset = refreshed
-        asset.importedAt = known.importedAt
+        asset.folderId = known.folderId
+        asset.folderName = known.folderName
+        asset.date = known.date
+        asset.captureDateSource = known.captureDateSource
+        asset.rating = known.rating
         asset.flag = known.flag
+        asset.colorLabel = known.colorLabel
+        asset.keywords = known.keywords
+        asset.title = known.title
+        asset.caption = known.caption
+        asset.author = known.author
+        asset.copyright = known.copyright
         asset.project = known.project
         asset.client = known.client
-        if !hasSidecar {
-            asset.rating = known.rating
-            asset.colorLabel = known.colorLabel
-            asset.keywords = known.keywords
-            asset.title = known.title
-            asset.caption = known.caption
-        }
+        asset.location = known.location
+        asset.gps = known.gps
+        asset.gpsAltitude = known.gpsAltitude
+        asset.importedAt = known.importedAt
+        asset.deleted = known.deleted
+        asset.isDemo = known.isDemo
+        asset.masterId = known.masterId
+        asset.copyName = known.copyName
+        // faces found again only when the rescan looks for them
         if !autoTag {
             asset.faces = known.faces
         }
