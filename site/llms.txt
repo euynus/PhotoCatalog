@@ -15,7 +15,7 @@ Key facts:
 - Output: export with presets, sharpening and watermarks; print; slideshows exported as MP4; web galleries; PDF photo books.
 - Formats: RAW from Canon (CR2, CR3), Nikon (NEF), Sony (ARW), Fujifilm (RAF), Olympus / OM System (ORF), Panasonic (RW2), Pentax (PEF), Samsung (SRW) and DNG, as far as macOS supports the camera; JPEG, HEIC, PNG, TIFF, GIF, WebP and BMP; MOV, MP4 and M4V video.
 - Scale: a 500,000-photo catalog is ready about five seconds after launch; filtering, sorting and searching take 0.1–0.35 s.
-- Privacy: no account, analytics, ads or tracking. The app goes online only for the optional AI assistant, maps and update checks. Originals are never modified.
+- Privacy: no account, analytics, ads or tracking. The app goes online only for the optional AI assistant, maps, update checks and the sample photos (from Unsplash) shown before a catalog is open. Originals are never modified.
 
 ## Pages
 

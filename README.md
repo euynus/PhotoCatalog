@@ -32,6 +32,7 @@ PhotoCatalog has no account, analytics or tracking, and it sends nothing about y
 
 - **The AI assistant**, when you use it: requests go to the service set in Settings → AI. Photos are sent only as 1024-pixel previews, describing photos asks first and shows what will be sent, and AI Adjust asks before it first sends a photo off this Mac. A service on this Mac (Ollama, LM Studio) keeps everything local.
 - **Maps**: the Places view and the location picker load Apple Maps and search places through MapKit.
+- **Sample photos**: with no catalog open (after Add Photo Folder… on the Welcome screen, until the import starts), the library shows sample photos downloaded from Unsplash (`images.unsplash.com`).
 - **Update checks** in the GitHub edition: PhotoCatalog → Check for Updates…, or once a day unless Settings → General → Check for Updates Automatically is off, reads the latest release from GitHub's API. The Mac App Store edition leaves updating to the App Store.
 
 Faces, scene tags, masks and enhancements are computed on this Mac. API keys are kept in the login keychain. Crash reports that macOS saves stay on the Mac. `Resources/PrivacyInfo.xcprivacy` declares no tracking and no collected data.
