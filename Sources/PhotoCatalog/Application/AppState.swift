@@ -6162,11 +6162,8 @@ final class AppState {
         Task { [weak self, store, packageURL] in
             let metrics = await Task.detached(priority: .utility) {
                 let backups = BackupService.listBackups(store)
-                let lastBackupDate = backups.first.flatMap {
-                    try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-                }
                 return StatusMetrics(cacheBytes: CatalogHealth.directorySize(store.cacheURL),
-                                     lastBackupDate: lastBackupDate,
+                                     lastBackupDate: backups.first.flatMap(BackupService.date(of:)),
                                      backupCount: backups.count)
             }.value
             guard let self, self.store?.packageURL == packageURL else { return }

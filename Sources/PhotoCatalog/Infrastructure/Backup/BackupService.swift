@@ -16,21 +16,47 @@ enum BackupService {
         return f
     }()
 
+    /// A schema migration's safety backup is stamped in UTC (CatalogStore.filenameStamp).
+    private static let migrationStampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
+
     @discardableResult
     static func backup(_ store: CatalogStore, at date: Date = Date()) throws -> URL {
         try store.backup(stamp: stampFormatter.string(from: date))
     }
 
+    /// Newest first.
     static func listBackups(_ store: CatalogStore) -> [URL] {
         ((try? FileManager.default.contentsOfDirectory(at: store.backupsURL,
             includingPropertiesForKeys: [.contentModificationDateKey])) ?? [])
             .filter { $0.pathExtension == "sqlite" }
+            .map { (url: $0, date: date(of: $0)) }
             .sorted {
-                let lhsDate = try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-                let rhsDate = try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-                if lhsDate != rhsDate { return (lhsDate ?? .distantPast) > (rhsDate ?? .distantPast) }
-                return $0.lastPathComponent > $1.lastPathComponent
+                if $0.date != $1.date { return ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+                return $0.url.lastPathComponent > $1.url.lastPathComponent
             }
+            .map(\.url)
+    }
+
+    /// When `backup` was made: the time it's named for, or the file's modification date when its
+    /// name carries none. Not the file's date first: a backup copied from the catalog file can keep
+    /// the date that file was last written.
+    static func date(of backup: URL) -> Date? {
+        let name = backup.deletingPathExtension().lastPathComponent
+        if name.hasPrefix("catalog-") {
+            let stamp = name.dropFirst("catalog-".count)
+            // catalog-2026-07-05-121125, then -1, -2… for more in the same second
+            if let date = stampFormatter.date(from: String(stamp.prefix(17))) { return date }
+            // catalog-pre-migration-v24-20261012T031348Z
+            if let last = stamp.split(separator: "-").last,
+               let date = migrationStampFormatter.date(from: String(last)) { return date }
+        }
+        return try? backup.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
     }
 
     /// Replace the live catalog DB with a backup (caller must reopen the store after).

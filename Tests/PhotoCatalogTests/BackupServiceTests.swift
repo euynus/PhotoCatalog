@@ -22,6 +22,46 @@ final class BackupServiceTests: XCTestCase {
                        [newer.lastPathComponent, older.lastPathComponent])
     }
 
+    /// The status bar's "last backup" is when the newest backup was made, not when the catalog
+    /// file last changed (a copy keeps the file's modification date).
+    func testLastBackupDateIsWhenTheBackupWasMade() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("pc-backup-date-\(UUID().uuidString)")
+        let store = try CatalogStore(packageURL: dir.appendingPathComponent("Library.photolibrary"))
+        defer { try? fm.removeItem(at: dir) }
+        // the catalog last written long ago, its WAL already flushed
+        XCTAssertTrue(store.db.walCheckpointTruncate())
+        try fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_000_000_000)],
+                             ofItemAtPath: store.packageURL.appendingPathComponent("catalog.sqlite").path)
+
+        let madeAt = Date()
+        try BackupService.backup(store, at: madeAt)
+
+        let newest = try XCTUnwrap(BackupService.listBackups(store).first)
+        let date = try XCTUnwrap(BackupService.date(of: newest))
+        XCTAssertEqual(date.timeIntervalSince1970, madeAt.timeIntervalSince1970, accuracy: 2)
+    }
+
+    /// Backups are listed newest first by when they were made, whatever their files' dates say.
+    func testListBackupsPutsTheNewestBackupFirst() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("pc-backup-newest-\(UUID().uuidString)")
+        let store = try CatalogStore(packageURL: dir.appendingPathComponent("Library.photolibrary"))
+        defer { try? fm.removeItem(at: dir) }
+        let older = store.backupsURL.appendingPathComponent("catalog-2026-07-05-121125.sqlite")
+        let newer = store.backupsURL.appendingPathComponent("catalog-2026-08-01-090000.sqlite")
+        let migration = store.backupsURL.appendingPathComponent("catalog-pre-migration-v24-20260901T000000Z.sqlite")
+        for url in [older, newer, migration] { try Data().write(to: url) }
+        // copies of a catalog file: the older backup's copy is of a later-written file
+        try fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: 300)], ofItemAtPath: older.path)
+        try fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: 200)], ofItemAtPath: newer.path)
+        try fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: 100)], ofItemAtPath: migration.path)
+
+        XCTAssertEqual(BackupService.listBackups(store).map(\.lastPathComponent),
+                       [migration.lastPathComponent, newer.lastPathComponent, older.lastPathComponent])
+        XCTAssertEqual(BackupService.date(of: migration), Date(timeIntervalSince1970: 1_788_220_800))
+    }
+
     func testFailedRestoreKeepsLiveSidecars() throws {
         let fm = FileManager.default
         let dir = fm.temporaryDirectory.appendingPathComponent("pc-restore-failure-\(UUID().uuidString)")
