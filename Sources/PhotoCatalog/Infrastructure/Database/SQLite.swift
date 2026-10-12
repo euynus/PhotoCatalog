@@ -110,6 +110,51 @@ final class Database: @unchecked Sendable {
         }
     }
 
+    /// Copies the database at `source` into `target` (created if missing, replaced if not) with
+    /// SQLite's online backup, through a connection of its own that holds one read transaction:
+    /// the copy is the database as of one commit, what's still only in the WAL included, while
+    /// writers carry on. A copy of the file instead can mix pages from before and after a write
+    /// made meanwhile. With `followingLinks` false, a path through a symbolic link is refused.
+    /// `checkCancellation` runs between steps; what it throws is passed on.
+    static func snapshot(from source: URL, to target: URL, followingLinks: Bool = true,
+                         checkCancellation: () throws -> Void = {}) throws {
+        var read: OpaquePointer?, write: OpaquePointer?
+        defer { sqlite3_close(read); sqlite3_close(write) }
+        let links = followingLinks ? 0 : SQLITE_OPEN_NOFOLLOW
+        guard sqlite3_open_v2(source.path, &read, SQLITE_OPEN_READONLY | links, nil) == SQLITE_OK else {
+            throw DBError.open("cannot open the database to copy")
+        }
+        guard sqlite3_open_v2(target.path, &write, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | links, nil) == SQLITE_OK else {
+            throw DBError.open("cannot create the copy")
+        }
+        sqlite3_busy_timeout(read, 100)
+        guard sqlite3_exec(read, "BEGIN; SELECT count(*) FROM sqlite_master;", nil, nil, nil) == SQLITE_OK else {
+            throw DBError.step("cannot start a read of the database to copy")
+        }
+        defer { sqlite3_exec(read, "ROLLBACK;", nil, nil, nil) }
+        guard let backup = sqlite3_backup_init(write, "main", read, "main") else {
+            throw DBError.step("backup could not start: " + String(cString: sqlite3_errmsg(write)))
+        }
+        var finished = false
+        defer { if !finished { sqlite3_backup_finish(backup) } }
+        var busyAttempts = 0
+        while true {
+            try checkCancellation()
+            let status = sqlite3_backup_step(backup, 256)
+            if status == SQLITE_DONE { break }
+            if status == SQLITE_BUSY || status == SQLITE_LOCKED {
+                busyAttempts += 1
+                guard busyAttempts <= 160 else { throw DBError.step("the database stayed busy") }
+                Thread.sleep(forTimeInterval: 0.025)
+            } else if status != SQLITE_OK {
+                throw DBError.step("backup failed (\(status))")
+            }
+        }
+        let status = sqlite3_backup_finish(backup)
+        finished = true
+        guard status == SQLITE_OK else { throw DBError.step("backup could not finish (\(status))") }
+    }
+
     func run(_ sql: String, _ params: [SQLValue] = []) throws {
         try locked {
             let stmt = try preparedStatement(sql, params)

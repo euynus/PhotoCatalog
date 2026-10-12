@@ -2,7 +2,6 @@ import CryptoKit
 import Darwin
 import Foundation
 import ImageIO
-import SQLite3
 
 enum FullBackupError: Error, CustomStringConvertible {
     case targetExists(String)
@@ -710,39 +709,12 @@ enum FullBackupService {
             if try FullBackupFiles.metadata(sidecar) != nil { _ = try FullBackupFiles.regularFile(sidecar) }
         }
         try FullBackupFiles.writeNew(Data(), to: target)
-        var read: OpaquePointer?, write: OpaquePointer?
-        defer { sqlite3_close(read); sqlite3_close(write) }
-        guard sqlite3_open_v2(source.path, &read, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOFOLLOW, nil) == SQLITE_OK else {
-            throw FullBackupError.invalidCatalog("Cannot open source snapshot")
-        }
-        guard sqlite3_open_v2(target.path, &write, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOFOLLOW, nil) == SQLITE_OK else {
-            throw FullBackupError.invalidCatalog("Cannot create snapshot")
-        }
-        sqlite3_busy_timeout(read, 100)
-        guard sqlite3_exec(read, "BEGIN; SELECT count(*) FROM sqlite_master;", nil, nil, nil) == SQLITE_OK else {
-            throw FullBackupError.invalidCatalog("Cannot start read snapshot")
-        }
-        defer { sqlite3_exec(read, "ROLLBACK;", nil, nil, nil) }
-        guard let backup = sqlite3_backup_init(write, "main", read, "main") else {
-            throw FullBackupError.invalidCatalog("SQLite backup initialization failed")
-        }
-        var finished = false
-        defer { if !finished { sqlite3_backup_finish(backup) } }
-        var busyAttempts = 0
-        while true {
-            try FullBackupFiles.checkCancellation(cancellation)
-            let status = sqlite3_backup_step(backup, 256)
-            if status == SQLITE_DONE { break }
-            if status == SQLITE_BUSY || status == SQLITE_LOCKED {
-                busyAttempts += 1
-                guard busyAttempts <= 160 else { throw FullBackupError.invalidCatalog("SQLite snapshot remained busy") }
-                Thread.sleep(forTimeInterval: 0.025)
-            } else if status != SQLITE_OK {
-                throw FullBackupError.invalidCatalog("SQLite snapshot failed (\(status))")
+        do {
+            try Database.snapshot(from: source, to: target, followingLinks: false) {
+                try FullBackupFiles.checkCancellation(cancellation)
             }
+        } catch let error as DBError {
+            throw FullBackupError.invalidCatalog("SQLite snapshot failed: \(error)")
         }
-        let status = sqlite3_backup_finish(backup)
-        finished = true
-        guard status == SQLITE_OK else { throw FullBackupError.invalidCatalog("SQLite snapshot could not finish") }
     }
 }

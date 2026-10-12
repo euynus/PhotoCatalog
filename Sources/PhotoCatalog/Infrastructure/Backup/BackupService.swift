@@ -90,6 +90,8 @@ enum BackupService {
         }
     }
 
+    /// A catalog's tables, and nothing damaged: a snapshot torn while it was copied can still
+    /// list its tables. Checked on the temporary copy, so no sidecars land beside the backup.
     private static func isValidBackupDatabase(_ url: URL) -> Bool {
         do {
             let db = try Database(path: url.path)
@@ -97,7 +99,8 @@ enum BackupService {
             SELECT name FROM sqlite_master
             WHERE type='table' AND name IN ('assets', 'schema_migrations');
             """)
-            return Set(rows.compactMap { $0.text("name") }) == ["assets", "schema_migrations"]
+            guard Set(rows.compactMap { $0.text("name") }) == ["assets", "schema_migrations"] else { return false }
+            return try db.query("PRAGMA integrity_check;").map { $0.text("integrity_check") } == ["ok"]
         } catch {
             return false
         }

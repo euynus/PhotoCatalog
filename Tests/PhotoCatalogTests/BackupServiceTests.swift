@@ -112,6 +112,66 @@ final class BackupServiceTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: shm.path))
     }
 
+    /// A snapshot is SQLite's own copy of the catalog as of one commit, not a copy of the file
+    /// after a checkpoint: it's made while something else reads the catalog (which holds a
+    /// checkpoint off), and it holds what's committed only to the WAL so far.
+    func testSnapshotIsTakenFromTheDatabaseNotItsFile() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("pc-backup-snapshot-\(UUID().uuidString)")
+        let store = try CatalogStore(packageURL: dir.appendingPathComponent("Library.photolibrary"))
+        defer { try? fm.removeItem(at: dir) }
+        var first = DemoData.assets[0], second = DemoData.assets[1]
+        first.isDemo = false
+        second.isDemo = false
+        try store.upsert([first])
+        // another reader of the catalog, mid-read
+        let reader = try Database(path: store.packageURL.appendingPathComponent("catalog.sqlite").path)
+        XCTAssertTrue(reader.exec("BEGIN; SELECT COUNT(*) FROM assets;"))
+        defer { reader.exec("ROLLBACK;") }
+        try store.upsert([second])
+
+        let backup = try BackupService.backup(store)
+
+        let copy = try Database(path: backup.path)
+        XCTAssertEqual(Set(try copy.query("SELECT id FROM assets;").compactMap { $0.text("id") }), [first.id, second.id])
+        XCTAssertEqual(try copy.query("PRAGMA integrity_check;").first?.text("integrity_check"), "ok")
+    }
+
+    /// A damaged snapshot (one torn while it was copied, say) is refused, even though the tables
+    /// a catalog has are all there; the live catalog stays as it is.
+    func testRestoreRefusesADamagedBackup() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("pc-restore-damaged-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try fm.createDirectory(at: package, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+        let live = package.appendingPathComponent("catalog.sqlite")
+        try Data("live".utf8).write(to: live)
+
+        let backup = dir.appendingPathComponent("backup.sqlite")
+        do {
+            let db = try Database(path: backup.path)
+            try db.execChecked("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT);")
+            try db.execChecked("CREATE TABLE assets (id TEXT PRIMARY KEY, payload BLOB);")
+            try db.transaction {
+                for index in 0..<200 {
+                    try db.run("INSERT INTO assets(id, payload) VALUES(?, randomblob(1000));", [.text("asset-\(index)")])
+                }
+            }
+            XCTAssertEqual(try db.query("PRAGMA journal_mode=DELETE;").first?.text("journal_mode"), "delete")
+        }
+        // a page in the middle of the assets table, overwritten
+        let handle = try FileHandle(forWritingTo: backup)
+        try handle.seek(toOffset: 20 * 4096)
+        try handle.write(contentsOf: Data(repeating: 0xA5, count: 4096))
+        try handle.close()
+
+        XCTAssertThrowsError(try BackupService.restore(backup, intoPackageAt: package)) { error in
+            XCTAssertEqual(error as? BackupError, .invalidBackup)
+        }
+        XCTAssertEqual(try Data(contentsOf: live), Data("live".utf8))
+    }
+
     private func writeValidBackup(at url: URL) throws {
         let db = try Database(path: url.path)
         try db.execChecked("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT);")
