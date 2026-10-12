@@ -4368,9 +4368,12 @@ final class AppState {
                 let knownPaths = Set(knownAssetsByPath.keys)
                 var fresh: [Asset] = []
                 var changed: [Asset] = []
+                // a folder watched inside another is walked by both: each file goes to the first
+                var claimed: Set<String> = []
                 for root in roots {
                     let sourceInfo = PathIdentity.aliases(for: root).lazy.compactMap { sourceInfoByPath[$0] }.first
-                    let scanned = ImportCoordinator.scanWithAliases(root)
+                    let scanned = ImportCoordinator.scanWithAliases(root).filter { $0.aliases.isDisjoint(with: claimed) }
+                    for file in scanned { claimed.formUnion(file.aliases) }
                     fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
                                                                  mode: .referenced, autoTag: vision,
                                                                  readSidecar: readXMP,
@@ -4399,7 +4402,8 @@ final class AppState {
                 }
             }
             let indexById = self.assetIndex
-            let trulyNew = delta.fresh.filter { indexById[$0.id] == nil }
+            var freshIds: Set<String> = []
+            let trulyNew = delta.fresh.filter { indexById[$0.id] == nil && freshIds.insert($0.id).inserted }
             let changedAssets = delta.changed.filter { indexById[$0.id] != nil }
             if !trulyNew.isEmpty || !changedAssets.isEmpty {
                 do {
@@ -4511,7 +4515,8 @@ final class AppState {
                 return
             }
 
-            let changesById = Dictionary(uniqueKeysWithValues: changes.map { ($0.assetId, $0) })
+            // a photo listed twice gets a change for each listing, both alike
+            let changesById = Dictionary(changes.map { ($0.assetId, $0) }, uniquingKeysWith: { first, _ in first })
             var updated = self.assets
             var didChange = false
             for index in updated.indices {
