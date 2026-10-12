@@ -706,6 +706,8 @@ final class AppState {
     @ObservationIgnored private var volumeMonitor: VolumeMonitor?
     /// Where drives are mounted and which is which: the system's answers, or a test's.
     @ObservationIgnored var volumeProbe = VolumeProbe.system
+    /// Where generative fills are kept: GenerativeFill's folder, or a test's.
+    @ObservationIgnored var generatedFillFolder = GenerativeFill.folder
     @ObservationIgnored private var availabilityScanTask: Task<Void, Never>?
     @ObservationIgnored private var availabilityScanGeneration = 0
     private(set) var isCheckingOriginals = false
@@ -4580,7 +4582,11 @@ final class AppState {
                     didChange = true
                 }
             }
-            if didChange { self.replaceAssetsForMutation(updated) }
+            if didChange {
+                // a drive back under another name: its photos' fills come along
+                self.carryGeneratedFills(from: self.assets, to: updated, ids: Set(changesById.keys))
+                self.replaceAssetsForMutation(updated)
+            }
             self.updateFolderStatusesFromAssets()
             self.flushPendingXMPWrites()
         }
@@ -5830,6 +5836,7 @@ final class AppState {
                  "warning")
             return
         }
+        carryGeneratedFills(from: assets, to: updated, ids: changedIds)
         replaceAssetsForMutation(updated)
         let saved = map.count
         push(verbatim: L("已重命名 \(saved) 个文件") + (saved < fileCount ? L(" · \(fileCount - saved) 失败") : ""),
@@ -5995,8 +6002,35 @@ final class AppState {
         }
         ids.formUnion(carryFileChanges(from: ids, in: &updated))
         guard persist(ids, in: updated) else { return false }
+        carryGeneratedFills(from: assets, to: updated, ids: ids)
         replaceAssetsForMutation(updated)
         return true
+    }
+
+    /// Photos among `ids` whose file moved from `before` to `after` (the same photos in the same
+    /// order) take their generative fills along — those of their edit, history and snapshots —
+    /// off the main thread. A fill left under the old path would be made again by the next
+    /// render, and a full backup, which never makes one, would stop for want of it.
+    private func carryGeneratedFills(from before: [Asset], to after: [Asset], ids: Set<String>) {
+        var moves: [(id: String, from: String, modified: Date?, to: String)] = []
+        for index in after.indices where index < before.count && ids.contains(after[index].id) {
+            guard before[index].id == after[index].id,
+                  let from = before[index].localPath, let to = after[index].localPath, from != to else { continue }
+            moves.append((after[index].id, from, before[index].fileModifiedAt, to))
+        }
+        guard !moves.isEmpty, let store else { return }
+        let edits = moves.reduce(into: [String: DevelopSettings]()) { $0[$1.id] = developSettings[$1.id] }
+        let directory = generatedFillFolder
+        Task.detached(priority: .utility) { [moves, edits, store, directory] in
+            for move in moves {
+                var settings = edits[move.id].map { [$0] } ?? []
+                settings += ((try? store.loadDevelopHistory(move.id)) ?? []).map(\.settings)
+                settings += ((try? store.loadDevelopSnapshots(move.id)) ?? []).map(\.settings)
+                guard settings.contains(where: { $0.spots.contains { $0.mode == .remove } }) else { continue }
+                GenerativeFill.carry(settings, from: move.from, modified: [move.modified],
+                                     to: URL(fileURLWithPath: move.to), in: directory)
+            }
+        }
     }
 
     private func pushOriginalFileOperationReport(_ report: OriginalFileOperationReport,
@@ -9254,6 +9288,7 @@ final class AppState {
         }
         guard !changedIds.isEmpty else { return }
         guard persist(changedIds, in: updated) else { return }
+        carryGeneratedFills(from: assets, to: updated, ids: changedIds)
         replaceAssetsForMutation(updated)
     }
 
@@ -9701,9 +9736,15 @@ final class AppState {
             $0.contentHash = HashService.contentHash(replacement)
             $0.status = .ready
         }) else { return }
+        if let relinked = assetIndex[id].map({ assets[$0] }) {
+            carryGeneratedFills(from: [asset], to: [relinked], ids: [id])
+        }
         var updated = assets
         let copies = carryFileChanges(from: [id], in: &updated)
-        if !copies.isEmpty, persist(copies, in: updated) { replaceAssetsForMutation(updated) }
+        if !copies.isEmpty, persist(copies, in: updated) {
+            carryGeneratedFills(from: assets, to: updated, ids: copies)
+            replaceAssetsForMutation(updated)
+        }
         recomputeDuplicates()
         push("已重新定位原件", "link")
     }

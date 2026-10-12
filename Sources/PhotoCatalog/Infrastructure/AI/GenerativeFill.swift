@@ -40,9 +40,48 @@ enum GenerativeFill {
     /// Everything the fill depends on: the file, this spot, the spots before it and the lens
     /// corrections (they move pixels). Not tone or white balance: the fill follows those.
     static func key(index: Int, settings: DevelopSettings, url: URL) -> String {
-        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-        let text = "\(url.path)|\(modified?.timeIntervalSince1970 ?? 0)|" + pixelDependencies(index: index, settings: settings)
+        key(index: index, settings: settings, path: url.path, modified: modificationDate(url))
+    }
+
+    /// The key of a file at `path` last modified at `modified`: one that may be gone by now.
+    static func key(index: Int, settings: DevelopSettings, path: String, modified: Date?) -> String {
+        let text = "\(path)|\(modified?.timeIntervalSince1970 ?? 0)|" + pixelDependencies(index: index, settings: settings)
         return SHA256.hash(data: Data(text.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func modificationDate(_ url: URL) -> Date? {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+    }
+
+    /// A photo's file, at `oldPath` until now, is at `newURL` (renamed, moved, relinked, or on a
+    /// drive mounted under another name): the fills made for it there — for each of `settings`
+    /// (its edit, history steps and snapshots) — are renamed for the new place, so renders and a
+    /// full backup find them instead of the model making them again. The key holds the file's
+    /// modification date as well: the moved file's own, or one of `modified` (the old file's, for
+    /// a relinked copy). Returns how many fills moved.
+    @discardableResult
+    static func carry(_ settings: [DevelopSettings], from oldPath: String, modified: [Date?], to newURL: URL,
+                      in directory: URL = folder) -> Int {
+        guard oldPath != newURL.path else { return 0 }
+        let fm = FileManager.default
+        var dates: [Date?] = [modificationDate(newURL)]
+        for date in modified where !dates.contains(date) { dates.append(date) }
+        var moved = 0
+        for edit in settings {
+            for (index, spot) in edit.spots.enumerated() where spot.mode == .remove {
+                let target = directory.appendingPathComponent(key(index: index, settings: edit, url: newURL) + ".png")
+                guard !fm.fileExists(atPath: target.path) else { continue }
+                for date in dates {
+                    let source = directory.appendingPathComponent(
+                        key(index: index, settings: edit, path: oldPath, modified: date) + ".png")
+                    if (try? fm.moveItem(at: source, to: target)) != nil {
+                        moved += 1
+                        break
+                    }
+                }
+            }
+        }
+        return moved
     }
 
     /// What of the settings a fill depends on: the lens corrections, this spot and those before
