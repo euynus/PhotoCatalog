@@ -61,10 +61,17 @@
   <script>
     (function () {
       var root = document.documentElement, saved = null;
-      try { saved = localStorage.getItem("pc-lang"); } catch (e) {}
+      // the language switch's English link carries ?lang=en, so it's a choice however it's opened (new tab too)
+      var chosen = /[?&]lang=en(&|$)/.test(location.search);
+      try {
+        if (chosen) localStorage.setItem("pc-lang", "en");
+        saved = localStorage.getItem("pc-lang");
+      } catch (e) {}
       // The English page is the default. A visitor whose browser prefers Chinese and who hasn't chosen
-      // English goes to the Chinese page; the language switch saves the choice (site.js).
-      if (root.lang === "en" && saved !== "en"
+      // English goes to the Chinese page; the language switch saves the choice (site.js). Only an arrival
+      // from elsewhere is sent: from another page of this site, English was already chosen or kept, and
+      // that holds even where storage is blocked.
+      if (root.lang === "en" && saved !== "en" && !chosen && document.referrer.indexOf(location.origin + "/") !== 0
           && (saved === "zh" || /^zh/i.test((navigator.languages && navigator.languages[0]) || navigator.language || ""))) {
         location.replace("zh/" + location.hash);
         return;
@@ -92,7 +99,7 @@
     </nav>
     <nav class="lang-switch" aria-label="Language / 语言">
       <a href="zh/" hreflang="zh-Hans" lang="zh-Hans">中文</a>
-      <a href="./" hreflang="en" aria-current="page" lang="en">EN</a>
+      <a href="./?lang=en" hreflang="en" aria-current="page" lang="en">EN</a>
     </nav>
   </div>
 </header>
