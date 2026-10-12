@@ -50,6 +50,7 @@ final class AppState {
     // ----- core data -----
     var assets: [Asset] {
         didSet {
+            assetMutationCount &+= 1
             let scope = nextAssetEditScope
             nextAssetEditScope = .any
             if scope.contains(.structure) {
@@ -87,6 +88,9 @@ final class AppState {
         static let any: Self = [.review, .metadata, .structure]
     }
     @ObservationIgnored private var nextAssetEditScope: AssetEditScope = .any
+    /// Counts every change to `assets`: a catalog load tells by it whether the photos on screen
+    /// were edited while it read the rest.
+    @ObservationIgnored private var assetMutationCount = 0
     /// id → index map, lazily rebuilt after any `assets` change (invalidated above).
     @ObservationIgnored private var assetIndexCache: [String: Int]?
     private var assetIndex: [String: Int] {
@@ -685,6 +689,8 @@ final class AppState {
     @ObservationIgnored private var deferredCatalogArguments: [String]?
     @ObservationIgnored private var catalogLoadTask: Task<Void, Never>?
     @ObservationIgnored private(set) var catalogLoadGeneration = 0
+    /// For checks: awaited once a background open has read the whole catalog, before installing it.
+    @ObservationIgnored var catalogHydrationGate: (@MainActor () async -> Void)?
     @ObservationIgnored private var watcher: FileWatcher?
     @ObservationIgnored private var watchedRoots: [URL] = []
     @ObservationIgnored private var securityScopedRoots: [URL] = []
@@ -2696,7 +2702,10 @@ final class AppState {
                 self.coordinator = ImportCoordinator(store: store)
                 self.applyCatalogPreview(page)
 
+                // the preview stays live while the rest is read: menus and Settings can still edit it
+                let mutations = self.assetMutationCount
                 let pairsRawJpeg = self.pairRawAndJpeg
+                let recentDays = self.recentImportDays
                 let recentCutoff = self.recentCutoff
                 let hydration = await Task.detached(priority: .userInitiated) {
                     do {
@@ -2708,14 +2717,21 @@ final class AppState {
                         return DeferredCatalogHydrationOutcome.failure
                     }
                 }.value
+                if let gate = self.catalogHydrationGate { await gate() }
                 guard self.catalogLoadGeneration == generation, !Task.isCancelled else { return }
                 switch hydration {
-                case .success(let assets, let derived):
+                case .success(let loaded, let derived):
                     self.catalogLoadTask = nil
                     self.setActiveCatalog(url)
                     self.refreshStatusMetrics()
                     self.loadingCatalogTotalCount = nil
-                    self.applyLoadedCatalog(assets, from: store, derived: derived)
+                    // edits made meanwhile were saved as they were made, so the photos on screen
+                    // are newer than the copies read in the background
+                    let edited = self.assetMutationCount != mutations
+                    let assets = edited ? Self.overlaying(self.assets, onto: loaded) : loaded
+                    // counted from the copies read, under the settings of the time
+                    let current = !edited && self.pairRawAndJpeg == pairsRawJpeg && self.recentImportDays == recentDays
+                    self.applyLoadedCatalog(assets, from: store, derived: current ? derived : nil)
                     self.hasCatalogPreview = false
                     self.isLoadingCatalog = false
                     self.loadingCatalogURL = nil
@@ -2736,6 +2752,25 @@ final class AppState {
                 fail(L("打开目录库失败"))
             }
         }
+    }
+
+    /// `loaded` with `edited` (the photos on screen as the load finishes) in place of the copies
+    /// read before their edits: removed ones dropped, ones made meanwhile (virtual copies) added.
+    nonisolated static func overlaying(_ edited: [Asset], onto loaded: [Asset]) -> [Asset] {
+        var pending = Dictionary(edited.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        var merged: [Asset] = []
+        merged.reserveCapacity(loaded.count + edited.count)
+        for asset in loaded {
+            guard let newer = pending.removeValue(forKey: asset.id) else {
+                merged.append(asset)
+                continue
+            }
+            if !newer.deleted { merged.append(newer) }
+        }
+        for asset in edited where !asset.deleted && pending.removeValue(forKey: asset.id) != nil {
+            merged.append(asset)
+        }
+        return merged
     }
 
     private func applyCatalogPreview(_ page: AssetPage) {
@@ -3171,12 +3206,21 @@ final class AppState {
     }
 
     // ---------- real folder import (§6.3) ----------
+    /// Refuses (true) an import asked for while a catalog opens: it would go into the catalog
+    /// the load is about to replace, or open another before the first photos are in.
+    private func refusesImportWhileCatalogLoads() -> Bool {
+        guard isLoadingCatalog else { return false }
+        push("目录库仍在载入，载入完成后再导入", "warning")
+        return true
+    }
+
     func addFolder() {
         guard !importing else {
             sheet = "import"
             push("已有导入任务正在运行", "warning")
             return
         }
+        guard !refusesImportWhileCatalogLoads() else { return }
 
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -3197,6 +3241,7 @@ final class AppState {
             push("已有导入任务正在运行", "warning")
             return
         }
+        guard !refusesImportWhileCatalogLoads() else { return }
         let mode = importMode
         openOrCreateCatalog()
         guard let coordinator, let store else { return }
@@ -3395,6 +3440,7 @@ final class AppState {
             push("已有导入任务正在运行", "warning")
             return false
         }
+        guard !refusesImportWhileCatalogLoads() else { return false }
         openOrCreateCatalog()
         guard let coordinator, store != nil else { return false }
         FileAccessService.reach(URL(fileURLWithPath: settings.destinationPath))
@@ -3546,6 +3592,7 @@ final class AppState {
             push("已有导入任务正在运行", "warning")
             return nil
         }
+        guard !refusesImportWhileCatalogLoads() else { return nil }
         guard !files.isEmpty else { return nil }
         cardImportOptions = options
         openOrCreateCatalog()

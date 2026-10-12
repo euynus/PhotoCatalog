@@ -162,6 +162,7 @@
 "已更新 %lld 张修改过的照片" = "Updated %lld changed photos";
 "已更新智能相册「%@」" = "Updated smart album “%@”";
 "已有导入任务正在运行" = "An import is already running";
+"目录库仍在载入，载入完成后再导入" = "The catalog is still loading. Import once it has loaded.";
 "已清理缓存 %@ · %lld 个文件" = "Freed %@ of cache · %lld files";
 "已清理缩略图缓存" = "Thumbnail cache cleaned up";
 "已清除安全书签，下次访问需重新授权" = "Security bookmarks cleared · folders need authorizing again on next use";

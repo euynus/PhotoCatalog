@@ -32,6 +32,23 @@ private final class FakeTetherSource: TetherSource {
     }
 }
 
+/// Holds a catalog load between reading the full catalog and installing it.
+@MainActor
+private final class HydrationGate {
+    private(set) var reached = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        reached = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 /// Opening, switching, creating and closing catalogs: nothing of the previous catalog — undo
 /// steps, a tethered session, sidecar changes, demo photos — carries over into the next.
 final class CatalogLifecycleTests: XCTestCase {
@@ -334,5 +351,101 @@ final class CatalogLifecycleTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.appendingPathComponent("catalog.sqlite").path))
         XCTAssertFalse(app.assets.contains { $0.isDemo }, "the demo photos stay in the new catalog")
         XCTAssertTrue(app.albums.isEmpty, "the demo albums stay in the new catalog")
+    }
+
+    // MARK: - #42 while a catalog loads
+
+    @MainActor
+    func testImportWaitsForCatalogBeingOpened() async throws {
+        let first = try makeCatalog("First", assets: [0])
+        let second = try makeCatalog("Second", assets: [1])
+        let folder = root.appendingPathComponent("Empty Folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let app = makeApp()
+        XCTAssertTrue(app.openCatalog(at: first.url))
+
+        app.openCatalogFromSystem(second.url)
+        XCTAssertTrue(app.isLoadingCatalog)
+        app.importFolder(folder)
+        let refused = !app.importing
+        XCTAssertTrue(refused, "an import starts while the catalog is still loading")
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "目录库仍在载入，载入完成后再导入")
+
+        try await waitUntil("Timed out waiting for the catalog to load") { !app.isLoadingCatalog && !app.importing }
+        XCTAssertEqual(app.catalogPath, second.url.path)
+    }
+
+    @MainActor
+    func testEditMadeWhileCatalogLoadsSurvives() async throws {
+        let first = try makeCatalog("First", assets: [0])
+        let second = try makeCatalog("Second", assets: [2])
+        let id = DemoData.assets[2].id
+        let app = makeApp()
+        XCTAssertTrue(app.openCatalog(at: first.url))
+        let gate = HydrationGate()
+        defer { gate.open() }
+        app.catalogHydrationGate = { await gate.wait() }
+
+        app.openCatalogFromSystem(second.url)
+        try await waitUntil("The load never read the full catalog") { gate.reached }
+        XCTAssertTrue(app.isLoadingCatalog)
+        XCTAssertTrue(app.hasCatalogPreview)
+        // the first photos are on screen, and the menus still edit them
+        select(id, in: app)
+        XCTAssertTrue(app.setRating(4))
+        gate.open()
+        try await waitUntil("Timed out waiting for the catalog to load") { !app.isLoadingCatalog }
+
+        XCTAssertEqual(try second.store.loadAssets().first { $0.id == id }?.rating, 4)
+        XCTAssertEqual(app.assets.first { $0.id == id }?.rating, 4, "the rating made while the catalog loaded is gone")
+    }
+
+    @MainActor
+    func testLoadedCatalogTakesPhotosEditedMeanwhile() throws {
+        var kept = DemoData.assets[0], edited = DemoData.assets[1], removed = DemoData.assets[2]
+        let made = DemoData.assets[3]
+        kept.rating = 1
+        edited.rating = 1
+        removed.rating = 1
+        var newer = edited
+        newer.rating = 5
+        var gone = removed
+        gone.deleted = true
+
+        let merged = AppState.overlaying([newer, gone, made], onto: [kept, edited, removed])
+
+        XCTAssertEqual(merged.map(\.id), [kept.id, edited.id, made.id])
+        XCTAssertEqual(merged.map(\.rating), [1, 5, made.rating])
+    }
+
+    @MainActor
+    func testPairingChangedWhileCatalogLoadsIsHonored() async throws {
+        let first = try makeCatalog("First", assets: [0])
+        let url = root.appendingPathComponent("Pairs.photolibrary")
+        let store = try CatalogStore(packageURL: url)
+        let folder = root.appendingPathComponent("Pair")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var raw = try XCTUnwrap(DemoData.assets.first { $0.isRaw })
+        var jpeg = try XCTUnwrap(DemoData.assets.first { !$0.isRaw && !$0.isVideo })
+        raw.localPath = folder.appendingPathComponent("IMG_0001.CR3").path
+        jpeg.localPath = folder.appendingPathComponent("IMG_0001.JPG").path
+        for asset in [raw, jpeg] { try Data("x".utf8).write(to: URL(fileURLWithPath: asset.localPath ?? "")) }
+        raw.isDemo = false; raw.deleted = false; raw.status = .ready
+        jpeg.isDemo = false; jpeg.deleted = false; jpeg.status = .ready
+        try store.upsert([raw, jpeg])
+        let app = makeApp()
+        app.pairRawAndJpeg = true
+        XCTAssertTrue(app.openCatalog(at: first.url))
+        let gate = HydrationGate()
+        defer { gate.open() }
+        app.catalogHydrationGate = { await gate.wait() }
+
+        app.openCatalogFromSystem(url)
+        try await waitUntil("The load never read the full catalog") { gate.reached }
+        app.pairRawAndJpeg = false
+        gate.open()
+        try await waitUntil("Timed out waiting for the catalog to load") { !app.isLoadingCatalog }
+
+        XCTAssertEqual(app.libraryCounts.all, 2, "counts still pair the RAW and its JPEG")
     }
 }
