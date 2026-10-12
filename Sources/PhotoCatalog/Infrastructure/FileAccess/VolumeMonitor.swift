@@ -96,9 +96,12 @@ struct VolumeProbe: Sendable {
     }
 
     /// Where the drive that `path` was recorded on (`identifier`) is now. A drive's name isn't
-    /// what tells it apart: another drive of the same name mounted where it was isn't it.
+    /// what tells it apart: another drive of the same name mounted where it was isn't it. A
+    /// folder recorded before drives were known by their volume UUID holds a session token no
+    /// drive reports any more, so it goes by the path alone, as it did then.
     func placement(of path: String, onVolume identifier: String?) -> VolumePlacement {
-        guard let identifier, let mountPoint = volumeRoot(of: path) else { return .unchecked }
+        guard let identifier, UUID(uuidString: identifier) != nil,
+              let mountPoint = volumeRoot(of: path) else { return .unchecked }
         if FileManager.default.fileExists(atPath: mountPoint),
            self.identifier(URL(fileURLWithPath: mountPoint, isDirectory: true)) == identifier {
             return .mounted

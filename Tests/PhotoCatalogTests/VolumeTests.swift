@@ -8,6 +8,9 @@ import XCTest
 final class VolumeTests: CatalogTestCase {
     private var volumes: URL { scratch.appendingPathComponent("Volumes") }
     private var unplugged: URL { scratch.appendingPathComponent("Unplugged") }
+    /// Two drives' volume UUIDs, as the system reports them.
+    private let driveA = "0A1B2C3D-0000-4000-8000-00000000000A"
+    private let driveB = "0A1B2C3D-0000-4000-8000-00000000000B"
 
     private var probe: VolumeProbe {
         let directory = volumes.path
@@ -40,15 +43,15 @@ final class VolumeTests: CatalogTestCase {
     }
 
     /// A catalog with one referenced source folder, `Shoot`, on the drive `Photos` (identifier
-    /// "drive-a"), holding IMG_0001.JPG.
+    /// `driveA`), holding IMG_0001.JPG.
     private func catalogOnDrive() throws -> (store: CatalogStore, root: SourceRootRecord, asset: Asset) {
-        let drive = try mountDrive("Photos", id: "drive-a")
+        let drive = try mountDrive("Photos", id: driveA)
         let folder = drive.appendingPathComponent("Shoot")
         let photo = folder.appendingPathComponent("IMG_0001.JPG")
         try makeTestJPEG(at: photo, shade: 1)
         let store = try CatalogStore(packageURL: scratch.appendingPathComponent("Library.photolibrary"))
         try store.addSourceRoot(id: "source-1", displayName: "Shoot", path: folder.path, bookmark: nil,
-                                volumeIdentifier: "drive-a")
+                                volumeIdentifier: driveA)
         let asset = try XCTUnwrap(ImportCoordinator(store: store)
             .importFiles([photo], from: folder, sourceRootId: "source-1", folderName: "Shoot").first)
         try store.upsert([asset])
@@ -63,7 +66,7 @@ final class VolumeTests: CatalogTestCase {
     func testAnotherDriveOfTheSameNameLeavesThePhotoOffline() throws {
         let (_, root, asset) = try catalogOnDrive()
         try unplug("Photos")
-        try makeTestJPEG(at: try mountDrive("Photos", id: "drive-b").appendingPathComponent("Shoot/IMG_0001.JPG"), shade: 7)
+        try makeTestJPEG(at: try mountDrive("Photos", id: driveB).appendingPathComponent("Shoot/IMG_0001.JPG"), shade: 7)
 
         let changes = AssetAvailabilityService.changes(in: [asset], sourceRootsById: [root.id: root], probe: probe)
 
@@ -75,7 +78,7 @@ final class VolumeTests: CatalogTestCase {
     func testThePhotosOwnDriveIsFoundUnderAnotherName() throws {
         let (_, root, asset) = try catalogOnDrive()
         try unplug("Photos")
-        try makeTestJPEG(at: try mountDrive("Photos", id: "drive-b").appendingPathComponent("Shoot/IMG_0001.JPG"), shade: 7)
+        try makeTestJPEG(at: try mountDrive("Photos", id: driveB).appendingPathComponent("Shoot/IMG_0001.JPG"), shade: 7)
         try plugIn("Photos", as: "Photos 1")
 
         let changes = AssetAvailabilityService.changes(in: [asset], sourceRootsById: [root.id: root], probe: probe)
@@ -94,8 +97,22 @@ final class VolumeTests: CatalogTestCase {
                                           bookmarkData: nil, managementMode: root.managementMode, status: root.status,
                                           volumeIdentifier: nil)
         try unplug("Photos")
-        try makeTestJPEG(at: try mountDrive("Photos", id: "drive-b").appendingPathComponent("Shoot/IMG_0001.JPG"), shade: 7)
+        try makeTestJPEG(at: try mountDrive("Photos", id: driveB).appendingPathComponent("Shoot/IMG_0001.JPG"), shade: 7)
         XCTAssertEqual(AssetAvailabilityService.changes(in: [asset], sourceRootsById: [root.id: unrecorded], probe: probe), [])
+    }
+
+    /// A folder added before drives were told apart by their volume UUID recorded the session's
+    /// token instead, which no drive reports any more: its photos go by the path alone, as before,
+    /// rather than being taken for another drive's and shown offline.
+    func testAFolderRecordedWithAnOldStyleDriveTokenGoesByThePath() throws {
+        let (_, root, asset) = try catalogOnDrive()
+        let oldStyle = SourceRootRecord(id: root.id, displayName: root.displayName, pathHint: root.pathHint,
+                                        bookmarkData: nil, managementMode: root.managementMode, status: root.status,
+                                        volumeIdentifier: "<NSData 0x600003a1c2e0>")
+
+        XCTAssertEqual(AssetAvailabilityService.changes(in: [asset], sourceRootsById: [root.id: oldStyle], probe: probe), [],
+                       "the photo on its drive stays available")
+        XCTAssertEqual(probe.currentPath(of: asset.localPath ?? "", onVolume: oldStyle.volumeIdentifier), asset.localPath)
     }
 
     /// Opening the catalog while another drive of the same name is plugged in: the folder is
@@ -104,7 +121,7 @@ final class VolumeTests: CatalogTestCase {
     func testOpeningWithAnotherDriveOfTheSameNameDoesNotScanIt() async throws {
         let (store, _, asset) = try catalogOnDrive()
         try unplug("Photos")
-        try makeTestJPEG(at: try mountDrive("Photos", id: "drive-b").appendingPathComponent("Shoot/IMG_0001.JPG"), shade: 7)
+        try makeTestJPEG(at: try mountDrive("Photos", id: driveB).appendingPathComponent("Shoot/IMG_0001.JPG"), shade: 7)
 
         let app = AppState()
         app.onboarded = true
@@ -125,7 +142,7 @@ final class VolumeTests: CatalogTestCase {
     func testOpeningFindsTheFoldersDriveUnderAnotherName() async throws {
         let (store, _, asset) = try catalogOnDrive()
         try unplug("Photos")
-        try makeTestJPEG(at: try mountDrive("Photos", id: "drive-b").appendingPathComponent("Shoot/IMG_0001.JPG"), shade: 7)
+        try makeTestJPEG(at: try mountDrive("Photos", id: driveB).appendingPathComponent("Shoot/IMG_0001.JPG"), shade: 7)
         try plugIn("Photos", as: "Photos 1")
         let moved = volumes.appendingPathComponent("Photos 1/Shoot")
 
@@ -249,7 +266,7 @@ final class VolumeTests: CatalogTestCase {
         app.volumesDidChange()
         try await waitUntil("originals checked") { !app.isCheckingOriginals }
         XCTAssertEqual(app.assets.first { $0.id == asset.id }?.status, .offline)
-        try makeTestJPEG(at: try mountDrive("Photos", id: "drive-b").appendingPathComponent("Shoot/IMG_0009.JPG"), shade: 7)
+        try makeTestJPEG(at: try mountDrive("Photos", id: driveB).appendingPathComponent("Shoot/IMG_0009.JPG"), shade: 7)
         try plugIn("Photos", as: "Photos 1")
         app.volumesDidChange()
         try await waitUntil("originals checked") { !app.isCheckingOriginals && !app.isIncrementalRescanning }
@@ -274,7 +291,7 @@ final class VolumeTests: CatalogTestCase {
         XCTAssertEqual(app.folders.first { $0.id == "source-1" }?.status, "online")
 
         try unplug("Photos")
-        let other = try mountDrive("Photos", id: "drive-b").appendingPathComponent("Shoot")
+        let other = try mountDrive("Photos", id: driveB).appendingPathComponent("Shoot")
         try makeTestJPEG(at: other.appendingPathComponent("IMG_0001.JPG"), shade: 7)
         try makeTestJPEG(at: other.appendingPathComponent("IMG_0002.JPG"), shade: 8)
         app.rescanCurrentSource()
