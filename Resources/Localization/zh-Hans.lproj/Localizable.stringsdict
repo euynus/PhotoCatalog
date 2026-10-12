@@ -138,6 +138,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>%lld 项条件</string>
 	</dict>
+	<key>PhotoCatalog 打印 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>PhotoCatalog 打印 %lld 张照片</string>
+	</dict>
 	<key>「最近导入」窗口 %lld 天</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -162,6 +167,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>导入失败 %lld 个文件</string>
+	</dict>
+	<key>导出 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>导出 %lld 张照片</string>
 	</dict>
 	<key>导出已取消 · 已写入 %lld 张</key>
 	<dict>
@@ -478,6 +488,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>已重命名 %lld 个文件</string>
 	</dict>
+	<key>打印 %lld 张照片</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>打印 %lld 张照片</string>
+	</dict>
 	<key>找到 %lld 张可能是已命名人物的人脸，请在“人物”中确认</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -533,6 +548,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>检测到 %lld 张新照片</string>
 	</dict>
+	<key>正在为 %@ 准备 %lld 张 TIFF…</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>正在为 %@ 准备 %lld 张 TIFF…</string>
+	</dict>
 	<key>正在从「%@」导入 %lld 张照片…</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -547,6 +567,11 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>比较 %lld 张 · 最多 4 张</string>
+	</dict>
+	<key>添加 %lld 个位置</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>添加 %lld 个位置</string>
 	</dict>
 	<key>用于 %lld 张照片，下级关键词一并更新。输入已有的关键词即合并。</key>
 	<dict>

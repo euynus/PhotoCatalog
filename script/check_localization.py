@@ -14,6 +14,7 @@ Checks:
   - English values whose format specifiers differ from their key
   - Chinese tables that would let a lookup fall back to English (Context.strings and the
     plural .stringsdict must exist for zh-Hans with the same keys)
+  - plural tables that don't match the English table: a counted noun without its singular form
 
 Interpolation types are inferred from the expression (counts are %lld, text is %@); list an
 expression in SPEC_OVERRIDES when the guess is wrong.
@@ -73,13 +74,21 @@ SPEC_OVERRIDES = {
     'singles': '%lld', 'unconfirmed': '%lld', 'person.unconfirmed': '%lld', 'k': '%@', 'active': '%lld',
     'app.cacheLimitMB': '%lld', 'app.effectiveCacheLimitMB': '%lld', 'person': '%@', 'plan.clashes': '%lld', 'plan.taken': '%lld', 'result.added': '%lld', 'gap + 1': '%lld', 'gap + 2': '%lld', 'person + 1': '%lld', 'readOnly': '%lld', 'status': '%lld', 'excerpt': '%@', 'applied': '%lld', 'query': '%@', 'unreadable': '%lld', 'roundedSeconds': '%lld', 'minutes': '%lld', 'editor': '%@', 'settings.rows': '%lld', 'settings.columns': '%lld', 'preview.stacks': '%lld', 'preview.photos': '%lld', 'status.shots': '%lld', 'Self.duration(slide * Double(count))': '%@', 'Self.duration($0)': '%@',
 }
-# English plurals: "%lld <noun>" gets a singular form in the .stringsdict
+# English plurals: "%lld <noun>" gets a singular form in the .stringsdict. Nouns and the words before
+# them match in any case, as in titles ("Print %lld Photos"); the singular keeps the noun's capital.
 NOUNS = {'photos': 'photo', 'files': 'file', 'originals': 'original', 'faces': 'face', 'groups': 'group',
          'people': 'person', 'days': 'day', 'stars': 'star', 'jobs': 'job', 'sidecars': 'sidecar',
          'conditions': 'condition', 'values': 'value', 'locations': 'location', 'previews': 'preview',
-         'assets': 'asset', 'records': 'record', 'spots': 'spot', 'steps': 'step', 'copies': 'copy', 'presets': 'preset', 'colors': 'color', 'LUTs': 'LUT',
+         'assets': 'asset', 'records': 'record', 'spots': 'spot', 'steps': 'step', 'copies': 'copy', 'presets': 'preset', 'colors': 'color', 'luts': 'LUT',
          'stacks': 'stack', 'seconds': 'second', 'minutes': 'minute', 'pages': 'page', 'tasks': 'task'}
-ADJECTIVES = r'(?:(?:duplicate|new|changed|failed|automatically|recognized|unnamed|XMP|disk|photo|virtual) )*'
+EN_PLURALS, ZH_PLURALS = 'en.lproj/Localizable.stringsdict', 'zh-Hans.lproj/Localizable.stringsdict'
+ADJECTIVES = r'(?:(?:duplicate|new|changed|failed|automatically|recognized|unnamed|XMP|TIFF|disk|photo|virtual) )*'
+
+
+def singular(plural):
+    """A counted noun's singular as it's written: Photos → Photo, LUTs → LUT."""
+    one = NOUNS[plural.lower()]
+    return one[0].upper() + one[1:] if plural[0].isupper() else one
 
 
 def literals(line):
@@ -272,12 +281,23 @@ def check():
                 if key not in zh:
                     errors.append(f'zh-Hans.lproj/{table}.strings lacks {json.dumps(key, ensure_ascii=False)} '
                                   '(Chinese would fall back to English)')
-    en_plurals = read_table(os.path.join(TABLES, 'en.lproj/Localizable.stringsdict')) or {}
-    zh_plurals = read_table(os.path.join(TABLES, 'zh-Hans.lproj/Localizable.stringsdict')) or {}
+    en_plurals = read_table(os.path.join(TABLES, EN_PLURALS)) or {}
+    zh_plurals = read_table(os.path.join(TABLES, ZH_PLURALS)) or {}
     for key in en_plurals:
         if key not in zh_plurals:
             errors.append(f'zh-Hans.lproj/Localizable.stringsdict lacks {json.dumps(key, ensure_ascii=False)}; '
                           'run check_localization.py plurals')
+    # the tables `plurals` would write now: a counted noun added to the English table has no singular yet
+    en = read_table(os.path.join(TABLES, 'en.lproj/Localizable.strings')) or {}
+    tables, entries = plural_tables(en)
+    missing = [key for key, _, _ in entries if key not in en_plurals]
+    for key in missing:
+        errors.append(f'{EN_PLURALS} has no singular for {json.dumps(en[key], ensure_ascii=False)}; '
+                      'run check_localization.py plurals')
+    for name, text in tables.items():
+        path = os.path.join(TABLES, name)
+        if not missing and (not os.path.exists(path) or open(path, encoding='utf-8').read() != text):
+            errors.append(f'{name} is out of date; run check_localization.py plurals')
     for line in warnings:
         print('warning:', line)
     for line in errors:
@@ -287,10 +307,10 @@ def check():
     return 1 if errors else 0
 
 
-def write_plurals():
-    """English one/other forms for "%lld <noun>" values, and Chinese identity entries."""
-    en = read_table(os.path.join(TABLES, 'en.lproj/Localizable.strings')) or {}
-    counted = re.compile(r'%(\d+\$)?lld( ' + ADJECTIVES + r'(' + '|'.join(NOUNS) + r'))\b')
+def plural_tables(en):
+    """(text by table, entries): English one/other forms for the "%lld <noun>" values of `en`, and
+    Chinese identity entries."""
+    counted = re.compile(r'%(\d+\$)?lld( ' + ADJECTIVES + r'(' + '|'.join(NOUNS) + r'))\b', re.IGNORECASE)
     entries = []
     for key in sorted(en):
         value = en[key]
@@ -305,7 +325,7 @@ def write_plurals():
             noun = counted.match(value, m.start())
             if noun:
                 phrase, plural = noun.group(2), noun.group(3)
-                variables.append((f'n{n}', '%lld' + phrase[:len(phrase) - len(plural)] + NOUNS[plural],
+                variables.append((f'n{n}', '%lld' + phrase[:len(phrase) - len(plural)] + singular(plural),
                                   '%lld' + phrase))
                 pos = noun.end()
             else:
@@ -332,10 +352,18 @@ def write_plurals():
         english.append('\t</dict>')
         chinese += [f'\t<key>{escape(key)}</key>', '\t<dict>', '\t\t<key>NSStringLocalizedFormatKey</key>',
                     f'\t\t<string>{escape(key)}</string>', '\t</dict>']
-    open(os.path.join(TABLES, 'en.lproj/Localizable.stringsdict'), 'w').write(
-        plist(english, 'English singular forms for counted nouns; generated by script/check_localization.py plurals'))
-    open(os.path.join(TABLES, 'zh-Hans.lproj/Localizable.stringsdict'), 'w').write(
-        plist(chinese, 'Chinese has no plural forms: each entry keeps its source text, so the English table is never used'))
+    return {EN_PLURALS: plist(english, 'English singular forms for counted nouns; generated by '
+                                       'script/check_localization.py plurals'),
+            ZH_PLURALS: plist(chinese, 'Chinese has no plural forms: each entry keeps its source text, so the '
+                                       'English table is never used')}, entries
+
+
+def write_plurals():
+    en = read_table(os.path.join(TABLES, 'en.lproj/Localizable.strings')) or {}
+    tables, entries = plural_tables(en)
+    for name, text in tables.items():
+        with open(os.path.join(TABLES, name), 'w', encoding='utf-8') as table:
+            table.write(text)
     print(f'{len(entries)} plural entries written')
     return 0
 

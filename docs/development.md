@@ -52,7 +52,7 @@ UI text is written in Chinese in the source and used as the lookup key. SwiftUI 
 1. Write it in Chinese in the code, as above.
 2. Add the English to `Resources/Localization/en.lproj/Localizable.strings`, keeping the format specifiers (`%lld` for numbers, `%@` for text; `%1$@`-style positions when English reorders them).
 3. If the English counts something ("%lld photos"), run `script/check_localization.py plurals`.
-4. Run `script/check_localization.py`: it reports text that isn't localized or translated.
+4. Run `script/check_localization.py`: it reports text that isn't localized or translated, and a counted noun ("Print %lld Photos") whose singular the plural tables don't have yet.
 
 ## Architecture
 
