@@ -8427,6 +8427,13 @@ final class AppState {
     var isPlaces: Bool { selection.type == .lib && selection.id == "places" }
     var isPeople: Bool { selection.type == .lib && selection.id == "people" }
 
+    /// Whether the content shows the selected photos. Capture analysis, duplicate review and the
+    /// people and places overviews stand in for the grid, with the selection out of sight behind them.
+    var showsSelection: Bool {
+        !isDuplicates && view != .analysis
+            && !(view == .grid && (isPlaces || (isPeople && hasOpenCatalog)))
+    }
+
     // ---------- navigation ----------
     func select(_ s: Selection) {
         selection = s
@@ -10260,7 +10267,7 @@ final class AppState {
             case "0":
                 resetThumbnailSize()
             case "delete", "backspace":
-                guard view != .analysis else { return true }
+                guard showsSelection else { return true }
                 trashSelectedOriginals()
             default:
                 return false
@@ -10269,7 +10276,7 @@ final class AppState {
         }
         guard onboarded else { return false }
 
-        if view == .analysis && ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "p", "x", "u", "s", "b", "delete", "backspace"].contains(key) {
+        if !showsSelection && ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "p", "x", "u", "s", "b", "delete", "backspace"].contains(key) {
             return false
         }
 
@@ -10349,7 +10356,7 @@ final class AppState {
             // S proofs in Develop, as in Lightroom; elsewhere it opens or closes a stack
             if view == .develop { toggleSoftProofing() } else { toggleStackForPrimary() }
         case "up", "down", "left", "right":
-            if view == .compare || view == .analysis { return false }
+            if view == .compare || !showsSelection { return false }
             if view == .survey { moveInSurvey(key); return true }
             moveSelection(key)
         case "delete", "backspace":

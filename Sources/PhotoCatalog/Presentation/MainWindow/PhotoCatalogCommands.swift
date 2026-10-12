@@ -172,7 +172,7 @@ struct PhotoCatalogCommands: Commands {
             Toggle("评分后自动前进", isOn: Binding(get: { app.autoAdvance }, set: { app.autoAdvance = $0 }))
                 .help("评分、旗标或颜色后跳到下一张；按住 Shift 可单次前进")
             Button("移除被拒绝的照片…") { perform("照片.移除被拒绝的照片") { app.confirmRemoveRejected() } }
-                .disabled(app.sheet != nil || !app.onboarded || app.view == .analysis)
+                .disabled(app.sheet != nil || !app.onboarded || !app.showsSelection)
             Divider()
             Button("导出…") { perform("照片.导出") { app.showRenderedExport() } }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
@@ -200,7 +200,7 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.canSaveCurrentFilter)
             Divider()
             Button("从目录库移除…") { perform("照片.从目录库移除") { app.confirmDeleteSelected() } }
-                .disabled(app.sheet != nil || !app.hasSelection || app.view == .analysis)
+                .disabled(app.sheet != nil || !app.hasSelection || !app.showsSelection)
             Button("将原件移到废纸篓…") {
                 perform("照片.将原件移到废纸篓") {
                     KeyCatcher.performMenuCommand({ app.trashSelectedOriginals() },
@@ -208,7 +208,7 @@ struct PhotoCatalogCommands: Commands {
                 }
             }
                 .keyboardShortcut(.delete, modifiers: .command)
-                .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals || app.view == .analysis)
+                .disabled(app.sheet != nil || !app.canOperateOnSelectedOriginals || !app.showsSelection)
         }
 
         // In the system View menu (显示) rather than a second view menu beside it.
