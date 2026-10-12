@@ -8,7 +8,8 @@ struct SettingsSheet: View {
     @Environment(AppState.self) var app
     @State private var shiftHours = 1
     @State private var shiftMinutes = 0
-    @State private var absoluteDate = Date()
+    /// A capture time (wall clock anchored to UTC), starting at the time on this Mac's clock.
+    @State private var absoluteDate = Date.now.captureWallClock()
     @State private var exportPresetName = ""
     @State private var category: Category = .general
 
@@ -418,6 +419,9 @@ struct SettingsSheet: View {
                 HStack(spacing: 12) {
                     DatePicker("", selection: $absoluteDate)
                         .labelsHidden().datePickerStyle(.compact)
+                        // shown and edited as the capture wall clock it is stored as
+                        .environment(\.calendar, Calendar.captureWallClock)
+                        .environment(\.timeZone, TimeZone.captureWallClock)
                     ghostButton(nil, L("设为该时间"), small: true) { app.setCaptureDate(absoluteDate) }
                     Spacer()
                 }
