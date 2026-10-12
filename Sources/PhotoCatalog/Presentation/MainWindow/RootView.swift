@@ -151,16 +151,37 @@ struct KeyCatcher: NSViewRepresentable {
         }
     }
 
-    nonisolated static func routeEvent(_ event: NSEvent, hostWindow: NSWindow?, isMenuTracking: Bool, isEditingText: Bool,
-                                      handle: (String, Bool, Bool) -> Bool) -> NSEvent? {
-        guard let hostWindow, event.window === hostWindow,
-              !isMenuTracking, !isEditingText,
+    /// Whether `window` is a sheet over the library's window, which takes the keys while it's up.
+    @MainActor
+    static func isSheet(_ window: NSWindow?, of hostWindow: NSWindow?,
+                        sheetParent: @MainActor (NSWindow) -> NSWindow? = { $0.sheetParent }) -> Bool {
+        guard let window, let hostWindow, window !== hostWindow else { return false }
+        return sheetParent(window) === hostWindow
+    }
+
+    @MainActor
+    static func routeEvent(_ event: NSEvent, hostWindow: NSWindow?, presentsSheet: Bool = false,
+                           isMenuTracking: Bool, isEditingText: Bool, isComposingText: Bool = false,
+                           sheetParent: @MainActor (NSWindow) -> NSWindow? = { $0.sheetParent },
+                           handle: (String, Bool, Bool) -> Bool) -> NSEvent? {
+        guard let hostWindow, !isMenuTracking,
               !shouldPassThroughGlobalShortcut(event.modifierFlags) else { return event }
         let command = event.modifierFlags.contains(.command)
         let key = keyString(keyCode: event.keyCode,
                             charactersIgnoringModifiers: event.charactersIgnoringModifiers)
-        guard !shouldPassThroughMenuCommand(key, hasCommand: command) else { return event }
-        return handle(key, command, event.modifierFlags.contains(.shift)) ? nil : event
+        let shift = event.modifierFlags.contains(.shift)
+        if event.window !== hostWindow {
+            // A sheet is a window of its own. Esc closes it, from one of its text fields too, as a
+            // Cancel button would (unless an input method is composing: Esc ends that first); the
+            // library's ⌘ shortcuts are kept from the photos behind it, except while a field takes
+            // them (⌘A, ⌘⌫). Its other keys, and every other window's, stay theirs.
+            guard presentsSheet, isSheet(event.window, of: hostWindow, sheetParent: sheetParent) else { return event }
+            let closes = key == "escape" && !command && !isComposingText
+            guard closes || (command && !isEditingText) else { return event }
+            return handle(key, command, shift) ? nil : event
+        }
+        guard !isEditingText, !shouldPassThroughMenuCommand(key, hasCommand: command) else { return event }
+        return handle(key, command, shift) ? nil : event
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(app: app) }
@@ -214,11 +235,16 @@ struct KeyCatcher: NSViewRepresentable {
             let app = app
             let handled = MainActor.assumeIsolated {
                 let hostWindow = hostView?.window
-                if let hostWindow, event.window === hostWindow, event.modifierFlags.contains(.command) {
+                // a sheet's too: a menu item still enabled from before the sheet would act behind it
+                if let hostWindow, event.window === hostWindow || KeyCatcher.isSheet(event.window, of: hostWindow),
+                   event.modifierFlags.contains(.command) {
                     KeyCatcher.refreshMenuItems()
                 }
-                return KeyCatcher.routeEvent(event, hostWindow: hostWindow, isMenuTracking: menuTrackingDepth > 0,
-                                             isEditingText: KeyCatcher.isEditingText()) { key, command, shift in
+                let composing = (event.window?.firstResponder as? NSTextInputClient)?.hasMarkedText() ?? false
+                return KeyCatcher.routeEvent(event, hostWindow: hostWindow, presentsSheet: app.sheet != nil,
+                                             isMenuTracking: menuTrackingDepth > 0,
+                                             isEditingText: KeyCatcher.isEditingText(),
+                                             isComposingText: composing) { key, command, shift in
                     app.handleKey(key, hasCommand: command, hasShift: shift)
                 } == nil
             }

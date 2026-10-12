@@ -2368,6 +2368,8 @@ final class AppState {
     @discardableResult
     func dismissTransientUI() -> Bool {
         if sheet != nil {
+            // Esc is the dialog's Cancel, which for Describe Photos also lets go of the photos it took
+            if sheet == "describe" { invalidateDescriptionReview() }
             sheet = nil
             smartAlbumEditingID = nil
             return true
