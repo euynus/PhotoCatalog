@@ -49,8 +49,11 @@ enum CatalogHealth {
         r.missingPreviews = real.filter {
             $0.preview.isEmpty || (!$0.preview.hasPrefix("http") && !fm.fileExists(atPath: $0.preview))
         }.count
+        // a managed import's photos are its copies in Originals (counted above if missing): the
+        // card or folder they were copied from is expected to be gone
         r.unavailableSourceRoots = ((try? store.loadSourceRoots()) ?? []).filter {
-            $0.status != "online" || !fm.fileExists(atPath: $0.pathHint)
+            $0.managementMode != ImportMode.managed.rawValue
+                && ($0.status != "online" || !fm.fileExists(atPath: $0.pathHint))
         }.count
         r.activeJobs = ((try? store.loadJobs(states: ["running", "paused"])) ?? []).count
         r.failedJobs = ((try? store.loadJobs(states: ["failed"])) ?? []).count
