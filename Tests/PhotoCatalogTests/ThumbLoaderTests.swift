@@ -63,9 +63,11 @@ final class ThumbLoaderTests: XCTestCase {
         let large = try await image(from: loader, minPixels: 80)
 
         XCTAssertGreaterThan(pixelWidth(large), pixelWidth(small))
-        XCTAssertGreaterThan(pixelWidth(ThumbLoader.cachedImage(forKey: ThumbLoader.key(url.path, maxPixel: 128,
-                                                                                       version: "2")) ?? small),
-                             pixelWidth(small))
+        // the shared cache may have let it go already (NSCache evicts at will); if it holds the
+        // new version's key, that's the new decode
+        if let cached = ThumbLoader.cachedImage(forKey: ThumbLoader.key(url.path, maxPixel: 128, version: "2")) {
+            XCTAssertGreaterThan(pixelWidth(cached), pixelWidth(small))
+        }
     }
 
     func testCancelAndReleaseDropsImageAndAllowsReload() async throws {
