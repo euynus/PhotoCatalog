@@ -6111,8 +6111,12 @@ final class AppState {
         return true
     }
 
-    @ObservationIgnored private var attemptedCacheRepairs = Set<String>()
-    @ObservationIgnored private var verifiedCacheSources = Set<String>()
+    /// Cache repairs that failed this session (or made a black RAW render again), by `id|kind`.
+    @ObservationIgnored private var failedCacheRepairs = Set<String>()
+    /// Cache files checked (or made) this session, by photo, which a lookup takes without touching
+    /// the disk. Whatever deletes cache files drops them: a prune all of them, removing photos
+    /// from the catalog theirs.
+    @ObservationIgnored private var verifiedCacheSources: [String: Set<String>] = [:]
     /// Cache repairs under way, each with the requests waiting for it: the loupe asks for a photo's
     /// preview while its neighbor prefetch is still making it, and then waits for that instead of
     /// decoding the same RAW a second time.
@@ -6375,9 +6379,17 @@ final class AppState {
 
     private func invalidateThumbnailCache() {
         ThumbLoader.clearCache()
-        attemptedCacheRepairs.removeAll()
+        failedCacheRepairs.removeAll()
         verifiedCacheSources.removeAll()
         thumbnailCacheGeneration &+= 1
+    }
+
+    private func isVerified(_ source: String, for assetId: String) -> Bool {
+        verifiedCacheSources[assetId]?.contains(source) == true
+    }
+
+    private func markVerified(_ source: String, for assetId: String) {
+        verifiedCacheSources[assetId, default: []].insert(source)
     }
 
     private static func confirmDestructiveAction(title: String, message: String, confirmTitle: String) -> Bool {
@@ -6411,7 +6423,7 @@ final class AppState {
             : kind
         if let settings = developSettings[assetId], !settings.isNeutral {
             let edited = thumbnails.editedCachePath(assetId: assetId, kind: resolvedKind, settings: settings).path
-            if verifiedCacheSources.contains(edited) { return edited }
+            if isVerified(edited, for: assetId) { return edited }
             // Rotation and crop alone start from the ordinary cached image, not a full RAW render.
             let base = settings.withoutGeometry.isNeutral
                 ? await cachedImageSource(for: asset, requestedSource: requestedSource, kind: resolvedKind,
@@ -6436,10 +6448,10 @@ final class AppState {
             : kind
         if let settings = developSettings[asset.id], !settings.isNeutral {
             let edited = coordinator.thumbnails.editedCachePath(assetId: asset.id, kind: resolvedKind, settings: settings).path
-            return verifiedCacheSources.contains(edited) ? edited : nil
+            return isVerified(edited, for: asset.id) ? edited : nil
         }
         let verifiedKey = "\(requestedSource)|\(asset.fileModifiedAt?.timeIntervalSince1970 ?? 0)"
-        return verifiedCacheSources.contains(verifiedKey) ? requestedSource : nil
+        return isVerified(verifiedKey, for: asset.id) ? requestedSource : nil
     }
 
     /// The ordinary (unadjusted) cached image, repaired from the original when missing or damaged.
@@ -6451,7 +6463,7 @@ final class AppState {
         // A cache file already checked this session (exists, fresh, not a black RAW render)
         // skips the stat + decode hops every time its cell scrolls back into view.
         let verifiedKey = "\(requestedSource)|\(asset.fileModifiedAt?.timeIntervalSince1970 ?? 0)"
-        if verifiedCacheSources.contains(verifiedKey) { return requestedSource }
+        if isVerified(verifiedKey, for: assetId) { return requestedSource }
         let cachedIsUsable = await Task.detached(priority: .userInitiated) {
             guard !requestedSource.isEmpty, FileManager.default.fileExists(atPath: requestedSource) else {
                 return false
@@ -6461,7 +6473,7 @@ final class AppState {
                 && !thumbnails.cachedRepresentationNeedsRegeneration(at: cached, original: original, kind: resolvedKind)
         }.value
         if cachedIsUsable {
-            verifiedCacheSources.insert(verifiedKey)
+            markVerified(verifiedKey, for: assetId)
             return requestedSource
         }
         // Only touch a referenced original after the local cache is missing, stale, or damaged.
@@ -6474,8 +6486,10 @@ final class AppState {
         guard originalExists || previewExists else {
             return nil
         }
-        // One repair per representation per session: a RAW that decodes black again
-        // must not cost another multi-second decode every time its cell reappears.
+        // A repair that failed isn't tried again this session: a RAW that decodes black again
+        // must not cost another multi-second decode every time its cell reappears. One that
+        // worked is remembered as a checked file instead, until a prune or a removal from the
+        // catalog drops that (it may have deleted the file), and then the file is made again.
         let repairKey = "\(assetId)|\(resolvedKind)"
         if repairsInFlight[repairKey] != nil {
             await withCheckedContinuation { repairsInFlight[repairKey, default: []].append($0) }
@@ -6483,23 +6497,29 @@ final class AppState {
             return await cachedImageSource(for: asset, requestedSource: requestedSource, kind: resolvedKind,
                                            original: original, fallbackPreview: fallbackPreview, thumbnails: thumbnails)
         }
-        guard !attemptedCacheRepairs.contains(repairKey) else { return nil }
+        guard !failedCacheRepairs.contains(repairKey) else { return nil }
         repairsInFlight[repairKey] = []
         defer { repairsInFlight.removeValue(forKey: repairKey)?.forEach { $0.resume() } }
-        guard let restored = await ThumbnailRepairQueue.run(.visible, {
-            thumbnails.ensureCached(from: original,
-                                    fallbackPreview: fallbackPreview,
-                                    catalogModificationDate: asset.fileModifiedAt,
-                                    assetId: assetId,
-                                    kind: resolvedKind)
+        guard let restored = await ThumbnailRepairQueue.run(.visible, { () -> (url: URL?, usable: Bool) in
+            let made = thumbnails.ensureCached(from: original,
+                                               fallbackPreview: fallbackPreview,
+                                               catalogModificationDate: asset.fileModifiedAt,
+                                               assetId: assetId,
+                                               kind: resolvedKind)
+            return (made, made.map {
+                !thumbnails.cachedRepresentationNeedsRegeneration(at: $0, original: original, kind: resolvedKind)
+            } ?? false)
         }) else {
             return nil   // cancelled while queued; retry when shown again
         }
-        attemptedCacheRepairs.insert(repairKey)
         // a remade file is as good as a checked one: the loupe can then show a prefetched
         // neighbor in the same frame as the arrow key instead of checking the disk first
-        if restored?.path == requestedSource { verifiedCacheSources.insert(verifiedKey) }
-        return restored?.path
+        if restored.usable, restored.url?.path == requestedSource {
+            markVerified(verifiedKey, for: assetId)
+        } else {
+            failedCacheRepairs.insert(repairKey)
+        }
+        return restored.url?.path
     }
 
     /// Developed rendering for an adjusted photo, rendered off the cooperative pool when missing.
@@ -6509,7 +6529,7 @@ final class AppState {
                                    thumbnails: ThumbnailService, base: String? = nil) async -> String? {
         let edited = thumbnails.editedCachePath(assetId: asset.id, kind: kind, settings: settings)
         let key = edited.path
-        if verifiedCacheSources.contains(key) { return key }
+        if isVerified(key, for: asset.id) { return key }
         let preview = asset.preview
         let source: (url: URL, isRaw: Bool)?
         if let base {
@@ -6527,7 +6547,7 @@ final class AppState {
             thumbnails.ensureEdited(from: source.url, isRaw: source.isRaw, settings: settings,
                                     assetId: assetId, kind: kind)
         }), let rendered else { return nil }
-        verifiedCacheSources.insert(rendered.path)
+        markVerified(rendered.path, for: assetId)
         return rendered.path
     }
 
@@ -6584,13 +6604,15 @@ final class AppState {
     }
 
     /// Best-effort removal of an asset's cached thumbnails/previews when it leaves the catalog,
-    /// so deleting photos reclaims their cache instead of leaving orphans behind. Deletion is
-    /// one-way (no un-delete), so this is safe to do eagerly.
+    /// so deleting photos reclaims their cache instead of leaving orphans behind. A photo brought
+    /// back (undo) has its files made again when shown: the checked files dropped here are
+    /// looked for on disk then.
     private func purgeCacheFiles<S: Sequence>(forAssetIds ids: S) where S.Element == String {
         guard let thumbnails = coordinator?.thumbnails else { return }
         let fm = FileManager.default
         let kinds: [ThumbnailService.Kind] = [.thumb256, .thumb512, .preview1600, .preview2048]
         for id in ids {
+            verifiedCacheSources[id] = nil
             for kind in kinds {
                 try? fm.removeItem(at: thumbnails.cachePath(assetId: id, kind: kind))
             }
