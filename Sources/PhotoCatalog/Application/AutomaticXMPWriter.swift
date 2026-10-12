@@ -7,34 +7,48 @@ actor AutomaticXMPWriter {
     /// change made elsewhere; a RAW and its JPEG share one sidecar, written one after the other.
     private var ownWriteTimes: [String: Double] = [:]
 
-    /// Writes each photo's sidecar; returns the failures, each written sidecar's new
-    /// modification time (so our own writes never read as another app's changes), the photos
-    /// left alone because another app changed their sidecar since `baselines`, and those whose
-    /// original is out of reach (its drive unplugged), to write once it's back.
-    func write(_ assets: [Asset], sequence: UInt64, baselines: [String: Double] = [:])
-        -> (failures: Int, written: [String: Double], changedElsewhere: Set<String>, unavailable: Set<String>) {
+    /// What a write did: the failures, each written sidecar's new modification time (so our own
+    /// writes never read as another app's changes), the photos left alone because another app
+    /// changed their sidecar since `baselines`, and those whose original is out of reach (its
+    /// drive unplugged), to write once it's back.
+    struct Result: Sendable {
         var failures = 0
         var written: [String: Double] = [:]
         var changedElsewhere = Set<String>()
         var unavailable = Set<String>()
+        /// Whether RAW+JPEG pairing was on, and the photos whose sidecar that decided (a RAW's
+        /// JPEG, the RAW): once it's switched, what was found for them is about other sidecars.
+        var pairing = true
+        var pairingDependent = Set<String>()
+    }
+
+    /// Writes each photo's sidecar.
+    func write(_ assets: [Asset], sequence: UInt64, baselines: [String: Double] = [:]) -> Result {
+        var result = Result()
+        result.pairing = XMPSidecar.pairsRawAndJpeg
+        let paths = assets.compactMap(\.localPath)
+        let choicesByPath = Dictionary(zip(paths, XMPSidecar.sidecarChoices(for: paths.map(URL.init(fileURLWithPath:)))),
+                                       uniquingKeysWith: { first, _ in first })
         for asset in assets {
             let latest = latestSequenceByAssetID[asset.id] ?? 0
             guard sequence >= latest else { continue }
             latestSequenceByAssetID[asset.id] = sequence
 
-            let sidecar = asset.localPath.map { XMPSidecar.sidecarURL(for: URL(fileURLWithPath: $0)) }
+            let choices = asset.localPath.flatMap { choicesByPath[$0] }
+            if let choices, choices.paired != choices.unpaired { result.pairingDependent.insert(asset.id) }
+            let sidecar = choices.map { result.pairing ? $0.paired : $0.unpaired }
             let ownWrite = sidecar.flatMap { ownWriteTimes[$0.path] }
             switch Self.writeUnlessChanged(asset, baseline: baselines[asset.id], ownWrite: ownWrite, sidecar: sidecar) {
             case .written(let time):
-                written[asset.id] = time
+                result.written[asset.id] = time
                 if let sidecar, let time { ownWriteTimes[sidecar.path] = time }
-            case .changedElsewhere: changedElsewhere.insert(asset.id)
-            case .failed: failures += 1
-            case .unavailable: unavailable.insert(asset.id)
+            case .changedElsewhere: result.changedElsewhere.insert(asset.id)
+            case .failed: result.failures += 1
+            case .unavailable: result.unavailable.insert(asset.id)
             case .skipped: break
             }
         }
-        return (failures, written, changedElsewhere, unavailable)
+        return result
     }
 
     enum Outcome: Equatable {

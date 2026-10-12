@@ -23,13 +23,22 @@ enum RenameService {
         private var stems: [String: [String: Set<String>]] = [:]
 
         init(folders: Set<String>) {
-            for folder in folders {
-                var byStem: [String: Set<String>] = [:]
-                for name in (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? [] {
-                    byStem[Self.stem(name), default: []].insert(name.lowercased())
-                }
-                stems[folder] = byStem
+            for folder in folders { include(folder) }
+        }
+
+        /// Looks at `folder` too, unless it already has (a destination, made as files arrive).
+        mutating func include(_ folder: String) {
+            guard stems[folder] == nil else { return }
+            var byStem: [String: Set<String>] = [:]
+            for name in (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? [] {
+                byStem[Self.stem(name), default: []].insert(name.lowercased())
             }
+            stems[folder] = byStem
+        }
+
+        /// A file put into `folder`.
+        mutating func added(_ name: String, in folder: String) {
+            stems[folder, default: [:]][Self.stem(name), default: []].insert(name.lowercased())
         }
 
         /// The folders `assets`' originals are in.

@@ -28,6 +28,15 @@ enum FileScanner {
         isSupported(extension: url.pathExtension.lowercased())
     }
 
+    /// The extensions (lower case) known without asking the system: RAWs, images and videos.
+    static let knownExtensions: Set<String> = rawExtensions.union(imageExtensions)
+        .union(Asset.videoTypes.map { $0.lowercased() })
+
+    /// Whether a (lower-case) extension is a camera RAW's.
+    static func isRaw(extension ext: String) -> Bool {
+        rawExtensions.contains(ext) || (UTType(filenameExtension: ext)?.conforms(to: .rawImage) ?? false)
+    }
+
     private static func isSupported(extension ext: String) -> Bool {
         if rawExtensions.contains(ext) || imageExtensions.contains(ext) || Asset.videoTypes.contains(ext.uppercased()) {
             return true

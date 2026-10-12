@@ -39,20 +39,105 @@ enum XMPSidecar {
         return f
     }()
 
-    /// Sidecar path for an original: `<original>.xmp`. A video beside a photo of the same name
-    /// (a Live Photo's HEIC and MOV) keeps its own, `<original>.<ext>.xmp`, so it never
-    /// overwrites the photo's.
+    // ---------- whose sidecar is whose ----------
+    /// Sidecar path for an original: `<name>.xmp` (IMG.xmp), which a RAW+JPEG pair shares. A
+    /// file beside another of its name that isn't its pair — a TIFF saved beside its JPEG, a JPEG
+    /// converted from a HEIC, a JPEG beside its RAW with pairing off, a Live Photo's MOV — keeps
+    /// its own `<name>.<ext>.xmp` (IMG.JPG.xmp, as darktable and digiKam name sidecars), so the
+    /// two never write over each other's. `IMG.xmp` stays with the one that owns the name: the
+    /// RAW, else a HEIC or JPEG, else the first by extension, and a video only when no photo has it.
     static func sidecarURL(for original: URL) -> URL {
-        let plain = original.deletingPathExtension().appendingPathExtension("xmp")
-        guard VideoMetadata.isVideo(original) else { return plain }
-        let stem = original.deletingPathExtension().lastPathComponent.lowercased()
-        let siblings = (try? FileManager.default.contentsOfDirectory(atPath: original.deletingLastPathComponent().path)) ?? []
-        let photoBeside = siblings.contains { name in
-            let url = URL(fileURLWithPath: name)
-            return url.deletingPathExtension().lastPathComponent.lowercased() == stem && !VideoMetadata.isVideo(url)
-                && url.pathExtension.lowercased() != "xmp" && FileScanner.isSupported(url)
+        sidecarURL(for: original, beside: namesakes(of: original), pairing: pairsRawAndJpeg)
+    }
+
+    /// The sidecars of many originals: a folder holding many of them is listed once, rather than
+    /// looked into for each.
+    static func sidecarURLs(for originals: [URL], pairing: Bool = pairsRawAndJpeg) -> [URL] {
+        sidecarChoices(for: originals).map { pairing ? $0.paired : $0.unpaired }
+    }
+
+    /// The sidecars of many originals with pairing on and off: they differ only for a RAW's JPEG
+    /// and the RAW itself.
+    static func sidecarChoices(for originals: [URL]) -> [(paired: URL, unpaired: URL)] {
+        func choices(_ original: URL, _ namesakes: Set<String>) -> (paired: URL, unpaired: URL) {
+            (sidecarURL(for: original, beside: namesakes, pairing: true),
+             sidecarURL(for: original, beside: namesakes, pairing: false))
         }
-        return photoBeside ? original.appendingPathExtension("xmp") : plain
+        var sidecars: [(paired: URL, unpaired: URL)] = originals.map { ($0, $0) }
+        let byFolder = Dictionary(grouping: originals.indices) { originals[$0].deletingLastPathComponent().path }
+        for (folder, indices) in byFolder {
+            guard indices.count >= listingThreshold,
+                  let names = try? FileManager.default.contentsOfDirectory(atPath: folder) else {
+                for index in indices { sidecars[index] = choices(originals[index], namesakes(of: originals[index])) }
+                continue
+            }
+            var extensionsByStem: [String: Set<String>] = [:]
+            for name in names {
+                let ext = (name as NSString).pathExtension.lowercased()
+                guard namesakeExtensions.contains(ext) else { continue }
+                extensionsByStem[(name as NSString).deletingPathExtension.lowercased(), default: []].insert(ext)
+            }
+            for index in indices {
+                let original = originals[index]
+                let stem = original.deletingPathExtension().lastPathComponent.lowercased()
+                sidecars[index] = choices(original, extensionsByStem[stem] ?? [])
+            }
+        }
+        return sidecars
+    }
+
+    /// From this many originals in one folder, listing it (a couple of µs a file there) is
+    /// quicker than looking for each one's namesakes (a few dozen lookups, ~150 µs each).
+    private static let listingThreshold = 2
+
+    /// Whether RAWs and their JPEGs are shown as pairs (Settings): a pair shares one sidecar,
+    /// while with pairing off the JPEG is a photo of its own, with a sidecar of its own.
+    static var pairsRawAndJpeg: Bool { UserDefaults.standard.object(forKey: "pc_pairRawJpeg") as? Bool ?? true }
+
+    /// The formats a file of the same name is looked for in: those the app imports.
+    private static let namesakeExtensions: Set<String> = FileScanner.knownExtensions.union(["psd", "psb", "avif", "jxl"])
+
+    /// The extensions (lower case) of the other files beside `original` with its name.
+    static func namesakes(of original: URL) -> Set<String> {
+        let fm = FileManager.default
+        let base = (original.path as NSString).deletingPathExtension
+        let own = original.pathExtension.lowercased()
+        var found = Set<String>()
+        for ext in namesakeExtensions where ext != own {
+            // a case-insensitive volume finds either spelling with the first
+            if fm.fileExists(atPath: base + "." + ext) || fm.fileExists(atPath: base + "." + ext.uppercased()) {
+                found.insert(ext)
+            }
+        }
+        return found
+    }
+
+    /// `original`'s sidecar, beside files of its name with the extensions `namesakes`.
+    static func sidecarURL(for original: URL, beside namesakes: Set<String>, pairing: Bool) -> URL {
+        ownsPlainName(original.pathExtension.lowercased(), beside: namesakes, pairing: pairing)
+            ? original.deletingPathExtension().appendingPathExtension("xmp")
+            : original.appendingPathExtension("xmp")
+    }
+
+    /// Whether a file with the extension `ext` has its name's plain sidecar (`IMG.xmp`), beside
+    /// files of that name with the extensions `others` (all lower case).
+    static func ownsPlainName(_ ext: String, beside others: Set<String>, pairing: Bool) -> Bool {
+        let others = others.subtracting([ext])
+        guard !others.isEmpty else { return true }
+        let isVideo = { (ext: String) in Asset.videoTypes.contains(ext.uppercased()) }
+        let all = others.union([ext])
+        // a video beside a photo of its name (a Live Photo's MOV) leaves the name to the photo
+        if isVideo(ext), all.contains(where: { !isVideo($0) }) { return false }
+        if pairing, !isVideo(ext) {
+            // a RAW and its JPEG/HEIC are one photo and share it; any other file beside them doesn't
+            let raws = all.filter { FileScanner.isRaw(extension: $0) }
+            let companions = all.filter { AssetPairing.companionExtensions.contains($0) }
+            if raws.count == 1, !companions.isEmpty { return raws.contains(ext) || companions.contains(ext) }
+        }
+        func rank(_ ext: String) -> Int {
+            isVideo(ext) ? 3 : FileScanner.isRaw(extension: ext) ? 0 : AssetPairing.companionExtensions.contains(ext) ? 1 : 2
+        }
+        return all.min { (rank($0), $0) < (rank($1), $1) } == ext
     }
 
     /// Moves an original's sidecar with it (`original` is where the file was, `moved` where it

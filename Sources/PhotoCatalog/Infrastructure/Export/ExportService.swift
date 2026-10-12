@@ -15,6 +15,10 @@ struct ExportReport {
 enum ExportService {
     /// Copy each asset's original into `destination`, preserving mtime.
     /// When `xmp` is true, an `.xmp` sidecar is written next to each copied original.
+    /// Originals sharing a folder and a name (a RAW and its JPEG) keep one name between them, and
+    /// no other photo's file — another of this export, or one already there in any extension —
+    /// shares it, so each photo's sidecar is its own. A name already there is skipped, written
+    /// over (only by the same files' names) or numbered, as `conflict` says, for all of them.
     static func copyOriginals(_ assets: [Asset], to destination: URL,
                               conflict: ExportConflict = .rename,
                               xmp: Bool = false,
@@ -24,6 +28,8 @@ enum ExportService {
         var report = ExportReport()
         let fm = FileManager.default
         try? fm.createDirectory(at: destination, withIntermediateDirectories: true)
+        var order: [String] = []
+        var groups: [String: (directory: URL, members: [(asset: Asset, source: URL)])] = [:]
         for a in assets {
             guard let path = a.localPath else { report.skipped += 1; continue }
             let src = URL(fileURLWithPath: path)
@@ -32,26 +38,87 @@ enum ExportService {
                                                   structure: directoryStructure,
                                                   albumNamesByAssetId: albumNamesByAssetId,
                                                   sourceRootPathsByFolderId: sourceRootPathsByFolderId)
-            try? fm.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
-            let target = resolve(targetDirectory.appendingPathComponent(src.lastPathComponent),
-                                 conflict: conflict, fm: fm)
-            guard let target else { report.skipped += 1; continue }
-            do {
-                if conflict == .overwrite { try? fm.removeItem(at: target) }
-                try fm.copyItem(at: src, to: target)
-                if let attrs = try? fm.attributesOfItem(atPath: src.path),
-                   let mtime = attrs[.modificationDate] as? Date {
-                    try? fm.setAttributes([.modificationDate: mtime], ofItemAtPath: target.path)
+            let key = [targetDirectory.path, src.deletingLastPathComponent().path,
+                       src.deletingPathExtension().lastPathComponent.lowercased()].joined(separator: "\n")
+            if groups[key] == nil { order.append(key); groups[key] = (targetDirectory, []) }
+            groups[key]?.members.append((a, src))
+        }
+
+        var names = RenameService.FolderNames(folders: [])
+        var exportedStems = Set<String>()   // folder + "\n" + name, taken by this export
+        for key in order {
+            guard let group = groups[key] else { continue }
+            let directory = group.directory, members = group.members
+            try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            names.include(directory.path)
+            let base = members[0].source.deletingPathExtension().lastPathComponent
+            guard let number = freeNumber(for: base, extensions: members.map(\.source.pathExtension),
+                                          in: directory.path, conflict: conflict,
+                                          names: names, exportedStems: exportedStems) else {
+                report.skipped += members.count
+                continue
+            }
+            exportedStems.insert(directory.path + "\n" + numbered(base, number).lowercased())
+            var copied: [(asset: Asset, target: URL)] = []
+            for (a, src) in members {
+                let target = directory.appendingPathComponent(
+                    number == 0 ? src.lastPathComponent : fileName(numbered(base, number), ext: src.pathExtension))
+                if fm.fileExists(atPath: target.path) {
+                    // rename never lands on a name already there; overwrite replaces the same file's
+                    guard conflict == .overwrite else { report.skipped += 1; continue }
+                    try? fm.removeItem(at: target)
                 }
-                if xmp, !XMPSidecar.write(a, to: XMPSidecar.sidecarURL(for: target)) {
-                    report.xmpFailed += 1
+                do {
+                    try fm.copyItem(at: src, to: target)
+                    if let attrs = try? fm.attributesOfItem(atPath: src.path),
+                       let mtime = attrs[.modificationDate] as? Date {
+                        try? fm.setAttributes([.modificationDate: mtime], ofItemAtPath: target.path)
+                    }
+                    names.added(target.lastPathComponent, in: directory.path)
+                    copied.append((a, target))
+                    report.copied += 1
+                } catch {
+                    report.failed += 1
                 }
-                report.copied += 1
-            } catch {
-                report.failed += 1
+            }
+            // sidecars once the whole group is there, each named as it is beside the others
+            guard xmp else { continue }
+            for (a, target) in copied where !XMPSidecar.write(a, to: XMPSidecar.sidecarURL(for: target)) {
+                report.xmpFailed += 1
             }
         }
         return report
+    }
+
+    /// The number a group of originals sharing the name `base` (a RAW and its JPEG) takes in
+    /// `folder`: 0 for their own name, else the first that will do; nil when none will. A name
+    /// won't do when another photo of this export took it, or a file already there has it that
+    /// isn't one of theirs (for `rename`, any file at all) or their sidecar, which a previous
+    /// export of the same photo left there.
+    private static func freeNumber(for base: String, extensions: [String], in folder: String,
+                                   conflict: ExportConflict, names: RenameService.FolderNames,
+                                   exportedStems: Set<String>) -> Int? {
+        for number in 0..<10_000 {
+            let stem = numbered(base, number)
+            guard !exportedStems.contains(folder + "\n" + stem.lowercased()) else { continue }
+            let own = conflict == .rename ? [] : Set(extensions.map { fileName(stem, ext: $0).lowercased() })
+                .union([stem.lowercased() + ".xmp"])
+            // a sidecar keeping its file's extension (IMG.JPG.xmp) goes by a name of its own, IMG.JPG
+            let free = names.isFree(stem, in: folder, own: own) && extensions.allSatisfy { ext in
+                ext.isEmpty || names.isFree(stem + "." + ext, in: folder, own: conflict == .rename
+                                            ? [] : [fileName(stem, ext: ext).lowercased() + ".xmp"])
+            }
+            if free { return number }
+        }
+        return nil
+    }
+
+    private static func numbered(_ base: String, _ number: Int) -> String {
+        number == 0 ? base : "\(base) (\(number))"
+    }
+
+    private static func fileName(_ stem: String, ext: String) -> String {
+        ext.isEmpty ? stem : "\(stem).\(ext)"   // extensionless originals must not gain a trailing dot
     }
 
     /// Export cached previews for lightweight sharing (PRD §6.11 EXP-004).

@@ -509,6 +509,7 @@ final class AppState {
             guard pairRawAndJpeg != oldValue else { return }
             UserDefaults.standard.set(pairRawAndJpeg, forKey: "pc_pairRawJpeg")
             invalidatePresentationCaches()
+            reseedSidecarBaselines(pairingWas: oldValue)
         }
     }
     @ObservationIgnored private var assetPairingCache: (version: Int, pairing: AssetPairing)?
@@ -4623,13 +4624,11 @@ final class AppState {
         guard !real.isEmpty else { push("仅可为已导入照片写入 XMP", "warning"); return }
         var count = 0
         var written: [String: Double] = [:]
-        for a in real {
-            guard let path = a.localPath else { continue }
-            let url = XMPSidecar.sidecarURL(for: URL(fileURLWithPath: path))
-            if XMPSidecar.write(a, to: url) {
-                count += 1
-                written[a.id] = XMPSidecar.modificationTime(forOriginal: path)
-            }
+        let located = real.compactMap { a in a.localPath.map { (asset: a, original: URL(fileURLWithPath: $0)) } }
+        let sidecars = XMPSidecar.sidecarURLs(for: located.map(\.original))
+        for (a, url) in zip(located.map(\.asset), sidecars) where XMPSidecar.write(a, to: url) {
+            count += 1
+            written[a.id] = XMPSidecar.modificationTime(of: url)
         }
         recordXMPSync(written)
         let failures = real.count - count
@@ -4662,10 +4661,40 @@ final class AppState {
     /// Remembers sidecars as they are now: our own writes and reads never count as changes.
     private func recordXMPSync(_ times: [String: Double]) {
         guard !times.isEmpty else { return }
-        try? store?.saveXMPSyncTimes(times)
-        xmpSyncTimes.merge(times) { $1 }
+        storeXMPSync(times)
         let settled = externallyChangedXMPIds.intersection(times.keys)
         if !settled.isEmpty { externallyChangedXMPIds.subtract(settled) }
+    }
+
+    private func storeXMPSync(_ times: [String: Double]) {
+        try? store?.saveXMPSyncTimes(times)
+        xmpSyncTimes.merge(times) { $1 }
+        xmpSyncCount &+= 1
+        for id in times.keys { xmpSyncRecordedAt[id] = xmpSyncCount }
+    }
+
+    /// A running count of sidecar times remembered, and when each photo's was: what a check or
+    /// re-seed worked out in the background from before then is older, and doesn't replace it.
+    @ObservationIgnored private var xmpSyncCount: UInt64 = 0
+    @ObservationIgnored private var xmpSyncRecordedAt: [String: UInt64] = [:]
+
+    /// What a sidecar time worked out in the background was worked out against.
+    struct XMPSyncSnapshot: Sendable {
+        let count: UInt64
+        let pairing: Bool
+    }
+
+    func xmpSyncSnapshot() -> XMPSyncSnapshot { XMPSyncSnapshot(count: xmpSyncCount, pairing: pairRawAndJpeg) }
+
+    /// The part of `times`, worked out in the background from `snapshot`, that's still about the
+    /// photos' sidecars as they are: not one for a sidecar switching pairing has since swapped
+    /// (a RAW's JPEG, among `pairingDependent`), and not one remembered anew since.
+    private func stillCurrent(_ times: [String: Double], pairingDependent: Set<String>,
+                              since snapshot: XMPSyncSnapshot) -> [String: Double] {
+        times.filter { id, _ in
+            (snapshot.pairing == pairRawAndJpeg || !pairingDependent.contains(id))
+                && (xmpSyncRecordedAt[id] ?? 0) <= snapshot.count
+        }
     }
 
     /// Where each new photo's sidecar stands as it joins the catalog (0: it has none), so one
@@ -4677,14 +4706,60 @@ final class AppState {
         }
         guard store != nil, !candidates.isEmpty else { return }
         let catalogURL = store?.packageURL
-        Task { [weak self, candidates] in
-            let times = await Task.detached(priority: .utility) {
-                Dictionary(candidates.map { ($0.id, XMPSidecar.modificationTime(forOriginal: $0.path) ?? 0) },
-                           uniquingKeysWith: { $1 })
+        let snapshot = xmpSyncSnapshot()
+        Task { [weak self, candidates, snapshot] in
+            let found = await Task.detached(priority: .utility) { () -> (times: [String: Double], dependent: Set<String>) in
+                let choices = XMPSidecar.sidecarChoices(for: candidates.map { URL(fileURLWithPath: $0.path) })
+                var times: [String: Double] = [:]
+                var dependent = Set<String>()
+                for (candidate, choice) in zip(candidates, choices) {
+                    times[candidate.id] = XMPSidecar.modificationTime(of: snapshot.pairing ? choice.paired : choice.unpaired) ?? 0
+                    if choice.paired != choice.unpaired { dependent.insert(candidate.id) }
+                }
+                return (times, dependent)
             }.value
             guard let self, self.store?.packageURL == catalogURL else { return }
-            self.recordXMPSync(times.filter { self.xmpSyncTimes[$0.key] == nil })
+            let current = self.stillCurrent(found.times, pairingDependent: found.dependent, since: snapshot)
+            self.recordXMPSync(current.filter { self.xmpSyncTimes[$0.key] == nil })
         }
+    }
+
+    /// Pairing decides whether a RAW's JPEG shares the RAW's sidecar or keeps its own: the photos
+    /// whose sidecar that changes start from the one they use now, as on first sight, rather than
+    /// looking changed elsewhere.
+    private func reseedSidecarBaselines(pairingWas old: Bool) {
+        let candidates = xmpCheckCandidates()
+        guard store != nil, !candidates.isEmpty else { return }
+        let snapshot = xmpSyncSnapshot()
+        let catalogURL = store?.packageURL
+        Task { [weak self, candidates, snapshot] in
+            let times = await Task.detached(priority: .utility) {
+                Self.sidecarReseedTimes(candidates, from: old, to: snapshot.pairing)
+            }.value
+            guard let self, self.store?.packageURL == catalogURL else { return }
+            self.applySidecarReseed(times, since: snapshot)
+        }
+    }
+
+    /// The photos whose sidecar is another with pairing `now` than with `old`, and that
+    /// sidecar's time (0: there's none).
+    nonisolated static func sidecarReseedTimes(_ candidates: [(id: String, path: String)], from old: Bool,
+                                               to now: Bool) -> [String: Double] {
+        let originals = candidates.map { URL(fileURLWithPath: $0.path) }
+        let before = XMPSidecar.sidecarURLs(for: originals, pairing: old)
+        let after = XMPSidecar.sidecarURLs(for: originals, pairing: now)
+        var times: [String: Double] = [:]
+        for index in candidates.indices where before[index] != after[index] {
+            times[candidates[index].id] = XMPSidecar.modificationTime(of: after[index]) ?? 0
+        }
+        return times
+    }
+
+    /// Takes in a re-seed worked out in the background from `snapshot` (its photos are all ones
+    /// whose sidecar pairing decides), unless pairing was switched again or a photo's sidecar
+    /// time was remembered anew meanwhile.
+    func applySidecarReseed(_ times: [String: Double], since snapshot: XMPSyncSnapshot) {
+        recordXMPSync(stillCurrent(times, pairingDependent: Set(times.keys), since: snapshot))
     }
 
     /// Looks at every original's sidecar in the background: one whose time moved since we last
@@ -4711,14 +4786,16 @@ final class AppState {
         isCheckingXMP = true
         let known = xmpSyncTimes
         let catalogURL = store?.packageURL
-        Task { [weak self, candidates, known] in
+        let snapshot = xmpSyncSnapshot()
+        Task { [weak self, candidates, known, snapshot] in
             let found = await Task.detached(priority: .utility) {
-                Self.findChangedSidecars(candidates, known: known)
+                Self.findChangedSidecars(candidates, known: known, pairing: snapshot.pairing)
             }.value
             guard let self else { return }
             self.isCheckingXMP = false
             guard self.store?.packageURL == catalogURL else { return }
-            self.applyExternalXMPCheck(seeded: found.seeded, changed: found.changed)
+            self.applyExternalXMPCheck(seeded: found.seeded, changed: found.changed,
+                                       pairingDependent: found.pairingDependent, since: snapshot)
         }
     }
 
@@ -4733,28 +4810,36 @@ final class AppState {
     /// Sidecars whose time moved from their starting point (changed, with the time found), and
     /// first sightings (seeded). Older counts too: a sidecar put back from a backup or synced
     /// in with its old date is still another version.
-    nonisolated static func findChangedSidecars(_ candidates: [(id: String, path: String)], known: [String: Double])
-        -> (seeded: [String: Double], changed: [String: Double]) {
+    /// Also the photos whose sidecar `pairing` decided (a RAW's JPEG, the RAW).
+    nonisolated static func findChangedSidecars(_ candidates: [(id: String, path: String)], known: [String: Double],
+                                                pairing: Bool = XMPSidecar.pairsRawAndJpeg)
+        -> (seeded: [String: Double], changed: [String: Double], pairingDependent: Set<String>) {
         var seeded: [String: Double] = [:]
         var changed: [String: Double] = [:]
-        for candidate in candidates {
-            guard let time = XMPSidecar.modificationTime(forOriginal: candidate.path) else { continue }
+        var dependent = Set<String>()
+        let choices = XMPSidecar.sidecarChoices(for: candidates.map { URL(fileURLWithPath: $0.path) })
+        for (candidate, choice) in zip(candidates, choices) {
+            if choice.paired != choice.unpaired { dependent.insert(candidate.id) }
+            guard let time = XMPSidecar.modificationTime(of: pairing ? choice.paired : choice.unpaired) else { continue }
             if let baseline = known[candidate.id] {
                 if abs(time - baseline) > 1 { changed[candidate.id] = time }
             } else {
                 seeded[candidate.id] = time
             }
         }
-        return (seeded, changed)
+        return (seeded, changed, dependent)
     }
 
-    func applyExternalXMPCheck(seeded: [String: Double], changed: [String: Double]) {
+    /// Takes in a check; one worked out in the background from `snapshot` leaves alone the
+    /// photos whose sidecar it no longer describes (see `stillCurrent`).
+    func applyExternalXMPCheck(seeded: [String: Double], changed: [String: Double],
+                               pairingDependent: Set<String> = [], since snapshot: XMPSyncSnapshot? = nil) {
+        let snapshot = snapshot ?? xmpSyncSnapshot()
+        let seeded = stillCurrent(seeded, pairingDependent: pairingDependent, since: snapshot)
+        let changed = stillCurrent(changed, pairingDependent: pairingDependent, since: snapshot)
         // the check looked at a snapshot: a sidecar we wrote or read meanwhile has moved on
         let fresh = seeded.filter { xmpSyncTimes[$0.key] == nil }
-        if !fresh.isEmpty {
-            try? store?.saveXMPSyncTimes(fresh)
-            xmpSyncTimes.merge(fresh) { $1 }
-        }
+        if !fresh.isEmpty { storeXMPSync(fresh) }
         let live = Set(changed.filter { id, time in
             guard let index = assetIndex[id], !assets[index].deleted else { return false }
             return xmpSyncTimes[id].map { abs(time - $0) > 1 } ?? true
@@ -4770,7 +4855,7 @@ final class AppState {
     /// For checks: the sidecar check, run now and to completion.
     func checkExternalXMPChangesNow() {
         let candidates = xmpCheckCandidates()
-        let found = Self.findChangedSidecars(candidates, known: xmpSyncTimes)
+        let found = Self.findChangedSidecars(candidates, known: xmpSyncTimes, pairing: pairRawAndJpeg)
         applyExternalXMPCheck(seeded: found.seeded, changed: found.changed)
     }
 
@@ -4779,10 +4864,13 @@ final class AppState {
     /// the sidecars aren't rewritten.
     @discardableResult
     func readMetadataFromFiles(_ ids: Set<String>? = nil, undoable: Bool = true) -> Int {
-        let targets = (ids ?? targetIds).compactMap { id -> (id: String, path: String, sidecar: SidecarMetadata)? in
-            guard let index = assetIndex[id], !assets[index].isVirtualCopy, let path = assets[index].localPath,
-                  let sidecar = XMPSidecar.read(XMPSidecar.sidecarURL(for: URL(fileURLWithPath: path))) else { return nil }
-            return (id, path, sidecar)
+        let located = (ids ?? targetIds).compactMap { id -> (id: String, path: String)? in
+            guard let index = assetIndex[id], !assets[index].isVirtualCopy, let path = assets[index].localPath else { return nil }
+            return (id, path)
+        }
+        let sidecarURLs = XMPSidecar.sidecarURLs(for: located.map { URL(fileURLWithPath: $0.path) })
+        let targets = zip(located, sidecarURLs).compactMap { photo, url -> (id: String, url: URL, sidecar: SidecarMetadata)? in
+            XMPSidecar.read(url).map { (photo.id, url, $0) }
         }
         guard !targets.isEmpty else {
             if ids == nil { push("所选照片旁没有 XMP 附属文件", "info") }
@@ -4793,7 +4881,7 @@ final class AppState {
             if let sidecar = byId[asset.id] { XMPSidecar.apply(sidecar, to: &asset, replacingKeywords: true) }
         }) else { return 0 }
         var times: [String: Double] = [:]
-        for target in targets { times[target.id] = XMPSidecar.modificationTime(forOriginal: target.path) }
+        for target in targets { times[target.id] = XMPSidecar.modificationTime(of: target.url) }
         recordXMPSync(times)
         push("已从 \(targets.count) 个 XMP 附属文件读取元数据", "refresh")
         return targets.count
@@ -7600,6 +7688,7 @@ final class AppState {
         clearFaces()
         // sidecar state is the catalog's (a loaded one reads its own)
         xmpSyncTimes = [:]
+        xmpSyncRecordedAt = [:]
         externallyChangedXMPIds = []
         pendingXMPWriteIds = []
         sourceRootPathsById = [:]
@@ -7765,20 +7854,26 @@ final class AppState {
         let catalogURL = store?.packageURL
         Task { [weak self, writer, changed, sequence, baselines, catalogURL] in
             let result = await writer.write(changed, sequence: sequence, baselines: baselines)
-            self?.recordXMPSync(result.written)
-            // another app's change waits to be read rather than being written over
-            if let self, !result.changedElsewhere.isEmpty {
-                self.externallyChangedXMPIds.formUnion(result.changedElsewhere)
-            }
-            // an original on a drive that's away gets its sidecar once it's back
-            if let self, self.store?.packageURL == catalogURL {
-                self.pendingXMPWriteIds.subtract(result.written.keys)
-                self.pendingXMPWriteIds.subtract(result.changedElsewhere)
-                self.pendingXMPWriteIds.formUnion(result.unavailable)
-            }
-            guard result.failures > 0 else { return }
-            self?.push("\(result.failures) 个 XMP 附属文件写入失败", "warning")
+            self?.applyAutomaticXMPWrite(result, catalogURL: catalogURL)
         }
+    }
+
+    /// Takes in what an automatic write did, once it's done: our write is the newest a sidecar
+    /// has been, unless pairing was switched since and the sidecar is no longer the photo's.
+    func applyAutomaticXMPWrite(_ result: AutomaticXMPWriter.Result, catalogURL: URL?) {
+        let swapped = result.pairing == pairRawAndJpeg ? [] : result.pairingDependent
+        recordXMPSync(result.written.filter { !swapped.contains($0.key) })
+        // another app's change waits to be read rather than being written over
+        let changedElsewhere = result.changedElsewhere.subtracting(swapped)
+        if !changedElsewhere.isEmpty { externallyChangedXMPIds.formUnion(changedElsewhere) }
+        // an original on a drive that's away gets its sidecar once it's back
+        if store?.packageURL == catalogURL {
+            pendingXMPWriteIds.subtract(result.written.keys)
+            pendingXMPWriteIds.subtract(result.changedElsewhere)
+            pendingXMPWriteIds.formUnion(result.unavailable)
+        }
+        guard result.failures > 0 else { return }
+        push("\(result.failures) 个 XMP 附属文件写入失败", "warning")
     }
 
     /// Photos edited while their original was out of reach (its drive unplugged), whose sidecar
