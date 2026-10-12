@@ -43,6 +43,8 @@ enum DevelopPresetFile {
         let format: String
         /// Lightroom's value minus this is ours (see `detailOffsets`).
         var offset: Double = 0
+        /// Keys read when `key` isn't there: what earlier versions of this app wrote.
+        var aliases: [String] = []
     }
 
     /// Detail here sits on top of the RAW engine's own sharpening and color noise reduction,
@@ -86,17 +88,22 @@ enum DevelopPresetFile {
             Scalar(key: "BlueHue", path: \.blueHue, field: .calibration, format: "%+.0f"),
             Scalar(key: "BlueSaturation", path: \.blueSaturation, field: .calibration, format: "%+.0f"),
             Scalar(key: "ColorGradeBlending", path: \.grading.blending, field: .colorGrading, format: "%.0f"),
-            Scalar(key: "ColorGradeBalance", path: \.grading.balance, field: .colorGrading, format: "%+.0f"),
+            Scalar(key: "SplitToningBalance", path: \.grading.balance, field: .colorGrading, format: "%+.0f",
+                   aliases: ["ColorGradeBalance"]),
         ]
-        let regions: [(String, WritableKeyPath<DevelopSettings, ColorGrading.Grade>)] = [
-            ("Shadow", \.grading.shadows), ("Midtone", \.grading.midtones),
-            ("Highlight", \.grading.highlights), ("Global", \.grading.global),
+        // Lightroom keeps the shadows' and highlights' tints, and the balance, as the split toning
+        // that color grading grew out of (which older presets have alone)
+        let regions: [(String, WritableKeyPath<DevelopSettings, ColorGrading.Grade>, splitToning: Bool)] = [
+            ("Shadow", \.grading.shadows, true), ("Midtone", \.grading.midtones, false),
+            ("Highlight", \.grading.highlights, true), ("Global", \.grading.global, false),
         ]
-        for (name, grade) in regions {
-            list.append(Scalar(key: "ColorGrade\(name)Hue", path: grade.appending(path: \.hue), field: .colorGrading,
-                               format: "%.0f"))
-            list.append(Scalar(key: "ColorGrade\(name)Sat", path: grade.appending(path: \.saturation),
-                               field: .colorGrading, format: "%.0f"))
+        for (name, grade, splitToning) in regions {
+            let hue = "ColorGrade\(name)Hue", saturation = "ColorGrade\(name)Sat"
+            list.append(Scalar(key: splitToning ? "SplitToning\(name)Hue" : hue, path: grade.appending(path: \.hue),
+                               field: .colorGrading, format: "%.0f", aliases: splitToning ? [hue] : []))
+            list.append(Scalar(key: splitToning ? "SplitToning\(name)Saturation" : saturation,
+                               path: grade.appending(path: \.saturation), field: .colorGrading, format: "%.0f",
+                               aliases: splitToning ? [saturation] : []))
             list.append(Scalar(key: "ColorGrade\(name)Lum", path: grade.appending(path: \.luminance),
                                field: .colorGrading, format: "%+.0f"))
         }
@@ -263,19 +270,9 @@ enum DevelopPresetFile {
             }
         }
         for scalar in scalars {
-            guard let value = number(scalar.key) else { continue }
+            guard let value = number(scalar.key) ?? scalar.aliases.lazy.compactMap(number).first else { continue }
             settings[keyPath: scalar.path] = scalar.offset > 0 ? max(0, value - scalar.offset) : value
             fields.insert(scalar.field)
-        }
-        // Lightroom's older split toning, where color grading isn't there
-        if number("ColorGradeShadowHue") == nil, number("SplitToningShadowHue") != nil
-            || number("SplitToningHighlightHue") != nil {
-            settings.grading.shadows.hue = number("SplitToningShadowHue") ?? 0
-            settings.grading.shadows.saturation = number("SplitToningShadowSaturation") ?? 0
-            settings.grading.highlights.hue = number("SplitToningHighlightHue") ?? 0
-            settings.grading.highlights.saturation = number("SplitToningHighlightSaturation") ?? 0
-            settings.grading.balance = number("SplitToningBalance") ?? 0
-            fields.insert(.colorGrading)
         }
         if let lateral = values["AutoLateralCA"] {
             settings.removeChromaticAberration = lateral == "1"
