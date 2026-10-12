@@ -26,6 +26,34 @@ final class FolderWatchTests: CatalogTestCase {
         XCTAssertEqual(try store.loadAssets().filter { $0.localPath == photo.path }.count, 1)
     }
 
+    /// A photo removed from the catalog in an earlier session: its file is still in the watched
+    /// folder, and the next launch's rescan leaves it out.
+    @MainActor
+    func testRescanAfterRelaunchLeavesRemovedPhotoOut() async throws {
+        let source = scratch.appendingPathComponent("Source")
+        let photo = source.appendingPathComponent("removed.jpg")
+        try makeTestJPEG(at: photo, shade: 5)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+        var removed = try XCTUnwrap(ImportCoordinator(store: store)
+            .importFiles([photo], from: source, sourceRootId: "source-1", folderName: "Source").first)
+        removed.rating = 3
+        removed.deleted = true
+        try store.upsert([removed])
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        try await rescanToCompletion(app)
+
+        XCTAssertFalse(app.assets.contains { !$0.deleted && $0.localPath == photo.path }, "the removed photo stays out")
+        let row = try store.db.query("SELECT deleted, rating FROM assets WHERE id=?;", [.text(removed.id)]).first
+        XCTAssertEqual(row?.bool("deleted"), true)
+        XCTAssertEqual(row?.int("rating"), 3)
+        XCTAssertEqual(try store.db.query("SELECT id FROM assets;").count, 1)
+    }
+
     /// A photo listed twice (as the nested-folder rescan used to leave it) whose original goes
     /// missing is flagged, not a crash.
     @MainActor

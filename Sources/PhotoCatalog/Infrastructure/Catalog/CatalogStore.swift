@@ -1491,6 +1491,15 @@ final class CatalogStore: @unchecked Sendable {
         return (row.text("local_path"), row.bool("deleted"))
     }
 
+    /// Where the originals of photos removed from the catalog are (virtual copies aside): files
+    /// folder watching leaves alone, as only an import brings a removed photo back.
+    func removedLocalPaths() throws -> Set<String> {
+        Set(try db.query("""
+        SELECT local_path FROM assets
+        WHERE deleted=1 AND is_demo=0 AND master_id IS NULL AND local_path IS NOT NULL;
+        """).compactMap { $0.text("local_path") })
+    }
+
     /// Photos removed from the catalog whose originals lie in `folder`: a removed photo keeps
     /// its id, which an import finds again for a file at the photo's path.
     func removedAssetIds(under folder: URL) throws -> Set<String> {

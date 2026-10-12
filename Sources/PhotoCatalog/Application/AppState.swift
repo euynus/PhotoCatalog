@@ -4365,7 +4365,13 @@ final class AppState {
                         }
                     }
                 }
-                let knownPaths = Set(knownAssetsByPath.keys)
+                var knownPaths = Set(knownAssetsByPath.keys)
+                // a photo removed from the catalog stays removed: its file isn't a new one (only an
+                // import brings it back). Removed in an earlier session, it isn't in `snapshot`.
+                for asset in snapshot where asset.deleted && !asset.isVirtualCopy {
+                    if let path = asset.localPath { knownPaths.insert(path) }
+                }
+                knownPaths.formUnion((try? store.removedLocalPaths()) ?? [])
                 var fresh: [Asset] = []
                 var changed: [Asset] = []
                 // a folder watched inside another is walked by both: each file goes to the first
