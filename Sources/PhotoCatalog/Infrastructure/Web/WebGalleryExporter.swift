@@ -16,27 +16,28 @@ struct WebGalleryPhoto: Sendable {
 }
 
 enum WebGalleryExporter {
-    /// Writes the gallery into a new folder named `name` inside `parent` (" 2", " 3" … when
-    /// taken): `index.html`, and `images/large` and `images/thumbs` of sRGB JPEGs rendered with
-    /// each photo's develop settings, without metadata. Returns the page; nil when cancelled
-    /// or it couldn't be written, leaving nothing behind.
+    /// Writes the gallery into a new folder named after `name` (see `folderName`) inside `parent`
+    /// (" 2", " 3" … when taken): `index.html`, and `images/large` and `images/thumbs` of sRGB
+    /// JPEGs rendered with each photo's develop settings, without metadata. Returns the page;
+    /// nil when cancelled or it couldn't be written, leaving nothing behind.
     static func export(_ photos: [WebGalleryPhoto], settings: WebGallerySettings, name: String, in parent: URL,
                        progress: @escaping @Sendable (Double) -> Void, cancelled: @escaping @Sendable () -> Bool) -> URL? {
         let fm = FileManager.default
-        var folder = parent.appendingPathComponent(name, isDirectory: true)
+        let base = folderName(name)
+        var folder = parent.appendingPathComponent(base, isDirectory: true)
         var suffix = 2
         while fm.fileExists(atPath: folder.path) {
-            folder = parent.appendingPathComponent("\(name) \(suffix)", isDirectory: true)
+            folder = parent.appendingPathComponent("\(base) \(suffix)", isDirectory: true)
             suffix += 1
         }
-        let large = folder.appendingPathComponent("images/large", isDirectory: true)
-        let thumbs = folder.appendingPathComponent("images/thumbs", isDirectory: true)
-        guard (try? fm.createDirectory(at: large, withIntermediateDirectories: true)) != nil,
-              (try? fm.createDirectory(at: thumbs, withIntermediateDirectories: true)) != nil else { return nil }
         func abandon() -> URL? {
             try? fm.removeItem(at: folder)
             return nil
         }
+        let large = folder.appendingPathComponent("images/large", isDirectory: true)
+        let thumbs = folder.appendingPathComponent("images/thumbs", isDirectory: true)
+        guard (try? fm.createDirectory(at: large, withIntermediateDirectories: true)) != nil,
+              (try? fm.createDirectory(at: thumbs, withIntermediateDirectories: true)) != nil else { return abandon() }
         var pages: [WebGalleryPage.Photo] = []
         for (index, photo) in photos.enumerated() {
             guard !cancelled() else { return abandon() }
@@ -57,6 +58,15 @@ enum WebGalleryExporter {
                                        theme: settings.theme, photos: pages)
         guard (try? html.write(to: page, atomically: true, encoding: .utf8)) != nil else { return abandon() }
         return page
+    }
+
+    /// The gallery folder's name for `name`: always one folder, never a path ("2024/25" is
+    /// "2024-25"), and never hidden (leading dots dropped).
+    static func folderName(_ name: String) -> String {
+        var cleaned = Substring(FileNameTemplate.sanitized(name))
+        while cleaned.hasPrefix(".") { cleaned = cleaned.dropFirst() }
+        let trimmed = cleaned.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? L("网页画廊") : trimmed
     }
 
     private static let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!

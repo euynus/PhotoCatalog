@@ -17,10 +17,15 @@ enum FileNameTemplate {
             .replacingOccurrences(of: "{camera}", with: camera)
             .replacingOccurrences(of: "{title}", with: title)
             .replacingOccurrences(of: "{rating}", with: L("\(rating)星"))
-        let illegal = CharacterSet(charactersIn: "/\\:?%*|\"<>").union(.newlines)
-        let cleaned = name.components(separatedBy: illegal).joined(separator: "-")
-            .trimmingCharacters(in: .whitespaces)
+        let cleaned = sanitized(name)
         return cleaned.isEmpty ? original : cleaned
+    }
+
+    /// `name` as one file or folder name: path separators and the other characters a name
+    /// can't hold everywhere (`:` `?` `*` `"` …, line breaks) become "-", ends trimmed.
+    static func sanitized(_ name: String) -> String {
+        let illegal = CharacterSet(charactersIn: "/\\:?%*|\"<>").union(.newlines)
+        return name.components(separatedBy: illegal).joined(separator: "-").trimmingCharacters(in: .whitespaces)
     }
 
     static func format(_ date: Date, _ pattern: String) -> String {
