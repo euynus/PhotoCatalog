@@ -93,38 +93,6 @@ if [[ -n "${UNIVERSAL:-}" ]]; then BUILD_ARGS+=(--arch arm64 --arch x86_64); fi
 swift build "${BUILD_ARGS[@]}"
 BUILD_BINARY="$(swift build "${BUILD_ARGS[@]}" --show-bin-path)/$APP_NAME"
 
-# What Xcode records about the toolchain in the Info.plist; App Store Connect checks the Xcode
-# and SDK versions an upload was built with.
-toolchain_plist_keys() {
-  local xcode_version xcode_build sdk_version sdk_build major minor patch
-  xcode_version="$(xcodebuild -version 2>/dev/null | awk '/^Xcode / {print $2}')" || true
-  [[ -n "$xcode_version" ]] || return 0
-  xcode_build="$(xcodebuild -version | awk '/^Build version / {print $3}')"
-  sdk_version="$(xcrun --sdk "$SDK_PATH" --show-sdk-version)"
-  sdk_build="$(xcrun --sdk "$SDK_PATH" --show-sdk-build-version)"
-  IFS=. read -r major minor patch <<<"$xcode_version"
-  cat <<KEYS
-  <key>BuildMachineOSBuild</key>
-  <string>$(sw_vers -buildVersion)</string>
-  <key>DTCompiler</key>
-  <string>com.apple.compilers.llvm.clang.1_0</string>
-  <key>DTPlatformBuild</key>
-  <string>$sdk_build</string>
-  <key>DTPlatformName</key>
-  <string>macosx</string>
-  <key>DTPlatformVersion</key>
-  <string>$sdk_version</string>
-  <key>DTSDKBuild</key>
-  <string>$sdk_build</string>
-  <key>DTSDKName</key>
-  <string>macosx$sdk_version</string>
-  <key>DTXcode</key>
-  <string>$(printf '%d%d%d' "$major" "${minor:-0}" "${patch:-0}")</string>
-  <key>DTXcodeBuild</key>
-  <string>$xcode_build</string>
-KEYS
-}
-
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
@@ -138,61 +106,9 @@ if [[ -d "$ROOT_DIR/Resources/Models" ]]; then
 fi
 chmod +x "$APP_BINARY"
 
-cat >"$INFO_PLIST" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleExecutable</key>
-  <string>$APP_NAME</string>
-  <key>CFBundleIdentifier</key>
-  <string>$BUNDLE_ID</string>
-  <key>CFBundleName</key>
-  <string>$APP_NAME</string>
-  <key>CFBundleDisplayName</key>
-  <string>$APP_NAME</string>
-  <key>CFBundleInfoDictionaryVersion</key>
-  <string>6.0</string>
-  <key>CFBundleSupportedPlatforms</key>
-  <array>
-    <string>MacOSX</string>
-  </array>
-  <key>CFBundleShortVersionString</key>
-  <string>$APP_VERSION</string>
-  <key>CFBundleVersion</key>
-  <string>$BUILD_NUMBER</string>
-  <key>CFBundleDevelopmentRegion</key>
-  <string>en</string>
-  <key>CFBundleLocalizations</key>
-  <array>
-    <string>en</string>
-    <string>zh-Hans</string>
-  </array>
-  <key>CFBundleIconFile</key>
-  <string>AppIcon.icns</string>
-  <key>CFBundlePackageType</key>
-  <string>APPL</string>
-  <key>LSMinimumSystemVersion</key>
-  <string>$MIN_SYSTEM_VERSION</string>
-  <key>LSApplicationCategoryType</key>
-  <string>public.app-category.photography</string>
-  <key>NSHumanReadableCopyright</key>
-  <string>$COPYRIGHT</string>
-  <!-- HTTPS through the system only: exempt from export compliance documentation -->
-  <key>ITSAppUsesNonExemptEncryption</key>
-  <false/>
-  <key>NSPrincipalClass</key>
-  <string>NSApplication</string>
-  <key>NSAppTransportSecurity</key>
-  <dict>
-    <!-- language models served on this Mac (Ollama, LM Studio) speak plain HTTP -->
-    <key>NSAllowsLocalNetworking</key>
-    <true/>
-  </dict>
-$(toolchain_plist_keys)
-</dict>
-</plist>
-PLIST
+# the bundle's keys, the catalog document type and the toolchain (script/info_plist.sh)
+source "$ROOT_DIR/script/info_plist.sh"
+write_info_plist >"$INFO_PLIST"
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
