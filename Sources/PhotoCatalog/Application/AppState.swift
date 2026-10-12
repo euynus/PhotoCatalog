@@ -2549,10 +2549,10 @@ final class AppState {
     }
 
     @discardableResult
-    private func loadExistingCatalog() -> Error? {
+    private func loadExistingCatalog(creatingIfMissing: Bool = false) -> Error? {
         let url = configuredCatalogURL
         FileAccessService.reach(url)
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        guard creatingIfMissing || FileManager.default.fileExists(atPath: url.path) else { return nil }
         let s: CatalogStore
         do {
             s = try CatalogStore(packageURL: url)
@@ -2930,17 +2930,20 @@ final class AppState {
         }
     }
 
+    /// The configured catalog — created the first time — for an import with none open (Add
+    /// Photo Folder from the Welcome screen), loaded like any catalog opened: the demo photos
+    /// still in memory make way for its own, its albums and Quick Collection with them.
     private func openOrCreateCatalog() {
         guard store == nil else { return }
-        FileAccessService.reach(configuredCatalogURL)
-        do {
-            let s = try CatalogStore(packageURL: configuredCatalogURL)
-            store = s
-            coordinator = ImportCoordinator(store: s)
-            refreshStatusMetrics()
-        } catch {
+        let url = configuredCatalogURL
+        resetCatalog(toDemo: false)
+        let error = loadExistingCatalog(creatingIfMissing: true)
+        guard store != nil else {
+            resetCatalog(toDemo: true)
             push(verbatim: catalogOpenFailureMessage(error, fallback: L("无法创建目录库")), "warning")
+            return
         }
+        setActiveCatalog(url)
     }
 
     func createCatalog() {

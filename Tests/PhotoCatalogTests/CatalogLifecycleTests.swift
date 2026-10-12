@@ -279,4 +279,60 @@ final class CatalogLifecycleTests: XCTestCase {
         XCTAssertTrue(app.hasOpenCatalog, "the catalog is left closed")
         XCTAssertEqual(app.assets.map(\.id), [id], "the catalog as it was before the restore is gone")
     }
+
+    // MARK: - #4 Welcome → Add Photo Folder
+
+    @MainActor
+    func testWelcomeImportLoadsCatalogInsteadOfKeepingDemoSet() async throws {
+        let catalog = try makeCatalog("Default", assets: [0, 1])
+        let firstId = DemoData.assets[0].id, secondId = DemoData.assets[1].id
+        try catalog.store.saveAlbum(Album(id: AppState.quickCollectionID, name: "快捷收藏", assetIds: [firstId]),
+                                    sortOrder: -1)
+        try catalog.store.saveAlbum(Album(id: "al-keep", name: "Keep", assetIds: [firstId, secondId]), sortOrder: 0)
+        let app = makeApp()
+        XCTAssertTrue(app.openCatalog(at: catalog.url))
+        app.closeCatalog()
+        // the configured catalog after Close Catalog (the default library) is this scratch one
+        UserDefaults.standard.set(catalog.url, forKey: "pc_catalogURL")
+        XCTAssertTrue(app.assets.contains { $0.isDemo })
+
+        // Welcome → Add Photo Folder: enters the app, then imports a folder
+        app.onboarded = true
+        let folder = root.appendingPathComponent("Empty Folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        app.importFolder(folder)
+        try await waitUntil("Timed out waiting for the import") { !app.importing }
+
+        XCTAssertTrue(app.hasOpenCatalog)
+        XCTAssertFalse(app.assets.contains { $0.isDemo }, "the demo photos stay beside the catalog's")
+        XCTAssertEqual(Set(app.assets.map(\.id)), [firstId, secondId])
+        XCTAssertEqual(app.quickCollection, [firstId])
+        XCTAssertEqual(app.albums.first { $0.id == "al-keep" }?.assetIds, [firstId, secondId])
+
+        select(secondId, in: app)
+        XCTAssertTrue(app.toggleQuickCollection())
+        XCTAssertEqual(try quickCollection(in: catalog.store), [firstId, secondId],
+                       "Quick Collection overwritten")
+        XCTAssertEqual(try catalog.store.loadAlbums().first { $0.id == "al-keep" }?.assetIds, [firstId, secondId])
+    }
+
+    @MainActor
+    func testFirstRunImportCreatesCatalogWithoutDemoSet() async throws {
+        let url = root.appendingPathComponent("First Run.photolibrary")
+        UserDefaults.standard.set(url, forKey: "pc_catalogURL")
+        let app = makeApp()
+        XCTAssertFalse(app.hasOpenCatalog)
+        XCTAssertTrue(app.assets.contains { $0.isDemo })
+
+        let folder = root.appendingPathComponent("Empty Folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        app.importFolder(folder)
+        try await waitUntil("Timed out waiting for the import") { !app.importing }
+
+        XCTAssertTrue(app.hasOpenCatalog)
+        XCTAssertEqual(app.catalogPath, url.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.appendingPathComponent("catalog.sqlite").path))
+        XCTAssertFalse(app.assets.contains { $0.isDemo }, "the demo photos stay in the new catalog")
+        XCTAssertTrue(app.albums.isEmpty, "the demo albums stay in the new catalog")
+    }
 }
