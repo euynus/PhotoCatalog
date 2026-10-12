@@ -23,7 +23,10 @@ enum PhotoSearch {
 
     private static let chineseExamples = ["猫", "海滩", "日落"]
 
-    static func request(_ query: String, today: Date, vocabulary: Vocabulary, chinese: Bool) -> LLMRequest {
+    static func request(_ query: String, today: Date, timeZone: TimeZone = .current, vocabulary: Vocabulary,
+                        chinese: Bool) -> LLMRequest {
+        // the date on this Mac, as the capture dates the answer is matched against are kept
+        let today = today.captureWallClock(in: timeZone)
         let lastYear = Calendar.captureWallClock.component(.year, from: today) - 1
         // the examples' search words in the catalog's language, or small models answer in English
         let examples = chinese ? chineseExamples : ["cat", "beach", "sunset"]

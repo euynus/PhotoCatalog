@@ -8413,7 +8413,7 @@ final class AppState {
         ListSignature(inputsVersion: listInputsVersion, selection: selection,
                       filters: filters, search: search, sort: sort,
                       collapsed: collapsedStackIds, recentDays: recentImportDays,
-                      captureDay: Calendar.captureWallClock.startOfDay(for: .now))
+                      captureDay: CaptureDates.startOfToday())
     }
 
     private func primeDefaultListCache(with loadedAssets: [Asset]) {

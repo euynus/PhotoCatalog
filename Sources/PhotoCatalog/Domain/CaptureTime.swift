@@ -23,6 +23,14 @@ extension TimeZone {
     static let captureWallClock = TimeZone(identifier: "UTC")!
 }
 
+extension Date {
+    /// This instant (now, a file's date) as a capture time: the wall clock it reads in `zone`,
+    /// anchored to UTC like capture dates, so it compares with what a camera records.
+    func captureWallClock(in zone: TimeZone = .current) -> Date {
+        addingTimeInterval(TimeInterval(zone.secondsFromGMT(for: self)))
+    }
+}
+
 enum CaptureDateSource {
     /// Where a capture time came from, in the user's language. The catalog stores the Chinese
     /// names (and EXIF tag names, shown as they are), so only the display is translated.

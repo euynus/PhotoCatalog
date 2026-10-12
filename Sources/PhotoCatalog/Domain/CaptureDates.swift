@@ -48,8 +48,16 @@ enum CaptureDates {
         return DateInterval(start: first, end: nextDay)
     }
 
-    static func presetInterval(_ preset: String, now: Date = .now) -> DateInterval? {
+    /// Today as a capture day: this Mac's date, not UTC's (which is still yesterday from midnight
+    /// to 08:00 in China).
+    static func startOfToday(now: Date = .now, timeZone: TimeZone = .current) -> Date {
+        Calendar.captureWallClock.startOfDay(for: now.captureWallClock(in: timeZone))
+    }
+
+    /// `now` is an instant; the windows are of capture days, counted from this Mac's today.
+    static func presetInterval(_ preset: String, now instant: Date = .now, timeZone: TimeZone = .current) -> DateInterval? {
         let calendar = Calendar.captureWallClock
+        let now = instant.captureWallClock(in: timeZone)
         switch preset {
         case "thisMonth": return calendar.dateInterval(of: .month, for: now)
         case "thisYear": return calendar.dateInterval(of: .year, for: now)

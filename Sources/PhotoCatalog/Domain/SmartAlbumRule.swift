@@ -67,9 +67,10 @@ enum SmartFields {
 }
 
 enum SmartMatcher {
-    static func matchesDatePreset(_ assetDate: Date, _ preset: String, now: Date = .now) -> Bool {
+    static func matchesDatePreset(_ assetDate: Date, _ preset: String, now: Date = .now,
+                                  timeZone: TimeZone = .current) -> Bool {
         if preset == "any" { return true }
-        guard let interval = CaptureDates.presetInterval(preset, now: now) else { return false }
+        guard let interval = CaptureDates.presetInterval(preset, now: now, timeZone: timeZone) else { return false }
         return CaptureDates.contains(assetDate, in: interval)
     }
 

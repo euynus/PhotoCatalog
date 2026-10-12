@@ -14,10 +14,12 @@ enum CaptureAnalysisCheck {
                && CaptureDates.interval(for: "2024-02-30") == nil,
                "date keys reject invalid calendar dates")
         assert(CaptureDates.key(day.start) == "2024-02-29", "date keys use capture wall-clock")
-        assert(CaptureDates.presetInterval("today", now: day.end)?.start == day.end
-               && CaptureDates.presetInterval("yesterday", now: day.end)?.start == day.start
-               && CaptureDates.presetInterval("last7Days", now: day.end)?.start == CaptureDates.interval(for: "2024-02-24")?.start
-               && CaptureDates.presetInterval("last30Days", now: day.end)?.start == CaptureDates.interval(for: "2024-02-01")?.start,
+        // "now" is an instant read on this Mac's clock; pinned to UTC it is midnight starting 1 March anywhere
+        let utc = TimeZone.captureWallClock
+        assert(CaptureDates.presetInterval("today", now: day.end, timeZone: utc)?.start == day.end
+               && CaptureDates.presetInterval("yesterday", now: day.end, timeZone: utc)?.start == day.start
+               && CaptureDates.presetInterval("last7Days", now: day.end, timeZone: utc)?.start == CaptureDates.interval(for: "2024-02-24")?.start
+               && CaptureDates.presetInterval("last30Days", now: day.end, timeZone: utc)?.start == CaptureDates.interval(for: "2024-02-01")?.start,
                "relative date windows include today and cross leap-month boundaries")
         let invalid = Filters(date: "custom", dateStart: day.end, dateEnd: day.start)
         assert(invalid.captureDateInterval() == nil, "reversed custom ranges have no valid interval")
