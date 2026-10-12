@@ -2312,6 +2312,9 @@ final class AppState {
     var sheet: String? {
         didSet {
             if sheet != "smart" { smartAlbumEditingID = nil }
+            // closed by Cancel, Esc or anything else: the search it started stops, and a reply
+            // that comes anyway sets no filter and closes no dialog opened since
+            if oldValue == "naturalSearch", sheet != "naturalSearch" { cancelNaturalSearch() }
         }
     }
     var smartAlbumEditingID: String?
@@ -5169,11 +5172,27 @@ final class AppState {
     var naturalSearchRunning = false
     /// The last sentence searched for, to start the dialog with.
     var naturalSearchQuery = ""
+    @ObservationIgnored private var naturalSearchTask: Task<Void, Never>?
 
     /// 编辑 → 用自然语言查找…
     func showNaturalSearch() {
         guard onboarded, sheet == nil else { return }
         sheet = "naturalSearch"
+    }
+
+    /// The dialog's 查找: the search, which closes the dialog once it shows. Cancel, Esc, or the
+    /// dialog closing any other way cancels it (see `sheet`).
+    func startNaturalSearch(_ query: String) {
+        naturalSearchTask?.cancel()
+        naturalSearchTask = Task { [weak self] in
+            guard let self, await self.searchNaturally(query), self.sheet == "naturalSearch" else { return }
+            self.sheet = nil
+        }
+    }
+
+    private func cancelNaturalSearch() {
+        naturalSearchTask?.cancel()
+        naturalSearchTask = nil
     }
 
     /// What the catalog holds, for the model to pick from: cameras, lenses and keywords by how
@@ -5203,6 +5222,8 @@ final class AppState {
         do {
             let reply = try await askLLM(PhotoSearch.request(query, today: .now, vocabulary: vocabulary,
                                                              chinese: PhotoDescriber.answersInChinese))
+            // cancelled with its dialog: a reply that comes anyway changes nothing
+            guard !Task.isCancelled else { return false }
             guard let interpretation = PhotoSearch.parse(reply, vocabulary: vocabulary, query: query) else {
                 push("没能理解这句话，请换个说法", "warning")
                 return false
@@ -5214,6 +5235,8 @@ final class AppState {
             push("按“\(query)”找到 \(list.count) 张照片", "sparkles")
             return true
         } catch {
+            // the request stopped because its dialog closed: nothing to report
+            guard !Task.isCancelled else { return false }
             push(verbatim: (error as? LLMError)?.message ?? error.localizedDescription, "warning")
             return false
         }

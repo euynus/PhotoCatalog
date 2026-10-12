@@ -66,8 +66,6 @@ struct NaturalSearchSheet: View {
 
     private func search() {
         guard canSearch else { return }
-        Task {
-            if await app.searchNaturally(query) { app.sheet = nil }
-        }
+        app.startNaturalSearch(query)
     }
 }
