@@ -7363,6 +7363,9 @@ final class AppState {
 
     /// The demo catalog, or an empty one, its first photo (if any) selected.
     private func resetCatalog(toDemo demo: Bool) {
+        // the steps put back photos and albums of the catalog being replaced: ⌘Z must not
+        // replay them into the next one (text fields' own steps stay)
+        undoManager?.removeAllActions(withTarget: self)
         duplicateRecomputeGeneration &+= 1
         let a = demo ? DemoData.assets : []
         assets = a
