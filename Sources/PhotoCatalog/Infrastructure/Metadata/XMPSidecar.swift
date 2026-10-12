@@ -267,8 +267,12 @@ enum XMPSidecar {
 
     /// The sidecar's modification time, or nil when there's none.
     static func modificationTime(forOriginal path: String) -> Double? {
-        let sidecar = sidecarURL(for: URL(fileURLWithPath: path))
-        return ((try? FileManager.default.attributesOfItem(atPath: sidecar.path))?[.modificationDate] as? Date)?
+        modificationTime(of: sidecarURL(for: URL(fileURLWithPath: path)))
+    }
+
+    /// A sidecar's modification time (seconds since 1970), or nil when it isn't there.
+    static func modificationTime(of sidecar: URL) -> Double? {
+        ((try? FileManager.default.attributesOfItem(atPath: sidecar.path))?[.modificationDate] as? Date)?
             .timeIntervalSince1970
     }
 
