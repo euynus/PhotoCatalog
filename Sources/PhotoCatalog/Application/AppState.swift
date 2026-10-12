@@ -4543,6 +4543,7 @@ final class AppState {
             }
             if didChange { self.replaceAssetsForMutation(updated) }
             self.updateFolderStatusesFromAssets()
+            self.flushPendingXMPWrites()
         }
     }
 
@@ -7600,6 +7601,7 @@ final class AppState {
         // sidecar state is the catalog's (a loaded one reads its own)
         xmpSyncTimes = [:]
         externallyChangedXMPIds = []
+        pendingXMPWriteIds = []
         sourceRootPathsById = [:]
         sourceManagementModesById = [:]
         duplicateGroupsCache = demo ? DemoData.duplicateGroups : []
@@ -7760,17 +7762,49 @@ final class AppState {
         let writer = automaticXMPWriter
         let baselines = Dictionary(changed.compactMap { asset in xmpSyncTimes[asset.id].map { (asset.id, $0) } },
                                    uniquingKeysWith: { $1 })
-        Task { [weak self, writer, changed, sequence, baselines] in
+        let catalogURL = store?.packageURL
+        Task { [weak self, writer, changed, sequence, baselines, catalogURL] in
             let result = await writer.write(changed, sequence: sequence, baselines: baselines)
             self?.recordXMPSync(result.written)
             // another app's change waits to be read rather than being written over
             if let self, !result.changedElsewhere.isEmpty {
                 self.externallyChangedXMPIds.formUnion(result.changedElsewhere)
             }
+            // an original on a drive that's away gets its sidecar once it's back
+            if let self, self.store?.packageURL == catalogURL {
+                self.pendingXMPWriteIds.subtract(result.written.keys)
+                self.pendingXMPWriteIds.subtract(result.changedElsewhere)
+                self.pendingXMPWriteIds.formUnion(result.unavailable)
+            }
             guard result.failures > 0 else { return }
             self?.push("\(result.failures) 个 XMP 附属文件写入失败", "warning")
         }
     }
+
+    /// Photos edited while their original was out of reach (its drive unplugged), whose sidecar
+    /// is still to be written.
+    @ObservationIgnored private var pendingXMPWriteIds: Set<String> = []
+
+    /// Writes the sidecars held back while their originals were out of reach, for those back now.
+    private func flushPendingXMPWrites() {
+        guard autoWriteXMPSidecar, !pendingXMPWriteIds.isEmpty else { return }
+        let fm = FileManager.default
+        var back: [Asset] = []
+        for id in pendingXMPWriteIds {
+            // a photo removed from the catalog meanwhile has nothing left to write
+            guard let index = assetIndex[id], !assets[index].deleted else {
+                pendingXMPWriteIds.remove(id)
+                continue
+            }
+            guard let path = assets[index].localPath, fm.fileExists(atPath: path) else { continue }
+            pendingXMPWriteIds.remove(id)
+            back.append(assets[index])
+        }
+        enqueueAutomaticXMPWrite(back)
+    }
+
+    /// For checks: whether a photo's sidecar waits for its original to be back.
+    func xmpWriteIsPending(for id: String) -> Bool { pendingXMPWriteIds.contains(id) }
 
     // ---------- toasts ----------
     /// A toast in the user's language (see `L`).

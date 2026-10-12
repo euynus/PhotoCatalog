@@ -8,13 +8,15 @@ actor AutomaticXMPWriter {
     private var ownWriteTimes: [String: Double] = [:]
 
     /// Writes each photo's sidecar; returns the failures, each written sidecar's new
-    /// modification time (so our own writes never read as another app's changes), and the
-    /// photos left alone because another app changed their sidecar since `baselines`.
+    /// modification time (so our own writes never read as another app's changes), the photos
+    /// left alone because another app changed their sidecar since `baselines`, and those whose
+    /// original is out of reach (its drive unplugged), to write once it's back.
     func write(_ assets: [Asset], sequence: UInt64, baselines: [String: Double] = [:])
-        -> (failures: Int, written: [String: Double], changedElsewhere: Set<String>) {
+        -> (failures: Int, written: [String: Double], changedElsewhere: Set<String>, unavailable: Set<String>) {
         var failures = 0
         var written: [String: Double] = [:]
         var changedElsewhere = Set<String>()
+        var unavailable = Set<String>()
         for asset in assets {
             let latest = latestSequenceByAssetID[asset.id] ?? 0
             guard sequence >= latest else { continue }
@@ -28,16 +30,20 @@ actor AutomaticXMPWriter {
                 if let sidecar, let time { ownWriteTimes[sidecar.path] = time }
             case .changedElsewhere: changedElsewhere.insert(asset.id)
             case .failed: failures += 1
+            case .unavailable: unavailable.insert(asset.id)
             case .skipped: break
             }
         }
-        return (failures, written, changedElsewhere)
+        return (failures, written, changedElsewhere, unavailable)
     }
 
     enum Outcome: Equatable {
         case written(Double?)
         case changedElsewhere
         case failed
+        /// The original isn't there to write beside (its drive is unplugged, say).
+        case unavailable
+        /// Nothing to write: a demo photo, a virtual copy, one removed from the catalog.
         case skipped
     }
 
@@ -47,8 +53,8 @@ actor AutomaticXMPWriter {
     nonisolated static func writeUnlessChanged(_ asset: Asset, baseline: Double?, ownWrite: Double? = nil,
                                                sidecar: URL? = nil) -> Outcome {
         // a virtual copy shares its master's sidecar and never writes it, as in Lightroom
-        guard !asset.deleted, !asset.isDemo, !asset.isVirtualCopy, let path = asset.localPath,
-              FileManager.default.fileExists(atPath: path) else { return .skipped }
+        guard !asset.deleted, !asset.isDemo, !asset.isVirtualCopy, let path = asset.localPath else { return .skipped }
+        guard FileManager.default.fileExists(atPath: path) else { return .unavailable }
         let sidecar = sidecar ?? XMPSidecar.sidecarURL(for: URL(fileURLWithPath: path))
         if let known = [baseline, ownWrite].compactMap({ $0 }).max(),
            let time = XMPSidecar.modificationTime(of: sidecar), abs(time - known) > 1 {

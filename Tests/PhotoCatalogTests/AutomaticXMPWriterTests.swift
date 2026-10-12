@@ -140,4 +140,42 @@ final class AutomaticXMPWriterTests: CatalogTestCase {
         app.checkExternalXMPChangesNow()
         XCTAssertEqual(app.externallyChangedXMPIds, [])
     }
+
+    /// An edit made while the photo's drive is away is written to its sidecar once the original
+    /// is back (the availability check that follows a mount finds it).
+    @MainActor
+    func testEditWhileOriginalIsAwayIsWrittenWhenItIsBack() async throws {
+        let source = scratch.appendingPathComponent("Source")
+        let original = source.appendingPathComponent("away.jpg")
+        try makeTestJPEG(at: original, shade: 5)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+        let imported = try XCTUnwrap(ImportCoordinator(store: store)
+            .importFiles([original], from: source, sourceRootId: "source-1", folderName: "Source").first)
+        try store.upsert([imported])
+        let sidecar = XMPSidecar.sidecarURL(for: original)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.autoWriteXMPSidecar = true
+        let parked = scratch.appendingPathComponent("parked.jpg")
+        try FileManager.default.moveItem(at: original, to: parked)
+
+        XCTAssertTrue(app.setRating(4, on: [imported.id]))
+        try await waitUntil("the write waits for the original") { app.xmpWriteIsPending(for: imported.id) }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sidecar.path), "nothing to write beside yet")
+        app.detectMissingRealAssets()
+        try await waitUntil("the check notices the original is away") {
+            app.asset(id: imported.id)?.status == .missing
+        }
+        XCTAssertTrue(app.xmpWriteIsPending(for: imported.id), "still waiting while the original is away")
+
+        try FileManager.default.moveItem(at: parked, to: original)
+        app.detectMissingRealAssets()
+        try await waitUntil("the edit reaches the sidecar") { XMPSidecar.read(sidecar)?.rating == 4 }
+        XCTAssertFalse(app.xmpWriteIsPending(for: imported.id))
+        XCTAssertEqual(app.externallyChangedXMPIds, [])
+    }
 }
