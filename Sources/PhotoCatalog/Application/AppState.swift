@@ -3468,7 +3468,7 @@ final class AppState {
         let target = status.folder.appendingPathComponent(tetherNamer.name(for: shot.originalName))
         status.working = true
         tether = status
-        let folder = status.folder, root = tetherRoot
+        let folder = status.folder, root = tetherRoot, catalog = store
         let vision = visionEnabled, previewSize = previewMaxPixel, readXMP = readXMPSidecar
         Task { [weak self] in
             let imported = await Task.detached(priority: .userInitiated) { () -> [Asset]? in
@@ -3477,7 +3477,9 @@ final class AppState {
                                                readSidecar: readXMP, previewMaxPixel: previewSize,
                                                sourceRootId: root?.id, folderName: root?.name)
             }.value
-            guard let self else { return }
+            // its catalog was closed meanwhile (and the session with it): the shot stays in the
+            // session's folder, out of whichever catalog is open now
+            guard let self, self.store === catalog else { return }
             if self.tether?.folder == folder { self.tether?.working = false }
             if let imported, !imported.isEmpty {
                 self.addTetheredShots(imported, folder: folder, name: target.lastPathComponent)
@@ -7320,6 +7322,9 @@ final class AppState {
     }
 
     private func closeCurrentCatalog() {
+        // a session imports into the catalog it started in; ended first, so the folder it hands
+        // to the watcher goes with the rest below
+        endTether()
         invalidateDescriptionReview()
         captureStatisticsTask?.cancel()
         captureStatisticsTask = nil
