@@ -54,6 +54,90 @@ final class PeopleTests: CatalogTestCase {
         XCTAssertEqual(app.people.first?.faceIds.count, 2, "undo names the faces again")
     }
 
+    // ---------- undoing a name takes back only the keywords it added ----------
+
+    @MainActor
+    func testUndoingANameKeepsThePersonKeywordThePhotoAlreadyHad() throws {
+        let (app, store, ids) = try appWithFaces([face("y0", on: 0)], keywords: [0: ["人物/小刚", "海"]])
+
+        step { app.nameFaces(["y0"], as: "小刚") }
+        XCTAssertEqual(app.people.map(\.name), ["小刚"])
+        undo.undo()
+
+        XCTAssertNil(app.face("y0")?.person, "undo takes the name back")
+        XCTAssertEqual(app.asset(id: ids[0])?.keywords, ["人物", "人物/小刚", "海"],
+                       "the photo keeps the person keyword it had before")
+        XCTAssertEqual(try store.loadAssets().first { $0.id == ids[0] }?.keywords, ["人物", "人物/小刚", "海"],
+                       "in the catalog too")
+    }
+
+    @MainActor
+    func testUndoingAConfirmationKeepsThePersonKeywordThePhotoAlreadyHad() throws {
+        let (app, store, ids) = try appWithFaces([face("s0", on: 0, person: "小刚", confirmed: false)],
+                                                 keywords: [0: ["人物/小刚"]])
+
+        step { app.confirmFaces(of: "小刚") }
+        XCTAssertEqual(app.face("s0")?.confirmed, true)
+        undo.undo()
+
+        XCTAssertEqual(app.face("s0")?.confirmed, false, "undo takes the confirmation back")
+        XCTAssertEqual(app.asset(id: ids[0])?.keywords, ["人物", "人物/小刚"], "the photo keeps its person keyword")
+        XCTAssertEqual(try store.loadAssets().first { $0.id == ids[0] }?.keywords, ["人物", "人物/小刚"])
+    }
+
+    @MainActor
+    func testUndoingANameTakesBackOnlyTheKeywordItAdded() throws {
+        let (app, store, ids) = try appWithFaces([face("x1", on: 1)])
+
+        step { app.nameFaces(["x1"], as: "小明") }
+        XCTAssertEqual(app.asset(id: ids[1])?.keywords, ["人物", "人物/小明"], "naming tags the photo")
+        // a keyword arriving without an undo step of its own, as from a sidecar read
+        XCTAssertTrue(app.mutate([ids[1]]) { $0.keywords.append("海") })
+        undo.undo()
+
+        XCTAssertEqual(app.asset(id: ids[1])?.keywords, ["海"], "undo takes the person keyword back, and only it")
+        XCTAssertEqual(try store.loadAssets().first { $0.id == ids[1] }?.keywords, ["海"])
+        undo.redo()
+        XCTAssertEqual(app.face("x1")?.person, "小明", "redo names the face again")
+        XCTAssertEqual(Set(app.asset(id: ids[1])?.keywords ?? []), ["人物", "人物/小明", "海"], "and tags the photo again")
+    }
+
+    @MainActor
+    func testUndoingNotThisPersonPutsTheKeywordBack() throws {
+        let (app, _, ids) = try appWithFaces([face("x1", on: 1)])
+        step { app.nameFaces(["x1"], as: "小明") }
+
+        step { app.removeFaceFromPerson("x1") }
+        XCTAssertEqual(app.asset(id: ids[1])?.keywords, [], "the photo loses the keyword with its only face")
+        undo.undo()
+
+        XCTAssertEqual(app.face("x1")?.person, "小明")
+        XCTAssertEqual(app.asset(id: ids[1])?.keywords, ["人物", "人物/小明"], "undo puts the keyword back")
+    }
+
+    @MainActor
+    func testUndoingARenameOrDeleteOfATaggedPersonPutsNamesAndKeywordsBack() throws {
+        let (app, store, ids) = try appWithFaces([face("x0", on: 0), face("x1", on: 1)])
+        step { app.nameFaces(["x0", "x1"], as: "小明") }
+
+        step { app.renamePerson("小明", to: "明明") }
+        XCTAssertEqual(app.asset(id: ids[0])?.keywords, ["人物", "人物/明明"])
+        undo.undo()
+        XCTAssertEqual(app.people.map(\.name), ["小明"], "undoing a rename takes the old name back")
+        XCTAssertEqual(app.asset(id: ids[0])?.keywords, ["人物", "人物/小明"], "and the old keyword")
+        undo.redo()
+        XCTAssertEqual(app.people.map(\.name), ["明明"], "redo renames again")
+        XCTAssertEqual(app.asset(id: ids[1])?.keywords, ["人物", "人物/明明"])
+
+        step { app.deletePerson("明明") }
+        XCTAssertTrue(app.people.isEmpty)
+        XCTAssertEqual(app.asset(id: ids[0])?.keywords, [])
+        undo.undo()
+        XCTAssertEqual(app.people.first?.photoCount, 2, "undoing a delete names the faces again")
+        XCTAssertEqual(app.asset(id: ids[0])?.keywords, ["人物", "人物/明明"], "and tags their photos again")
+        XCTAssertEqual(try store.loadAssets().first { $0.id == ids[1] }?.keywords, ["人物", "人物/明明"])
+    }
+
     // ---------- fixture ----------
 
     /// One undo step, as one user action makes.

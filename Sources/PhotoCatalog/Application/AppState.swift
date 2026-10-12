@@ -9838,18 +9838,67 @@ final class AppState {
         }
     }
 
+    private typealias FaceStates = [String: (person: String?, confirmed: Bool)]
+    /// The person keywords a face step added to and removed from each photo.
+    private typealias PersonKeywordChanges = [String: (added: [String], removed: [String])]
+
     /// Writes face names and keeps photo keywords in step: a photo carries `人物/名字` exactly
     /// when one of its faces is named so.
-    private func setFaceStates(_ changes: [String: (person: String?, confirmed: Bool)], undoName: String?) {
+    private func setFaceStates(_ changes: FaceStates, undoName: String?) {
         guard let store else { return }
-        let before = Dictionary(uniqueKeysWithValues: changes.keys.compactMap { id in
+        let before = faceStates(changes.keys)
+        guard let touched = writeFaceStates(changes, to: store) else { return }
+        let keywords = syncPersonKeywords(for: touched.assetIds, names: touched.names)
+        registerFaceUndo(restoring: before, keywords: keywords, takingBack: true, undoName: undoName)
+    }
+
+    /// Undo and redo of a face step: the faces as they were, and the keyword changes the step
+    /// made taken back (or made again). Matching keywords to the faces afresh instead took a
+    /// person keyword off a photo that had it before the step.
+    private func replayFaceStep(_ states: FaceStates, keywords: PersonKeywordChanges, takingBack: Bool,
+                                undoName: String) {
+        guard let store else { return }
+        let before = faceStates(states.keys)
+        guard writeFaceStates(states, to: store) != nil else { return }
+        if !keywords.isEmpty {
+            mutate(Set(keywords.keys)) { asset in
+                guard let change = keywords[asset.id] else { return }
+                let (add, remove) = takingBack ? (change.removed, change.added) : (change.added, change.removed)
+                asset.keywords = KeywordService.normalize(asset.keywords.filter { !remove.contains($0) } + add)
+            }
+        }
+        registerFaceUndo(restoring: before, keywords: keywords, takingBack: !takingBack, undoName: undoName)
+        refreshFaceClusters()
+    }
+
+    private func registerFaceUndo(restoring states: FaceStates, keywords: PersonKeywordChanges, takingBack: Bool,
+                                  undoName: String?) {
+        guard let undoName, let undoManager else { return }
+        UndoSteps.register(on: undoManager) {
+            undoManager.registerUndo(withTarget: self) { app in
+                MainActor.assumeIsolated {
+                    app.replayFaceStep(states, keywords: keywords, takingBack: takingBack, undoName: undoName)
+                }
+            }
+            undoManager.setActionName(undoName)
+        }
+    }
+
+    private func faceStates(_ ids: some Sequence<String>) -> FaceStates {
+        Dictionary(uniqueKeysWithValues: ids.compactMap { id in
             faces[id].map { (id, (person: $0.person, confirmed: $0.confirmed)) }
         })
+    }
+
+    /// Saves face names and sets them in memory. Returns the photos the faces are in and the
+    /// names involved, or nil when they couldn't be saved.
+    private func writeFaceStates(_ changes: FaceStates, to store: CatalogStore)
+        -> (assetIds: Set<String>, names: Set<String>)? {
         do {
             try store.setFacePeople(changes)
         } catch {
             push("保存人物失败", "warning")
-            return
+            return nil
         }
         var touchedAssets = Set<String>()
         var names = Set<String>()
@@ -9863,24 +9912,14 @@ final class AppState {
             touchedAssets.insert(face.assetId)
         }
         facesRevision &+= 1
-        syncPersonKeywords(for: touchedAssets, names: names)
-        guard let undoName, let undoManager else { return }
-        UndoSteps.register(on: undoManager) {
-            undoManager.registerUndo(withTarget: self) { app in
-                MainActor.assumeIsolated {
-                    app.setFaceStates(before, undoName: undoName)
-                    app.refreshFaceClusters()
-                }
-            }
-            undoManager.setActionName(undoName)
-        }
+        return (touchedAssets, names)
     }
 
     /// Makes the `人物/名字` keywords of `names` match the confirmed faces on each photo (and
     /// its paired JPEG). Suggestions wait for confirmation, and only these names are touched,
-    /// so person keywords typed by hand survive.
-    private func syncPersonKeywords(for assetIds: Set<String>, names: Set<String>) {
-        guard !names.isEmpty else { return }
+    /// so person keywords typed by hand survive. Returns the keywords it changed.
+    private func syncPersonKeywords(for assetIds: Set<String>, names: Set<String>) -> PersonKeywordChanges {
+        guard !names.isEmpty else { return [:] }
         var present: [String: Set<String>] = [:]
         for face in faces.values where assetIds.contains(face.assetId) {
             if face.confirmed, let person = face.person, names.contains(person) {
@@ -9900,7 +9939,10 @@ final class AppState {
             let orphanedRoot = keywords.contains(root) && !keywords.contains { $0.hasPrefix(root + "/") }
             return orphanedRoot || current != Set((wanted[id] ?? []).map(FaceClustering.keyword))
         })
-        guard !changed.isEmpty else { return }
+        guard !changed.isEmpty else { return [:] }
+        let before = Dictionary(uniqueKeysWithValues: changed.compactMap { id in
+            assetIndex[id].map { (id, assets[$0].keywords) }
+        })
         // keywords follow the faces; the face edit carries the undo
         let registered = undoManager
         undoManager = nil
@@ -9912,6 +9954,12 @@ final class AppState {
             asset.keywords = KeywordService.normalize(keywords)
         }
         undoManager = registered
+        var made: PersonKeywordChanges = [:]
+        for (id, old) in before {
+            guard let new = asset(id: id)?.keywords, new != old else { continue }
+            made[id] = (new.filter { !old.contains($0) }, old.filter { !new.contains($0) })
+        }
+        return made
     }
 
     /// Keeps face names in step when a `人物/…` keyword is renamed or deleted from the sidebar.
