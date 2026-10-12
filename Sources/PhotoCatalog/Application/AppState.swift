@@ -7283,11 +7283,10 @@ final class AppState {
     func restoreBackup() {
         // never replace the catalog file while an import task still holds the live connection
         guard !importing else { push("导入中无法恢复备份", "warning"); return }
-        guard let packageURL = store?.packageURL else {
+        guard let backupsURL = store?.backupsURL else {
             push("无目录库可恢复", "warning")
             return
         }
-        let backupsURL = store?.backupsURL
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
@@ -7303,17 +7302,37 @@ final class AppState {
         guard confirmDestructiveAction(L("恢复目录库备份？"),
                                        L("当前目录库数据库会被所选备份替换。应用会先尝试创建一次当前状态备份。"),
                                        L("恢复")) else { return }
+        restoreBackup(from: backup)
+    }
 
+    /// Puts `backup` in place of the open catalog's database, once chosen and confirmed.
+    func restoreBackup(from backup: URL) {
+        guard !importing else { push("导入中无法恢复备份", "warning"); return }
+        guard let packageURL = store?.packageURL else {
+            push("无目录库可恢复", "warning")
+            return
+        }
         do {
+            // scoped, so the live connection closes with the catalog below
+            var current: URL?
             if let store {
                 try store.upsert(assets.filter { !$0.isDemo })
-                _ = try BackupService.backup(store)
+                current = try BackupService.backup(store)
             }
             closeCurrentCatalog()
             resetCatalog(toDemo: true)
             try BackupService.restore(backup, intoPackageAt: packageURL)
+            let error = loadExistingCatalog()
+            guard store == nil else {
+                push("已恢复备份 · \(backup.lastPathComponent)", "check")
+                return
+            }
+            // in place, but it won't open (a newer version's, say): the catalog goes back to how
+            // it was, from the backup just made
+            if let current { try? BackupService.restore(current, intoPackageAt: packageURL) }
+            resetCatalog(toDemo: true)
             loadExistingCatalog()
-            push("已恢复备份 · \(backup.lastPathComponent)", "check")
+            push(verbatim: catalogOpenFailureMessage(error, fallback: L("恢复备份失败")), "warning")
         } catch {
             resetCatalog(toDemo: true)
             loadExistingCatalog()

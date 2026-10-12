@@ -252,4 +252,31 @@ final class CatalogLifecycleTests: XCTestCase {
         XCTAssertTrue(app.externallyChangedXMPIds.isEmpty, "Close Catalog still lists the catalog's changed sidecars")
         XCTAssertNil(app.xmpSyncTime(for: id), "Close Catalog keeps the catalog's sidecar baselines")
     }
+
+    // MARK: - #55 restore snapshot
+
+    @MainActor
+    func testRestoringSnapshotThatWontOpenReportsFailureAndKeepsCatalog() throws {
+        let first = try makeCatalog("First", assets: [0])
+        let id = DemoData.assets[0].id
+        let app = makeApp()
+        XCTAssertTrue(app.openCatalog(at: first.url))
+        // a snapshot from a newer version: a valid backup, but this version can't open it
+        let snapshot = root.appendingPathComponent("catalog-newer.sqlite")
+        do {
+            // closed before it's restored, so its tables are in the file rather than the WAL
+            let db = try Database(path: snapshot.path)
+            try db.execChecked("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT);")
+            try db.execChecked("CREATE TABLE assets (id TEXT PRIMARY KEY);")
+            try db.execChecked("INSERT INTO schema_migrations (version, applied_at) VALUES (\(CatalogStore.latestSchemaVersion + 1), 'x');")
+        }
+
+        app.restoreBackup(from: snapshot)
+
+        let toast = try XCTUnwrap(app.toastCenter.toasts.last)
+        XCTAssertFalse(toast.message.hasPrefix("已恢复备份"), "says restored: \(toast.message)")
+        XCTAssertEqual(toast.icon, "warning")
+        XCTAssertTrue(app.hasOpenCatalog, "the catalog is left closed")
+        XCTAssertEqual(app.assets.map(\.id), [id], "the catalog as it was before the restore is gone")
+    }
 }
