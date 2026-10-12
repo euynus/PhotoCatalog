@@ -38,14 +38,20 @@ enum CaptureDates {
         return calendar.dateInterval(of: component, for: start)
     }
 
+    /// The days from `start` through `end`, both included. A range with one end is open at the
+    /// other ("since September": no end); one with neither is none.
     static func interval(from start: Date?, through end: Date?) -> DateInterval? {
-        guard let start, let end,
-              start.timeIntervalSince1970.isFinite, end.timeIntervalSince1970.isFinite else { return nil }
+        guard start != nil || end != nil,
+              start?.timeIntervalSince1970.isFinite ?? true, end?.timeIntervalSince1970.isFinite ?? true else { return nil }
         let calendar = Calendar.captureWallClock
-        let first = calendar.startOfDay(for: start)
-        let last = calendar.startOfDay(for: end)
-        guard first <= last, let nextDay = calendar.date(byAdding: .day, value: 1, to: last) else { return nil }
-        return DateInterval(start: first, end: nextDay)
+        let first = start.map { calendar.startOfDay(for: $0) } ?? .distantPast
+        var afterLast = Date.distantFuture
+        if let end {
+            guard let nextDay = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: end)) else { return nil }
+            afterLast = nextDay
+        }
+        guard first < afterLast else { return nil }
+        return DateInterval(start: first, end: afterLast)
     }
 
     /// Today as a capture day: this Mac's date, not UTC's (which is still yesterday from midnight

@@ -4,8 +4,7 @@ import SwiftUI
 /// what the library holds, with how many photos each; type, date, GPS and file state under 更多.
 struct FilterBar: View {
     @Environment(AppState.self) var app
-    @State private var startDate = Date.now
-    @State private var endDate = Date.now
+    @State private var range = CaptureRangePickers(Filters(), fallback: .now, today: .now)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -29,8 +28,8 @@ struct FilterBar: View {
             }
             if app.filters.date == "custom" {
                 HStack(spacing: 16) {
-                    DatePicker("起始日期", selection: $startDate, displayedComponents: .date)
-                    DatePicker("结束日期", selection: $endDate, in: startDate..., displayedComponents: .date)
+                    DatePicker("起始日期", selection: $range.start, displayedComponents: .date)
+                    DatePicker("结束日期", selection: $range.end, in: range.start..., displayedComponents: .date)
                     Spacer(minLength: 0)
                 }
                 .controlSize(.small)
@@ -46,11 +45,11 @@ struct FilterBar: View {
         .onAppear { syncDates() }
         .onChange(of: app.filters.dateStart) { syncDates() }
         .onChange(of: app.filters.dateEnd) { syncDates() }
-        .onChange(of: startDate) {
-            if startDate > endDate { endDate = startDate }
+        .onChange(of: range.start) {
+            if range.start > range.end { range.end = range.start }
             applyDateRange()
         }
-        .onChange(of: endDate) { applyDateRange() }
+        .onChange(of: range.end) { applyDateRange() }
     }
 
     @ViewBuilder
@@ -235,23 +234,60 @@ struct FilterBar: View {
     private func setDateFilter(_ value: String) {
         var filters = app.filters
         filters.date = value
-        if value == "custom" {
-            filters.dateStart = filters.dateStart ?? Calendar.captureWallClock.startOfDay(for: app.primary?.date ?? .now)
-            filters.dateEnd = filters.dateEnd ?? filters.dateStart
+        // a range open at one end stays open
+        if value == "custom" && filters.dateStart == nil && filters.dateEnd == nil {
+            filters.dateStart = Calendar.captureWallClock.startOfDay(for: app.primary?.date ?? .now)
+            filters.dateEnd = filters.dateStart
         }
         app.setFilters(filters)
     }
 
     private func syncDates() {
-        startDate = app.filters.dateStart ?? Calendar.captureWallClock.startOfDay(for: app.primary?.date ?? .now)
-        endDate = app.filters.dateEnd ?? startDate
+        range = CaptureRangePickers(app.filters,
+                                    fallback: Calendar.captureWallClock.startOfDay(for: app.primary?.date ?? .now),
+                                    today: CaptureDates.startOfToday())
     }
 
     private func applyDateRange() {
         guard app.filters.date == "custom" else { return }
-        var filters = app.filters
-        filters.dateStart = startDate
-        filters.dateEnd = endDate
+        let filters = range.applied(to: app.filters)
         if filters != app.filters { app.setFilters(filters) }
+    }
+}
+
+/// The custom range's two pickers over `Filters.dateStart` and `dateEnd`. A range can be open at
+/// one end (AI search's "since September"): that end's picker shows a stand-in day, and the end
+/// stays open until its own picker is changed.
+struct CaptureRangePickers: Equatable {
+    var start: Date
+    var end: Date
+    /// The stand-ins shown for open ends.
+    private var openStart: Date?
+    private var openEnd: Date?
+
+    /// `fallback` is the day shown for a range with neither end; an open end shows `today` (or
+    /// the start, if that's later), an open start the fallback (or the end, if that's earlier).
+    init(_ filters: Filters, fallback: Date, today: Date) {
+        switch (filters.dateStart, filters.dateEnd) {
+        case let (start?, nil):
+            self.start = start
+            end = max(today, start)
+            openEnd = end
+        case let (nil, end?):
+            start = min(fallback, end)
+            self.end = end
+            openStart = start
+        default:
+            start = filters.dateStart ?? fallback
+            end = filters.dateEnd ?? start
+        }
+    }
+
+    /// `filters` with the range the pickers show; an end still showing its stand-in stays open.
+    func applied(to filters: Filters) -> Filters {
+        var filters = filters
+        if start != openStart { filters.dateStart = start }
+        if end != openEnd { filters.dateEnd = end }
+        return filters
     }
 }

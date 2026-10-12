@@ -5,6 +5,11 @@ import XCTest
 final class CaptureDateTests: XCTestCase {
     private let china = TimeZone(secondsFromGMT: 8 * 3600)!
     private let newYork = TimeZone(secondsFromGMT: -5 * 3600)!
+    private var folder: URL?
+
+    override func tearDownWithError() throws {
+        if let folder { try? FileManager.default.removeItem(at: folder) }
+    }
 
     private func instant(_ iso: String) throws -> Date {
         try XCTUnwrap(ISO8601DateFormatter().date(from: iso))
@@ -52,5 +57,91 @@ final class CaptureDateTests: XCTestCase {
                                           vocabulary: PhotoSearch.Vocabulary(), chinese: true)
         XCTAssertTrue(request.system.contains("today is 2027-01-01"), request.system)
         XCTAssertTrue(request.system.contains(#""dateStart": "2026-06-01""#), "last year is the local year's")
+    }
+
+    // MARK: - #71 a range with one end is open at the other
+
+    /// Photos taken at noon on each of these days, as catalog photos.
+    private func photos(on days: [String]) throws -> [Asset] {
+        try days.enumerated().map { index, key in
+            var asset = DemoData.assets[index]
+            asset.date = try day(key).start.addingTimeInterval(12 * 3600)
+            asset.isDemo = false
+            asset.deleted = false
+            return asset
+        }
+    }
+
+    func testNaturalSearchWithOnlyAStartDateFindsEverythingSince() throws {
+        let reply = #"{"dateStart": "2025-09-01"}"#
+        let filters = try XCTUnwrap(PhotoSearch.parse(reply, vocabulary: PhotoSearch.Vocabulary(),
+                                                      query: "2025年9月以来的照片")).filters
+        XCTAssertEqual(filters.date, "custom")
+        XCTAssertNil(filters.dateEnd)
+
+        let assets = try photos(on: ["2025-08-31", "2025-09-01", "2026-10-12"])
+        let since = [assets[1].id, assets[2].id]
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("pc-open-range-\(UUID().uuidString)")
+        self.folder = folder
+        let store = try CatalogStore(packageURL: folder.appendingPathComponent("Open.photolibrary"))
+        try store.upsert(assets)
+        let page = try store.loadAssetPage(matching: AssetQuery(filters: filters), offset: 0, limit: 10)
+        XCTAssertEqual(Set(page.assets.map(\.id)), Set(since), "the catalog query finds the photos since")
+
+        let rule = SmartRule(conditions: filters.smartConditions(search: ""))
+        XCTAssertEqual(rule.conditions.map(\.op), [">="], "saved as a smart album, it keeps only its start")
+        XCTAssertEqual(SmartMatcher.match(assets, rule).map(\.id), since)
+
+        let interval = try XCTUnwrap(filters.captureDateInterval(), "a start alone is a range")
+        XCTAssertEqual(assets.filter { CaptureDates.contains($0.date, in: interval) }.map(\.id), since)
+    }
+
+    func testARangeWithOnlyAnEndFindsEverythingBefore() throws {
+        let filters = Filters(date: "custom", dateEnd: try day("2020-12-31").start)
+        let assets = try photos(on: ["2019-05-04", "2020-12-31", "2021-01-01"])
+        let interval = try XCTUnwrap(filters.captureDateInterval())
+        XCTAssertEqual(assets.filter { CaptureDates.contains($0.date, in: interval) }.map(\.id),
+                       [assets[0].id, assets[1].id])
+        XCTAssertNil(Filters(date: "custom").captureDateInterval(), "a range with neither end still finds nothing")
+    }
+
+    // the filter bar's pickers, open or opened over such a range, leave the open end open
+
+    func testFilterBarKeepsAnOpenEndOpenUntilItsPickerChanges() throws {
+        let since = Filters(date: "custom", dateStart: try day("2025-09-01").start)
+        let today = try day("2026-10-12").start
+        var pickers = CaptureRangePickers(since, fallback: try day("2026-01-01").start, today: today)
+        XCTAssertEqual(pickers.start, since.dateStart)
+        XCTAssertEqual(pickers.end, today, "the open end shows today")
+        XCTAssertEqual(pickers.applied(to: since), since, "showing the range changes nothing")
+
+        pickers.start = try day("2025-10-01").start
+        XCTAssertEqual(pickers.applied(to: since).dateStart, try day("2025-10-01").start)
+        XCTAssertNil(pickers.applied(to: since).dateEnd, "moving the start leaves the end open")
+
+        pickers.end = try day("2025-12-31").start
+        XCTAssertEqual(pickers.applied(to: since).dateEnd, try day("2025-12-31").start, "picking an end sets it")
+    }
+
+    func testFilterBarKeepsAnOpenStartOpenUntilItsPickerChanges() throws {
+        let before = Filters(date: "custom", dateEnd: try day("2020-12-31").start)
+        var pickers = CaptureRangePickers(before, fallback: try day("2026-01-01").start,
+                                          today: try day("2026-10-12").start)
+        XCTAssertEqual(pickers.end, before.dateEnd)
+        XCTAssertLessThanOrEqual(pickers.start, pickers.end, "the open start shows a day the end can follow")
+        XCTAssertEqual(pickers.applied(to: before), before, "showing the range changes nothing")
+
+        pickers.end = try day("2021-06-30").start
+        XCTAssertNil(pickers.applied(to: before).dateStart, "moving the end leaves the start open")
+        pickers.start = try day("2019-01-01").start
+        XCTAssertEqual(pickers.applied(to: before).dateStart, try day("2019-01-01").start, "picking a start sets it")
+    }
+
+    func testFilterBarWritesAClosedRangeAsBefore() throws {
+        let closed = Filters(date: "custom", dateStart: try day("2025-06-01").start, dateEnd: try day("2025-08-31").start)
+        var pickers = CaptureRangePickers(closed, fallback: try day("2026-01-01").start, today: try day("2026-10-12").start)
+        XCTAssertEqual(pickers.applied(to: closed), closed)
+        pickers.end = try day("2025-09-30").start
+        XCTAssertEqual(pickers.applied(to: closed).dateEnd, try day("2025-09-30").start)
     }
 }

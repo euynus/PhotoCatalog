@@ -667,8 +667,13 @@ struct Filters: Equatable, Sendable {
             conditions.append(SmartCondition(field: "lens", op: "包含", value: lensQuery))
         }
         if date == "custom" {
-            conditions.append(SmartCondition(field: "captureDate", op: ">=", value: dateStart.map { CaptureDates.key($0) } ?? ""))
-            conditions.append(SmartCondition(field: "captureDate", op: "<=", value: dateEnd.map { CaptureDates.key($0) } ?? ""))
+            // an open end adds nothing; with neither end the empty keys match nothing, like the filter
+            if dateStart != nil || dateEnd == nil {
+                conditions.append(SmartCondition(field: "captureDate", op: ">=", value: dateStart.map { CaptureDates.key($0) } ?? ""))
+            }
+            if dateEnd != nil || dateStart == nil {
+                conditions.append(SmartCondition(field: "captureDate", op: "<=", value: dateEnd.map { CaptureDates.key($0) } ?? ""))
+            }
         } else if date != "any" {
             conditions.append(SmartCondition(field: "datePreset", op: "=", value: date))
         }
