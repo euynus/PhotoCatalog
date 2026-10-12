@@ -5128,9 +5128,13 @@ final class AppState {
 
     var isLLMReady: Bool { llmConfiguration.isComplete && (!llmConfiguration.needsKey || !(llmKey ?? "").isEmpty) }
 
+    /// Tests answer here instead of the configured service.
+    @ObservationIgnored var llmOverride: ((LLMRequest) async throws -> String)?
+
     /// One request to the configured service.
     func askLLM(_ request: LLMRequest) async throws -> String {
-        try await LLMClient.complete(request, configuration: llmConfiguration, key: llmKey)
+        if let llmOverride { return try await llmOverride(request) }
+        return try await LLMClient.complete(request, configuration: llmConfiguration, key: llmKey)
     }
 
     /// Settings → AI → 测试连接: a one-word exchange with the service.
@@ -5205,6 +5209,8 @@ final class AppState {
             }
             filters = interpretation.filters
             search = interpretation.text
+            // as the filter bar does: photos the new list hides leave the selection, or the next key edits them unseen
+            ensurePrimaryValid()
             push("按“\(query)”找到 \(list.count) 张照片", "sparkles")
             return true
         } catch {
