@@ -386,6 +386,47 @@ struct Asset: Identifiable, Equatable, Sendable {
               masterId: masterId ?? self.id, copyName: name, duration: duration)
     }
 
+    /// Takes every editable field that `new` changed from `old`, leaving the rest as they are:
+    /// undo and redo replay one step onto the photo as it is now, so whatever changed it since
+    /// (a rename, a trash, an offline check, a rescan, a sidecar read) stays.
+    mutating func takeChanges(from old: Asset, to new: Asset) {
+        guard old.storage !== new.storage else { return }
+        if old.filename != new.filename { filename = new.filename }
+        if old.folderId != new.folderId { folderId = new.folderId }
+        if old.folderName != new.folderName { folderName = new.folderName }
+        if old.date != new.date { date = new.date }
+        if old.hasICCProfile != new.hasICCProfile { hasICCProfile = new.hasICCProfile }
+        if old.fileMB != new.fileMB { fileMB = new.fileMB }
+        if old.fileModifiedAt != new.fileModifiedAt { fileModifiedAt = new.fileModifiedAt }
+        if old.fileCreatedAt != new.fileCreatedAt { fileCreatedAt = new.fileCreatedAt }
+        if old.rating != new.rating { rating = new.rating }
+        if old.flag != new.flag { flag = new.flag }
+        if old.colorLabel != new.colorLabel { colorLabel = new.colorLabel }
+        if old.keywords != new.keywords { keywords = new.keywords }
+        if old.title != new.title { title = new.title }
+        if old.caption != new.caption { caption = new.caption }
+        if old.author != new.author { author = new.author }
+        if old.copyright != new.copyright { copyright = new.copyright }
+        if old.makerNotes != new.makerNotes { makerNotes = new.makerNotes }
+        if old.project != new.project { project = new.project }
+        if old.client != new.client { client = new.client }
+        if old.location != new.location { location = new.location }
+        if old.gps.0 != new.gps.0 || old.gps.1 != new.gps.1 { gps = new.gps }
+        if old.gpsAltitude != new.gpsAltitude { gpsAltitude = new.gpsAltitude }
+        if old.status != new.status { status = new.status }
+        if old.importedAt != new.importedAt { importedAt = new.importedAt }
+        if old.deleted != new.deleted { deleted = new.deleted }
+        if old.localPath != new.localPath { localPath = new.localPath }
+        if old.captureDateSource != new.captureDateSource { captureDateSource = new.captureDateSource }
+        if old.contentHash != new.contentHash { contentHash = new.contentHash }
+        if old.quickHash != new.quickHash { quickHash = new.quickHash }
+        if old.isDemo != new.isDemo { isDemo = new.isDemo }
+        if old.faces != new.faces { faces = new.faces }
+        if old.perceptualHash != new.perceptualHash { perceptualHash = new.perceptualHash }
+        if old.masterId != new.masterId { masterId = new.masterId }
+        if old.copyName != new.copyName { copyName = new.copyName }
+    }
+
     var megapixels: Double { Double(width * height) / 1_000_000 }
 
     /// A file's size as `fileMB` keeps it, and back. One conversion for every comparison by size

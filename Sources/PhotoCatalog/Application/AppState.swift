@@ -229,31 +229,44 @@ final class AppState {
         didSet { undoManager?.levelsOfUndo = 100 }
     }
 
-    /// Records how to put `before` back. Undoing registers the reverse, which is what redo replays.
-    private func registerUndo(restoring before: [Asset], actionName: String?) {
+    /// Records how to take back the step that turned `before` into `after` (the same photos, in
+    /// the same order). Undoing registers the reverse, which is what redo replays.
+    private func registerUndo(from before: [Asset], to after: [Asset], actionName: String?) {
         guard let actionName, let undoManager, !before.isEmpty else { return }
         UndoSteps.register(on: undoManager) {
             undoManager.registerUndo(withTarget: self) { app in
-                MainActor.assumeIsolated { app.restoreSnapshot(before, actionName: actionName) }
+                MainActor.assumeIsolated { app.replayStep(from: after, to: before, actionName: actionName) }
             }
             undoManager.setActionName(actionName)
         }
     }
 
-    private func restoreSnapshot(_ snapshot: [Asset], actionName: String) {
+    /// Applies the fields a step changed from `old` to `new` onto each photo as it is now, rather
+    /// than writing back a whole copy: renames, moves, trashing, offline checks, rescans and
+    /// sidecar reads aren't undoable, and ⌘Z on an earlier edit must not take them back too.
+    private func replayStep(from old: [Asset], to new: [Asset], actionName: String) {
         let index = assetIndex
-        let edits = snapshot.compactMap { asset in index[asset.id].map { (offset: $0, asset: asset) } }
-        let current = edits.map { assets[$0.offset] }
-        guard persistChanged(edits.map(\.asset)) else { return }
+        var edits: [(offset: Int, asset: Asset)] = []
+        var current: [Asset] = [], replayedOld: [Asset] = [], replayedNew: [Asset] = []
+        for (stepOld, stepNew) in zip(old, new) {
+            guard let offset = index[stepNew.id] else { continue }
+            var asset = assets[offset]
+            asset.takeChanges(from: stepOld, to: stepNew)
+            edits.append((offset, asset))
+            current.append(assets[offset])
+            replayedOld.append(stepOld)
+            replayedNew.append(stepNew)
+        }
+        guard !edits.isEmpty, persistChanged(edits.map(\.asset)) else { return }
         let deletionChanged = zip(current, edits).contains { $0.deleted != $1.asset.deleted }
         let scope = zip(current, edits).reduce(into: AssetEditScope()) {
             $0.formUnion(Self.editScope(from: $1.0, to: $1.1.asset))
         }
         applyAssetEdits(edits, scope: scope)
         ensurePrimaryValid()
-        enqueueAutomaticXMPWrite(snapshot.filter { !$0.isDemo && !$0.deleted })
+        enqueueAutomaticXMPWrite(edits.map(\.asset).filter { !$0.isDemo && !$0.deleted })
         if deletionChanged { recomputeDuplicates() }
-        registerUndo(restoring: current, actionName: actionName)
+        registerUndo(from: replayedOld, to: replayedNew, actionName: actionName)
     }
 
     private func replaceAssetsForMutation(_ updated: [Asset]) {
@@ -8572,7 +8585,7 @@ final class AppState {
         }
         applyAssetEdits(edits, scope: scope)
         ensurePrimaryValid()
-        registerUndo(restoring: before, actionName: undoName)
+        registerUndo(from: before, to: edits.map(\.asset), actionName: undoName)
         return true
     }
 
@@ -8628,7 +8641,7 @@ final class AppState {
                 return false
             }
         }
-        registerUndo(restoring: edits.map { assets[$0.offset] }, actionName: undoName)
+        registerUndo(from: edits.map { assets[$0.offset] }, to: edits.map(\.asset), actionName: undoName)
         applyAssetEdits(edits, scope: .review)
         ensurePrimaryValid()
         enqueueAutomaticXMPWrite(changed)
