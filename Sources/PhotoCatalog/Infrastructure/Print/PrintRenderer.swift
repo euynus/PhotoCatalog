@@ -16,6 +16,8 @@ struct PrintItem: Sendable {
     let originalSize: CGSize
     let filename: String
     let title: String
+    /// The catalog's caption, for the words a book prints under the photo.
+    var caption = ""
 
     /// Width over height of the developed photo: turned and cropped.
     var aspect: Double {

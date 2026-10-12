@@ -715,10 +715,14 @@ protocol PhotoCaption: RawRepresentable where RawValue == String {}
 
 extension PhotoCaption {
     func text(for asset: Asset) -> String {
+        text(title: asset.title, caption: asset.caption, filename: asset.filename)
+    }
+
+    func text(title: String, caption: String, filename: String) -> String {
         switch rawValue {
-        case "title": asset.title
-        case "caption": asset.caption
-        case "filename": asset.filename
+        case "title": title
+        case "caption": caption
+        case "filename": filename
         default: ""
         }
     }

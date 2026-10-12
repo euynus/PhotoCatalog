@@ -6751,7 +6751,7 @@ final class AppState {
         return PrintItem(sourcePath: path, isRaw: asset.isRaw,
                          develop: developSettings[asset.id] ?? .neutral,
                          originalSize: CGSize(width: asset.width, height: asset.height),
-                         filename: asset.filename, title: asset.title)
+                         filename: asset.filename, title: asset.title, caption: asset.caption)
     }
 
     /// Says that `count` photos were left out of a slideshow video, web gallery or book because

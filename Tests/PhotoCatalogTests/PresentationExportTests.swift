@@ -36,4 +36,30 @@ final class PresentationExportTests: CatalogTestCase {
         XCTAssertEqual(app.bookItems(caption: .none).map(\.item.sourcePath), [online.path],
                        "a book leaves the offline photo out")
     }
+
+    /// The book dialog took its photos captioned as the stored setting said when it opened, so
+    /// its preview kept those captions whatever the caption picker was set to.
+    @MainActor
+    func testTheBookPreviewCaptionsPhotosAsThePickerSays() throws {
+        let first = scratch.appendingPathComponent("Photos/first.jpg")
+        let second = scratch.appendingPathComponent("Photos/second.jpg")
+        let app = AppState.selfCheckFixture()
+        app.assets = [asset("first", original: first, preview: first, title: "Harbor", caption: "Boats at dawn"),
+                      asset("second", original: second, preview: second, title: "Hill", caption: "Fog")]
+        app.select(Selection(type: .lib, id: "all", name: "Book"))
+        app.selectedIds = ["first", "second"]
+
+        var stored = BookSettings()
+        stored.caption = .none
+        // as the main window opens it
+        let sheet = BookSheet(settings: stored, items: app.bookItems(caption: stored.caption))
+        var picked = stored
+        for (caption, expected) in [(BookSettings.Caption.filename, ["first.jpg", "second.jpg"]),
+                                    (.title, ["Harbor", "Hill"]), (.caption, ["Boats at dawn", "Fog"]),
+                                    (.none, ["", ""])] {
+            picked.caption = caption
+            XCTAssertEqual(Set(sheet.previewItems(for: picked).map(\.caption)), Set(expected),
+                           "the preview's captions follow the picker (\(caption))")
+        }
+    }
 }

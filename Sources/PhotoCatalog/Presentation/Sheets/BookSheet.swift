@@ -20,6 +20,10 @@ struct BookSheet: View {
     /// The pages as laid out now (cheap: no photo is rendered).
     private var pages: [BookPage] { BookLayout.pages(items.map(\.item.aspect), settings: settings) }
 
+    /// The photos as the preview draws them with `settings`: captioned as the picker says now,
+    /// not as the stored setting did when the dialog opened.
+    func previewItems(for settings: BookSettings) -> [BookItem] { items.map { $0.captioned(settings.caption) } }
+
     var body: some View {
         let pageCount = pages.count
         VStack(spacing: 0) {
@@ -62,7 +66,7 @@ struct BookSheet: View {
             // a moment's pause, so typing a title renders once
             try? await Task.sleep(for: .milliseconds(200))
             guard !Task.isCancelled else { return }
-            let renderer = BookRenderer(items: items, settings: settings)
+            let renderer = BookRenderer(items: previewItems(for: settings), settings: settings)
             renderer.resolution = 150
             let index = min(page, max(0, renderer.pages.count - 1))
             let image = await withCheckedContinuation { continuation in

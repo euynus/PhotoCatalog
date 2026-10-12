@@ -9,6 +9,11 @@ import Foundation
 struct BookItem: Sendable {
     let item: PrintItem
     let caption: String
+
+    /// The same photo with the words `choice` puts under it.
+    func captioned(_ choice: BookSettings.Caption) -> BookItem {
+        BookItem(item: item, caption: choice.text(title: item.title, caption: item.caption, filename: item.filename))
+    }
 }
 
 /// Draws a book's pages (see `BookLayout`): each photo rendered at 300 ppi for the size it's
