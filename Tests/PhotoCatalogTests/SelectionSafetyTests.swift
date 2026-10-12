@@ -69,4 +69,37 @@ final class SelectionSafetyTests: XCTestCase {
         XCTAssertFalse(app.handleKey("5", hasCommand: false))
         XCTAssertTrue(app.assets.allSatisfy { $0.rating == 0 }, "a rating key then rates nothing")
     }
+
+    /// In 未评分, rating the active photo in Survey takes it out of the list though Survey still
+    /// shows it: the first photo of the list, not one of the surveyed, became active, and the next
+    /// key edited it out of sight.
+    @MainActor
+    func testSurveyKeepsItsActivePhotoWhenARatingFiltersItOut() throws {
+        let app = makeApp()
+        app.select(Selection(type: .lib, id: "unrated", name: "Unrated"))
+        let ids = app.list.map(\.id)
+        app.selectCell(ids[2], shift: false, meta: false)
+        app.selectCell(ids[3], shift: false, meta: true)
+        app.selectCell(ids[4], shift: false, meta: true)
+        app.switchView(.survey)
+        XCTAssertEqual(app.view, .survey)
+        let surveyed = Set(app.surveyIds)
+        XCTAssertEqual(surveyed, [ids[2], ids[3], ids[4]])
+        app.activateInSurvey(ids[3])
+
+        XCTAssertTrue(app.handleKey("3", hasCommand: false))
+        XCTAssertFalse(app.list.contains { $0.id == ids[3] }, "rated, it left 未评分")
+        XCTAssertEqual(app.primaryId, ids[3], "Survey still shows it, and it stays active")
+        XCTAssertEqual(app.selectedIds, [ids[3]])
+        XCTAssertTrue(app.handleKey("p", hasCommand: false))
+        XCTAssertEqual(app.asset(id: ids[3])?.flag, .pick)
+        for asset in app.assets where !surveyed.contains(asset.id) {
+            XCTAssertEqual(asset.rating, 0, "\(asset.id) isn't in the survey")
+            XCTAssertEqual(asset.flag, .none, "\(asset.id) isn't in the survey")
+        }
+
+        app.switchView(.grid)
+        XCTAssertEqual(app.selectedIds, [ids[2], ids[4]], "back in the grid, only the photos it shows are selected")
+        XCTAssertTrue(app.selectedIds.contains(app.primaryId ?? ""))
+    }
 }

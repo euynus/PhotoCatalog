@@ -8470,6 +8470,14 @@ final class AppState {
     }
 
     private func ensurePrimaryValid() {
+        // Survey shows its own photos, even one a rating just took out of the list: the active one
+        // stays among them (the list's first photo may not be one, and the next key edited it unseen).
+        if view == .survey, let active = surveyActiveId() {
+            if primaryId != active { primaryId = active }
+            if selectedIds != [active] { selectedIds = [active] }
+            anchorId = active
+            return
+        }
         let ids = list
         guard !ids.isEmpty else {
             selectedIds = []
@@ -10130,14 +10138,26 @@ final class AppState {
         activateInSurvey(surveyIds[next])
     }
 
-    /// Back in the grid, the photos still in the survey are the selection.
+    /// The surveyed photo to keep active: the active one while it's in the catalog, else the next.
+    private func surveyActiveId() -> String? {
+        let live = surveyIds.filter { id in assetIndex[id].map { !assets[$0].deleted } ?? false }
+        if let primaryId, live.contains(primaryId) { return primaryId }
+        let start = primaryId.flatMap { surveyIds.firstIndex(of: $0) } ?? 0
+        return surveyIds[start...].first(where: live.contains) ?? live.last
+    }
+
+    /// Back in the grid, the photos still in the survey are the selection — those the list shows:
+    /// one a rating took out of it would be edited unseen by the next key.
     private func leaveSurvey() {
-        let remaining = surveyIds.filter { assetIndex[$0] != nil }
+        let positions = listPositions(of: Set(surveyIds))
+        let remaining = surveyIds.filter { positions[$0] != nil }
         surveyIds = []
-        if view == .grid, !remaining.isEmpty {
+        guard view == .grid else { return }
+        if !remaining.isEmpty {
             selectedIds = Set(remaining)
             if primaryId.map({ !remaining.contains($0) }) ?? true { primaryId = remaining.first }
         }
+        ensurePrimaryValid()
     }
 
     // ---------- onboarding ----------
