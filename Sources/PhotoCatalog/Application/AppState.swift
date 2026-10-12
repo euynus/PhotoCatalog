@@ -2832,42 +2832,48 @@ final class AppState {
         FileAccessService.reachOriginals()
         guard let roots = try? store.loadSourceRoots() else { return }
         for root in roots {
-            let resolved = resolveSourceRoot(root)
-            if resolved.status == "online", let url = resolved.url,
-               url.path != root.pathHint || resolved.bookmark != root.bookmarkData {
-                try? store.updateSourceRootAccess(
-                    id: root.id,
-                    displayName: root.displayName,
-                    path: url.path,
-                    bookmark: resolved.bookmark,
-                    status: resolved.status,
-                    volumeIdentifier: volumeProbe.identifier(url) ?? root.volumeIdentifier
-                )
-                // found elsewhere — renamed or moved (a stale bookmark), or its drive mounted under
-                // another name: its photos move with it, before anything at their old paths (on
-                // another drive of the old name, say) is taken for them
-                if url.path != root.pathHint {
-                    movedSourceRoots.append((root.id, root.pathHint, url.path))
-                }
-            } else {
-                try? store.updateSourceRootStatus(id: root.id, status: resolved.status)
-            }
-
-            sourceManagementModesById[root.id] = root.managementMode
-            sourceRootPathsById[root.id] = resolved.url?.path ?? root.pathHint
-            if let index = folders.firstIndex(where: { $0.id == root.id }) {
-                folders[index].status = resolved.status
-            } else {
-                folders.append(Folder(id: root.id, name: root.displayName, status: resolved.status))
-            }
-            if root.managementMode == "referenced",
-               resolved.status == "online",
-               let url = resolved.url,
-               !watchedRoots.contains(url) {
-                watchedRoots.append(url)
-            }
+            applySourceRoot(root, resolved: resolveSourceRoot(root), in: store)
         }
         refreshWatcher()
+    }
+
+    /// Records where a source folder was found, or why it wasn't, in the catalog and the sidebar,
+    /// and watches a referenced folder that's there (the caller restarts the watcher).
+    private func applySourceRoot(_ root: SourceRootRecord, resolved: (url: URL?, status: String, bookmark: Data?),
+                                 in store: CatalogStore) {
+        if resolved.status == "online", let url = resolved.url,
+           url.path != root.pathHint || resolved.bookmark != root.bookmarkData {
+            try? store.updateSourceRootAccess(
+                id: root.id,
+                displayName: root.displayName,
+                path: url.path,
+                bookmark: resolved.bookmark,
+                status: resolved.status,
+                volumeIdentifier: volumeProbe.identifier(url) ?? root.volumeIdentifier
+            )
+            // found elsewhere — renamed or moved (a stale bookmark), or its drive mounted under
+            // another name: its photos move with it, before anything at their old paths (on
+            // another drive of the old name, say) is taken for them
+            if url.path != root.pathHint {
+                movedSourceRoots.append((root.id, root.pathHint, url.path))
+            }
+        } else {
+            try? store.updateSourceRootStatus(id: root.id, status: resolved.status)
+        }
+
+        sourceManagementModesById[root.id] = root.managementMode
+        sourceRootPathsById[root.id] = resolved.url?.path ?? root.pathHint
+        if let index = folders.firstIndex(where: { $0.id == root.id }) {
+            folders[index].status = resolved.status
+        } else {
+            folders.append(Folder(id: root.id, name: root.displayName, status: resolved.status))
+        }
+        if root.managementMode == "referenced",
+           resolved.status == "online",
+           let url = resolved.url,
+           !watchedRoots.contains(url) {
+            watchedRoots.append(url)
+        }
     }
 
     /// Where a source folder is now, whether it can be read, and its bookmark: a stale one is
@@ -2885,11 +2891,14 @@ final class AppState {
             return (fallback.url, fallback.status, nil)
         }
         guard let resolved = FileAccessService.resolveBookmark(bookmark) else {
-            let fallback = fallbackSourceRoot(root, preferredStatus: "permissionLost")
+            // a drive that isn't plugged in can't resolve it either: that's offline, not a lost permission
+            let driveAway = volumeProbe.volumeRoot(of: root.pathHint).map { !FileManager.default.fileExists(atPath: $0) }
+            let fallback = fallbackSourceRoot(root, preferredStatus: driveAway == true ? nil : "permissionLost")
             return (fallback.url, fallback.status, bookmark)
         }
-        let ok = resolved.url.startAccessingSecurityScopedResource()
-        if ok { securityScopedRoots.append(resolved.url) }
+        // looked for again each time a drive comes or goes: access opened once is kept
+        let ok = securityScopedRoots.contains(resolved.url) || resolved.url.startAccessingSecurityScopedResource()
+        if ok, !securityScopedRoots.contains(resolved.url) { securityScopedRoots.append(resolved.url) }
         if resolved.isStale {
             // a renamed or moved folder still opens; the bookmark made now finds it next time
             guard ok, let fresh = FileAccessService.createBookmark(for: resolved.url) else {
@@ -4612,12 +4621,40 @@ final class AppState {
     }
 
     private func startVolumeMonitor() {
-        let m = VolumeMonitor { [weak self] in
-            self?.detectMissingRealAssets()
-            self?.refreshCardVolumes()
-        }
+        let m = VolumeMonitor { [weak self] in self?.volumesDidChange() }
         m.start()
         volumeMonitor = m
+    }
+
+    /// A drive was mounted or unmounted. Every drive change enters the app here: source folders
+    /// that aren't watched (their drive was away) are looked for again, and one that's back is
+    /// watched again and rescanned for what changed on it meanwhile; then the originals'
+    /// availability is checked again and memory cards are listed afresh.
+    func volumesDidChange() {
+        reconnectSourceRoots()
+        detectMissingRealAssets()
+        refreshCardVolumes()
+    }
+
+    private func reconnectSourceRoots() {
+        // a catalog still loading looks for its folders once it's loaded
+        guard let store, !isLoadingCatalog, let roots = try? store.loadSourceRoots() else { return }
+        let watched = Set(watchedRoots.map(\.standardizedFileURL.path))
+        var cameBack = false
+        for root in roots where root.managementMode == ImportMode.referenced.rawValue {
+            let path = URL(fileURLWithPath: sourceRootPathsById[root.id] ?? root.pathHint).standardizedFileURL.path
+            guard !watched.contains(path) else { continue }
+            let resolved = resolveSourceRoot(root)
+            applySourceRoot(root, resolved: resolved, in: store)
+            if resolved.status == "online", resolved.url != nil { cameBack = true }
+        }
+        for moved in movedSourceRoots {
+            rebaseSourceRootAssetPaths(folderId: moved.id, oldRoot: moved.from, newRoot: moved.to)
+        }
+        movedSourceRoots = []
+        guard cameBack else { return }
+        refreshWatcher()
+        incrementalRescan()
     }
 
     // ---------- batch capture-time shift (§4.2 / META-008) ----------

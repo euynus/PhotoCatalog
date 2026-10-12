@@ -143,6 +143,53 @@ final class VolumeTests: CatalogTestCase {
         XCTAssertEqual(try store.loadAssets().first { $0.id == asset.id }?.quickHash, asset.quickHash)
     }
 
+    // ---------- a drive plugged in after the catalog opened (#32) ----------
+
+    /// The folder's drive isn't plugged in when the catalog opens. Plugged in later, the folder is
+    /// online and watched again: a photo added to it meanwhile comes in, and ⌘R rescans it.
+    @MainActor
+    func testDrivePluggedInAfterOpeningIsWatchedAgain() async throws {
+        let (store, _, asset) = try catalogOnDrive()
+        try unplug("Photos")
+        let app = AppState()
+        app.onboarded = true
+        app.volumeProbe = probe
+        XCTAssertTrue(app.openCatalog(at: store.packageURL))
+        try await waitUntil("originals checked") { !app.isCheckingOriginals }
+        XCTAssertEqual(app.folders.first { $0.id == "source-1" }?.status, "offline")
+        XCTAssertEqual(app.assets.first { $0.id == asset.id }?.status, .offline)
+
+        try plugIn("Photos")
+        try makeTestJPEG(at: volumes.appendingPathComponent("Photos/Shoot/IMG_0002.JPG"), shade: 4)
+        app.volumesDidChange()
+        try await waitUntil("the photo added meanwhile comes in") {
+            app.assets.contains { $0.filename == "IMG_0002.JPG" } && !app.isCheckingOriginals
+        }
+
+        XCTAssertEqual(app.folders.first { $0.id == "source-1" }?.status, "online")
+        XCTAssertEqual(try store.loadSourceRoots().first?.status, "online")
+        XCTAssertEqual(app.assets.first { $0.id == asset.id }?.status, .ready)
+        try await rescanToCompletion(app)
+    }
+
+    /// A folder whose bookmark can't be resolved because its drive isn't plugged in is offline,
+    /// not waiting for permission.
+    @MainActor
+    func testFolderOnAnUnpluggedDriveIsOfflineNotWaitingForPermission() async throws {
+        let (store, root, _) = try catalogOnDrive()
+        // a bookmark that can't be resolved, as one to a drive that isn't plugged in, and no drive recorded
+        try store.updateSourceRootAccess(id: root.id, displayName: root.displayName, path: root.pathHint,
+                                         bookmark: Data([1, 2, 3]), status: "online", volumeIdentifier: nil)
+        try unplug("Photos")
+
+        let app = AppState()
+        app.onboarded = true
+        app.volumeProbe = probe
+        XCTAssertTrue(app.openCatalog(at: store.packageURL))
+
+        XCTAssertEqual(try store.loadSourceRoots().first?.status, "offline")
+    }
+
     /// The drive is swapped for another of the same name while the catalog is open: a rescan of
     /// the folder doesn't read the other drive's files into the catalog.
     @MainActor
