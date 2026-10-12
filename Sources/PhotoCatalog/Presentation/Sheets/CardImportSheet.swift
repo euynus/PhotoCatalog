@@ -23,6 +23,8 @@ struct CardImportSheet: View {
     @State private var scanning = false
     @State private var selection: Set<String> = []
     @State private var hideImported = false
+    /// The rename example, worked out off the main thread: it reads a photo on the card.
+    @State private var exampleName = "—"
 
     init(card: CardVolume?, device: CameraDevice?, options: CardImportOptions) {
         _card = State(initialValue: device == nil ? card : nil)
@@ -315,6 +317,12 @@ struct CardImportSheet: View {
                     LabeledContent("示例") {
                         Text(exampleName).foregroundStyle(Theme.text2).lineLimit(1).truncationMode(.middle)
                     }
+                    .task(id: ExampleSource(file: chosen.first ?? files.first, options: options)) {
+                        let source = ExampleSource(file: chosen.first ?? files.first, options: options)
+                        exampleName = await Task.detached(priority: .userInitiated) {
+                            Self.exampleName(for: source.file, options: source.options)
+                        }.value
+                    }
                 }
             }
             Section("备份") {
@@ -349,11 +357,26 @@ struct CardImportSheet: View {
         .scrollContentBackground(.hidden)
     }
 
-    private var exampleName: String {
-        guard let file = chosen.first ?? files.first else { return "—" }
+    private struct ExampleSource: Equatable, Sendable {
+        let file: CardFile?
+        let options: CardImportOptions
+    }
+
+    /// The name the copy of `file` gets, from the capture time and camera the copy is named by.
+    /// A photo still on a camera or phone can't be read until it's downloaded: its time there,
+    /// on this Mac's clock, stands in, without a camera.
+    nonisolated static func exampleName(for file: CardFile?, options: CardImportOptions) -> String {
+        guard let file else { return "—" }
         let original = file.url.deletingPathExtension().lastPathComponent
+        let (date, camera): (Date, String)
+        if file.deviceID == nil {
+            let meta = MetadataReader.read(file.url)
+            (date, camera) = (meta.captureDate, meta.camera)
+        } else {
+            (date, camera) = (file.modified.captureWallClock(), "")
+        }
         return FileNameTemplate.render(options.renameTemplate, original: original, sequence: options.sequenceStart,
-                                       date: file.modified) + "." + file.url.pathExtension
+                                       date: date, camera: camera) + "." + file.url.pathExtension
     }
 
     private var footer: some View {
