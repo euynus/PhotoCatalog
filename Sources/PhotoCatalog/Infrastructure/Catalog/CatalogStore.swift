@@ -1483,8 +1483,16 @@ final class CatalogStore: @unchecked Sendable {
             .compactMap(Self.importCheckpoint(from:))
     }
 
-    /// Photos removed from the catalog whose originals lie in `folder`: a referenced photo's ID
-    /// comes from its path, so these are the rows an import of the folder would find taken.
+    /// The original's path, and whether the photo was removed, for the photo with `id` if the
+    /// catalog has one — removed photos included, as their ids stay taken.
+    func assetPathRecord(id: String) -> (localPath: String?, deleted: Bool)? {
+        guard let row = try? db.query("SELECT local_path, deleted FROM assets WHERE id=?;", [.text(id)]).first
+        else { return nil }
+        return (row.text("local_path"), row.bool("deleted"))
+    }
+
+    /// Photos removed from the catalog whose originals lie in `folder`: a removed photo keeps
+    /// its id, which an import finds again for a file at the photo's path.
     func removedAssetIds(under folder: URL) throws -> Set<String> {
         var ids: Set<String> = []
         for path in Set([folder.path, folder.resolvingSymlinksInPath().path]) {

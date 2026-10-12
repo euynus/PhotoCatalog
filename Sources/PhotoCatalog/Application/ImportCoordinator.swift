@@ -49,7 +49,25 @@ final class ImportCoordinator: @unchecked Sendable {
     }
 
     func sourceId(forFolder folder: URL) -> String { "src-" + shortHash(folder.path) }
-    func assetId(forPath path: String) -> String { "r" + shortHash(path) }
+
+    /// The id a file being cataloged gets. It's made from the file's path, but a photo keeps its
+    /// id when renamed or moved, so the path's id may already be another photo's: then the path
+    /// is hashed again with a counter until the id is free. A photo already cataloged at this
+    /// path is this file and keeps its id — a removed one too, so importing it again brings it
+    /// back in place.
+    func newAssetId(forPath path: String) -> String {
+        var removed: String?
+        for attempt in 0... {
+            let id = "r" + shortHash(attempt == 0 ? path : path + "\u{0}" + String(attempt))
+            guard let row = store.assetPathRecord(id: id) else { return removed ?? id }
+            let samePath = row.localPath.map { $0 == path || PathIdentity.aliases(forPath: $0).contains(path) } ?? false
+            guard samePath else { continue }
+            // a live photo at this path wins over a removed one
+            if !row.deleted { return id }
+            if removed == nil { removed = id }
+        }
+        return removed ?? "r" + shortHash(path)
+    }
 
     /// Full import of a folder (managed mode copies originals into Originals/YYYY/MM/DD;
     /// autoTag runs on-device Vision scene tagging + face detection).
@@ -116,12 +134,16 @@ final class ImportCoordinator: @unchecked Sendable {
                      autoTag: Bool = false, readSidecar: Bool = true, previewMaxPixel: Int = 2048,
                      sourceRootId: String? = nil, folderName: String? = nil,
                      scanned: [(url: URL, aliases: Set<String>)]? = nil) -> [Asset] {
-        let files = (scanned ?? Self.scanWithAliases(folder)).filter { file in
+        // each changed file is made again as the photo whose file it is, under that photo's id —
+        // never the one its path would give, which a renamed photo doesn't have
+        var knownIdByPath: [String: String] = [:]
+        let files = (scanned ?? Self.scanWithAliases(folder)).compactMap { file -> URL? in
             let known = file.aliases.lazy.compactMap { knownAssetsByPath[$0] }.first
-            guard let known else { return false }
+            guard let known else { return nil }
             let url = file.url
+            knownIdByPath[url.path] = known.id
             guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-                  let size = attrs[.size] as? Int64 else { return true }
+                  let size = attrs[.size] as? Int64 else { return url }
             let knownSize = known.fileBytes
             let sizeChanged = knownSize != size
             let modifiedAt = attrs[.modificationDate] as? Date
@@ -129,11 +151,11 @@ final class ImportCoordinator: @unchecked Sendable {
                 modifiedAt.map { abs($0.timeIntervalSince(knownDate)) >= 1 } ?? true
             } ?? (modifiedAt != nil)
             let quickHashChanged = HashService.quickHash(url, fileSize: size) != known.quickHash
-            return sizeChanged || modifiedChanged || quickHashChanged
-        }.map(\.url)
+            return sizeChanged || modifiedChanged || quickHashChanged ? url : nil
+        }
         let refreshed = process(files, folder: folder, mode: mode, autoTag: autoTag, readSidecar: readSidecar,
                                 previewMaxPixel: previewMaxPixel, control: nil, sourceRootId: sourceRootId,
-                                folderName: folderName, progress: nil)
+                                folderName: folderName, refreshingIds: knownIdByPath, progress: nil)
         var knownById: [String: Asset] = [:]
         for asset in knownAssetsByPath.values where knownById[asset.id] == nil {
             knownById[asset.id] = asset
@@ -141,8 +163,8 @@ final class ImportCoordinator: @unchecked Sendable {
         var hasSidecarById: [String: Bool] = [:]
         if readSidecar {
             for url in files {
-                hasSidecarById[assetId(forPath: url.path)] =
-                    FileManager.default.fileExists(atPath: XMPSidecar.sidecarURL(for: url).path)
+                guard let id = knownIdByPath[url.path] else { continue }
+                hasSidecarById[id] = FileManager.default.fileExists(atPath: XMPSidecar.sidecarURL(for: url).path)
             }
         }
         return refreshed.map { asset in
@@ -171,9 +193,15 @@ final class ImportCoordinator: @unchecked Sendable {
                          checkpoints: [String: ImportFileCheckpoint] = [:],
                          sourceRootId: String? = nil, folderName: String? = nil,
                          preparer: (any ImportFilePreparer)? = nil,
+                         refreshingIds: [String: String] = [:],
                          progress: ((ImportProgress) -> Void)?) -> [Asset] {
         let folderId = sourceRootId ?? sourceId(forFolder: folder)
         let folderName = folderName ?? folder.lastPathComponent
+        // cataloged files are known by where they are now: a photo's id needn't match its path
+        var knownByPath: [String: Asset] = [:]
+        for asset in knownAssetsById.values {
+            if let path = asset.localPath { knownByPath[path] = asset }
+        }
         // copying into Originals/ picks a free name, and a preparer may share staging space:
         // both one file at a time
         let copying = NSLock()
@@ -189,8 +217,10 @@ final class ImportCoordinator: @unchecked Sendable {
             guard preparer?.isAvailable(url) ?? FileManager.default.fileExists(atPath: url.path) else {
                 return .failed(ImportFailure(url: url, reason: L("文件不存在或不可访问")))
             }
+            // `url` is a known photo's changed file: made again, as that photo
+            let refreshingId = refreshingIds[url.path]
             // Reuse cataloged referenced files; downstream dedup still counts them as skipped.
-            if mode == .referenced, let known = knownAssetsById[assetId(forPath: url.path)] {
+            if refreshingId == nil, mode == .referenced, let known = knownByPath[url.path] {
                 return .imported(known)
             }
             do {
@@ -198,7 +228,7 @@ final class ImportCoordinator: @unchecked Sendable {
                 if let asset = try makeAsset(source: target, folderId: folderId, folderName: folderName,
                                             mode: mode, autoTag: autoTag, archiveRule: archiveRule,
                                             readSidecar: readSidecar, previewMaxPixel: previewMaxPixel,
-                                            copying: copying) {
+                                            assetId: refreshingId, copying: copying) {
                     return .imported(asset)
                 }
                 return .failed(ImportFailure(url: url, reason: L("无法读取图片元数据或像素尺寸")))
@@ -259,7 +289,8 @@ final class ImportCoordinator: @unchecked Sendable {
 
     private func makeAsset(source url: URL, folderId: String, folderName: String,
                            mode: ImportMode, autoTag: Bool, archiveRule: ManagedArchiveRule = .date,
-                           readSidecar: Bool = true, previewMaxPixel: Int, copying: NSLock) throws -> Asset? {
+                           readSidecar: Bool = true, previewMaxPixel: Int, assetId knownId: String? = nil,
+                           copying: NSLock) throws -> Asset? {
         let meta = MetadataReader.read(url)
         guard meta.width > 0, meta.height > 0 else { return nil }
         let finalURL: URL
@@ -271,9 +302,8 @@ final class ImportCoordinator: @unchecked Sendable {
             finalURL = url
         }
 
-        let hash = shortHash(finalURL.path)
-        let assetId = "r" + hash
-        let pid = (Int(hash.prefix(6), radix: 16) ?? 0) % 100000
+        let assetId = knownId ?? newAssetId(forPath: finalURL.path)
+        let pid = (Int(assetId.dropFirst().prefix(6), radix: 16) ?? 0) % 100000
         let quick = HashService.quickHash(finalURL, fileSize: meta.fileSize)
         let content = HashService.contentHash(finalURL)
         let (thumb, preview) = thumbnails.generateAll(from: finalURL, assetId: assetId,
@@ -339,8 +369,8 @@ final class ImportCoordinator: @unchecked Sendable {
         lazy var sourceHash = HashService.contentHash(url)   // read once, and only on a name clash
         while FileManager.default.fileExists(atPath: dest.path) {
             // An identical original is already here — e.g. an import resumed after a crash
-            // re-scans files already copied. Reuse it (its asset id then matches the existing
-            // one and dedups) instead of writing a duplicate "name (1).ext" + duplicate asset.
+            // re-scans files already copied. Reuse it (the photo cataloged at this path keeps
+            // its id and dedups) instead of writing a duplicate "name (1).ext" + duplicate asset.
             if let existing = HashService.contentHash(dest), existing == sourceHash {
                 return dest
             }

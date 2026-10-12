@@ -4306,7 +4306,7 @@ final class AppState {
     }
 
     // ---------- FSEvents incremental watch (§12.8) ----------
-    @ObservationIgnored private var isIncrementalRescanning = false
+    @ObservationIgnored private(set) var isIncrementalRescanning = false
     @ObservationIgnored private var needsIncrementalRescan = false
     @ObservationIgnored private var incrementalRescanGeneration = 0
 

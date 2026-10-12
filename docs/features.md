@@ -49,7 +49,7 @@ The full reference to what PhotoCatalog does; [README](../README.md) has the ove
   - Shots import one at a time in order, get the session's develop preset (changeable from the bar mid-session) and keywords, and show in the loupe.
   - Ending the session, or unplugging the camera, leaves the folder watched like any imported one. Opening, creating or closing a catalog ends the session; a shot still on its way stays in the session's folder rather than joining the next catalog. The folder path and the session are covered by `--pipeline`; the camera path is written against ImageCaptureCore and exercised through a simulated device, not a physical camera.
 - **Develop settings on import** — a develop preset chosen in Settings → Import, the import window or the card window applies to new photos, on top of the per-camera RAW defaults (see [Presets and sync](#develop)).
-- **Watching** — referenced folders are watched with FSEvents: new files import and removed files are flagged missing automatically.
+- **Watching** — referenced folders are watched with FSEvents: new files import and removed files are flagged missing automatically. A photo renamed or moved by the app is still followed at its new path, and a new file saved under its old name imports as a photo of its own.
 - **Missing and offline** — originals are re-checked on launch and flagged missing if gone; unmounting an external drive marks its photos offline instead, and remounting restores them.
 
 ## Develop
