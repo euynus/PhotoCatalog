@@ -368,7 +368,7 @@ struct SettingsSheet: View {
                     .font(.system(size: 11.5)).foregroundStyle(Theme.text3)
                 HStack(spacing: 9) {
                     ghostButton(nil, L("重命名选中照片…"), small: true,
-                                disabled: !app.canOperateOnSelectedOriginals) { app.showRenameSheet() }
+                                disabled: !app.canRenameOriginals) { app.showRenameSheet() }
                     Spacer()
                 }
             }

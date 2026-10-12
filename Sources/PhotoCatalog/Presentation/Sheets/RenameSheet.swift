@@ -21,6 +21,13 @@ struct RenameSheet: View {
         ("{camera}", L("相机")), ("{title}", L("标题")), ("{rating}", L("评分")),
     ]
 
+    /// The numbers {seq} can start from: the field takes any number typed, the stepper stops here.
+    static let startRange = 0...999_999
+
+    static func clampedStart(_ start: Int) -> Int {
+        min(max(start, startRange.lowerBound), startRange.upperBound)
+    }
+
     init(targets: [Asset], template: String) {
         self.targets = targets
         _template = State(initialValue: template)
@@ -65,11 +72,12 @@ struct RenameSheet: View {
                 }
                 HStack(spacing: 8) {
                     Text("起始序号").font(.system(size: 12)).foregroundStyle(Theme.text2)
-                    TextField("起始序号", value: $start, format: .number)
+                    TextField("起始序号", value: Binding(get: { start }, set: { start = Self.clampedStart($0) }),
+                              format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 70)
                         .labelsHidden()
-                    Stepper("起始序号", value: $start, in: 0...999_999).labelsHidden()
+                    Stepper("起始序号", value: $start, in: Self.startRange).labelsHidden()
                     Spacer()
                 }
                 VStack(alignment: .leading, spacing: 4) {

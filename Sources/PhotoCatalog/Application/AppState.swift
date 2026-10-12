@@ -5567,6 +5567,8 @@ final class AppState {
 
     /// 照片 → 重命名照片…: the rename dialog, with a preview of the new names.
     func showRenameSheet() {
+        // Settings, a window of its own, offers this too: never in place of a dialog already up
+        guard onboarded, sheet == nil else { return }
         let targets = renameTargets()
         guard !targets.isEmpty else {
             push("仅可重命名已导入照片", "warning")
