@@ -47,16 +47,21 @@ enum HashService {
             bySize[fileSizeBytes(a.fileMB), default: []].append(a)
         }
         var groups: [DuplicateGroup] = []
-        var n = 0
         for (_, bucket) in bySize where bucket.count > 1 {
             var byHash: [String: [Asset]] = [:]
             for a in bucket { byHash[a.contentHash!, default: []].append(a) }
             for (_, items) in byHash where items.count > 1 {
-                groups.append(DuplicateGroup(id: "dg-real-\(n)", method: "contentHash", score: 1.0, items: items))
-                n += 1
+                groups.append(DuplicateGroup(id: groupId("real", items), method: "contentHash", score: 1.0, items: items))
             }
         }
         return groups
+    }
+
+    /// A group's id from its kind and its photos, not from its place in the list: the Duplicates
+    /// view remembers its choices by id, so a group keeps it when the groups are found again,
+    /// and the one left after another is resolved doesn't take over the resolved one's id.
+    static func groupId(_ kind: String, _ items: [Asset]) -> String {
+        "dg-\(kind)-" + items.map(\.id).sorted().joined(separator: "-")
     }
 
     static func exactDuplicateKey(_ asset: Asset) -> String? {
@@ -75,17 +80,15 @@ enum HashService {
         }
 
         var groups: [DuplicateGroup] = []
-        var index = 0
         for (_, bucket) in buckets where bucket.count > 1 {
             let contentHashes = Set(bucket.compactMap(\.contentHash))
             if contentHashes.count == 1 && bucket.allSatisfy({ $0.contentHash != nil }) {
                 continue
             }
-            groups.append(DuplicateGroup(id: "dg-sus-\(index)",
+            groups.append(DuplicateGroup(id: groupId("sus", bucket),
                                          method: "suspected",
                                          score: 0.82,
                                          items: bucket))
-            index += 1
         }
         return groups
     }

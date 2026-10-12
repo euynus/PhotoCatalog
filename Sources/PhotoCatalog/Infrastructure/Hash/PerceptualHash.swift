@@ -58,7 +58,6 @@ enum PerceptualHash {
         }
         var used = Set<String>()
         var groups: [DuplicateGroup] = []
-        var n = 0
         for i in hashed.indices {
             let base = hashed[i]
             if used.contains(base.asset.id) { continue }
@@ -75,11 +74,11 @@ enum PerceptualHash {
             used.insert(base.asset.id)
             members.forEach { used.insert($0.0.id) }
             let worst = members.map { $0.1 }.max() ?? 0
+            let items = [base.asset] + members.map { $0.0 }
             groups.append(DuplicateGroup(
-                id: "dg-sim-\(n)", method: "perceptualHash",
+                id: HashService.groupId("sim", items), method: "perceptualHash",
                 score: 1.0 - Double(worst) / 64.0,
-                items: [base.asset] + members.map { $0.0 }))
-            n += 1
+                items: items))
         }
         return groups
     }
