@@ -8337,8 +8337,11 @@ final class AppState {
               filters.isEmpty,
               search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               sort == Sort(), collapsedStackIds.isEmpty else { return }
-        listCache = (currentListSignature, loadedAssets)
-        uncollapsedListCache = (currentListSignature, loadedAssets)
+        // as All Photographs shows them: a RAW's JPEG is behind its tile (loaded photos are live)
+        let pairing = assetPairing
+        let shown = pairing.isEmpty ? loadedAssets : loadedAssets.filter(pairing.shows)
+        listCache = (currentListSignature, shown)
+        uncollapsedListCache = (currentListSignature, shown)
         listIdentity &+= 1
     }
 
