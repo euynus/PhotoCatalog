@@ -346,7 +346,7 @@ enum DevelopRenderer {
         // +100 lifts the corners 1.3 EV, -100 darkens them as much
         let amount = s.lensVignette >= 0 ? s.lensVignette / 100 * 1.5 : s.lensVignette / 100 * 0.6
         let corrected = DevelopKernels.radialGain(image, amount: amount, start: start, width: 1 - start)
-        return DevelopKernels.distort(corrected, k: s.distortion / 100 * 0.15)
+        return DevelopKernels.distort(corrected, k: DevelopGeometry.distortionStrength(s.distortion))
     }
 
     /// The point curves, as one lookup table per channel applied to display-encoded values
@@ -369,7 +369,7 @@ enum DevelopRenderer {
             return input
         }
         let extent = input.extent
-        let depth = DepthMap.image(map, extent: extent, guide: input)
+        let depth = DepthMap.image(map, extent: extent, guide: input, distortion: s.distortion)
         if visualize {
             return depth.applyingFilter("CIFalseColor", parameters: [
                 "inputColor0": CIColor(red: 0.08, green: 0.16, blue: 0.45), "inputColor1": CIColor(red: 1, green: 0.62, blue: 0.25),

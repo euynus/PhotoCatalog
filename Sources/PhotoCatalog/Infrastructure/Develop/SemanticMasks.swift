@@ -119,7 +119,7 @@ enum SemanticMasks {
             .transformed(by: CGAffineTransform(translationX: extent.minX, y: extent.minY))
             .cropped(to: extent)
         if inverted { image = image.applyingFilter("CIColorInvert") }
-        return DevelopKernels.distort(image, k: distortion / 100 * 0.15)
+        return DevelopKernels.distort(image, k: DevelopGeometry.distortionStrength(distortion))
     }
 
     // ---- the canonical image: as shot, 1024 px ----

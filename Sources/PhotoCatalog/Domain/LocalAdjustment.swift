@@ -424,6 +424,23 @@ extension DevelopGeometry {
         return CGPoint(x: (x / fw - crop.x) / crop.width, y: (y / fh - crop.y) / crop.height)
     }
 
+    /// The manual distortion correction's strength for the Distortion slider: k of
+    /// `DevelopKernels.distort`.
+    static func distortionStrength(_ distortion: Double) -> Double { distortion / 100 * 0.15 }
+
+    /// Where the manual distortion correction takes the point `p` of the corrected photo from:
+    /// what's there in the photo as decoded, and in what's made from it (masks, depth).
+    static func distortionSource(_ p: CGPoint, distortion: Double, sourceSize: CGSize) -> CGPoint {
+        let k = distortionStrength(distortion)
+        guard k != 0 else { return p }
+        // as the kernel samples: about the middle, zoomed in for k < 0, r = 1 at the corners
+        let w = Double(sourceSize.width), h = Double(sourceSize.height)
+        let zoom = k < 0 ? 1 - k : 1
+        let dx = (Double(p.x) - 0.5) * w / zoom, dy = (Double(p.y) - 0.5) * h / zoom
+        let scale = 1 - k * (dx * dx + dy * dy) / max((w * w + h * h) / 4, 1e-9)
+        return CGPoint(x: 0.5 + dx * scale / max(w, 1e-9), y: 0.5 + dy * scale / max(h, 1e-9))
+    }
+
     static func sourcePoint(fromFinished p: CGPoint, settings s: DevelopSettings, sourceSize: CGSize) -> CGPoint {
         let w = Double(sourceSize.width), h = Double(sourceSize.height)
         let frame = rotatedSize(sourceSize, s.rotation)

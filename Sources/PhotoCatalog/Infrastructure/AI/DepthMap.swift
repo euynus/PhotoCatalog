@@ -32,8 +32,10 @@ enum DepthMap {
         /// The depth under `point` of the finished photo (fractions, top-left origin) as
         /// `settings` develop it; `sourceSize` is the decoded photo's size (any scale).
         func depth(atFinished point: CGPoint, settings: DevelopSettings, sourceSize: CGSize) -> Double {
-            // already fractions of the source photo, as the map is
-            depth(at: DevelopGeometry.sourcePoint(fromFinished: point, settings: settings, sourceSize: sourceSize))
+            // on the photo with its lens corrected, then where that comes from as decoded, as the map is
+            let corrected = DevelopGeometry.sourcePoint(fromFinished: point, settings: settings, sourceSize: sourceSize)
+            return depth(at: DevelopGeometry.distortionSource(corrected, distortion: settings.distortion,
+                                                              sourceSize: sourceSize))
         }
 
         /// The depth below which `fraction` of the photo lies.
@@ -144,9 +146,10 @@ enum DepthMap {
         return map.percentile(0.85)
     }
 
-    /// The map as a one-channel image over `extent`, stretched back from the model's frame, its
-    /// edges then fitted to `guide`'s (the photo), so blur stops where the subject does.
-    static func image(_ map: Map, extent: CGRect, guide: CIImage?) -> CIImage {
+    /// The map as a one-channel image over `extent`, stretched back from the model's frame and
+    /// bent by the photo's manual `distortion` correction as the photo is, its edges then fitted
+    /// to `guide`'s (the photo), so blur stops where the subject does.
+    static func image(_ map: Map, extent: CGRect, guide: CIImage?, distortion: Double = 0) -> CIImage {
         let data = map.values.withUnsafeBufferPointer { Data(buffer: $0) }
         var image = CIImage(bitmapData: data, bytesPerRow: map.width * 4,
                             size: CGSize(width: map.width, height: map.height), format: .Lf, colorSpace: nil)
@@ -155,6 +158,7 @@ enum DepthMap {
                                                         y: extent.height / CGFloat(map.height))
             .concatenating(CGAffineTransform(translationX: extent.minX, y: extent.minY)))
             .clampedToExtent().cropped(to: extent)
+        image = DevelopKernels.distort(image, k: DevelopGeometry.distortionStrength(distortion))
         guard let guide else { return image }
         let radius = max(2, max(extent.width, extent.height) * 0.004)
         return image.applyingFilter("CIGuidedFilter", parameters: [
