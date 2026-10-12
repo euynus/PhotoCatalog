@@ -1,6 +1,6 @@
 // ============================================================
-//  VolumeMonitor — detect external volume mount/unmount so assets
-//  on offline drives are flagged (PRD §5.3, §6.4 ORG-007).
+//  VolumeMonitor — detect external volume mount/unmount/rename so
+//  assets on offline drives are flagged and followed (PRD §5.3, §6.4 ORG-007).
 // ============================================================
 import Foundation
 import AppKit
@@ -15,7 +15,8 @@ final class VolumeMonitor: @unchecked Sendable {
 
     func start() {
         let nc = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
+        for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification,
+                     NSWorkspace.didRenameVolumeNotification] {
             observers.append(nc.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in self?.onChange() }
             })

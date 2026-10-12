@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import PhotoCatalog
 
@@ -188,6 +189,76 @@ final class VolumeTests: CatalogTestCase {
         XCTAssertTrue(app.openCatalog(at: store.packageURL))
 
         XCTAssertEqual(try store.loadSourceRoots().first?.status, "offline")
+    }
+
+    // ---------- a drive renamed or remounted elsewhere while the catalog is open (#50) ----------
+
+    /// Renaming a drive is a drive change the app hears about.
+    @MainActor
+    func testVolumeMonitorHearsADriveRenamed() async throws {
+        final class Count: @unchecked Sendable { var value = 0 }
+        let count = Count()
+        let monitor = VolumeMonitor { count.value += 1 }
+        monitor.start()
+        defer { monitor.stop() }
+
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didRenameVolumeNotification, object: nil)
+
+        try await waitUntil("the rename is heard", timeout: 2) { count.value == 1 }
+    }
+
+    /// The folder's drive is renamed while the catalog is open: the folder and its photos move to
+    /// the new name, and the folder is watched there.
+    @MainActor
+    func testDriveRenamedWhileOpenMovesItsFolder() async throws {
+        let (store, _, asset) = try catalogOnDrive()
+        let app = AppState()
+        app.onboarded = true
+        app.volumeProbe = probe
+        XCTAssertTrue(app.openCatalog(at: store.packageURL))
+        try await waitUntil("originals checked") { !app.isCheckingOriginals }
+
+        try FileManager.default.moveItem(at: volumes.appendingPathComponent("Photos"),
+                                         to: volumes.appendingPathComponent("Archive"))
+        let renamed = volumes.appendingPathComponent("Archive/Shoot")
+        try makeTestJPEG(at: renamed.appendingPathComponent("IMG_0002.JPG"), shade: 4)
+        app.volumesDidChange()
+        try await waitUntil("the photo added there comes in") {
+            app.assets.contains { $0.filename == "IMG_0002.JPG" } && !app.isCheckingOriginals
+        }
+
+        XCTAssertEqual(try store.loadSourceRoots().first?.pathHint, renamed.path)
+        let moved = try XCTUnwrap(app.assets.first { $0.id == asset.id })
+        XCTAssertEqual(moved.localPath, renamed.appendingPathComponent("IMG_0001.JPG").path)
+        XCTAssertEqual(moved.status, .ready)
+        XCTAssertEqual(app.folders.first { $0.id == "source-1" }?.status, "online")
+    }
+
+    /// The drive is unplugged and plugged back in while another drive has taken its name: its
+    /// folder is found under the new name; the other drive isn't read.
+    @MainActor
+    func testDriveRemountedUnderAnotherNameWhileOpenIsFollowed() async throws {
+        let (store, _, asset) = try catalogOnDrive()
+        let app = AppState()
+        app.onboarded = true
+        app.volumeProbe = probe
+        XCTAssertTrue(app.openCatalog(at: store.packageURL))
+        try await waitUntil("originals checked") { !app.isCheckingOriginals }
+
+        try unplug("Photos")
+        app.volumesDidChange()
+        try await waitUntil("originals checked") { !app.isCheckingOriginals }
+        XCTAssertEqual(app.assets.first { $0.id == asset.id }?.status, .offline)
+        try makeTestJPEG(at: try mountDrive("Photos", id: "drive-b").appendingPathComponent("Shoot/IMG_0009.JPG"), shade: 7)
+        try plugIn("Photos", as: "Photos 1")
+        app.volumesDidChange()
+        try await waitUntil("originals checked") { !app.isCheckingOriginals && !app.isIncrementalRescanning }
+
+        let moved = volumes.appendingPathComponent("Photos 1/Shoot")
+        XCTAssertEqual(try store.loadSourceRoots().first?.pathHint, moved.path)
+        XCTAssertEqual(app.assets.first { $0.id == asset.id }?.localPath, moved.appendingPathComponent("IMG_0001.JPG").path)
+        XCTAssertEqual(app.assets.first { $0.id == asset.id }?.status, .ready)
+        XCTAssertFalse(app.assets.contains { $0.filename == "IMG_0009.JPG" }, "the other drive isn't read")
     }
 
     /// The drive is swapped for another of the same name while the catalog is open: a rescan of

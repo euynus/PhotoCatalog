@@ -4626,10 +4626,12 @@ final class AppState {
         volumeMonitor = m
     }
 
-    /// A drive was mounted or unmounted. Every drive change enters the app here: source folders
-    /// that aren't watched (their drive was away) are looked for again, and one that's back is
-    /// watched again and rescanned for what changed on it meanwhile; then the originals'
-    /// availability is checked again and memory cards are listed afresh.
+    /// A drive was mounted, unmounted or renamed. Every drive change enters the app here: source
+    /// folders that aren't watched (their drive was away), and watched ones whose drive is no
+    /// longer at their path, are looked for again. One that's back, or on its drive under a new
+    /// name, is watched there and rescanned for what changed on it meanwhile, its photos moving
+    /// with it; one whose drive went away stops being watched. Then the originals' availability
+    /// is checked again and memory cards are listed afresh.
     func volumesDidChange() {
         reconnectSourceRoots()
         detectMissingRealAssets()
@@ -4639,22 +4641,32 @@ final class AppState {
     private func reconnectSourceRoots() {
         // a catalog still loading looks for its folders once it's loaded
         guard let store, !isLoadingCatalog, let roots = try? store.loadSourceRoots() else { return }
-        let watched = Set(watchedRoots.map(\.standardizedFileURL.path))
-        var cameBack = false
+        var watchChanged = false, cameBack = false
         for root in roots where root.managementMode == ImportMode.referenced.rawValue {
             let path = URL(fileURLWithPath: sourceRootPathsById[root.id] ?? root.pathHint).standardizedFileURL.path
-            guard !watched.contains(path) else { continue }
+            if let watched = watchedRoots.firstIndex(where: { $0.standardizedFileURL.path == path }) {
+                // still on its own drive, where it was (a folder on the startup disk stays put)
+                let placement = volumeProbe.placement(of: path, onVolume: root.volumeIdentifier)
+                guard volumeProbe.volumeRoot(of: path) != nil,
+                      (placement != .mounted && placement != .unchecked) || !FileManager.default.fileExists(atPath: path)
+                else { continue }
+                // its drive was renamed, unplugged, or swapped for another of its name
+                watchedRoots.remove(at: watched)
+                watchChanged = true
+            }
             let resolved = resolveSourceRoot(root)
             applySourceRoot(root, resolved: resolved, in: store)
-            if resolved.status == "online", resolved.url != nil { cameBack = true }
+            if resolved.status == "online", resolved.url != nil {
+                watchChanged = true
+                cameBack = true
+            }
         }
         for moved in movedSourceRoots {
             rebaseSourceRootAssetPaths(folderId: moved.id, oldRoot: moved.from, newRoot: moved.to)
         }
         movedSourceRoots = []
-        guard cameBack else { return }
-        refreshWatcher()
-        incrementalRescan()
+        if watchChanged { refreshWatcher() }
+        if cameBack { incrementalRescan() }
     }
 
     // ---------- batch capture-time shift (§4.2 / META-008) ----------
