@@ -92,6 +92,34 @@ final class AssetIdentityTests: CatalogTestCase {
         XCTAssertEqual(again.id, imported.id)
     }
 
+    /// Import Photo Folder… in managed mode, Remove from Catalog, the same import again: the
+    /// photo comes back, as it does for a referenced import.
+    @MainActor
+    func testManagedReimportBringsBackRemovedPhoto() async throws {
+        let folder = scratch.appendingPathComponent("Card")
+        try makeTestJPEG(at: folder.appendingPathComponent("managed.jpg"), shade: 6)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+
+        let app = AppState()
+        app.onboarded = true
+        app.importMode = .managed
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.importFolder(folder)
+        try await waitUntil("first import finished") { !app.importing }
+        let imported = try XCTUnwrap(app.assets.first { !$0.isDemo && $0.filename == "managed.jpg" })
+        XCTAssertTrue(imported.localPath?.hasPrefix(store.originalsURL.path) == true)
+        XCTAssertTrue(app.mutate([imported.id], writingSidecars: false) { $0.deleted = true })
+
+        app.importFolder(folder)
+        try await waitUntil("second import finished") { !app.importing }
+
+        XCTAssertEqual(app.assets.filter { $0.id == imported.id }.map(\.deleted), [false], "the removed photo is back")
+        XCTAssertEqual(app.assets.filter { !$0.isDemo && !$0.deleted }.count, 1)
+        let row = try store.db.query("SELECT deleted FROM assets WHERE id=?;", [.text(imported.id)]).first
+        XCTAssertEqual(row?.bool("deleted"), false)
+    }
+
     func testImportOfRemovedPhotoAtItsPathKeepsItsId() throws {
         let source = scratch.appendingPathComponent("Source")
         let photo = source.appendingPathComponent("removed.jpg")

@@ -3645,9 +3645,11 @@ final class AppState {
     @ObservationIgnored private var pendingImportRun: ImportRun?
     @ObservationIgnored private var lastImportRunFlush: ContinuousClock.Instant?
 
-    private func importOptionsSnapshot(for folder: URL) -> ImportOptionsSnapshot {
+    private func importOptionsSnapshot(for folder: URL, mode: ImportMode) -> ImportOptionsSnapshot {
         let presets = Dictionary(allDevelopPresets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let albumName = importPostAlbumName.trimmingCharacters(in: .whitespacesAndNewlines)
+        // a managed import's photos are its copies in Originals, which an import again finds there
+        let photosFolder = mode == .managed ? store?.originalsURL ?? folder : folder
         return ImportOptionsSnapshot(
             duplicateStrategy: importDuplicateStrategy.rawValue,
             keywords: ImportPostActionService.normalizeKeywords(importPostKeywords),
@@ -3658,7 +3660,7 @@ final class AppState {
             rawDefaultOptOuts: Set(rawDefaultPresetIds.filter { $0.value == "none" }.map(\.key)),
             bookmark: FileAccessService.createBookmark(for: folder),
             // taken as the import begins: photos removed later, while it runs, stay removed
-            revivableIds: try? store?.removedAssetIds(under: folder))
+            revivableIds: try? store?.removedAssetIds(under: photosFolder))
     }
 
     private func prepareImportBatches(options: ImportOptionsSnapshot,
@@ -4057,7 +4059,7 @@ final class AppState {
         guard let coordinator, let store else { return }
         do {
             let checkpoints = try store.loadImportCheckpoints(sessionId: run.id.uuidString)
-            prepareImportBatches(options: options ?? importOptionsSnapshot(for: folder), checkpoints: checkpoints)
+            prepareImportBatches(options: options ?? importOptionsSnapshot(for: folder, mode: mode), checkpoints: checkpoints)
         } catch {
             failImportPersistence(error, run: run, store: store, detail: L("未能恢复导入"))
             return
@@ -4212,7 +4214,8 @@ final class AppState {
         guard !importing else { return false }
         sheet = "import"
         let jobId = "job-" + run.id.uuidString
-        let options = configuration?.options ?? importOptionsSnapshot(for: URL(fileURLWithPath: run.sourcePath))
+        let options = configuration?.options
+            ?? importOptionsSnapshot(for: URL(fileURLWithPath: run.sourcePath), mode: run.mode)
         do {
             try store.db.transaction {
                 try store.startImportSession(id: run.id.uuidString, startedAt: run.startedAt)
