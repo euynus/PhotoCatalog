@@ -6744,13 +6744,21 @@ final class AppState {
     func slideshowEnded() { slideshowPlayer = nil }
 
     /// A photo as slideshow videos, web galleries and books render it: its original, with its
-    /// develop settings; nil without a local original.
-    private func renderItem(for asset: Asset) -> PrintItem? {
-        guard let source = developSource(for: asset) else { return nil }
-        return PrintItem(sourcePath: source.url.path, isRaw: source.isRaw,
+    /// develop settings; nil without a local original — never the cached preview of an offline
+    /// one, too small for a printed page or a 4K frame. Those are left out, and said so.
+    func renderItem(for asset: Asset) -> PrintItem? {
+        guard !asset.isVideo, asset.status == .ready, let path = asset.localPath else { return nil }
+        return PrintItem(sourcePath: path, isRaw: asset.isRaw,
                          develop: developSettings[asset.id] ?? .neutral,
                          originalSize: CGSize(width: asset.width, height: asset.height),
                          filename: asset.filename, title: asset.title)
+    }
+
+    /// Says that `count` photos were left out of a slideshow video, web gallery or book because
+    /// their originals are offline or missing.
+    private func noteOriginalsLeftOut(_ count: Int) {
+        guard count > 0 else { return }
+        push("原件离线而未包含的照片：\(count) 张", "warning")
     }
 
     /// Writes the slideshow as an MP4 video at `url`: the photos with a local original, rendered
@@ -6758,7 +6766,8 @@ final class AppState {
     func exportSlideshowVideo(to url: URL) {
         guard slideshowExportProgress == nil else { return }
         let settings = slideshowSettings
-        let slides = slideshowOrder(presentationAssets(), settings: settings).compactMap { asset -> SlideshowSlide? in
+        let shown = slideshowOrder(presentationAssets(), settings: settings)
+        let slides = shown.compactMap { asset -> SlideshowSlide? in
             guard let item = renderItem(for: asset) else { return nil }
             return SlideshowSlide(item: item, caption: settings.caption.text(for: asset))
         }
@@ -6767,6 +6776,7 @@ final class AppState {
             return
         }
         sheet = nil
+        noteOriginalsLeftOut(shown.count - slides.count)
         let music = slideshowMusic(settings)
         let seconds = settings.slideSeconds(fitting: slides.count, toMusic: music.flatMap(SlideshowVideo.musicDuration))
         let timeline = SlideshowTimeline(count: slides.count, slide: seconds, fade: settings.fadeSeconds, repeats: false)
@@ -6844,7 +6854,7 @@ final class AppState {
 
     func showWebGallery() {
         guard canExportWebGallery else { return }
-        guard presentationAssets().contains(where: { developSource(for: $0) != nil }) else {
+        guard presentationAssets().contains(where: { renderItem(for: $0) != nil }) else {
             push("这些照片没有可用的本地原件", "warning")
             return
         }
@@ -6873,7 +6883,8 @@ final class AppState {
     func exportWebGallery(to parent: URL) {
         guard webGalleryProgress == nil else { return }
         let settings = webGallerySettings
-        let photos = presentationAssets().compactMap { asset -> WebGalleryPhoto? in
+        let shown = presentationAssets()
+        let photos = shown.compactMap { asset -> WebGalleryPhoto? in
             guard let item = renderItem(for: asset) else { return nil }
             let caption = settings.caption.text(for: asset)
             return WebGalleryPhoto(item: item,
@@ -6885,6 +6896,7 @@ final class AppState {
             return
         }
         sheet = nil
+        noteOriginalsLeftOut(shown.count - photos.count)
         let name = settings.title.isEmpty ? webGalleryDefaultTitle : settings.title
         var initial = BackgroundTask(kind: .exportPhotos, title: L("导出网页画廊"), state: .running,
                                      totalCount: photos.count, destination: parent)
@@ -6940,6 +6952,7 @@ final class AppState {
         let items = bookItems(caption: settings.caption)
         guard !items.isEmpty, bookProgress == nil else { return }
         sheet = nil
+        noteOriginalsLeftOut(presentationAssets().count - items.count)
         let renderer = BookRenderer(items: items, settings: settings)
         let pageCount = renderer.pages.count
         var initial = BackgroundTask(kind: .exportPhotos, title: L("导出画册 PDF"), state: .running,

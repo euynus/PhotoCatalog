@@ -1762,6 +1762,7 @@
 "结束放映 (Esc)" = "End Slideshow (Esc)";
 "没有可放映的照片" = "No photos to show";
 "这些照片没有可用的本地原件" = "These photos have no local originals";
+"原件离线而未包含的照片：%lld 张" = "Left out because their originals are offline: %lld";
 "幻灯片视频已导出：%@" = "Slideshow video exported: %@";
 "幻灯片视频未能导出" = "The slideshow video couldn't be exported";
 
