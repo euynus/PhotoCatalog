@@ -42,4 +42,28 @@ final class ManagedImportTests: CatalogTestCase {
 
         XCTAssertEqual(imported.localPath, day.appendingPathComponent("IMG_1234.JPG").path)
     }
+
+    /// A folder holding a link to a photo kept elsewhere: Originals gets the photo itself, so the
+    /// copy outlives the file the link pointed to.
+    func testLinkedPhotoIsCopiedAsAFile() throws {
+        let store = try CatalogStore(packageURL: scratch.appendingPathComponent("Library.photolibrary"))
+        let elsewhere = scratch.appendingPathComponent("Elsewhere/photo.jpg")
+        try makeTestJPEG(at: elsewhere, shade: 3)
+        let bytes = try Data(contentsOf: elsewhere)
+        let folder = scratch.appendingPathComponent("Folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let link = folder.appendingPathComponent("linked.jpg")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: elsewhere)
+
+        let imported = try XCTUnwrap(ImportCoordinator(store: store)
+            .importFiles([link], from: folder, mode: .managed, readSidecar: false).first)
+
+        let copy = URL(fileURLWithPath: try XCTUnwrap(imported.localPath))
+        XCTAssertTrue(copy.path.hasPrefix(store.originalsURL.path + "/"))
+        XCTAssertEqual(copy.lastPathComponent, "linked.jpg", "named as the folder shows it")
+        XCTAssertEqual(try copy.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink, false,
+                       "the copy is a file, not a link")
+        try FileManager.default.removeItem(at: elsewhere)
+        XCTAssertEqual(try? Data(contentsOf: copy), bytes, "the copy outlives the photo the link pointed to")
+    }
 }

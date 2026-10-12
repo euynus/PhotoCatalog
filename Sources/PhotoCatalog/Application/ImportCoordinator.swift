@@ -385,7 +385,8 @@ final class ImportCoordinator: @unchecked Sendable {
             dest = dir.appendingPathComponent("\(base) (\(i)).\(url.pathExtension)")
             i += 1
         }
-        try FileManager.default.copyItem(at: url, to: dest)
+        // the photo a link points to, not the link: a copied link would dangle once the photo goes
+        try FileManager.default.copyItem(at: url.resolvingSymlinksInPath(), to: dest)
         return dest
     }
 
