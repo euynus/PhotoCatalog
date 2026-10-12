@@ -262,6 +262,8 @@ final class DevelopPreviewEngine: ObservableObject {
     private let fullWorker = DevelopRenderWorker()
     private var token = 0
     private var histogramToken = 0
+    /// The photo the newest render is of: the one on the canvas.
+    private var requestedAssetId: String?
 
     func shown(for assetId: String) -> Shown? { shown?.assetId == assetId ? shown : nil }
 
@@ -279,6 +281,15 @@ final class DevelopPreviewEngine: ObservableObject {
 
     func isRendering(_ assetId: String) -> Bool { renderingAssetId == assetId }
 
+    /// Whether a finished render of `assetId` (request `token`) replaces `shown`: only one of the
+    /// photo last `requested` — the engine outlives a photo, and a late full-resolution render of
+    /// the one before would blank the canvas — and of the photo shown, only one at least as new;
+    /// a coalesced older render still beats a stale photo while dragging.
+    nonisolated static func shows(assetId: String, token: Int, requested: String?,
+                                  over shown: (assetId: String, token: Int)?) -> Bool {
+        assetId == requested && (shown?.assetId != assetId || token >= (shown?.token ?? 0))
+    }
+
     func render(assetId: String, url: URL, isRaw: Bool, settings: DevelopSettings, draft: Bool,
                 fullResolution: Bool, wholeFrame: Bool, overlayMask: String? = nil, visualizeSpots: Bool = false,
                 visualizeDepth: Bool = false, proof: SoftProof? = nil,
@@ -293,6 +304,7 @@ final class DevelopPreviewEngine: ObservableObject {
         request.visualizeDepth = visualizeDepth
         request.proof = proof
         renderingAssetId = assetId
+        requestedAssetId = assetId
         (fullResolution ? fullWorker : previewWorker).submit(request) { [weak self] result in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -304,9 +316,9 @@ final class DevelopPreviewEngine: ObservableObject {
                     histogram = result.histogram
                 }
                 finished(result, histogram)
-                // a coalesced older render still beats a stale photo while dragging
                 guard let image = result.image,
-                      self.shown?.assetId != assetId || result.request.token >= (self.shown?.token ?? 0) else { return }
+                      Self.shows(assetId: assetId, token: result.request.token, requested: self.requestedAssetId,
+                                 over: self.shown.map { ($0.assetId, $0.token) }) else { return }
                 self.shown = Shown(assetId: assetId, token: result.request.token, image: image,
                                    fullResolution: result.request.maxPixel == nil,
                                    wholeFrame: result.request.wholeFrame,
