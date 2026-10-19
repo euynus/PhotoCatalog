@@ -254,6 +254,8 @@ final class AppState {
     var thumbnailCacheGeneration = 0
     @ObservationIgnored private var listCache: (signature: ListSignature, value: [Asset])?
     @ObservationIgnored private var uncollapsedListCache: (signature: ListSignature, value: [Asset])?
+    /// How many list positions patching edits into the list has looked at one by one (for tests).
+    @ObservationIgnored private(set) var listPatchScannedPhotos = 0
     /// Every sidecar write, automatic or asked for, goes through the writer with the next sequence.
     @ObservationIgnored private var automaticXMPWriter = AutomaticXMPWriter()
     @ObservationIgnored private var automaticXMPWriteSequence: UInt64 = 0
@@ -482,8 +484,10 @@ final class AppState {
             let positions = listPositionsCache.flatMap { $0.signature == before ? $0.positions : nil }
                 ?? (edits.count > Self.listScanLimit ? Self.positions(of: visible.value) : nil)
             let hint = listPositionHint
+            let shows = listShows
             listCache = nil
             uncollapsedListCache = nil
+            var scanned = 0
             visible.value.withUnsafeMutableBufferPointer { buffer in
                 if let positions {
                     for edit in edits {
@@ -491,19 +495,23 @@ final class AppState {
                     }
                     return
                 }
-                var pending = edits.map(\.asset)
+                // a JPEG behind its RAW (a rating reaches both) or a removed photo is in no list:
+                // looking for it walked every photo
+                var pending = edits.map(\.asset).filter(shows)
                 if let hint, hint.position < buffer.count, buffer[hint.position].id == hint.id,
                    let slot = pending.firstIndex(where: { $0.id == hint.id }) {
                     buffer[hint.position] = pending.remove(at: slot)
                 }
                 guard !pending.isEmpty else { return }
                 for position in buffer.indices {
+                    scanned += 1
                     let id = buffer[position].id
                     guard let slot = pending.firstIndex(where: { $0.id == id }) else { continue }
                     buffer[position] = pending.remove(at: slot)
                     if pending.isEmpty { break }
                 }
             }
+            listPatchScannedPhotos += scanned
             listCache = (after, visible.value)
             uncollapsedListCache = (after, visible.value)
             if let positions { listPositionsCache = (after, positions) }
@@ -511,6 +519,7 @@ final class AppState {
         }
         let edited = Dictionary(edits.map { ($0.asset.id, $0.asset) }, uniquingKeysWith: { $1 })
         func patch(_ list: inout [Asset]) {
+            listPatchScannedPhotos += list.count
             list.withUnsafeMutableBufferPointer { buffer in
                 for i in buffer.indices {
                     if let asset = edited[buffer[i].id] { buffer[i] = asset }
@@ -9005,13 +9014,17 @@ final class AppState {
     }
 
     // ---------- base collection from sidebar ----------
+    /// Whether a photo can be in the list at all: not removed, and not a JPEG behind its RAW.
+    /// Missing/offline is file-level: a lost JPEG must show even when its RAW is fine.
+    private var listShows: (Asset) -> Bool {
+        (selection.type == .lib && selection.id == "missing" ? .empty : assetPairing).shows
+    }
+
     var baseList: [Asset] {
         // Observed inputs are read once, outside the per-asset predicates, and live +
         // collection membership is one pass: no intermediate copy of every asset.
         let selection = self.selection
-        // Missing/offline is file-level: a lost JPEG must show even when its RAW is fine.
-        let pairing = selection.type == .lib && selection.id == "missing" ? .empty : assetPairing
-        let live = pairing.shows
+        let live = listShows
         let belongs: (Asset) -> Bool
         switch selection.type {
         case .folder:
