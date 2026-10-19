@@ -206,13 +206,16 @@ final class AppState {
                 for keyword in old.keywords { Self.add(-1, to: keyword, in: &counts.keywords) }
                 for keyword in new.keywords { Self.add(1, to: keyword, in: &counts.keywords) }
             }
-            if old.project != new.project {
-                if !old.project.isEmpty { Self.add(-1, to: old.project, in: &counts.projects) }
-                if !new.project.isEmpty { Self.add(1, to: new.project, in: &counts.projects) }
+            // under their names as listed, without the spaces around them
+            let (oldProject, newProject) = (listedValue(old.project), listedValue(new.project))
+            if oldProject != newProject {
+                if !oldProject.isEmpty { Self.add(-1, to: oldProject, in: &counts.projects) }
+                if !newProject.isEmpty { Self.add(1, to: newProject, in: &counts.projects) }
             }
-            if old.client != new.client {
-                if !old.client.isEmpty { Self.add(-1, to: old.client, in: &counts.clients) }
-                if !new.client.isEmpty { Self.add(1, to: new.client, in: &counts.clients) }
+            let (oldClient, newClient) = (listedValue(old.client), listedValue(new.client))
+            if oldClient != newClient {
+                if !oldClient.isEmpty { Self.add(-1, to: oldClient, in: &counts.clients) }
+                if !newClient.isEmpty { Self.add(1, to: newClient, in: &counts.clients) }
             }
         }
 
@@ -8476,7 +8479,7 @@ final class AppState {
             let raw = asset[keyPath: keyPath]
             // most photos have no value: skip them before any lookup or Foundation call
             guard !raw.isEmpty, pairing.shows(asset) else { return "" }
-            return raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return listedValue(raw)
         }
 
         /// Moves the photos at the changes' offsets from their old value to their new one, as a
@@ -8874,8 +8877,13 @@ final class AppState {
                     run = 0
                 }
                 run += 1
-                if !asset.project.isEmpty { tallies.projects[asset.project, default: 0] += 1 }
-                if !asset.client.isEmpty { tallies.clients[asset.client, default: 0] += 1 }
+                // under their names as the lists give them: without the spaces around them
+                if !asset.project.isEmpty, case let project = listedValue(asset.project), !project.isEmpty {
+                    tallies.projects[project, default: 0] += 1
+                }
+                if !asset.client.isEmpty, case let client = listedValue(asset.client), !client.isEmpty {
+                    tallies.clients[client, default: 0] += 1
+                }
                 for offset in rules.indices where rules[offset].matches(asset, memo: &memos[offset]) {
                     tallies.smartAlbums[offset] += 1
                 }
@@ -8983,10 +8991,11 @@ final class AppState {
             belongs = { rule.matches($0, memo: &memo) }
         case .keyword:
             belongs = { $0.keywords.contains(selection.id) }
+        // a project or client is listed without the spaces around it, and shows what it counts
         case .project:
-            belongs = { $0.project == selection.id }
+            belongs = { $0.project == selection.id || (!$0.project.isEmpty && listedValue($0.project) == selection.id) }
         case .client:
-            belongs = { $0.client == selection.id }
+            belongs = { $0.client == selection.id || (!$0.client.isEmpty && listedValue($0.client) == selection.id) }
         case .captureDate:
             guard let range = CaptureDates.interval(for: selection.id) else { return [] }
             belongs = { CaptureDates.contains($0.date, in: range) }
@@ -11412,6 +11421,12 @@ extension AppLanguage {
             UserDefaults.app.set([rawValue], forKey: Self.defaultsKey)
         }
     }
+}
+
+/// A project or client (or camera) as the sidebar and the filter bar list it: without the spaces
+/// and line breaks around it, so " Wedding " and "Wedding" are one project.
+fileprivate func listedValue(_ raw: String) -> String {
+    raw.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
 /// Grid layout shared by GridView and arrow-key navigation. `target` is the

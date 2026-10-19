@@ -306,3 +306,35 @@ extension SidebarCountTests {
         }
     }
 }
+
+extension SidebarCountTests {
+    /// A project or client typed with spaces around it is listed trimmed; its pinned count and its
+    /// collection go by that trimmed name too, as the list counts it.
+    @MainActor
+    func testProjectWithSurroundingSpacesCountsAndShowsUnderItsTrimmedName() throws {
+        let app = AppState.selfCheckFixture()
+        var spaced = photo("spaced", "IMG_0001.JPG", raw: false, project: " Wedding ")
+        spaced.client = "Acme "
+        let plain = photo("plain", "IMG_0002.JPG", raw: false, offset: 10, project: "Wedding")
+        let others = (0..<4).map { photo("filler-\($0)", "IMG_1\($0).JPG", raw: false, offset: 100 + Double($0)) }
+        app.assets = [spaced, plain] + others
+        app.duplicateGroupsCache = []
+        XCTAssertEqual(app.projectList.first { $0.name == "Wedding" }?.count, 2)
+
+        let project = PinnedSidebarItem(type: .project, selectionId: "Wedding", name: "Wedding")
+        let client = PinnedSidebarItem(type: .client, selectionId: "Acme", name: "Acme")
+        XCTAssertEqual(app.countForPinnedSidebarItem(project), "2", "the pinned project counts what the list does")
+        XCTAssertEqual(app.countForPinnedSidebarItem(client), "1")
+        XCTAssertEqual(app.sidebarCounts, app.recountedSidebarCounts())
+
+        app.select(Selection(type: .project, id: "Wedding", name: "Wedding"))
+        XCTAssertEqual(Set(app.list.map(\.id)), [spaced.id, plain.id], "the collection shows what it counts")
+        app.select(Selection(type: .client, id: "Acme", name: "Acme"))
+        XCTAssertEqual(app.list.map(\.id), [spaced.id])
+
+        // an edit to the spacing alone keeps both where they were
+        XCTAssertTrue(app.mutate([plain.id]) { $0.project = "Wedding  " })
+        XCTAssertEqual(app.countForPinnedSidebarItem(project), "2")
+        XCTAssertEqual(app.sidebarCounts, app.recountedSidebarCounts())
+    }
+}
