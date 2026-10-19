@@ -52,12 +52,13 @@ struct SQLiteRow {
 }
 
 enum DBError: Error, CustomStringConvertible {
-    case open(String), prepare(String), step(String)
+    case open(String), prepare(String), step(String), bind(String)
     var description: String {
         switch self {
         case .open(let m): return "sqlite open failed: \(m)"
         case .prepare(let m): return "sqlite prepare failed: \(m)"
         case .step(let m): return "sqlite step failed: \(m)"
+        case .bind(let m): return "sqlite bind failed: \(m)"
         }
     }
 }
@@ -178,6 +179,7 @@ final class Database: @unchecked Sendable {
             let stmt = try preparedStatement(sql, params)
             defer { sqlite3_reset(stmt); sqlite3_clear_bindings(stmt) }
             var values: [T] = []
+            let columns = SQLiteRow(stmt: stmt)
             let cols = Int(sqlite3_column_count(stmt))
             // column names are stable for the statement — read them once, not per row
             let names = (0..<cols).map { String(cString: sqlite3_column_name(stmt, Int32($0))) }
@@ -195,7 +197,8 @@ final class Database: @unchecked Sendable {
                         switch sqlite3_column_type(stmt, i) {
                         case SQLITE_INTEGER: row[name] = .int(Int(sqlite3_column_int64(stmt, i)))
                         case SQLITE_FLOAT: row[name] = .double(sqlite3_column_double(stmt, i))
-                        case SQLITE_TEXT: row[name] = .text(String(cString: sqlite3_column_text(stmt, i)))
+                        // by its byte count: a NUL inside the text doesn't end it
+                        case SQLITE_TEXT: row[name] = .text(String(decoding: columns.bytes(i), as: UTF8.self))
                         case SQLITE_BLOB:
                             // an empty BLOB has no bytes to point at (the pointer is NULL), but
                             // it's still a value: a face kept without a vector, say
@@ -274,16 +277,30 @@ final class Database: @unchecked Sendable {
         }
         for (i, p) in params.enumerated() {
             let idx = Int32(i + 1)
+            let rc: Int32
             switch p {
-            case .int(let v): sqlite3_bind_int64(stmt, idx, Int64(v))
-            case .double(let v): sqlite3_bind_double(stmt, idx, v)
-            case .text(let v): sqlite3_bind_text(stmt, idx, v, -1, SQLITE_TRANSIENT)
+            case .int(let v): rc = sqlite3_bind_int64(stmt, idx, Int64(v))
+            case .double(let v): rc = sqlite3_bind_double(stmt, idx, v)
+            case .text(let v):
+                // by its byte count, so a NUL inside doesn't end it
+                rc = v.withCString {
+                    sqlite3_bind_text64(stmt, idx, $0, sqlite3_uint64(v.utf8.count), SQLITE_TRANSIENT, UInt8(SQLITE_UTF8))
+                }
             case .blob(let d) where d.isEmpty:
                 // empty data may have no address, and a NULL pointer would bind NULL, not an empty BLOB
-                sqlite3_bind_zeroblob(stmt, idx, 0)
+                rc = sqlite3_bind_zeroblob(stmt, idx, 0)
             case .blob(let d):
-                _ = d.withUnsafeBytes { sqlite3_bind_blob(stmt, idx, $0.baseAddress, Int32(d.count), SQLITE_TRANSIENT) }
-            case .null: sqlite3_bind_null(stmt, idx)
+                // a 64-bit length: data past SQLite's limit is refused (SQLITE_TOOBIG), never cut short
+                rc = d.withUnsafeBytes {
+                    sqlite3_bind_blob64(stmt, idx, $0.baseAddress, sqlite3_uint64($0.count), SQLITE_TRANSIENT)
+                }
+            case .null: rc = sqlite3_bind_null(stmt, idx)
+            }
+            // a value that doesn't bind (a parameter with no placeholder, one too big) would leave
+            // NULL in its place: the statement isn't run without it
+            guard rc == SQLITE_OK else {
+                throw DBError.bind("parameter \(idx) of \(sqlite3_bind_parameter_count(stmt)): "
+                                   + String(cString: sqlite3_errstr(rc)))
             }
         }
         return stmt

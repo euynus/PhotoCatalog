@@ -59,6 +59,40 @@ final class SQLiteTests: XCTestCase {
         XCTAssertEqual(rows.map { $0.blob("v") }, [Data(), Data()])
     }
 
+    /// Text is stored and read back whole, a NUL character in it included: written as a
+    /// parameter, or read from what SQL wrote.
+    func testTextWithAnEmbeddedNulRoundTrips() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-sqlite-nul-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let db = try Database(path: dir.appendingPathComponent("test.sqlite").path)
+        try db.run("CREATE TABLE t(id INTEGER PRIMARY KEY, v TEXT);")
+        try db.run("INSERT INTO t(id, v) VALUES(1, ?);", [.text("a\u{0}b")])
+        try db.run("INSERT INTO t(id, v) VALUES(2, CAST(X'610062' AS TEXT));")
+        try db.run("INSERT INTO t(id, v) VALUES(3, ?);", [.text("")])
+
+        let rows = try db.query("SELECT id, v, length(CAST(v AS BLOB)) AS bytes FROM t ORDER BY id;")
+        XCTAssertEqual(rows.map { $0.int("bytes") }, [3, 3, 0], "the parameter is stored whole")
+        XCTAssertEqual(rows.map { $0.text("v") }, ["a\u{0}b", "a\u{0}b", ""], "and read back whole")
+    }
+
+    /// A parameter the statement has no place for is an error, not quietly dropped.
+    func testParameterWithoutAPlaceholderThrows() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-sqlite-bind-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let db = try Database(path: dir.appendingPathComponent("test.sqlite").path)
+        try db.run("CREATE TABLE t(id INTEGER PRIMARY KEY);")
+        XCTAssertThrowsError(try db.run("INSERT INTO t(id) VALUES(?);", [.int(1), .text("extra")]))
+        XCTAssertEqual(db.scalarInt("SELECT COUNT(*) FROM t;"), 0)
+        try db.run("INSERT INTO t(id) VALUES(?);", [.int(1)])
+        XCTAssertEqual(db.scalarInt("SELECT COUNT(*) FROM t;"), 1, "the statement still works with its own parameters")
+    }
+
     /// A face named without a vector (none could be made for it) is still there after a relaunch.
     func testNamedFaceWithoutVectorSurvivesReload() throws {
         let dir = FileManager.default.temporaryDirectory
