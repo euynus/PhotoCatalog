@@ -1862,6 +1862,44 @@ final class AppStateSelectionTests: XCTestCase {
                        "重复文件处理未完成 · 已回滚 1 个原件 · 目录库保存失败")
     }
 
+    /// A virtual copy is saved with the develop settings it starts from, or not at all: copies
+    /// the catalog kept without them would show up at the next launch, unseen until then.
+    @MainActor
+    func testVirtualCopiesThatFailToSaveLeaveNothingInTheCatalog() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-virtual-copy-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        var asset = try XCTUnwrap(DemoData.assets.first)
+        asset.isDemo = false
+        asset.deleted = false
+        try store.upsert([asset])
+        var edit = DevelopSettings.neutral
+        edit.exposure = 0.7
+        try store.saveDevelopSettings([asset.id: edit])
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.primaryId = asset.id
+        app.selectedIds = [asset.id]
+        let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
+        try db.execChecked("""
+        CREATE TRIGGER fail_copy_settings BEFORE INSERT ON develop_settings
+        BEGIN
+          SELECT RAISE(ABORT, 'forced develop settings save failure');
+        END;
+        """)
+
+        app.createVirtualCopies()
+
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "创建虚拟副本失败，目录库未保存")
+        XCTAssertFalse(app.assets.contains { $0.isVirtualCopy })
+        XCTAssertEqual(try store.db.query("SELECT id FROM assets WHERE master_id IS NOT NULL;").count, 0,
+                       "a copy is in the catalog without its develop settings")
+    }
+
     @MainActor
     func testAlbumCountsIgnoreSoftDeletedAssets() throws {
         let app = AppState()

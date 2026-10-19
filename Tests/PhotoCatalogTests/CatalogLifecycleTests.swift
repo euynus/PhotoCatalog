@@ -248,6 +248,38 @@ final class CatalogLifecycleTests: XCTestCase {
         XCTAssertTrue(inSession(try second.store.loadAssets()).isEmpty, "a shot of the previous catalog's session is saved in the next")
     }
 
+    /// A shot is saved with the session's folder as a source folder, or not at all: a photo the
+    /// catalog kept without its folder would show up at the next launch, unseen until then.
+    @MainActor
+    func testTetheredShotThatFailsToSaveLeavesNothingInTheCatalog() async throws {
+        let first = try makeCatalog("First", assets: [0])
+        let fixture = root.appendingPathComponent("fixture.jpg")
+        try writeJPEG(fixture)
+        let app = makeApp()
+        XCTAssertTrue(app.openCatalog(at: first.url))
+        var settings = TetherSettings()
+        settings.sessionName = "Studio"
+        settings.destinationPath = root.appendingPathComponent("Sessions").path
+        let session = root.appendingPathComponent("Sessions/Studio").standardizedFileURL.path
+        let camera = FakeTetherSource(fixture: fixture)
+        XCTAssertTrue(app.startTether(settings, source: camera))
+        try first.store.db.execChecked("""
+        CREATE TRIGGER fail_session_folder BEFORE INSERT ON source_roots
+        BEGIN
+          SELECT RAISE(ABORT, 'forced source folder save failure');
+        END;
+        """)
+
+        camera.shoot()
+        try await waitUntil("The shot's save never failed", timeout: 5) {
+            app.toastCenter.toasts.contains { $0.message == "联机拍摄的照片未能保存到目录库" }
+        }
+
+        func inSession(_ assets: [Asset]) -> [Asset] { assets.filter { $0.localPath?.hasPrefix(session) == true } }
+        XCTAssertTrue(inSession(app.assets).isEmpty)
+        XCTAssertTrue(inSession(try first.store.loadAssets()).isEmpty, "the shot is in the catalog without its folder")
+    }
+
     // MARK: - #61 sidecars changed elsewhere
 
     @MainActor

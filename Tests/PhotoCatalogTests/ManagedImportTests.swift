@@ -43,6 +43,44 @@ final class ManagedImportTests: CatalogTestCase {
         XCTAssertEqual(imported.localPath, day.appendingPathComponent("IMG_1234.JPG").path)
     }
 
+    /// A managed import whose catalog write fails leaves its copy in Originals; the same import
+    /// run again takes that copy for the photo rather than copying the original a second time.
+    @MainActor
+    func testImportAfterAFailedOneAdoptsTheCopyItLeft() async throws {
+        let folder = scratch.appendingPathComponent("Card")
+        try makeTestJPEG(at: folder.appendingPathComponent("shot.jpg"), shade: 5)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        try store.db.execChecked("""
+        CREATE TRIGGER fail_import_insert BEFORE INSERT ON assets
+        BEGIN
+          SELECT RAISE(ABORT, 'forced import save failure');
+        END;
+        """)
+        func copies() -> [String] {
+            (FileManager.default.enumerator(atPath: store.originalsURL.path)?.allObjects as? [String] ?? [])
+                .filter { $0.hasSuffix(".jpg") }
+        }
+
+        let app = AppState()
+        app.onboarded = true
+        app.importMode = .managed
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.importFolder(folder)
+        try await waitUntil("failed import finished") { !app.importing }
+        XCTAssertEqual(app.importRun?.phase, .failed)
+        XCTAssertTrue(try store.loadAssets().isEmpty)
+        XCTAssertEqual(copies().count, 1, "the failed import left its copy behind")
+        try store.db.execChecked("DROP TRIGGER fail_import_insert;")
+
+        app.importFolder(folder)
+        try await waitUntil("second import finished") { !app.importing }
+
+        XCTAssertEqual(copies().count, 1, "the original is copied a second time")
+        let photo = try XCTUnwrap(try store.loadAssets().first)
+        XCTAssertEqual(photo.localPath, store.originalsURL.appendingPathComponent(try XCTUnwrap(copies().first)).path)
+    }
+
     /// A folder holding a link to a photo kept elsewhere: Originals gets the photo itself, so the
     /// copy outlives the file the link pointed to.
     func testLinkedPhotoIsCopiedAsAFile() throws {

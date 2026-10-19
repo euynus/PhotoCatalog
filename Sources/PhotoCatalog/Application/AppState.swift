@@ -3567,21 +3567,21 @@ final class AppState {
             keywords: ImportPostActionService.normalizeKeywords(tetherSettings.keywords), colorLabel: nil,
             author: importAuthor, copyright: importCopyright))
         guard let newest = fresh.last else { return }
+        // the session's folder becomes a source folder of its own, saved with its first shot
+        let root = tetherFolderRegistered ? nil : SourceRootRecord(
+            id: coordinator.sourceId(forFolder: folder), displayName: folder.lastPathComponent, pathHint: folder.path,
+            bookmarkData: FileAccessService.createBookmark(for: folder), managementMode: ImportMode.referenced.rawValue,
+            status: "online", volumeIdentifier: VolumeMonitor.volumeIdentifier(for: folder))
         do {
-            try store.upsert(fresh)
-            if !tetherFolderRegistered {
-                // the session's folder becomes a source folder of its own
-                let id = coordinator.sourceId(forFolder: folder)
-                try store.addSourceRoot(id: id, displayName: folder.lastPathComponent, path: folder.path,
-                                        bookmark: FileAccessService.createBookmark(for: folder), mode: .referenced,
-                                        volumeIdentifier: VolumeMonitor.volumeIdentifier(for: folder))
-                tetherFolderRegistered = true
-                sourceManagementModesById[id] = ImportMode.referenced.rawValue
-                setSourceFolder(id: id, name: folder.lastPathComponent, path: folder.path, status: "online")
-            }
+            try store.upsert(fresh, addingSourceRoot: root)
         } catch {
             push("联机拍摄的照片未能保存到目录库", "warning")
             return
+        }
+        if let root {
+            tetherFolderRegistered = true
+            sourceManagementModesById[root.id] = root.managementMode
+            setSourceFolder(id: root.id, name: root.displayName, path: root.pathHint, status: root.status)
         }
         appendAssets(fresh)
         recordSidecarBaselines(fresh)
@@ -5719,8 +5719,7 @@ final class AppState {
             if let edit = developSettings[source.id] { settings[id] = edit }
         }
         do {
-            try store?.upsert(copies)
-            try store?.saveDevelopSettings(settings)
+            try store?.saveVirtualCopies(copies, developSettings: settings)
         } catch {
             push("创建虚拟副本失败，目录库未保存", "warning")
             return

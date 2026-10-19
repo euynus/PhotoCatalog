@@ -496,6 +496,20 @@ final class CatalogStore: @unchecked Sendable {
         try db.transaction { try upsertRows(assets) }
     }
 
+    /// `assets` and, when given, the source folder they're filed under, in one transaction: a
+    /// photo is never in the catalog without its folder.
+    func upsert(_ assets: [Asset], addingSourceRoot root: SourceRootRecord?) throws {
+        try db.transaction {
+            try upsertRows(assets)
+            if let root {
+                try addSourceRoot(id: root.id, displayName: root.displayName, path: root.pathHint,
+                                  bookmark: root.bookmarkData,
+                                  mode: ImportMode(rawValue: root.managementMode) ?? .referenced,
+                                  volumeIdentifier: root.volumeIdentifier)
+            }
+        }
+    }
+
     /// The asset row's insert, plain and as an upsert, each giving back the row's rowid.
     /// The upsert is a true in-place one. INSERT OR REPLACE would DELETE the conflicting row
     /// before re-inserting, which — with foreign_keys=ON — fires album_assets' ON DELETE CASCADE
@@ -1150,19 +1164,30 @@ final class CatalogStore: @unchecked Sendable {
 
     /// Stores `settings` for each asset; neutral settings delete the row (the photo is as shot).
     func saveDevelopSettings(_ settings: [String: DevelopSettings]) throws {
+        try db.transaction { try writeDevelopSettings(settings) }
+    }
+
+    /// Virtual copies with the develop settings they start from, in one transaction: a copy is
+    /// never in the catalog without them.
+    func saveVirtualCopies(_ copies: [Asset], developSettings: [String: DevelopSettings]) throws {
+        try db.transaction {
+            try upsertRows(copies)
+            try writeDevelopSettings(developSettings)
+        }
+    }
+
+    private func writeDevelopSettings(_ settings: [String: DevelopSettings]) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
-        try db.transaction {
-            for (id, value) in settings {
-                if value.isNeutral {
-                    try db.run("DELETE FROM develop_settings WHERE asset_id=?;", [.text(id)])
-                } else {
-                    let json = String(decoding: try encoder.encode(value), as: UTF8.self)
-                    try db.run("""
-                    INSERT INTO develop_settings(asset_id, settings, updated_at) VALUES(?, ?, ?)
-                    ON CONFLICT(asset_id) DO UPDATE SET settings=excluded.settings, updated_at=excluded.updated_at;
-                    """, [.text(id), .text(json), .text(Self.iso(.now))])
-                }
+        for (id, value) in settings {
+            if value.isNeutral {
+                try db.run("DELETE FROM develop_settings WHERE asset_id=?;", [.text(id)])
+            } else {
+                let json = String(decoding: try encoder.encode(value), as: UTF8.self)
+                try db.run("""
+                INSERT INTO develop_settings(asset_id, settings, updated_at) VALUES(?, ?, ?)
+                ON CONFLICT(asset_id) DO UPDATE SET settings=excluded.settings, updated_at=excluded.updated_at;
+                """, [.text(id), .text(json), .text(Self.iso(.now))])
             }
         }
     }
