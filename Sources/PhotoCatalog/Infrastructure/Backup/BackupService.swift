@@ -79,15 +79,32 @@ enum BackupService {
             }
         }
         guard isValidBackupDatabase(temp) else { throw BackupError.invalidBackup }
-        if fm.fileExists(atPath: live.path) {
-            _ = try fm.replaceItemAt(live, withItemAt: temp, backupItemName: nil)
-        } else {
-            try fm.moveItem(at: temp, to: live)
+        // The old database's WAL must never sit beside the new one, where SQLite would replay its
+        // frames onto it at the next open. The sidecars are set aside before the swap (a crash in
+        // between leaves the old database without them, not the new one with them), put back if
+        // it fails, and dropped once it's done; the validated copy needs none of them.
+        let sidecars = ["catalog.sqlite-wal", "catalog.sqlite-shm"].map {
+            (live: packageURL.appendingPathComponent($0), aside: packageURL.appendingPathComponent($0 + ".restoring"))
         }
-        // drop stale WAL/SHM sidecars only after the live DB replacement succeeds
-        for sidecar in ["catalog.sqlite-wal", "catalog.sqlite-shm"] {
-            try? fm.removeItem(at: packageURL.appendingPathComponent(sidecar))
+        do {
+            for sidecar in sidecars {
+                try? fm.removeItem(at: sidecar.aside)
+                if (try? fm.attributesOfItem(atPath: sidecar.live.path)) != nil {
+                    try fm.moveItem(at: sidecar.live, to: sidecar.aside)
+                }
+            }
+            if fm.fileExists(atPath: live.path) {
+                _ = try fm.replaceItemAt(live, withItemAt: temp, backupItemName: nil)
+            } else {
+                try fm.moveItem(at: temp, to: live)
+            }
+        } catch {
+            for sidecar in sidecars where (try? fm.attributesOfItem(atPath: sidecar.aside.path)) != nil {
+                try? fm.moveItem(at: sidecar.aside, to: sidecar.live)
+            }
+            throw error
         }
+        for sidecar in sidecars { try? fm.removeItem(at: sidecar.aside) }
     }
 
     /// A catalog's tables, and nothing damaged: a snapshot torn while it was copied can still

@@ -88,6 +88,41 @@ final class BackupServiceTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: live), Data("live".utf8))
     }
 
+    /// The catalog's WAL from before a restore (one a session that didn't close leaves) never
+    /// meets the restored database, where SQLite would replay it: what's restored is the backup.
+    func testRestoreLeavesNoStaleWALBeside() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("pc-restore-wal-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try fm.createDirectory(at: package, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+        let live = package.appendingPathComponent("catalog.sqlite")
+        let wal = package.appendingPathComponent("catalog.sqlite-wal")
+        let stale: Data
+        do {
+            let db = try Database(path: live.path)
+            try db.execChecked("PRAGMA wal_autocheckpoint=0;")
+            try db.execChecked("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT);")
+            try db.execChecked("CREATE TABLE assets (id TEXT PRIMARY KEY);")
+            try db.run("INSERT INTO assets(id) VALUES('live');")
+            stale = try Data(contentsOf: wal)
+        }
+        // closing checkpointed it away; it's back, frames and all
+        XCTAssertFalse(stale.isEmpty)
+        try stale.write(to: wal)
+        let backup = dir.appendingPathComponent("backup.sqlite")
+        try writeValidBackup(at: backup)
+        try Database(path: backup.path).run("INSERT INTO assets(id) VALUES('backup');")
+
+        try BackupService.restore(backup, intoPackageAt: package)
+
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: package.path), ["catalog.sqlite"],
+                       "neither the old WAL nor anything set aside is left")
+        let restored = try Database(path: live.path)
+        XCTAssertEqual(try restored.query("SELECT id FROM assets;").compactMap { $0.text("id") }, ["backup"])
+        XCTAssertEqual(try restored.query("PRAGMA integrity_check;").first?.text("integrity_check"), "ok")
+    }
+
     func testInvalidRestoreBackupDoesNotReplaceLiveDatabase() throws {
         let fm = FileManager.default
         let dir = fm.temporaryDirectory.appendingPathComponent("pc-invalid-restore-\(UUID().uuidString)")
