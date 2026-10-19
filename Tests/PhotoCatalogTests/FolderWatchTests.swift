@@ -190,6 +190,27 @@ final class FolderWatchTests: CatalogTestCase {
         XCTAssertEqual(rows.first { $0.text("id") == removedId }?.bool("deleted"), true)
     }
 
+    /// A watcher reports a change in its folder; dropped, it's gone: the stream doesn't keep it
+    /// alive, and a change after that calls nobody.
+    @MainActor
+    func testDroppedWatcherIsReleasedAndCallsNoMore() async throws {
+        let folder = scratch.appendingPathComponent("Watched")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var calls = 0
+        var watcher: FileWatcher? = FileWatcher(paths: [folder.path], latency: 0.05) { _ in calls += 1 }
+        weak var released = watcher
+        watcher?.start()
+        try Data("a".utf8).write(to: folder.appendingPathComponent("a.txt"))
+        try await waitUntil("the change is reported") { calls > 0 }
+
+        watcher = nil
+        XCTAssertNil(released, "the stream doesn't keep the watcher alive")
+        let reported = calls
+        try Data("b".utf8).write(to: folder.appendingPathComponent("b.txt"))
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertEqual(calls, reported, "a dropped watcher calls nobody")
+    }
+
     /// A photo listed twice (as the nested-folder rescan used to leave it) whose original goes
     /// missing is flagged, not a crash.
     @MainActor
