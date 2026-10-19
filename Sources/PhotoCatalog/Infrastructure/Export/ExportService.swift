@@ -63,13 +63,10 @@ enum ExportService {
             for (a, src) in members {
                 let target = directory.appendingPathComponent(
                     number == 0 ? src.lastPathComponent : fileName(numbered(base, number), ext: src.pathExtension))
-                if fm.fileExists(atPath: target.path) {
-                    // rename never lands on a name already there; overwrite replaces the same file's
-                    guard conflict == .overwrite else { report.skipped += 1; continue }
-                    try? fm.removeItem(at: target)
-                }
+                // rename never lands on a name already there; overwrite replaces the same file's
+                if fm.fileExists(atPath: target.path), conflict != .overwrite { report.skipped += 1; continue }
                 do {
-                    try fm.copyItem(at: src, to: target)
+                    try placeCopy(of: src, at: target, fm: fm)
                     if let attrs = try? fm.attributesOfItem(atPath: src.path),
                        let mtime = attrs[.modificationDate] as? Date {
                         try? fm.setAttributes([.modificationDate: mtime], ofItemAtPath: target.path)
@@ -113,6 +110,24 @@ enum ExportService {
         return nil
     }
 
+    /// Copies `source` to `target` through a hidden partial file beside it, which then takes the
+    /// place of whatever is there: a copy that fails (an unreadable original, a full disk) leaves
+    /// an earlier export as it was, and never half a file under the real name.
+    private static func placeCopy(of source: URL, at target: URL, fm: FileManager) throws {
+        let partial = target.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).partial")
+        do {
+            try fm.copyItem(at: source, to: partial)
+            if fm.fileExists(atPath: target.path) {
+                _ = try fm.replaceItemAt(target, withItemAt: partial)
+            } else {
+                try fm.moveItem(at: partial, to: target)
+            }
+        } catch {
+            try? fm.removeItem(at: partial)
+            throw error
+        }
+    }
+
     private static func numbered(_ base: String, _ number: Int) -> String {
         number == 0 ? base : "\(base) (\(number))"
     }
@@ -145,8 +160,7 @@ enum ExportService {
                 continue
             }
             do {
-                if conflict == .overwrite { try? fm.removeItem(at: target) }
-                try fm.copyItem(at: source, to: target)
+                try placeCopy(of: source, at: target, fm: fm)
                 report.copied += 1
             } catch {
                 report.failed += 1
