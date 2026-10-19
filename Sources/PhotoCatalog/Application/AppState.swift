@@ -71,10 +71,11 @@ final class AppState {
                 keywordSuggestionPoolCache = nil
                 projectListCache = nil
                 clientListCache = nil
+                pinnedSidebarFavoritesCache = nil   // pins of keywords, projects, clients and dates
             }
+            // edits patch these again (applyAssetEdits) when they leave files and folders alone
             libraryCountsCache = nil
             sidebarCountIndexCache = nil
-            pinnedSidebarFavoritesCache = nil
             listInputsVersion &+= 1
         }
     }
@@ -171,13 +172,48 @@ final class AppState {
     @ObservationIgnored private var folderTreeCountCache: [String: Int]?
     @ObservationIgnored private var libraryCountsCache: LibraryCounts?
     @ObservationIgnored private var sidebarCountIndexCache: SidebarCountIndex?
+    /// How often the sidebar's counts were worked out from every photo (for tests).
+    @ObservationIgnored private(set) var sidebarCountIndexRebuilds = 0
+    /// Each sidebar row's photo count, by folder, album, keyword, project, client and smart album id.
+    struct SidebarCounts: Equatable {
+        var folders: [String: Int] = [:]
+        var albums: [String: Int] = [:]
+        var keywords: [String: Int] = [:]
+        var projects: [String: Int] = [:]
+        var clients: [String: Int] = [:]
+        var smartAlbums: [String: Int] = [:]
+    }
     private struct SidebarCountIndex {
-        var folderCounts: [String: Int] = [:]
-        var albumCounts: [String: Int] = [:]
-        var keywordCounts: [String: Int] = [:]
-        var projectCounts: [String: Int] = [:]
-        var clientCounts: [String: Int] = [:]
-        var smartAlbumCounts: [String: Int] = [:]
+        var counts = SidebarCounts()
+        /// The smart albums' rules as the counts were matched, so an edit is matched the same way.
+        var smartRules: [(id: String, rule: SmartMatcher.Prepared)] = []
+
+        /// Moves a shown photo from what it was to what an edit made it, for an edit that keeps
+        /// its file, folder and deletion: its smart albums, keywords, project and client can change.
+        mutating func applyChange(from old: Asset, to new: Asset) {
+            for (id, rule) in smartRules {
+                let change = (rule.matches(new) ? 1 : 0) - (rule.matches(old) ? 1 : 0)
+                if change != 0 { counts.smartAlbums[id, default: 0] += change }
+            }
+            if old.keywords != new.keywords {
+                for keyword in old.keywords { Self.add(-1, to: keyword, in: &counts.keywords) }
+                for keyword in new.keywords { Self.add(1, to: keyword, in: &counts.keywords) }
+            }
+            if old.project != new.project {
+                if !old.project.isEmpty { Self.add(-1, to: old.project, in: &counts.projects) }
+                if !new.project.isEmpty { Self.add(1, to: new.project, in: &counts.projects) }
+            }
+            if old.client != new.client {
+                if !old.client.isEmpty { Self.add(-1, to: old.client, in: &counts.clients) }
+                if !new.client.isEmpty { Self.add(1, to: new.client, in: &counts.clients) }
+            }
+        }
+
+        /// A name no photo has any more is dropped, as a recount would leave it out.
+        private static func add(_ change: Int, to key: String, in counts: inout [String: Int]) {
+            let count = counts[key, default: 0] + change
+            counts[key] = count == 0 ? nil : count
+        }
     }
     struct LibraryCounts: Equatable {
         var all = 0, recent = 0, unrated = 0, picks = 0, rejected = 0, missingOffline = 0, places = 0, people = 0
@@ -290,15 +326,24 @@ final class AppState {
     }
 
     /// Writes edited copies back at their offsets in one mutation (one didSet, no array copy).
-    /// Review edits also patch the library counts and — when the current collection,
+    /// Review edits also patch the library and sidebar counts and — when the current collection,
     /// filters and sort ignore review fields — the cached list, instead of rescanning
     /// and re-sorting every asset.
     private func applyAssetEdits(_ edits: [(offset: Int, asset: Asset)], scope: AssetEditScope) {
         var patchedCounts: LibraryCounts?
         var patchedKeywords: (order: [String], counts: [String: Int])?
+        var patchedSidebar: SidebarCountIndex?
         var listBefore: ListSignature?
         if !scope.contains(.structure) {
             let pairing = assetPairing
+            // Matching each edited photo before and after against every smart album: past half
+            // the library, recounting it (once, when the sidebar next reads) is the cheaper way.
+            if var index = sidebarCountIndexCache, edits.count * 2 <= assets.count {
+                for edit in edits where pairing.shows(edit.asset) {
+                    index.applyChange(from: assets[edit.offset], to: edit.asset)
+                }
+                patchedSidebar = index
+            }
             patchedCounts = libraryCountsCache.map { counts in
                 edits.reduce(into: counts) { counts, edit in
                     guard !pairing.isHiddenCompanion(edit.asset.id) else { return }
@@ -334,6 +379,7 @@ final class AppState {
         }
         if let patchedCounts { libraryCountsCache = patchedCounts }
         if let patchedKeywords { keywordCountsCache = patchedKeywords }
+        if let patchedSidebar { sidebarCountIndexCache = patchedSidebar }
         if let listBefore { patchListCaches(with: edits, validFor: listBefore) }
         didMutateAssets()
     }
@@ -8489,17 +8535,17 @@ final class AppState {
     func countForPinnedSidebarItem(_ item: PinnedSidebarItem) -> String {
         switch item.type {
         case .folder:
-            return "\(sidebarCountIndex.folderCounts[item.selectionId] ?? 0)"
+            return "\(sidebarCounts.folders[item.selectionId] ?? 0)"
         case .album:
-            return "\(sidebarCountIndex.albumCounts[item.selectionId] ?? 0)"
+            return "\(sidebarCounts.albums[item.selectionId] ?? 0)"
         case .smart:
-            return "\(sidebarCountIndex.smartAlbumCounts[item.selectionId] ?? 0)"
+            return "\(sidebarCounts.smartAlbums[item.selectionId] ?? 0)"
         case .keyword:
-            return "\(sidebarCountIndex.keywordCounts[item.selectionId] ?? 0)"
+            return "\(sidebarCounts.keywords[item.selectionId] ?? 0)"
         case .project:
-            return "\(sidebarCountIndex.projectCounts[item.selectionId] ?? 0)"
+            return "\(sidebarCounts.projects[item.selectionId] ?? 0)"
         case .client:
-            return "\(sidebarCountIndex.clientCounts[item.selectionId] ?? 0)"
+            return "\(sidebarCounts.clients[item.selectionId] ?? 0)"
         case .captureDate:
             return "\(CaptureDates.count(for: item.selectionId, in: captureDateGroups))"
         case .lib:
@@ -8508,46 +8554,61 @@ final class AppState {
     }
 
     func countForSmartAlbum(_ album: SmartAlbum) -> Int {
-        sidebarCountIndex.smartAlbumCounts[album.id] ?? album.count
+        sidebarCounts.smartAlbums[album.id] ?? album.count
     }
 
     func countForAlbum(_ album: Album) -> Int {
-        sidebarCountIndex.albumCounts[album.id] ?? 0
+        sidebarCounts.albums[album.id] ?? 0
     }
 
-    private var sidebarCountIndex: SidebarCountIndex {
+    /// What the sidebar shows beside each folder, album, keyword, project and client.
+    var sidebarCounts: SidebarCounts {
         _ = listInputsVersion   // register the dependency even on a cache hit
-        if let cache = sidebarCountIndexCache { return cache }
-        // Rebuilt after every rating while an album is in the sidebar: one pass over the photos
-        // as shown, smart albums matched in it, without copying the catalog or its ids out.
+        if let cache = sidebarCountIndexCache { return cache.counts }
+        // Worked out once per change of folders, files, albums or pairing: ratings, flags,
+        // keywords and other metadata edits patch it in place (applyAssetEdits).
+        let index = makeSidebarCountIndex(keywordCounts: keywordCounts.counts)
+        sidebarCountIndexRebuilds &+= 1
+        sidebarCountIndexCache = index
+        return index.counts
+    }
+
+    /// The counts as worked out afresh from every photo, leaving the sidebar's own alone (for tests).
+    func recountedSidebarCounts() -> SidebarCounts {
+        makeSidebarCountIndex(keywordCounts: Self.keywordCounts(of: assets, pairing: assetPairing).counts).counts
+    }
+
+    /// One pass over the photos as shown, smart albums matched in it, without copying the catalog
+    /// or its ids out. Keyword counts are the ones the keyword list keeps for the same photos.
+    private func makeSidebarCountIndex(keywordCounts: [String: Int]) -> SidebarCountIndex {
         let pairing = assetPairing
-        let rules = smartAlbums.map { SmartMatcher.Prepared($0.rule) }
+        let rules = smartAlbums.map { (id: $0.id, rule: SmartMatcher.Prepared($0.rule)) }
         var smartCounts = Array(repeating: 0, count: rules.count)
         var index = SidebarCountIndex()
-        index.keywordCounts = keywordCounts.counts   // kept for the same photos, patched on edits
+        index.smartRules = rules
+        index.counts.keywords = keywordCounts.filter { $0.value != 0 }   // the list's patches keep emptied ones
         for asset in assets where pairing.shows(asset) {
-            index.folderCounts[asset.folderId, default: 0] += 1
+            index.counts.folders[asset.folderId, default: 0] += 1
             if !asset.project.isEmpty {
-                index.projectCounts[asset.project, default: 0] += 1
+                index.counts.projects[asset.project, default: 0] += 1
             }
             if !asset.client.isEmpty {
-                index.clientCounts[asset.client, default: 0] += 1
+                index.counts.clients[asset.client, default: 0] += 1
             }
-            for (offset, rule) in rules.enumerated() where rule.matches(asset) {
+            for (offset, rule) in rules.enumerated() where rule.rule.matches(asset) {
                 smartCounts[offset] += 1
             }
         }
-        for (album, count) in zip(smartAlbums, smartCounts) {
-            index.smartAlbumCounts[album.id] = count
+        for (rule, count) in zip(rules, smartCounts) {
+            index.counts.smartAlbums[rule.id] = count
         }
         let positions = assetIndex
         for album in albums {
-            index.albumCounts[album.id] = album.assetIds.reduce(0) { count, id in
+            index.counts.albums[album.id] = album.assetIds.reduce(0) { count, id in
                 guard let position = positions[id], pairing.shows(assets[position]) else { return count }
                 return count + 1
             }
         }
-        sidebarCountIndexCache = index
         return index
     }
 

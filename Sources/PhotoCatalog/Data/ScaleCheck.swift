@@ -132,6 +132,27 @@ enum ScaleCheck {
         let ids = app.list.prefix(1000).map(\.id)
         step("select") { if let id = ids.first { app.setPrimary(id) } }
         step("rate 1") { _ = app.handleKey("3", hasCommand: false) }
+        // The sidebar shows every album's count and re-reads them after each edit. The generated
+        // catalog has no albums: these are a few smart albums of the kinds people make, and an album.
+        app.smartAlbums = sidebarSmartAlbums
+        app.albums = [Album(id: "scale-album", name: "Scale album", assetIds: ids)]
+        func readSidebar() {
+            for album in app.smartAlbums { _ = app.countForSmartAlbum(album) }
+            for album in app.albums { _ = app.countForAlbum(album) }
+        }
+        step("sidebar") { readSidebar() }
+        // the median of a few ratings, each on another photo, then the sidebar as it redraws
+        // (to a tenth of a millisecond: with the counts patched in place it's well under one)
+        var rounds: [Double] = []
+        for round in 0..<5 {
+            app.setPrimary(ids[(round + 1) % ids.count])
+            let start = ContinuousClock.now
+            _ = app.handleKey(String(round + 1), hasCommand: false)
+            readSidebar()
+            let elapsed = ContinuousClock.now - start
+            rounds.append(Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15)
+        }
+        line.append("rate 1 + sidebar " + String(format: "%.1f", rounds.sorted()[rounds.count / 2]))
         step("select all") { _ = app.handleKey("a", hasCommand: true) }
         app.selectedIds = Set(ids)
         app.primaryId = ids.first
@@ -153,6 +174,24 @@ enum ScaleCheck {
         report("footprint \(delta(footprint(), baseline)) MB since start, \(megabytes(footprint())) MB total")
         return 0
     }
+
+    /// Smart albums by rating, keyword, capture date and camera, matched against every photo.
+    private static let sidebarSmartAlbums: [SmartAlbum] = {
+        func album(_ id: String, _ match: String, _ conditions: [(String, String, String)]) -> SmartAlbum {
+            SmartAlbum(id: "scale-smart-\(id)", name: id,
+                       rule: SmartRule(match: match, conditions: conditions.map {
+                           SmartCondition(field: $0.0, op: $0.1, value: $0.2)
+                       }), count: 0)
+        }
+        return [
+            album("rated", "all", [("rating", ">=", "4")]),
+            album("travel", "all", [("keywords", "包含", "旅行")]),
+            album("picks-2023", "all", [("captureYear", "=", "2023"), ("flag", "=", "pick")]),
+            album("recent", "any", [("datePreset", "=", "thisYear"), ("captureDate", ">=", "2025-06-01")]),
+            album("canon-portraits", "all", [("camera", "包含", "Canon"), ("keywords", "包含", "人像"),
+                                             ("rating", ">=", "3")]),
+        ]
+    }()
 
     // ---- synthetic catalog ----
 
