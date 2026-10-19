@@ -523,6 +523,11 @@
 		<key>NSStringLocalizedFormatKey</key>
 		<string>未命名 · %lld 组</string>
 	</dict>
+	<key>未命名的人物，%lld 张人脸</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>未命名的人物，%lld 张人脸</string>
+	</dict>
 	<key>检测到 %lld 张新照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

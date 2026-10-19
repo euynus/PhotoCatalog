@@ -138,10 +138,14 @@ struct BookSheet: View {
             HStack(spacing: 12) {
                 Button { page = max(0, page - 1) } label: { Image(systemName: "chevron.left") }
                     .disabled(page == 0)
+                    .help("上一页")
+                    .accessibilityLabel("上一页")
                 Text(settings.cover && page == 0 ? L("封面，共 \(pageCount) 页")
                      : L("第 \(min(page, max(0, pageCount - 1)) + 1) 页，共 \(pageCount) 页")).monospacedDigit()
                 Button { page = min(pageCount - 1, page + 1) } label: { Image(systemName: "chevron.right") }
                     .disabled(page >= pageCount - 1)
+                    .help("下一页")
+                    .accessibilityLabel("下一页")
             }
             .buttonStyle(.borderless)
             .font(.system(size: 12))

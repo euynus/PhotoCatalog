@@ -1134,6 +1134,9 @@
 
 /* Presentation/People/PeopleView.swift */
 "%lld 张人脸" = "%lld faces";
+"未命名的人物，%lld 张人脸" = "Unnamed person, %lld faces";
+"%@ 中的人脸" = "Face in %@";
+"一张人脸" = "A face";
 "%lld 张自动识别的人脸待确认" = "%lld automatically recognized faces to confirm";
 "人物 · %lld" = "People · %lld";
 "停止" = "Stop";
@@ -1843,6 +1846,8 @@
 "版式" = "Layout";
 "由打印机管理" = "Printer Manages Colors";
 "第 %lld 页，共 %lld 页" = "Page %lld of %lld";
+"上一页" = "Previous Page";
+"下一页" = "Next Page";
 "色彩管理" = "Color Management";
 "纸张" = "Paper";
 "边距" = "Margins";

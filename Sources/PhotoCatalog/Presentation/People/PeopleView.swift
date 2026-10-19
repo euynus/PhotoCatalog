@@ -163,6 +163,7 @@ private struct PersonTile: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
+        .accessibilityAction { open() }
     }
 }
 
@@ -176,7 +177,12 @@ private struct ClusterTile: View {
         VStack(spacing: 6) {
             FaceAvatar(faceId: cluster.id, size: 96, circle: true)
                 .onTapGesture(perform: open)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("未命名的人物，\(cluster.faceIds.count) 张人脸")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { open() }
             Text("\(cluster.faceIds.count) 张人脸").font(.system(size: 11)).foregroundStyle(Theme.text3)
+                .accessibilityHidden(true)   // the avatar says it
             Button("命名") { naming = true }
                 .controlSize(.small)
                 .popover(isPresented: $naming) {
@@ -323,6 +329,7 @@ private struct PeopleDetailView: View {
         let face = app.face(id)
         let isCluster = if case .cluster = detail { true } else { false }
         let ticked = !excluded.contains(id)
+        let unconfirmed = face?.person != nil && face?.confirmed == false
         return FaceAvatar(faceId: id, size: 96, circle: false)
             .opacity(isCluster && !ticked ? 0.4 : 1)
             .overlay(alignment: .topLeading) {
@@ -335,19 +342,26 @@ private struct PeopleDetailView: View {
                 }
             }
             .overlay(alignment: .topTrailing) {
-                if face?.person != nil && face?.confirmed == false {
+                if unconfirmed {
                     Image(systemName: "questionmark.circle.fill")
                         .foregroundStyle(.white, Theme.accentFill)
                         .padding(4)
                         .help("自动识别，尚未确认")
                 }
             }
+            // for VoiceOver a face is a button: in a group it ticks the face, elsewhere it opens the photo
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(faceDescription(face))
+            .accessibilityValue(unconfirmed ? L("自动识别，尚未确认") : "")
+            .accessibilityAddTraits(isCluster && ticked ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction {
+                if isCluster { toggle(id) } else if let face { app.openLoupe(face.assetId) }
+            }
+            .accessibilityAction(named: "打开照片") { if let face { app.openLoupe(face.assetId) } }
             .onTapGesture {
                 let isDoubleClick = ClickEvent.clickCount >= 2
                 // the second click of a double-click flips the tick back before opening
-                if isCluster {
-                    if ticked { excluded.insert(id) } else { excluded.remove(id) }
-                }
+                if isCluster { toggle(id) }
                 if isDoubleClick, let face { app.openLoupe(face.assetId) }
             }
             .contextMenu {
@@ -362,6 +376,17 @@ private struct PeopleDetailView: View {
                 }
             }
             .help(isCluster ? "点按勾选或取消 · 双击打开照片" : "双击打开照片")
+    }
+
+    /// Ticks a group's face, or unticks it.
+    private func toggle(_ id: String) {
+        if excluded.contains(id) { excluded.remove(id) } else { excluded.insert(id) }
+    }
+
+    /// What VoiceOver calls a face: the photo it was found in.
+    private func faceDescription(_ face: FaceRecord?) -> String {
+        guard let face, let filename = app.asset(id: face.assetId)?.filename else { return L("一张人脸") }
+        return L("\(filename) 中的人脸")
     }
 }
 
