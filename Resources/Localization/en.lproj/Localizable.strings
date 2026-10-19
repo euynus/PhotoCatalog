@@ -25,7 +25,6 @@
 "按照片中的中性色自动设置色温与色调" = "Set temperature and tint automatically from the photo's gray surfaces";
 " · %lld 个 XMP 失败" = " · %lld XMP failed";
 " · %lld 失败" = " · %lld failed";
-" · %lld 张失败（%@）" = " · %lld failed (%@)";
 " · %lld 张已存在而跳过" = " · %lld skipped because they already exist";
 " · %lld 张与目录中的原件同名，已加编号而未覆盖原件" = " · %lld numbered so as not to overwrite an original in the catalog";
 " · %lld 跳过" = " · %lld skipped";
@@ -38,7 +37,6 @@
 " · 已回滚 %lld 张照片" = " · %lld photos rolled back";
 " · 目录库保存失败" = " · catalog not saved";
 "%lld 个 XMP 附属文件写入失败" = "Couldn't write %lld XMP sidecars";
-"%lld 张照片已写入，但源目录或导入状态未保存" = "%lld photos were written, but the source folder or import state wasn't saved";
 "PhotoCatalog 导出" = "PhotoCatalog Export";
 "「%@」里没有带时间的轨迹点" = "“%@” has no timestamped track points";
 "一次导入一个文件夹，先导入「%@」" = "One folder at a time · importing “%@” first";
@@ -83,7 +81,6 @@
 "向右旋转" = "Rotate Right";
 "向左旋转" = "Rotate Left";
 "命名人物" = "Name Person";
-"备份失败" = "Backup failed";
 "复位修图调整" = "Reset Develop Adjustments";
 "复制" = "Copy";
 "复制到此处" = "Copy Here";
@@ -296,7 +293,6 @@
 "缓存已在 %lld MB 上限内" = "The cache is within the %lld MB limit";
 "缩略图已重建" = "Thumbnails rebuilt";
 "缺失状态保存失败" = "Couldn't save the missing-file status";
-"自动备份失败" = "Automatic backup failed";
 "自动拉直" = "Auto Straighten";
 "设置位置" = "Set Location";
 "设置拍摄时间" = "Set Capture Time";
@@ -957,7 +953,6 @@
 "检测到 %lld 张" = "%lld detected";
 "演示照片无本地原件" = "Demo photos have no local original";
 "状态" = "Status";
-"目录库备份" = "Catalog Backup";
 "离线（外置盘）" = "Offline (external drive)";
 "简介分页" = "Info tabs";
 "管理方式" = "Management";
@@ -1070,7 +1065,6 @@
 "在访达中显示" = "Show in Finder";
 "将原件移到废纸篓…" = "Move Originals to Trash…";
 "应用修图预设" = "Apply Develop Preset";
-"恢复备份…" = "Restore Backup…";
 "打开目录库…" = "Open Catalog…";
 "拍摄参数分析" = "Capture Analysis";
 "拷贝修图设置…" = "Copy Develop Settings…";
@@ -1088,7 +1082,6 @@
 "用默认应用打开" = "Open in Default App";
 "目录库" = "Catalog";
 "移除被拒绝的照片…" = "Remove Rejected Photos…";
-"立即备份目录库" = "Back Up Catalog Now";
 "维护" = "Maintenance";
 "缩小缩略图" = "Smaller Thumbnails";
 "网格视图" = "Grid";
@@ -1118,20 +1111,14 @@
 "隐藏两侧面板 (Tab)" = "Hide Side Panels (Tab)";
 "显示两侧面板" = "Show Side Panels";
 "隐藏两侧面板" = "Hide Side Panels";
-" · 队列 %lld" = " · %lld queued";
 "%@ 张照片" = "%@ photos";
-"导入 %lld%%" = "Importing %lld%%";
-"导出 %lld/%lld" = "Exporting %lld/%lld";
 "已暂停" = "Paused";
-"已暂停 %lld%%" = "Paused %lld%%";
 "已选 %@" = "%@ selected";
 "显示缩略图信息" = "Show Thumbnail Info";
 "显示缩略图信息 (I)" = "Show thumbnail info (I)";
-"正在扫描…" = "Scanning…";
 "正在检查原件…" = "Checking originals…";
 "正在载入完整目录…" = "Loading the full catalog…";
 "目录库就绪 · %@ · %@" = "Catalog ready · %@ · %@";
-"%@ · 立即备份目录库 (⌘B)" = "%@ · Back up the catalog now (⌘B)";
 "缩略图大小" = "Thumbnail Size";
 "调整缩略图大小 (⌘+ / ⌘−)" = "Adjust thumbnail size (⌘+ / ⌘−)";
 "隐藏缩略图信息" = "Hide Thumbnail Info";
@@ -1282,8 +1269,6 @@
 "已暂停在 %@ / %@ 个文件" = "Paused at %@ of %@ files";
 "原位添加" = "Add in Place";
 "归档规则" = "Filing";
-"待处理" = "Pending";
-"成功" = "Imported";
 "复制到目录库" = "Copy to Catalog";
 "暂停" = "Pause";
 "来源" = "Source";
@@ -1396,7 +1381,6 @@
 "开启「低电量模式」时暂停后台缩略图补齐，节省电量。" = "Pauses background thumbnail generation while Low Power Mode is on, to save power.";
 "原位添加：只建立索引，原件留在原位置（推荐）。" = "Add in Place: photos are indexed and originals stay where they are (recommended).";
 "性能" = "Performance";
-"恢复备份" = "Restore Backup";
 "打开目录库" = "Open Catalog";
 "复制到目录库：导入时把原件复制到目录库的 Originals/<相机>/YYYY/MM。" = "Copy to Catalog: originals are copied into the catalog's Originals/<Camera>/YYYY/MM on import.";
 "复制到目录库：导入时把原件复制到目录库的 Originals/YYYY/MM/DD。" = "Copy to Catalog: originals are copied into the catalog's Originals/YYYY/MM/DD on import.";
@@ -1418,7 +1402,6 @@
 "目录结构" = "Folders";
 "相册名" = "Album name";
 "移动选中原件" = "Move Selected Originals";
-"立即备份" = "Back Up Now";
 "缓存上限 %lld MB" = "Cache limit %lld MB";
 "缓存上限 %lld MB（自动）" = "Cache limit %lld MB (automatic)";
 "恢复自动上限" = "Use Automatic Limit";
@@ -1426,7 +1409,6 @@
 "缓存与性能" = "Cache & Performance";
 "编辑时自动写入 XMP 附属文件" = "Write XMP sidecars automatically when editing";
 "缩略图与缓存" = "Thumbnails & Cache";
-"自动备份" = "Automatic Backup";
 "设为该时间" = "Set to This Time";
 "评分 / 关键词 / 标题等改动会写入同名 .xmp，不改动原图。" = "Changes to ratings, keywords, titles and more are written to a .xmp file with the same name; the original isn't touched.";
 "语言" = "Language";
@@ -1572,14 +1554,7 @@
 "AI 描述照片" = "Describe Photos with AI";
 "AI 描述照片…" = "Describe Photos with AI…";
 "AI 描述" = "AI Description";
-"AI 描述 %lld/%lld" = "Describing %lld/%lld";
-"取消 AI 描述" = "Cancel AI Description";
-"AI 描述已停止" = "AI description stopped";
-"已描述 %lld 张照片" = "%lld photos described";
-"已取消，已描述 %lld 张照片" = "Canceled; %lld photos described";
-"已描述 %lld 张照片，%lld 张没有得到结果" = "%lld photos described; %lld got no result";
 "请选择已导入的照片" = "Select imported photos";
-"让 AI 看 %lld 张照片的预览图（缩小到 1024 像素），写出下面选中的内容。关键词添加到已有的之中；可以撤销。" = "AI looks at previews of %lld photos (reduced to 1024 pixels) and writes what's checked below. Keywords are added to the ones there; it can be undone.";
 "替换已有的标题和说明" = "Replace existing titles and captions";
 "还没有设置 AI 服务" = "No AI service is set up yet";
 "打开设置" = "Open Settings";
@@ -1611,9 +1586,6 @@
 "预计约 %lld 秒" = "About %lld seconds";
 "预计约 %lld 分钟" = "About %lld minutes";
 "请选择有原件的照片" = "Select photos whose originals are available";
-"增强 %lld/%lld" = "Enhance %lld/%lld";
-"正在增强…" = "Enhancing…";
-"取消增强" = "Cancel Enhance";
 "已取消增强" = "Enhance canceled";
 "已取消增强，已完成 %lld 张" = "Enhance canceled; %lld photos finished";
 "已增强照片" = "Photo enhanced";

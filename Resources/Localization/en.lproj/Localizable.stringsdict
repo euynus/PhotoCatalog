@@ -341,22 +341,6 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
-	<key>%lld 张照片已写入，但源目录或导入状态未保存</key>
-	<dict>
-		<key>NSStringLocalizedFormatKey</key>
-		<string>%#@n1@ were written, but the source folder or import state wasn't saved</string>
-		<key>n1</key>
-		<dict>
-			<key>NSStringFormatSpecTypeKey</key>
-			<string>NSStringPluralRuleType</string>
-			<key>NSStringFormatValueTypeKey</key>
-			<string>lld</string>
-			<key>one</key>
-			<string>%lld photo</string>
-			<key>other</key>
-			<string>%lld photos</string>
-		</dict>
-	</dict>
 	<key>%lld 张照片所在的文件夹是只读的，无法在原件旁生成 TIFF</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -1056,22 +1040,6 @@
 			<string>%lld photos</string>
 		</dict>
 	</dict>
-	<key>已取消，已描述 %lld 张照片</key>
-	<dict>
-		<key>NSStringLocalizedFormatKey</key>
-		<string>Canceled; %#@n1@ described</string>
-		<key>n1</key>
-		<dict>
-			<key>NSStringFormatSpecTypeKey</key>
-			<string>NSStringPluralRuleType</string>
-			<key>NSStringFormatValueTypeKey</key>
-			<string>lld</string>
-			<key>one</key>
-			<string>%lld photo</string>
-			<key>other</key>
-			<string>%lld photos</string>
-		</dict>
-	</dict>
 	<key>已同步到 %lld 张照片</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -1412,49 +1380,6 @@
 			<string>%lld photo</string>
 			<key>other</key>
 			<string>%lld photos</string>
-		</dict>
-	</dict>
-	<key>已描述 %lld 张照片</key>
-	<dict>
-		<key>NSStringLocalizedFormatKey</key>
-		<string>%#@n1@ described</string>
-		<key>n1</key>
-		<dict>
-			<key>NSStringFormatSpecTypeKey</key>
-			<string>NSStringPluralRuleType</string>
-			<key>NSStringFormatValueTypeKey</key>
-			<string>lld</string>
-			<key>one</key>
-			<string>%lld photo</string>
-			<key>other</key>
-			<string>%lld photos</string>
-		</dict>
-	</dict>
-	<key>已描述 %lld 张照片，%lld 张没有得到结果</key>
-	<dict>
-		<key>NSStringLocalizedFormatKey</key>
-		<string>%#@n1@ described; %#@n2@ got no result</string>
-		<key>n1</key>
-		<dict>
-			<key>NSStringFormatSpecTypeKey</key>
-			<string>NSStringPluralRuleType</string>
-			<key>NSStringFormatValueTypeKey</key>
-			<string>lld</string>
-			<key>one</key>
-			<string>%lld photo</string>
-			<key>other</key>
-			<string>%lld photos</string>
-		</dict>
-		<key>n2</key>
-		<dict>
-			<key>NSStringFormatSpecTypeKey</key>
-			<string>NSStringPluralRuleType</string>
-			<key>NSStringFormatValueTypeKey</key>
-			<string>lld</string>
-			<key>one</key>
-			<string>%lld</string>
-			<key>other</key>
-			<string>%lld</string>
 		</dict>
 	</dict>
 	<key>已更新 %lld 张修改过的照片</key>
@@ -2070,22 +1995,6 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>Tethered capture ended: %#@n1@</string>
-		<key>n1</key>
-		<dict>
-			<key>NSStringFormatSpecTypeKey</key>
-			<string>NSStringPluralRuleType</string>
-			<key>NSStringFormatValueTypeKey</key>
-			<string>lld</string>
-			<key>one</key>
-			<string>%lld photo</string>
-			<key>other</key>
-			<string>%lld photos</string>
-		</dict>
-	</dict>
-	<key>让 AI 看 %lld 张照片的预览图（缩小到 1024 像素），写出下面选中的内容。关键词添加到已有的之中；可以撤销。</key>
-	<dict>
-		<key>NSStringLocalizedFormatKey</key>
-		<string>AI looks at previews of %#@n1@ (reduced to 1024 pixels) and writes what's checked below. Keywords are added to the ones there; it can be undone.</string>
 		<key>n1</key>
 		<dict>
 			<key>NSStringFormatSpecTypeKey</key>
