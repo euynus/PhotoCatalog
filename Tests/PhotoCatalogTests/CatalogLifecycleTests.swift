@@ -280,6 +280,64 @@ final class CatalogLifecycleTests: XCTestCase {
         XCTAssertTrue(inSession(try first.store.loadAssets()).isEmpty, "the shot is in the catalog without its folder")
     }
 
+    // MARK: - catalogs that can't be read
+
+    /// A catalog with a photo in an album, whose albums table can't be read.
+    @MainActor
+    private func makeUnreadableCatalog() throws -> (url: URL, store: CatalogStore) {
+        let broken = try makeCatalog("Broken", assets: [0])
+        try broken.store.saveAlbum(Album(id: "al-kept", name: "Kept", assetIds: [DemoData.assets[0].id]))
+        try broken.store.db.execChecked("ALTER TABLE albums RENAME TO albums_unreadable;")
+        return broken
+    }
+
+    /// A catalog part of which can't be read is refused rather than opened as one without
+    /// albums, where later edits would build on what's missing.
+    @MainActor
+    func testCatalogWhoseAlbumsCantBeReadIsRefused() throws {
+        let first = try makeCatalog("First", assets: [1])
+        let broken = try makeUnreadableCatalog()
+        let app = makeApp()
+        XCTAssertTrue(app.openCatalog(at: first.url))
+
+        XCTAssertFalse(app.openCatalog(at: broken.url), "a catalog that can't be read opens")
+
+        XCTAssertEqual(app.catalogPath, first.url.path, "the catalog that was open opens again")
+        XCTAssertFalse(app.assets.contains { $0.id == DemoData.assets[0].id })
+        XCTAssertEqual(app.toastCenter.toasts.last?.message, "打开目录库失败")
+    }
+
+    /// The same, opened as the Finder and the recent catalogs open one: in the background.
+    @MainActor
+    func testCatalogWhoseAlbumsCantBeReadIsRefusedWhenLoadedInTheBackground() async throws {
+        let first = try makeCatalog("First", assets: [1])
+        let broken = try makeUnreadableCatalog()
+        let app = makeApp()
+        XCTAssertTrue(app.openCatalog(at: first.url))
+
+        app.openCatalogFromSystem(broken.url)
+        try await waitUntil("Timed out waiting for the catalog to load") { !app.isLoadingCatalog }
+
+        XCTAssertEqual(app.catalogPath, first.url.path, "a catalog that can't be read opens")
+        XCTAssertFalse(app.assets.contains { $0.id == DemoData.assets[0].id })
+        XCTAssertTrue(app.toastCenter.toasts.contains { $0.message == "打开目录库失败" })
+    }
+
+    /// Search falls back to the photos in memory when the catalog's search index can't be read,
+    /// rather than finding nothing.
+    @MainActor
+    func testSearchFindsPhotoWhenTheIndexCantBeRead() throws {
+        let first = try makeCatalog("First", assets: [0])
+        let photo = DemoData.assets[0]
+        let app = makeApp()
+        XCTAssertTrue(app.openCatalog(at: first.url))
+        try first.store.db.execChecked("DROP TABLE asset_search;")
+
+        app.search = photo.filename
+
+        XCTAssertTrue(app.list.contains { $0.id == photo.id }, "the search finds nothing")
+    }
+
     // MARK: - #61 sidecars changed elsewhere
 
     @MainActor

@@ -2565,8 +2565,14 @@ final class AppState {
         FileAccessService.reach(url)
         guard creatingIfMissing || FileManager.default.fileExists(atPath: url.path) else { return nil }
         let s: CatalogStore
+        let real: [Asset]
+        let collections: CatalogCollections
         do {
             s = try CatalogStore(packageURL: url)
+            // read whole before any of it is shown: a part that can't be read fails the open,
+            // rather than showing as an empty catalog that later edits would build on
+            real = try s.loadAssets().filter { !$0.isDemo && !$0.deleted }
+            collections = try s.loadCatalogCollections()
         } catch {
             return error
         }
@@ -2574,12 +2580,12 @@ final class AppState {
         coordinator = ImportCoordinator(store: s)
         rememberCatalog(url)
         refreshStatusMetrics()
-        let real = ((try? s.loadAssets()) ?? []).filter { !$0.isDemo && !$0.deleted }
-        applyLoadedCatalog(real, from: s)
+        applyLoadedCatalog(real, from: s, collections: collections)
         return nil
     }
 
-    private func applyLoadedCatalog(_ real: [Asset], from store: CatalogStore, derived: CatalogDerivedData? = nil) {
+    private func applyLoadedCatalog(_ real: [Asset], from store: CatalogStore, collections: CatalogCollections,
+                                    derived: CatalogDerivedData? = nil) {
         guard !real.isEmpty else {
             assets = []
             albums = []
@@ -2590,7 +2596,7 @@ final class AppState {
             duplicateGroupsCache = []
             restoreSourceRoots(from: store)
             movedSourceRoots = []
-            restoreAlbums(from: store, assets: [])
+            restoreAlbums(from: store, assets: [], collections: collections)
             recoverInterruptedImportJobs()
             ensurePrimaryValid()
             return
@@ -2623,7 +2629,7 @@ final class AppState {
             try? store.updateSourceRootStatus(id: folders[index].id, status: status)
         }
         recomputeDuplicates()
-        restoreAlbums(from: store, assets: checked)
+        restoreAlbums(from: store, assets: checked, collections: collections)
         recoverInterruptedImportJobs()
         primeDefaultListCache(with: checked)
         ensurePrimaryValid()
@@ -2726,6 +2732,13 @@ final class AppState {
                 guard self.catalogLoadGeneration == generation, !Task.isCancelled else { return }
                 switch hydration {
                 case .success(let loaded, let derived):
+                    // read now, with whatever changed in them while the photos loaded; a part that
+                    // can't be read fails the open, as the photos would, rather than showing empty
+                    guard let collections = try? store.loadCatalogCollections() else {
+                        self.discardCatalogPreview()
+                        fail(L("打开目录库失败"))
+                        return
+                    }
                     self.catalogLoadTask = nil
                     self.setActiveCatalog(url)
                     self.refreshStatusMetrics()
@@ -2736,7 +2749,8 @@ final class AppState {
                     let assets = edited ? Self.overlaying(self.assets, onto: loaded) : loaded
                     // counted from the copies read, under the settings of the time
                     let current = !edited && self.pairRawAndJpeg == pairsRawJpeg && self.recentImportDays == recentDays
-                    self.applyLoadedCatalog(assets, from: store, derived: current ? derived : nil)
+                    self.applyLoadedCatalog(assets, from: store, collections: collections,
+                                            derived: current ? derived : nil)
                     self.hasCatalogPreview = false
                     self.isLoadingCatalog = false
                     self.loadingCatalogURL = nil
@@ -2811,21 +2825,20 @@ final class AppState {
         if let message { push(verbatim: message, "warning") }
     }
 
-    private func restoreAlbums(from store: CatalogStore, assets: [Asset]) {
-        developSettings = (try? store.loadDevelopSettings()) ?? [:]
+    private func restoreAlbums(from store: CatalogStore, assets: [Asset], collections: CatalogCollections) {
+        developSettings = collections.developSettings
         clearDevelopRecordCaches()
         loadFaces(from: store)
         // the quick collection is stored as an album under a reserved id, and listed apart
-        let loadedAlbums = (try? store.loadAlbums()) ?? []
+        let loadedAlbums = collections.albums
         quickCollection = Set(loadedAlbums.first { $0.id == Self.quickCollectionID }?.assetIds ?? [])
         albums = loadedAlbums.filter { $0.id != Self.quickCollectionID }
-        let loadedSmartAlbums = (try? store.loadSmartAlbums()) ?? []
-        smartAlbums = loadedSmartAlbums.map { album in
+        smartAlbums = collections.smartAlbums.map { album in
             SmartAlbum(id: album.id, name: album.name, rule: album.rule,
                        count: SmartMatcher.count(assets, album.rule), setId: album.setId)
         }
-        albumSets = (try? store.loadAlbumSets()) ?? []
-        xmpSyncTimes = (try? store.loadXMPSyncTimes()) ?? [:]
+        albumSets = collections.albumSets
+        xmpSyncTimes = collections.xmpSyncTimes
         externallyChangedXMPIds = []
     }
 
@@ -8730,9 +8743,10 @@ final class AppState {
         let sort = self.sort
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
         let pairing = assetPairing
-        let indexedSearchIds: Set<String>? = if q.count >= 3, let store {
+        // an index that can't answer leaves the search to the photos in memory, as for short queries
+        let indexedSearchIds: Set<String>? = if q.count >= 3, let hits = store?.search(q) {
             // a hit on a hidden JPEG surfaces its RAW's tile
-            Set(store.search(q).flatMap { [$0] + (pairing.primaryByCompanion[$0].map { [$0] } ?? []) })
+            Set(hits.flatMap { [$0] + (pairing.primaryByCompanion[$0].map { [$0] } ?? []) })
         } else {
             nil
         }
@@ -8972,7 +8986,8 @@ final class AppState {
 
     /// The post-load step of opening a catalog, for the large-catalog benchmark.
     func applyLoadedCatalogForScaleCheck(_ loaded: [Asset], from store: CatalogStore) {
-        applyLoadedCatalog(loaded, from: store)
+        // a check's catalog: one whose albums can't be read fails the check's own assertions
+        applyLoadedCatalog(loaded, from: store, collections: (try? store.loadCatalogCollections()) ?? CatalogCollections())
     }
 
     /// A fixture backed by a scratch catalog, for checks of catalog-persisted features. It never

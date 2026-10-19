@@ -16,7 +16,7 @@ final class SQLiteTests: XCTestCase {
         deleted.deleted = true
         try store.upsert([live, deleted])
 
-        let matches = Set(store.search("needlefts"))
+        let matches = Set(store.search("needlefts") ?? [])
         XCTAssertTrue(matches.contains(live.id))
         XCTAssertFalse(matches.contains(deleted.id))
     }

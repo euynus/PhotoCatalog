@@ -14,6 +14,16 @@ struct SourceRootRecord: Identifiable, Sendable {
     let volumeIdentifier: String?
 }
 
+/// What a catalog keeps beside its photos, read whole as it opens.
+struct CatalogCollections: Sendable {
+    var developSettings: [String: DevelopSettings] = [:]
+    /// The Quick Collection among them, under its reserved id.
+    var albums: [Album] = []
+    var smartAlbums: [SmartAlbum] = []
+    var albumSets: [AlbumSet] = []
+    var xmpSyncTimes: [String: Double] = [:]
+}
+
 struct ImportSessionRecord: Identifiable, Equatable, Sendable {
     let id: String
     let rootId: String?
@@ -369,18 +379,28 @@ final class CatalogStore: @unchecked Sendable {
                    [.int(version), .text(Self.iso(.now))])
     }
 
-    /// Trigram FTS search returning substring matches for queries of at least three characters.
-    func search(_ query: String) -> [String] {
+    /// Trigram FTS search returning substring matches for queries of at least three characters;
+    /// nil when the index can't answer — a shorter query, or an index that can't be read — so
+    /// the caller searches otherwise rather than finding nothing.
+    func search(_ query: String) -> [String]? {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard q.count >= 3 else { return [] }
+        guard q.count >= 3 else { return nil }
         let match = Self.ftsMatch(q)
-        let rows = (try? db.query("""
+        guard let rows = try? db.query("""
         SELECT asset_search.asset_id
         FROM asset_search
         JOIN assets ON assets.id = asset_search.asset_id
         WHERE assets.deleted=0 AND asset_search MATCH ?;
-        """, [.text(match)])) ?? []
+        """, [.text(match)]) else { return nil }
         return rows.compactMap { $0.text("asset_id") }
+    }
+
+    /// Develop settings, albums, smart albums, album sets and sidecar sync times, as a catalog
+    /// opens: a table that can't be read fails the open rather than showing as empty.
+    func loadCatalogCollections() throws -> CatalogCollections {
+        CatalogCollections(developSettings: try loadDevelopSettings(), albums: try loadAlbums(),
+                           smartAlbums: try loadSmartAlbums(), albumSets: try loadAlbumSets(),
+                           xmpSyncTimes: try loadXMPSyncTimes())
     }
 
     private static let ddlV1 = """
