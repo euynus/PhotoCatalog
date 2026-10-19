@@ -12,18 +12,19 @@ struct MainView: View {
     @State private var searchText = ""
 
     var body: some View {
-        let assetRevision = app.assetRenderVersion
+        // The columns read the asset render version where they hand it on: read here, every rating
+        // re-ran the split view, toolbar, search field and an open sheet's content.
         NavigationSplitView(columnVisibility: Binding(
             get: { app.sidebarVisible ? .all : .detailOnly },
             set: { app.sidebarVisible = $0 != .detailOnly })) {
-            SidebarColumn(assetRevision: assetRevision)
+            SidebarColumn()
                 .navigationSplitViewColumnWidth(min: Theme.sidebarMinW, ideal: Theme.sidebarW,
                                                 max: Theme.sidebarMaxW)
         } detail: {
-            ContentColumn(assetRevision: assetRevision)
+            ContentColumn()
                 .frame(minWidth: Theme.contentMinW)
                 .inspector(isPresented: inspectorPresented) {
-                    InspectorColumn(assetRevision: assetRevision)
+                    InspectorColumn()
                         .inspectorColumnWidth(min: Theme.inspectorMinW, ideal: Theme.inspectorW,
                                               max: Theme.inspectorMaxW)
                 }
@@ -143,13 +144,12 @@ extension AppState {
 /// has them; it reads the view mode itself, so switching views doesn't re-evaluate MainView.
 private struct SidebarColumn: View {
     @Environment(AppState.self) private var app
-    let assetRevision: Int
 
     var body: some View {
         if app.view == .develop {
             DevelopSidebar()
         } else {
-            Sidebar(assetRevision: assetRevision)
+            Sidebar(assetRevision: app.assetRenderVersion)
         }
     }
 }
@@ -158,13 +158,12 @@ private struct SidebarColumn: View {
 /// selection made MainView (split view, sidebar, toolbar) re-evaluate on every photo change.
 private struct InspectorColumn: View {
     @Environment(AppState.self) private var app
-    let assetRevision: Int
 
     var body: some View {
         if app.view == .develop {
             DevelopPanel(asset: app.primary)
         } else {
-            InspectorView(asset: app.primary, assetRevision: assetRevision)
+            InspectorView(asset: app.primary, assetRevision: app.assetRenderVersion)
         }
     }
 }
@@ -193,7 +192,6 @@ private struct DetailTitles: ViewModifier {
 // ---------- Content column (filters / main / status) ----------
 struct ContentColumn: View {
     @Environment(AppState.self) var app
-    let assetRevision: Int
     @State private var dropTargeted = false
 
     var body: some View {
@@ -240,7 +238,7 @@ struct ContentColumn: View {
                 // the grid stays built under the loupe, unseen and untouchable: going back to it
                 // (Esc, G) is then immediate and it's still scrolled where it was
                 ZStack {
-                    GridView(assetRevision: assetRevision)
+                    GridView(assetRevision: app.assetRenderVersion)
                         .opacity(app.view == .grid ? 1 : 0)
                         .allowsHitTesting(app.view == .grid)
                         .accessibilityHidden(app.view != .grid)
