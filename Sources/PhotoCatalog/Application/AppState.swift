@@ -2213,10 +2213,17 @@ final class AppState {
     @ObservationIgnored private var developSnapshotCache: [String: [DevelopSnapshot]] = [:]
     /// Bumped whenever a loaded history or snapshot list changes.
     private var developRecordsVersion = 0
+    /// Photos whose history or snapshots are in memory, the most recently shown last. With a
+    /// catalog they're read again when shown again, so only the recent ones are kept.
+    @ObservationIgnored private var developRecordOrder: [String] = []
+    private static let developRecordCacheLimit = 64
+    /// Photos whose history or snapshots are in memory (for tests).
+    var cachedDevelopRecordCount: Int { Set(developHistoryCache.keys).union(developSnapshotCache.keys).count }
 
     /// The photo's develop steps, oldest first.
     func developHistory(for id: String) -> [DevelopHistoryStep] {
         _ = developRecordsVersion
+        defer { touchDevelopRecords(id) }
         if let cached = developHistoryCache[id] { return cached }
         let loaded = (try? store?.loadDevelopHistory(id)) ?? []
         developHistoryCache[id] = loaded
@@ -2225,10 +2232,29 @@ final class AppState {
 
     func developSnapshots(for id: String) -> [DevelopSnapshot] {
         _ = developRecordsVersion
+        defer { touchDevelopRecords(id) }
         if let cached = developSnapshotCache[id] { return cached }
         let loaded = (try? store?.loadDevelopSnapshots(id)) ?? []
         developSnapshotCache[id] = loaded
         return loaded
+    }
+
+    /// Marks the photo's records as just shown and forgets those of the photos shown longest ago,
+    /// beyond the limit — never the photo on screen. Without a catalog the records live only in
+    /// memory, so none is forgotten.
+    private func touchDevelopRecords(_ id: String) {
+        guard store != nil else { return }
+        if developRecordOrder.last != id {
+            developRecordOrder.removeAll { $0 == id }
+            developRecordOrder.append(id)
+        }
+        while developRecordOrder.count > Self.developRecordCacheLimit {
+            let current = primaryId
+            guard let oldest = developRecordOrder.firstIndex(where: { $0 != id && $0 != current }) else { break }
+            let forgotten = developRecordOrder.remove(at: oldest)
+            developHistoryCache[forgotten] = nil
+            developSnapshotCache[forgotten] = nil
+        }
     }
 
     private func recordDevelopHistory(_ changed: [String: DevelopSettings], name: String, change: DevelopHistoryChange) {
@@ -2273,6 +2299,7 @@ final class AppState {
     func clearDevelopHistory(for id: String) {
         try? store?.clearDevelopHistory(id)
         developHistoryCache[id] = []
+        touchDevelopRecords(id)
         developRecordsVersion &+= 1
     }
 
@@ -2324,6 +2351,7 @@ final class AppState {
     private func clearDevelopRecordCaches() {
         developHistoryCache = [:]
         developSnapshotCache = [:]
+        developRecordOrder = []
         developRecordsVersion &+= 1
     }
     /// Shared by every Compare panel, so zoom and pan stay linked across them.
