@@ -2698,7 +2698,7 @@ final class AppState {
             duplicateGroupsCache = []
             restoreSourceRoots(from: store)
             movedSourceRoots = []
-            restoreAlbums(from: store, assets: [], collections: collections)
+            restoreAlbums(from: store, collections: collections)
             recoverInterruptedImportJobs()
             ensurePrimaryValid()
             return
@@ -2731,7 +2731,7 @@ final class AppState {
             try? store.updateSourceRootStatus(id: folders[index].id, status: status)
         }
         recomputeDuplicates()
-        restoreAlbums(from: store, assets: checked, collections: collections)
+        restoreAlbums(from: store, collections: collections)
         recoverInterruptedImportJobs()
         primeDefaultListCache(with: checked)
         ensurePrimaryValid()
@@ -2927,7 +2927,7 @@ final class AppState {
         if let message { push(verbatim: message, "warning") }
     }
 
-    private func restoreAlbums(from store: CatalogStore, assets: [Asset], collections: CatalogCollections) {
+    private func restoreAlbums(from store: CatalogStore, collections: CatalogCollections) {
         developSettings = collections.developSettings
         clearDevelopRecordCaches()
         loadFaces(from: store)
@@ -2935,10 +2935,9 @@ final class AppState {
         let loadedAlbums = collections.albums
         quickCollection = Set(loadedAlbums.first { $0.id == Self.quickCollectionID }?.assetIds ?? [])
         albums = loadedAlbums.filter { $0.id != Self.quickCollectionID }
-        smartAlbums = collections.smartAlbums.map { album in
-            SmartAlbum(id: album.id, name: album.name, rule: album.rule,
-                       count: SmartMatcher.count(assets, album.rule), setId: album.setId)
-        }
+        // counted by the sidebar (sidebarCounts), on all cores and once: matching every rule over
+        // the catalog here as well added most of a second to opening a large one
+        smartAlbums = collections.smartAlbums
         albumSets = collections.albumSets
         xmpSyncTimes = collections.xmpSyncTimes
         externallyChangedXMPIds = []
@@ -9249,8 +9248,8 @@ final class AppState {
                                          messageText: L("新建智能相册")) else { return }
 
         let rule = SmartRule(match: "all", conditions: conditions)
-        let count = SmartMatcher.count(assets.filter { !$0.deleted }, rule)
-        saveSmart(name: name, rule: rule, count: count)
+        // the sidebar counts it, as the library shows the photos (a RAW's JPEG folded into it)
+        saveSmart(name: name, rule: rule, count: 0)
     }
 
     private func defaultFilterSmartAlbumName() -> String {
