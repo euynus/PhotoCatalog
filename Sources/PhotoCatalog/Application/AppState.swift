@@ -3844,7 +3844,7 @@ final class AppState {
                 // a returning photo replaces its removed copy, still here when it was removed this session
                 replaceAssetsForMutation(assets.filter { !committed.revivedIds.contains($0.id) } + fresh)
             }
-            recordSidecarBaselines(fresh)
+            recordSidecarBaselines(fresh, returning: committed.revivedIds)
             clearDevelopRecordCaches()
         }
         if let source = committed.source {
@@ -4862,6 +4862,15 @@ final class AppState {
         for id in times.keys { xmpSyncRecordedAt[id] = xmpSyncCount }
     }
 
+    /// Shows these photos' sidecars as changed elsewhere now, ahead of the next check: a check
+    /// already under way looked before, and doesn't take them off.
+    private func noteChangedElsewhere(_ ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        xmpSyncCount &+= 1
+        for id in ids { xmpChangeFoundAt[id] = xmpSyncCount }
+        externallyChangedXMPIds.formUnion(ids)
+    }
+
     /// A running count of sidecar times remembered (and changes found), and when each photo's
     /// was: what a check or re-seed worked out in the background from before then is older, and
     /// doesn't replace it.
@@ -4890,29 +4899,49 @@ final class AppState {
     }
 
     /// Where each new photo's sidecar stands as it joins the catalog (0: it has none), so one
-    /// another app writes later — even its first — reads as a change.
-    private func recordSidecarBaselines(_ fresh: [Asset]) {
+    /// another app writes later — even its first — reads as a change. A photo coming back to the
+    /// catalog (among `returning`) has the catalog's metadata, not its sidecar's. With a record
+    /// of its sidecar, the check holds the sidecar against that as for any photo; with none (a
+    /// catalog from before the record was kept), a sidecar that says otherwise than the catalog
+    /// is one it hasn't taken in, and shows as changed elsewhere until it's read or written.
+    private func recordSidecarBaselines(_ fresh: [Asset], returning: Set<String> = []) {
         let candidates = fresh.compactMap { asset -> (id: String, path: String)? in
             guard !asset.isDemo, !asset.isVirtualCopy, let path = asset.localPath else { return nil }
             return (asset.id, path)
         }
         guard store != nil, !candidates.isEmpty else { return }
+        // what the catalog says of each returning photo whose sidecar it has no record of
+        let unrecorded = Dictionary(fresh.filter { returning.contains($0.id) && xmpSyncTimes[$0.id] == nil }
+            .map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         let catalogURL = store?.packageURL
         let snapshot = xmpSyncSnapshot()
-        Task { [weak self, candidates, snapshot] in
-            let found = await Task.detached(priority: .utility) { () -> (times: [String: Double], dependent: Set<String>) in
+        Task { [weak self, candidates, unrecorded, snapshot] in
+            let found = await Task.detached(priority: .utility) {
+                () -> (times: [String: Double], dependent: Set<String>, differing: Set<String>) in
                 let choices = XMPSidecar.sidecarChoices(for: candidates.map { URL(fileURLWithPath: $0.path) })
                 var times: [String: Double] = [:]
                 var dependent = Set<String>()
+                var differing = Set<String>()
                 for (candidate, choice) in zip(candidates, choices) {
-                    times[candidate.id] = XMPSidecar.modificationTime(of: snapshot.pairing ? choice.paired : choice.unpaired) ?? 0
+                    let sidecar = snapshot.pairing ? choice.paired : choice.unpaired
+                    times[candidate.id] = XMPSidecar.modificationTime(of: sidecar) ?? 0
                     if choice.paired != choice.unpaired { dependent.insert(candidate.id) }
+                    if let asset = unrecorded[candidate.id], let read = XMPSidecar.read(sidecar),
+                       !XMPSidecar.agrees(read, with: asset) {
+                        differing.insert(candidate.id)
+                    }
                 }
-                return (times, dependent)
+                return (times, dependent, differing)
             }.value
             guard let self, self.store?.packageURL == catalogURL else { return }
             let current = self.stillCurrent(found.times, pairingDependent: found.dependent, since: snapshot)
-            self.recordXMPSync(current.filter { self.xmpSyncTimes[$0.key] == nil })
+                .filter { self.xmpSyncTimes[$0.key] == nil }
+            let differing = found.differing.intersection(current.keys)
+            self.recordXMPSync(current.filter { !differing.contains($0.key) })
+            guard !differing.isEmpty else { return }
+            // recorded as none, so every check finds the sidecar changed until it's read or written
+            self.storeXMPSync(Dictionary(uniqueKeysWithValues: differing.map { ($0, 0) }))
+            self.noteChangedElsewhere(differing)
         }
     }
 
@@ -8086,12 +8115,7 @@ final class AppState {
     func applyAutomaticXMPWrite(_ result: AutomaticXMPWriter.Result, catalogURL: URL?) {
         let swapped = recordWrittenSidecars(result)
         // another app's change waits to be read rather than being written over
-        let changedElsewhere = result.changedElsewhere.subtracting(swapped)
-        if !changedElsewhere.isEmpty {
-            xmpSyncCount &+= 1
-            for id in changedElsewhere { xmpChangeFoundAt[id] = xmpSyncCount }
-            externallyChangedXMPIds.formUnion(changedElsewhere)
-        }
+        noteChangedElsewhere(result.changedElsewhere.subtracting(swapped))
         // an original on a drive that's away gets its sidecar once it's back
         if store?.packageURL == catalogURL {
             pendingXMPWriteIds.subtract(result.written.keys)

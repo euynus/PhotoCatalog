@@ -348,6 +348,19 @@ enum XMPSidecar {
         }
     }
 
+    /// Whether `sc` says what `asset` does: reading it (as Read Metadata from Files does) would
+    /// leave the photo's rating, label, keywords, text, credits, capture time and location as
+    /// they are. Times are written to the second, so they agree within one.
+    static func agrees(_ sc: SidecarMetadata, with asset: Asset) -> Bool {
+        var read = asset
+        apply(sc, to: &read, replacingKeywords: true)
+        return read.rating == asset.rating && read.colorLabel == asset.colorLabel
+            && Set(read.keywords) == Set(asset.keywords) && read.title == asset.title
+            && read.caption == asset.caption && read.author == asset.author && read.copyright == asset.copyright
+            && abs(read.date.timeIntervalSince(asset.date)) < 1
+            && abs(read.gps.0 - asset.gps.0) < 1e-6 && abs(read.gps.1 - asset.gps.1) < 1e-6
+    }
+
     /// The sidecar's modification time, or nil when there's none.
     static func modificationTime(forOriginal path: String) -> Double? {
         modificationTime(of: sidecarURL(for: URL(fileURLWithPath: path)))

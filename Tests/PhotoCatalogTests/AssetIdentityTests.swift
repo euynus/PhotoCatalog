@@ -352,6 +352,115 @@ final class AssetIdentityTests: CatalogTestCase {
         XCTAssertNotEqual(back?.contentHash, removed.contentHash, "with what its file holds now")
     }
 
+    /// A catalog in `Library.photolibrary` with one photo, `Source/IMG_0001.JPG`, rated, keyworded
+    /// and titled in the catalog and then removed from it — saved straight to the catalog, so it
+    /// has no record of the photo's sidecar (as a catalog from before that record was kept).
+    private func removedPhotoWithoutSidecarRecord() throws -> (folder: URL, photo: URL, package: URL, removed: Asset) {
+        let folder = scratch.appendingPathComponent("Source")
+        let photo = folder.appendingPathComponent("IMG_0001.JPG")
+        try makeShot(at: photo, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:00", shade: 1)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        var removed = try XCTUnwrap(ImportCoordinator(store: store).importFiles([photo], from: folder).first)
+        removed.rating = 4
+        removed.keywords = ["kept"]
+        removed.title = "Catalog title"
+        removed.deleted = true
+        try store.upsert([removed])
+        return (folder, photo, package, removed)
+    }
+
+    /// Writes `photo`'s sidecar as another app would: its own rating and title.
+    private func writeOtherAppsSidecar(for photo: URL) throws {
+        try """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+        <rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+          xmlns:dc="http://purl.org/dc/elements/1.1/" xmp:Rating="1">
+        <dc:title><rdf:Alt><rdf:li xml:lang="x-default">Their title</rdf:li></rdf:Alt></dc:title>
+        </rdf:Description></rdf:RDF></x:xmpmeta>
+        """.write(to: XMPSidecar.sidecarURL(for: photo), atomically: true, encoding: .utf8)
+    }
+
+    /// The catalog keeps its record of a removed photo's sidecar: one another app changed while
+    /// the photo was out shows under Metadata Changed Elsewhere once the photo is back with the
+    /// catalog's metadata.
+    @MainActor
+    func testSidecarChangedWhilePhotoWasOutShowsAsChangedElsewhere() async throws {
+        let folder = scratch.appendingPathComponent("Source")
+        let photo = folder.appendingPathComponent("IMG_0001.JPG")
+        try makeShot(at: photo, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:00", shade: 1)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        _ = try CatalogStore(packageURL: package)
+        let app = AppState()
+        app.onboarded = true
+        app.runsBackgroundMaintenance = false
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.importFolder(folder)
+        try await waitUntil("first import finished") { !app.importing }
+        let id = try XCTUnwrap(app.assets.first { !$0.isDemo && $0.localPath == photo.path }?.id)
+        try await waitUntil("the sidecar's starting point is recorded") { app.xmpSyncTime(for: id) != nil }
+        XCTAssertTrue(app.mutate([id], writingSidecars: false) { $0.rating = 4; $0.title = "Catalog title" })
+        XCTAssertTrue(app.mutate([id], writingSidecars: false) { $0.deleted = true })
+        try writeOtherAppsSidecar(for: photo)
+
+        app.importFolder(folder)
+        try await waitUntil("second import finished") { !app.importing }
+
+        XCTAssertEqual(app.assets.first { $0.id == id }?.rating, 4, "the photo is back with the catalog's rating")
+        app.checkExternalXMPChangesNow()
+        XCTAssertEqual(app.externallyChangedXMPIds, [id], "the sidecar changed while the photo was out")
+    }
+
+    /// With no record of a returning photo's sidecar (a catalog from before one was kept), a
+    /// sidecar that says otherwise than the catalog shows under Metadata Changed Elsewhere —
+    /// and stays there until it's read — rather than being taken as seen.
+    @MainActor
+    func testSidecarWrittenWhilePhotoWasOutShowsAsChangedElsewhereWithoutARecord() async throws {
+        let (folder, photo, package, removed) = try removedPhotoWithoutSidecarRecord()
+        try writeOtherAppsSidecar(for: photo)
+        let app = AppState()
+        app.onboarded = true
+        app.runsBackgroundMaintenance = false
+        XCTAssertTrue(app.openCatalog(at: package))
+        XCTAssertNil(app.xmpSyncTime(for: removed.id), "the catalog has no record of the sidecar")
+
+        app.importFolder(folder)
+        try await waitUntil("import finished") { !app.importing }
+        try await waitUntil("the sidecar is looked at") { app.xmpSyncTime(for: removed.id) != nil }
+
+        XCTAssertEqual(app.assets.first { $0.id == removed.id }?.rating, 4, "the photo is back with the catalog's rating")
+        app.checkExternalXMPChangesNow()
+        XCTAssertEqual(app.externallyChangedXMPIds, [removed.id], "the other app's sidecar is taken as seen")
+        app.checkExternalXMPChangesNow()
+        XCTAssertEqual(app.externallyChangedXMPIds, [removed.id], "until it's read")
+        app.readMetadataFromFiles([removed.id])
+        XCTAssertEqual(app.externallyChangedXMPIds, [])
+        XCTAssertEqual(app.assets.first { $0.id == removed.id }?.rating, 1)
+        app.checkExternalXMPChangesNow()
+        XCTAssertEqual(app.externallyChangedXMPIds, [])
+    }
+
+    /// A returning photo whose sidecar says what the catalog does isn't a change made elsewhere.
+    @MainActor
+    func testSidecarThatAgreesWithTheCatalogIsNotAChangeWhenThePhotoReturns() async throws {
+        let (folder, photo, package, removed) = try removedPhotoWithoutSidecarRecord()
+        let sidecar = XMPSidecar.sidecarURL(for: photo)
+        XCTAssertTrue(XMPSidecar.write(removed, to: sidecar))
+        let app = AppState()
+        app.onboarded = true
+        app.runsBackgroundMaintenance = false
+        XCTAssertTrue(app.openCatalog(at: package))
+
+        app.importFolder(folder)
+        try await waitUntil("import finished") { !app.importing }
+        try await waitUntil("the sidecar is looked at") { app.xmpSyncTime(for: removed.id) != nil }
+
+        XCTAssertEqual(app.xmpSyncTime(for: removed.id), XMPSidecar.modificationTime(of: sidecar),
+                       "the sidecar is taken as seen")
+        app.checkExternalXMPChangesNow()
+        XCTAssertEqual(app.externallyChangedXMPIds, [])
+    }
+
     func testImportOfRemovedPhotoAtItsPathKeepsItsId() throws {
         let source = scratch.appendingPathComponent("Source")
         let photo = source.appendingPathComponent("removed.jpg")
