@@ -245,7 +245,7 @@ enum PairingCheck {
                                                          recentCutoff: app.recentCutoff)
         assert(derived.pairing.primaryByCompanion == app.assetPairing.primaryByCompanion
                && derived.libraryCounts == app.libraryCounts
-               && derived.projects == app.projectList && derived.clients == app.clientList
+               && derived.projects.list == app.projectList && derived.clients.list == app.clientList
                && derived.captureDateGroups.map { "\($0.id)=\($0.count)" } == app.captureDateGroups.map { "\($0.id)=\($0.count)" }
                && derived.indexById.count == app.assets.count,
                "background-derived catalog data equals the lazily computed caches")

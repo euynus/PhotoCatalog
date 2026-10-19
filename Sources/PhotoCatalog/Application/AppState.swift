@@ -61,6 +61,8 @@ final class AppState {
                 stackByAssetCache = nil
                 stackInputsVersion &+= 1
                 keywordCountsCache = nil
+                projectCountsCache = nil
+                clientCountsCache = nil
                 gearCountsCache = nil
                 captureDateGroupsCache = nil
                 folderTreeCache = nil
@@ -69,8 +71,6 @@ final class AppState {
             if !scope.isDisjoint(with: [.metadata, .structure]) {
                 keywordListCache = nil   // re-derived from the (patched) counts
                 keywordSuggestionPoolCache = nil
-                projectListCache = nil
-                clientListCache = nil
                 pinnedSidebarFavoritesCache = nil   // pins of keywords, projects, clients and dates
             }
             // edits patch these again (applyAssetEdits) when they leave files and folders alone
@@ -162,8 +162,9 @@ final class AppState {
     /// Every keyword's photo count, in first-seen order; metadata edits patch it in place.
     @ObservationIgnored private var keywordCountsCache: (order: [String], counts: [String: Int])?
     @ObservationIgnored private var keywordSuggestionPoolCache: [String]?
-    @ObservationIgnored private var projectListCache: [KeywordCount]?
-    @ObservationIgnored private var clientListCache: [KeywordCount]?
+    /// The project and client lists; metadata edits patch them in place.
+    @ObservationIgnored private var projectCountsCache: MetadataValueCounts?
+    @ObservationIgnored private var clientCountsCache: MetadataValueCounts?
     @ObservationIgnored private var captureDateGroupsCache: [CaptureDateBucket]?
     private var captureStatisticsCache: (request: CaptureStatisticsRequest, value: CaptureStatistics)?
     @ObservationIgnored private var captureStatisticsTask: Task<CaptureStatistics, Error>?
@@ -339,6 +340,8 @@ final class AppState {
         var patchedCounts: LibraryCounts?
         var patchedKeywords: (order: [String], counts: [String: Int])?
         var patchedSidebar: SidebarCountIndex?
+        var projectChanges: [(offset: Int, old: String, new: String)] = []
+        var clientChanges: [(offset: Int, old: String, new: String)] = []
         var listBefore: ListSignature?
         if !scope.contains(.structure) {
             let pairing = assetPairing
@@ -378,6 +381,19 @@ final class AppState {
                 }
                 return patched
             }
+            // the project and client lists move only with a project or client: a title, keyword
+            // or location edit keeps them as they are
+            for edit in edits {
+                let old = assets[edit.offset]
+                if old.project != edit.asset.project {
+                    projectChanges.append((edit.offset, MetadataValueCounts.value(of: old, \.project, pairing: pairing),
+                                           MetadataValueCounts.value(of: edit.asset, \.project, pairing: pairing)))
+                }
+                if old.client != edit.asset.client {
+                    clientChanges.append((edit.offset, MetadataValueCounts.value(of: old, \.client, pairing: pairing),
+                                          MetadataValueCounts.value(of: edit.asset, \.client, pairing: pairing)))
+                }
+            }
         }
         nextAssetEditScope = scope
         assets.withUnsafeMutableBufferPointer { buffer in
@@ -386,6 +402,8 @@ final class AppState {
         if let patchedCounts { libraryCountsCache = patchedCounts }
         if let patchedKeywords { keywordCountsCache = patchedKeywords }
         if let patchedSidebar { sidebarCountIndexCache = patchedSidebar }
+        patch(&projectCountsCache, projectChanges, \.project)
+        patch(&clientCountsCache, clientChanges, \.client)
         if let listBefore { patchListCaches(with: edits, validFor: listBefore) }
         didMutateAssets()
     }
@@ -604,8 +622,8 @@ final class AppState {
         keywordListCache = nil
         keywordSuggestionPoolCache = nil
         gearCountsCache = nil
-        projectListCache = nil
-        clientListCache = nil
+        projectCountsCache = nil
+        clientCountsCache = nil
         libraryCountsCache = nil
         sidebarCountIndexCache = nil
         pinnedSidebarFavoritesCache = nil
@@ -8239,8 +8257,8 @@ final class AppState {
         let indexById: [String: Int]
         let keywordCounts: (order: [String], counts: [String: Int])
         let captureDateGroups: [CaptureDateBucket]
-        let projects: [KeywordCount]
-        let clients: [KeywordCount]
+        let projects: MetadataValueCounts
+        let clients: MetadataValueCounts
         let libraryCounts: LibraryCounts
 
         nonisolated static func derive(from assets: [Asset], pairsRawJpeg: Bool, recentCutoff: Date) -> CatalogDerivedData {
@@ -8263,8 +8281,8 @@ final class AppState {
         if pairRawAndJpeg { assetPairingCache = (structureVersion, derived.pairing) }
         keywordCountsCache = derived.keywordCounts
         captureDateGroupsCache = derived.captureDateGroups
-        projectListCache = derived.projects
-        clientListCache = derived.clients
+        projectCountsCache = derived.projects
+        clientCountsCache = derived.clients
         libraryCountsCache = derived.libraryCounts
     }
 
@@ -8301,20 +8319,30 @@ final class AppState {
         return result
     }
 
+    /// How often the project and client lists were counted from every photo (for tests).
+    @ObservationIgnored private(set) var metadataListRebuilds = 0
+
+    /// The lists as counted afresh from every photo, leaving the cached ones alone (for tests).
+    func recountedMetadataLists() -> (projects: [KeywordCount], clients: [KeywordCount]) {
+        (countMetadataValues(\.project), countMetadataValues(\.client))
+    }
+
     var projectList: [KeywordCount] {
         _ = listInputsVersion   // register the dependency even on a cache hit
-        if let cache = projectListCache { return cache }
-        let result = countMetadataValues(\.project)
-        projectListCache = result
-        return result
+        if let cache = projectCountsCache { return cache.list }
+        let result = Self.metadataCounts(assets, pairing: assetPairing, \.project)
+        metadataListRebuilds &+= 1
+        projectCountsCache = result
+        return result.list
     }
 
     var clientList: [KeywordCount] {
         _ = listInputsVersion   // register the dependency even on a cache hit
-        if let cache = clientListCache { return cache }
-        let result = countMetadataValues(\.client)
-        clientListCache = result
-        return result
+        if let cache = clientCountsCache { return cache.list }
+        let result = Self.metadataCounts(assets, pairing: assetPairing, \.client)
+        metadataListRebuilds &+= 1
+        clientCountsCache = result
+        return result.list
     }
 
     var captureDateGroups: [CaptureDateBucket] {
@@ -8419,24 +8447,132 @@ final class AppState {
     }
 
     private func countMetadataValues(_ keyPath: KeyPath<Asset, String>) -> [KeywordCount] {
-        Self.metadataCounts(assets, pairing: assetPairing, keyPath)
+        Self.metadataCounts(assets, pairing: assetPairing, keyPath).list
     }
 
-    nonisolated static func metadataCounts(_ assets: [Asset], pairing: AssetPairing,
-                                           _ keyPath: KeyPath<Asset, String>) -> [KeywordCount] {
-        var order: [String] = []
-        var counts: [String: Int] = [:]
-        for asset in assets where !asset.deleted {
+    /// The values photos have for a field (a project, a client, a camera) as the sidebar and the
+    /// filter bar list them: trimmed, each with how many of the photos as shown have it, most
+    /// first, ties in the order a pass over the photos meets them. Where each value's first photo
+    /// sits is kept, since it orders the ties, so that an edit can patch the list.
+    struct MetadataValueCounts {
+        private(set) var list: [KeywordCount] = []
+        private var counts: [String: Int]
+        private var first: [String: Int]
+
+        fileprivate init(counts: [String: Int], first: [String: Int]) {
+            self.counts = counts
+            self.first = first
+            sort()
+        }
+
+        private mutating func sort() {
+            list = counts.map { KeywordCount(name: $0.key, count: $0.value) }.sorted {
+                $0.count != $1.count ? $0.count > $1.count : (first[$0.name] ?? .max) < (first[$1.name] ?? .max)
+            }
+        }
+
+        /// What a photo is counted under: "" for none, or for a photo the library doesn't show.
+        static func value(of asset: Asset, _ keyPath: KeyPath<Asset, String>, pairing: AssetPairing) -> String {
             let raw = asset[keyPath: keyPath]
             // most photos have no value: skip them before any lookup or Foundation call
-            guard !raw.isEmpty, !pairing.isHiddenCompanion(asset.id) else { continue }
-            let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !value.isEmpty else { continue }
-            if counts[value] == nil { order.append(value) }
-            counts[value, default: 0] += 1
+            guard !raw.isEmpty, pairing.shows(asset) else { return "" }
+            return raw.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        return order.map { KeywordCount(name: $0, count: counts[$0] ?? 0) }
-            .sorted { $0.count > $1.count }
+
+        /// Moves the photos at the changes' offsets from their old value to their new one, as a
+        /// recount of the photos as they are now (`value(at:)` of each offset) would count them: a
+        /// value on no photo leaves the list, and one whose first photo lost it moves to its next.
+        /// False when the counts don't add up to the photos (they're to be recounted then).
+        fileprivate mutating func apply(_ changes: [(offset: Int, old: String, new: String)], photos: Int,
+                                        value: (Int) -> String) -> Bool {
+            var lost: [String: Int] = [:]    // a value whose first photo lost it → that photo
+            var added: [String: Int] = [:]   // a value → the first photo it was put on
+            for change in changes where change.old != change.new {
+                if !change.old.isEmpty {
+                    guard let count = counts[change.old] else { return false }
+                    counts[change.old] = count - 1
+                    if first[change.old] == change.offset { lost[change.old] = change.offset }
+                }
+                if !change.new.isEmpty {
+                    counts[change.new, default: 0] += 1
+                    added[change.new] = min(added[change.new] ?? .max, change.offset)
+                }
+            }
+            for name in counts.filter({ $0.value <= 0 }).map(\.key) {
+                counts[name] = nil
+                first[name] = nil
+                lost[name] = nil
+            }
+            for (name, offset) in added where lost[name] == nil {
+                first[name] = min(first[name] ?? .max, offset)
+            }
+            // No photo before a lost first one had the value: it's first on a photo given it now,
+            // or on the next photo after that one that still has it.
+            var pending: [String: Int] = [:]
+            for (name, offset) in lost {
+                if let put = added[name], put < offset { first[name] = put } else { pending[name] = offset }
+            }
+            if let start = pending.values.min() {
+                for position in start + 1 ..< photos {
+                    let name = value(position)
+                    guard let after = pending[name], position > after else { continue }
+                    first[name] = position
+                    pending[name] = nil
+                    if pending.isEmpty { break }
+                }
+            }
+            guard pending.isEmpty else { return false }
+            sort()
+            return true
+        }
+    }
+
+    /// Counted in chunks on every core, each chunk's counts added up and first photos kept.
+    nonisolated static func metadataCounts(_ assets: [Asset], pairing: AssetPairing, _ keyPath: KeyPath<Asset, String>,
+                                           chunk: Int = 65_536) -> MetadataValueCounts {
+        func count(_ range: Range<Int>) -> (counts: [String: Int], first: [String: Int]) {
+            var counts: [String: Int] = [:]
+            var first: [String: Int] = [:]
+            for position in range {
+                let value = MetadataValueCounts.value(of: assets[position], keyPath, pairing: pairing)
+                guard !value.isEmpty else { continue }
+                if counts[value] == nil { first[value] = position }
+                counts[value, default: 0] += 1
+            }
+            return (counts, first)
+        }
+        let chunk = max(chunk, 1)
+        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
+        guard chunks > 1 else {
+            let whole = count(assets.indices)
+            return MetadataValueCounts(counts: whole.counts, first: whole.first)
+        }
+        let lock = NSLock()
+        var counts: [String: Int] = [:]
+        var first: [String: Int] = [:]
+        DispatchQueue.concurrentPerform(iterations: chunks) { index in
+            let part = count(index * chunk ..< min(assets.count, (index + 1) * chunk))
+            lock.withLock {
+                counts.merge(part.counts, uniquingKeysWith: +)
+                first.merge(part.first, uniquingKeysWith: min)
+            }
+        }
+        return MetadataValueCounts(counts: counts, first: first)
+    }
+
+    /// Patches a project or client list for edits that changed that field, or drops it to be
+    /// recounted when it doesn't add up.
+    private func patch(_ cache: inout MetadataValueCounts?, _ changes: [(offset: Int, old: String, new: String)],
+                       _ keyPath: KeyPath<Asset, String>) {
+        guard !changes.isEmpty, var counts = cache else { return }
+        cache = nil   // the only copy then, patched without copying its tables
+        let photos = assets
+        let pairing = assetPairing
+        if counts.apply(changes, photos: photos.count, value: {
+            MetadataValueCounts.value(of: photos[$0], keyPath, pairing: pairing)
+        }) {
+            cache = counts
+        }
     }
 
     // Cached like the other derived sidebar collections — resolving a pinned

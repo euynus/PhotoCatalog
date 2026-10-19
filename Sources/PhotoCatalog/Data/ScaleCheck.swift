@@ -166,6 +166,19 @@ enum ScaleCheck {
             rounds.append(Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15)
         }
         line.append("rate 1 + sidebar " + String(format: "%.1f", rounds.sorted()[rounds.count / 2]))
+        // a title, then the sidebar's project and client lists as it redraws
+        _ = app.projectList
+        _ = app.clientList
+        step("title 1 + lists") {
+            app.mutate([ids[6]]) { $0.title = "Scale \(Date().timeIntervalSince1970)" }
+            _ = app.projectList
+            _ = app.clientList
+        }
+        step("project 1 + lists") {
+            app.mutate([ids[6]]) { $0.project = $0.project.isEmpty ? "Scale project" : "" }
+            _ = app.projectList
+            _ = app.clientList
+        }
         report("edits ms: " + line.joined(separator: " · "))
 
         // A structural change (an import batch, Move to Trash, a move or rename) drops what's
@@ -179,6 +192,10 @@ enum ScaleCheck {
         step("change") { app.assets = app.assets }
         step("pairing") { _ = app.assetPairing }
         step("keywords") { _ = app.keywordList }
+        step("projects") {
+            _ = app.projectList
+            _ = app.clientList
+        }
         step("sidebar") { readSidebar() }
         step("grid") {
             _ = app.list.count

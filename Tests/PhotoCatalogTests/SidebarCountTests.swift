@@ -120,6 +120,99 @@ extension SidebarCountTests {
         XCTAssertEqual(app.sidebarCounts, app.recountedSidebarCounts())
     }
 
+    /// The project and client lists keep through edits that leave projects and clients alone, and
+    /// edits that change them patch the lists instead of recounting every photo, coming out as a
+    /// recount would: most photos first, ties in the order a pass meets them, a value no photo
+    /// has any more gone, values trimmed, and a RAW with its JPEG counted once.
+    @MainActor
+    func testProjectAndClientListsArePatchedAsARecountWouldCountThem() throws {
+        let app = AppState.selfCheckFixture()
+        app.pairRawAndJpeg = true
+        let raw = photo("raw", "IMG_0002.CR3", raw: true, offset: 10, project: "Wedding")
+        let jpeg = photo("jpeg", "IMG_0002.JPG", raw: false, offset: 10, project: "Wedding")
+        // p0…p7 alternate between two projects; the first three have a client
+        let others = (0..<8).map { index in
+            var asset = photo("p\(index)", "IMG_1\(index).JPG", raw: false, offset: 100 + Double(index),
+                              project: index % 2 == 0 ? "Portraits" : "Wedding")
+            asset.client = index < 3 ? " Acme " : ""
+            return asset
+        }
+        app.assets = [raw, jpeg] + others
+        app.duplicateGroupsCache = []
+        XCTAssertTrue(app.assetPairing.isHiddenCompanion(jpeg.id))
+        func expectRecount(_ message: String, file: StaticString = #filePath, line: UInt = #line) {
+            let recounted = app.recountedMetadataLists()
+            XCTAssertEqual(app.projectList, recounted.projects, message, file: file, line: line)
+            XCTAssertEqual(app.clientList, recounted.clients, message, file: file, line: line)
+        }
+        func projects() -> [String] { app.projectList.map { "\($0.name) \($0.count)" } }
+        XCTAssertEqual(projects(), ["Wedding 5", "Portraits 4"])
+        XCTAssertEqual(app.clientList.map { "\($0.name) \($0.count)" }, ["Acme 3"])
+        let rebuilds = app.metadataListRebuilds
+
+        XCTAssertTrue(app.mutate(["p0"]) { $0.title = "Golden hour" })
+        XCTAssertTrue(app.mutate(["p1"]) { $0.keywords = ["beach"] })
+        expectRecount("a title and a keyword")
+        XCTAssertEqual(app.metadataListRebuilds, rebuilds, "edits that leave projects and clients alone keep the lists")
+
+        XCTAssertTrue(app.mutate(["p1"]) { $0.project = "Portraits" })
+        XCTAssertEqual(projects(), ["Portraits 5", "Wedding 4"])
+        expectRecount("a photo moved to the other project")
+
+        // Portraits' first photo leaves it: a tie, which the photo Wedding is first on now wins
+        XCTAssertTrue(app.mutate(["p0"]) { $0.project = "" })
+        XCTAssertEqual(projects(), ["Wedding 4", "Portraits 4"])
+        expectRecount("a project's first photo emptied")
+
+        XCTAssertTrue(app.mutate(app.withCompanions([raw.id])) { $0.project = "" })
+        XCTAssertEqual(projects(), ["Portraits 4", "Wedding 3"])
+        expectRecount("the RAW and its JPEG emptied, once")
+
+        XCTAssertTrue(app.mutate(["p0"]) { $0.project = "Wedding" })
+        XCTAssertEqual(projects(), ["Wedding 4", "Portraits 4"], "a photo before a project's first one is its first now")
+        expectRecount("a project set before its first photo")
+
+        XCTAssertTrue(app.mutate([jpeg.id]) { $0.project = "Hidden" })
+        XCTAssertEqual(projects(), ["Wedding 4", "Portraits 4"], "a JPEG behind its RAW isn't counted")
+        expectRecount("the hidden JPEG alone")
+
+        XCTAssertTrue(app.mutate(["p0", "p5", "p6", "p7"]) { $0.client = $0.id == "p0" ? "" : "Acme" })
+        XCTAssertEqual(app.clientList.map { "\($0.name) \($0.count)" }, ["Acme 5"])
+        expectRecount("a client added to some and taken from its first photo at once")
+
+        XCTAssertTrue(app.mutate(["p3"]) { $0.project = " Wedding " })
+        expectRecount("a value as it was with spaces around")
+
+        XCTAssertTrue(app.mutate(Set(app.assets.filter { $0.project == "Portraits" }.map(\.id))) { $0.project = "" })
+        XCTAssertEqual(projects(), ["Wedding 4"], "a project on no photo leaves the list")
+        expectRecount("a project emptied")
+
+        XCTAssertTrue(app.mutate(["p7"]) { $0.project = "Studio" })
+        XCTAssertEqual(projects(), ["Wedding 3", "Studio 1"])
+        expectRecount("a new project")
+
+        // A on p0, p2, p4 and B on p1, p3: when p0 leaves A, A's first photo is p2, after B's
+        let others8 = Set((0..<8).map { "p\($0)" })
+        XCTAssertTrue(app.mutate(others8) { $0.project = ["p0": "A", "p2": "A", "p4": "A", "p1": "B", "p3": "B"][$0.id] ?? "" })
+        XCTAssertEqual(projects(), ["A 3", "B 2"])
+        expectRecount("projects set on many photos at once")
+        XCTAssertTrue(app.mutate(["p0"]) { $0.project = "" })
+        XCTAssertEqual(projects(), ["B 2", "A 2"], "tied, A's first photo now comes after B's")
+        expectRecount("a project's first photo emptied, its next one after another's first")
+        XCTAssertTrue(app.mutate(["p0", "p2"]) { $0.project = $0.id == "p0" ? "A" : "" })
+        XCTAssertEqual(projects(), ["A 2", "B 2"])
+        expectRecount("a project moved to a photo before its first, in one edit")
+        XCTAssertTrue(app.mutate(["p0", "p5"]) { $0.project = $0.id == "p0" ? "" : "A" })
+        XCTAssertEqual(projects(), ["B 2", "A 2"])
+        expectRecount("a project moved from its first photo to a later one, in one edit")
+        XCTAssertEqual(app.metadataListRebuilds, rebuilds, "project and client edits patch the lists")
+
+        // a structural change still recounts them
+        app.assets = app.assets
+        expectRecount("after a structural change")
+        XCTAssertEqual(app.metadataListRebuilds, rebuilds + 2)
+    }
+
     /// The smart album editor's preview counts what the sidebar counts: a RAW and the JPEG shown
     /// behind it are one photo, in the preview's thumbnails too.
     @MainActor
@@ -193,6 +286,23 @@ extension SidebarCountTests {
             let counted = AppState.keywordCounts(of: photos, pairing: pairing, chunk: chunk)
             XCTAssertEqual(counted.order, firstSeen, "in chunks of \(chunk)")
             XCTAssertEqual(counted.counts, Dictionary(keywords.map { ($0, 1) }, uniquingKeysWith: +))
+        }
+
+        // and projects, clients and cameras: trimmed, most photos first, ties as a pass meets them
+        for field in [\Asset.project, \Asset.client, \Asset.camera] {
+            var order: [String] = []
+            var counts: [String: Int] = [:]
+            for photo in shown {
+                let value = photo[keyPath: field].trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !value.isEmpty else { continue }
+                if counts[value] == nil { order.append(value) }
+                counts[value, default: 0] += 1
+            }
+            let expected = order.map { KeywordCount(name: $0, count: counts[$0] ?? 0) }.sorted { $0.count > $1.count }
+            for chunk in [1, 3, 7, Int.max] {
+                XCTAssertEqual(AppState.metadataCounts(photos, pairing: pairing, field, chunk: chunk).list, expected,
+                               "\(field) in chunks of \(chunk)")
+            }
         }
     }
 }
