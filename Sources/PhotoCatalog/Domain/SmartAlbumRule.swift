@@ -313,16 +313,17 @@ enum SmartMatcher {
         let first: [Asset]
     }
 
-    /// What the rule builder shows: the live (not trashed) photos the rule matches, counted in one
-    /// pass that keeps only the first `limit`. Nil when the task running it is cancelled.
-    static func preview(_ assets: [Asset], _ rule: SmartRule, limit: Int) -> Preview? {
+    /// What the rule builder shows: the photos as the library shows them (not trashed, a RAW's
+    /// JPEG folded into it) that the rule matches, so it counts what the sidebar will. Counted in
+    /// one pass that keeps only the first `limit`. Nil when the task running it is cancelled.
+    static func preview(_ assets: [Asset], _ rule: SmartRule, pairing: AssetPairing, limit: Int) -> Preview? {
         let prepared = Prepared(rule)
         var memo = Memo(for: prepared)
         var count = 0
         var first: [Asset] = []
         for (offset, asset) in assets.enumerated() {
             if offset % 4096 == 0, Task.isCancelled { return nil }
-            guard !asset.deleted, prepared.matches(asset, memo: &memo) else { continue }
+            guard pairing.shows(asset), prepared.matches(asset, memo: &memo) else { continue }
             count += 1
             if first.count < limit { first.append(asset) }
         }

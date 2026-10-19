@@ -14,10 +14,12 @@ struct SmartAlbumBuilder: View {
     /// next one runs. Nil until the first one is in.
     @State private var shown: (input: PreviewInput, preview: SmartMatcher.Preview)?
 
-    /// What a match depends on: the rule, and the photos (by their edit version). Not the name.
+    /// What a match depends on: the rule, the photos (by their edit version) and whether a RAW's
+    /// JPEG is folded into it. Not the name.
     private struct PreviewInput: Equatable {
         let rule: SmartRule
         let assets: Int
+        let pairsRawAndJpeg: Bool
     }
 
     init(album: SmartAlbum? = nil) {
@@ -43,7 +45,7 @@ struct SmartAlbumBuilder: View {
     var body: some View {
         // Matching a large library takes a while, so it runs off the main thread and never in
         // body: typing the name doesn't match at all, and typing a value matches once it pauses.
-        let input = PreviewInput(rule: rule, assets: app.assetRenderVersion)
+        let input = PreviewInput(rule: rule, assets: app.assetRenderVersion, pairsRawAndJpeg: app.pairRawAndJpeg)
         VStack(spacing: 0) {
             head
             body_(shown?.preview, pending: shown?.input != input)
@@ -60,10 +62,11 @@ struct SmartAlbumBuilder: View {
         if shown != nil {
             do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
         }
-        // trashed photos are left out, as the sidebar and grid leave them out
+        // trashed photos and a RAW's JPEG are left out, as the sidebar and grid leave them out
         let assets = app.assets
+        let pairing = app.assetPairing
         let worker = Task.detached(priority: .userInitiated) {
-            SmartMatcher.preview(assets, input.rule, limit: 14)
+            SmartMatcher.preview(assets, input.rule, pairing: pairing, limit: 14)
         }
         let preview = await withTaskCancellationHandler {
             await worker.value

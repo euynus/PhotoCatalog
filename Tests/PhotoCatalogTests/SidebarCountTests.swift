@@ -120,6 +120,27 @@ extension SidebarCountTests {
         XCTAssertEqual(app.sidebarCounts, app.recountedSidebarCounts())
     }
 
+    /// The smart album editor's preview counts what the sidebar counts: a RAW and the JPEG shown
+    /// behind it are one photo, in the preview's thumbnails too.
+    @MainActor
+    func testSmartAlbumPreviewLeavesOutHiddenCompanionsAsTheSidebarDoes() throws {
+        let app = AppState.selfCheckFixture()
+        app.pairRawAndJpeg = true
+        let raw = photo("raw", "IMG_0002.CR3", raw: true, offset: 10, rating: 4)
+        let jpeg = photo("jpeg", "IMG_0002.JPG", raw: false, offset: 10, rating: 4)
+        let other = photo("other", "IMG_0003.JPG", raw: false, offset: 20, rating: 1)
+        app.assets = [raw, jpeg, other]
+        app.duplicateGroupsCache = []
+        let rated = smart("rated", "rating", ">=", "4")
+        app.smartAlbums = [rated]
+        XCTAssertTrue(app.assetPairing.isHiddenCompanion(jpeg.id))
+        XCTAssertEqual(app.countForSmartAlbum(rated), 1)
+
+        let preview = try XCTUnwrap(SmartMatcher.preview(app.assets, rated.rule, pairing: app.assetPairing, limit: 14))
+        XCTAssertEqual(preview.count, app.countForSmartAlbum(rated), "the editor and the sidebar agree")
+        XCTAssertEqual(preview.first.map(\.id), [raw.id])
+    }
+
     /// Counted in chunks on several threads, the sidebar's tallies come out as one pass's, and a
     /// smart album's count is the photos shown that its rule, read field by field, matches.
     func testChunkedTalliesAreOnePassCounts() throws {

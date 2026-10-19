@@ -30,18 +30,18 @@ final class SmartMatcherTests: XCTestCase {
         }
         let rule = SmartRule(conditions: [SmartCondition(field: "rating", op: ">=", value: "3")])
 
-        let preview = try XCTUnwrap(SmartMatcher.preview(assets, rule, limit: 14))
+        let preview = try XCTUnwrap(SmartMatcher.preview(assets, rule, pairing: .empty, limit: 14))
 
         let live = assets.filter { !$0.deleted }
         XCTAssertEqual(preview.count, SmartMatcher.match(live, rule).count)
         XCTAssertEqual(preview.count, 19)
         XCTAssertEqual(preview.first.map(\.id), SmartMatcher.match(live, rule).prefix(14).map(\.id))
-        XCTAssertEqual(try XCTUnwrap(SmartMatcher.preview(assets, rule, limit: 30)).first.count, 19)
+        XCTAssertEqual(try XCTUnwrap(SmartMatcher.preview(assets, rule, pairing: .empty, limit: 30)).first.count, 19)
 
         // a match the builder no longer needs (the rule changed, the sheet closed) stops
         let cancelled = await Task.detached {
             withUnsafeCurrentTask { $0?.cancel() }
-            return SmartMatcher.preview(assets, rule, limit: 14)
+            return SmartMatcher.preview(assets, rule, pairing: .empty, limit: 14)
         }.value
         XCTAssertNil(cancelled)
     }
