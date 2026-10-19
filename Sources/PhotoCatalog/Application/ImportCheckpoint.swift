@@ -37,6 +37,9 @@ struct CommittedImportBatch: Sendable {
 
 struct ImportFileCheckpoint: Sendable {
     enum Outcome: String, Sendable { case saved, skipped, failed }
+    /// The reason a file skipped as an exact duplicate (Skip Exact Duplicates) carries, so
+    /// folder watching leaves it out too.
+    static let skippedAsDuplicate = "duplicate"
     let source: ImportSourceFile
     let assetId: String?
     let outcome: Outcome

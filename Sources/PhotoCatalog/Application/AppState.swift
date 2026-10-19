@@ -4410,6 +4410,8 @@ final class AppState {
                     if let path = asset.localPath { knownPaths.insert(path) }
                 }
                 knownPaths.formUnion((try? store.removedLocalPaths()) ?? [])
+                // as do files an import skipped as exact duplicates of photos it cataloged
+                knownPaths.formUnion((try? store.skippedDuplicatePaths()) ?? [])
                 var fresh: [Asset] = []
                 var changed: [Asset] = []
                 // a folder watched inside another is walked by both: each file goes to the first

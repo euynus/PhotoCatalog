@@ -54,6 +54,39 @@ final class FolderWatchTests: CatalogTestCase {
         XCTAssertEqual(try store.db.query("SELECT id FROM assets;").count, 1)
     }
 
+    /// Import Photo Folder… under Skip Exact Duplicates leaves out a byte-identical copy of a
+    /// photo it imports; the watched folder's rescan leaves it out too.
+    @MainActor
+    func testRescanLeavesOutDuplicateTheImportSkipped() async throws {
+        let key = "pc_importDuplicateStrategy"
+        let previous = UserDefaults.standard.object(forKey: key)
+        defer {
+            if let previous { UserDefaults.standard.set(previous, forKey: key) }
+            else { UserDefaults.standard.removeObject(forKey: key) }
+        }
+        let source = scratch.appendingPathComponent("Source")
+        let photo = source.appendingPathComponent("a.jpg")
+        try makeTestJPEG(at: photo, shade: 3)
+        try FileManager.default.copyItem(at: photo, to: source.appendingPathComponent("b.jpg"))
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        _ = try CatalogStore(packageURL: package)
+
+        let app = AppState()
+        app.onboarded = true
+        app.importDuplicateStrategy = .skipExact
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.importFolder(source)
+        try await waitUntil("import finished") { !app.importing }
+        XCTAssertEqual(app.assets.filter { !$0.isDemo && !$0.deleted }.count, 1, "the duplicate is skipped")
+        XCTAssertEqual(app.importRun?.skipped, 1)
+
+        try await rescanToCompletion(app)
+
+        XCTAssertEqual(app.assets.filter { !$0.isDemo && !$0.deleted }.count, 1,
+                       "the rescan leaves the skipped duplicate out")
+        XCTAssertEqual(try CatalogStore(packageURL: package).loadAssets().count, 1)
+    }
+
     /// An original changed on disk (an editor's save) is read again for what the file holds —
     /// size, pixels, hashes — while what the catalog says about the photo stays, a sidecar
     /// from before the catalog's edits included.

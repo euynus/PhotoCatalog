@@ -1522,6 +1522,14 @@ final class CatalogStore: @unchecked Sendable {
         """).compactMap { $0.text("local_path") })
     }
 
+    /// Files an import left out as exact duplicates of photos in the catalog (Skip Exact
+    /// Duplicates): folder watching leaves them alone too, as only an import decides on them.
+    func skippedDuplicatePaths() throws -> Set<String> {
+        Set(try db.query("""
+        SELECT DISTINCT source_path FROM import_files WHERE outcome='skipped' AND reason=?;
+        """, [.text(ImportFileCheckpoint.skippedAsDuplicate)]).compactMap { $0.text("source_path") })
+    }
+
     /// Photos removed from the catalog whose originals lie in `folder`: a removed photo keeps
     /// its id, which an import finds again for a file at the photo's path.
     func removedAssetIds(under folder: URL) throws -> Set<String> {
@@ -1573,6 +1581,7 @@ final class CatalogStore: @unchecked Sendable {
                 if let previous, previous.source == result.source, previous.outcome != .failed { continue }
 
                 var outcome: ImportFileCheckpoint.Outcome = result.reason == nil ? .skipped : .failed
+                var reason = result.reason
                 if let asset = result.asset, !asset.isDemo, !newIds.contains(asset.id),
                    case let existing = try db.query("SELECT deleted FROM assets WHERE id=?;", [.text(asset.id)]).first,
                    // a photo removed before this import began comes back; one removed while it runs (even
@@ -1596,6 +1605,8 @@ final class CatalogStore: @unchecked Sendable {
                         if existing != nil { revived.insert(asset.id) }
                         if let key { newKeys.insert(key) }
                         outcome = .saved
+                    } else if outcome == .skipped {
+                        reason = ImportFileCheckpoint.skippedAsDuplicate
                     }
                 }
                 if previous?.outcome == .saved { committedRun.saved -= 1 }
@@ -1605,7 +1616,7 @@ final class CatalogStore: @unchecked Sendable {
                 if outcome == .skipped { committedRun.skipped += 1 }
                 if outcome == .failed { committedRun.failed += 1 }
                 writes[result.source.path] = ImportFileCheckpoint(source: result.source, assetId: result.asset?.id,
-                                                                 outcome: outcome, reason: result.reason)
+                                                                 outcome: outcome, reason: reason)
             }
             fresh = ImportPostActionService.apply(to: fresh, actions: options.postActions)
             // a returning photo comes back as the catalog had it, as its develop settings do below
