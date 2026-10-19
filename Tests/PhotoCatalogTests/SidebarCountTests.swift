@@ -86,3 +86,37 @@ final class SidebarCountTests: CatalogTestCase {
         XCTAssertEqual(app.sidebarCountIndexRebuilds, rebuilds + 1)
     }
 }
+
+extension SidebarCountTests {
+    /// A Today (or This Week…) smart album counts as of the day it's read: an edit after midnight
+    /// doesn't patch yesterday's count, and reading it then doesn't hand it back either.
+    @MainActor
+    func testRelativeDateSmartAlbumsCountAsOfTheDayTheyAreRead() throws {
+        let app = AppState.selfCheckFixture()
+        var now = shot
+        app.sidebarClock = { now }
+        // taken that day by its camera's clock, among photos from a month before
+        let wallClock = now.captureWallClock(in: .current).timeIntervalSince(shot)
+        let taken = photo("today", "IMG_0001.JPG", raw: false, offset: wallClock)
+        let older = (0..<8).map {
+            photo("older-\($0)", "IMG_1\($0).JPG", raw: false, offset: wallClock - 86_400 * Double(30 + $0))
+        }
+        app.assets = [taken] + older
+        app.duplicateGroupsCache = []
+        let today = SmartAlbum(id: "today", name: "Today",
+                               rule: SmartRule(conditions: [SmartCondition(field: "datePreset", op: "=", value: "today")]),
+                               count: 0)
+        app.smartAlbums = [today]
+        XCTAssertEqual(app.countForSmartAlbum(today), 1)
+
+        now = now.addingTimeInterval(86_400)
+        XCTAssertEqual(app.countForSmartAlbum(today), 0, "read the next day, the photo is yesterday's")
+
+        now = now.addingTimeInterval(-86_400)
+        XCTAssertEqual(app.countForSmartAlbum(today), 1)
+        now = now.addingTimeInterval(86_400)
+        XCTAssertTrue(app.setRating(3, on: [taken.id]))
+        XCTAssertEqual(app.countForSmartAlbum(today), 0, "an edit the next day doesn't patch yesterday's count")
+        XCTAssertEqual(app.sidebarCounts, app.recountedSidebarCounts())
+    }
+}

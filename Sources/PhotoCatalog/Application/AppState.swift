@@ -174,6 +174,9 @@ final class AppState {
     @ObservationIgnored private var sidebarCountIndexCache: SidebarCountIndex?
     /// How often the sidebar's counts were worked out from every photo (for tests).
     @ObservationIgnored private(set) var sidebarCountIndexRebuilds = 0
+    /// The time relative-date smart albums are counted at (tests move it).
+    @ObservationIgnored var sidebarClock: () -> Date = { .now }
+    private var sidebarDay: Date { CaptureDates.startOfToday(now: sidebarClock()) }
     /// Each sidebar row's photo count, by folder, album, keyword, project, client and smart album id.
     struct SidebarCounts: Equatable {
         var folders: [String: Int] = [:]
@@ -187,6 +190,9 @@ final class AppState {
         var counts = SidebarCounts()
         /// The smart albums' rules as the counts were matched, so an edit is matched the same way.
         var smartRules: [(id: String, rule: SmartMatcher.Prepared)] = []
+        /// The day they were matched on: Today, This Week and the other relative dates move at
+        /// midnight, so the counts are of that day only.
+        var day = Date.distantPast
 
         /// Moves a shown photo from what it was to what an edit made it, for an edit that keeps
         /// its file, folder and deletion: its smart albums, keywords, project and client can change.
@@ -338,7 +344,7 @@ final class AppState {
             let pairing = assetPairing
             // Matching each edited photo before and after against every smart album: past half
             // the library, recounting it (once, when the sidebar next reads) is the cheaper way.
-            if var index = sidebarCountIndexCache, edits.count * 2 <= assets.count {
+            if var index = sidebarCountIndexCache, index.day == sidebarDay, edits.count * 2 <= assets.count {
                 for edit in edits where pairing.shows(edit.asset) {
                     index.applyChange(from: assets[edit.offset], to: edit.asset)
                 }
@@ -8592,7 +8598,7 @@ final class AppState {
     /// What the sidebar shows beside each folder, album, keyword, project and client.
     var sidebarCounts: SidebarCounts {
         _ = listInputsVersion   // register the dependency even on a cache hit
-        if let cache = sidebarCountIndexCache { return cache.counts }
+        if let cache = sidebarCountIndexCache, cache.day == sidebarDay { return cache.counts }
         // Worked out once per change of folders, files, albums or pairing: ratings, flags,
         // keywords and other metadata edits patch it in place (applyAssetEdits).
         let index = makeSidebarCountIndex(keywordCounts: keywordCounts.counts)
@@ -8610,9 +8616,11 @@ final class AppState {
     /// or its ids out. Keyword counts are the ones the keyword list keeps for the same photos.
     private func makeSidebarCountIndex(keywordCounts: [String: Int]) -> SidebarCountIndex {
         let pairing = assetPairing
-        let rules = smartAlbums.map { (id: $0.id, rule: SmartMatcher.Prepared($0.rule)) }
+        let now = sidebarClock()
+        let rules = smartAlbums.map { (id: $0.id, rule: SmartMatcher.Prepared($0.rule, now: now)) }
         var smartCounts = Array(repeating: 0, count: rules.count)
         var index = SidebarCountIndex()
+        index.day = CaptureDates.startOfToday(now: now)
         index.smartRules = rules
         index.counts.keywords = keywordCounts.filter { $0.value != 0 }   // the list's patches keep emptied ones
         for asset in assets where pairing.shows(asset) {
