@@ -3635,9 +3635,11 @@ final class AppState {
         Task { [weak self] in
             let imported = await Task.detached(priority: .userInitiated) { () -> [Asset]? in
                 do { try shot.deliver(target) } catch { return nil }
+                // a shot is a new photo, even where a removed (trashed) one was
                 return coordinator.importFiles([target], from: folder, mode: .referenced, autoTag: vision,
                                                readSidecar: readXMP, previewMaxPixel: previewSize,
-                                               sourceRootId: root?.id, folderName: root?.name)
+                                               sourceRootId: root?.id, folderName: root?.name,
+                                               reusingRemovedIds: false)
             }.value
             // its catalog was closed meanwhile (and the session with it): the shot stays in the
             // session's folder, out of whichever catalog is open now

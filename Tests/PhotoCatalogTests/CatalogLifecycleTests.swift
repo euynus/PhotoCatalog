@@ -280,6 +280,56 @@ final class CatalogLifecycleTests: XCTestCase {
         XCTAssertTrue(inSession(try first.store.loadAssets()).isEmpty, "the shot is in the catalog without its folder")
     }
 
+    /// A shot written where a photo removed in an earlier session was (its file moved to the
+    /// Trash) is a new photo: it doesn't take the removed photo's id, albums or edits, and the
+    /// removed photo stays as it was removed — even when the two files are the same bytes.
+    @MainActor
+    func testTetheredShotAtARemovedPhotosPathIsANewPhoto() async throws {
+        let catalog = try makeCatalog("First", assets: [0])
+        let fixture = root.appendingPathComponent("fixture.jpg")
+        try writeJPEG(fixture)
+        let sessionFolder = root.appendingPathComponent("Sessions/Studio").standardizedFileURL
+        let earlier = sessionFolder.appendingPathComponent("Studio-0001.JPG")
+        try FileManager.default.createDirectory(at: sessionFolder, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: fixture, to: earlier)
+        var removed = try XCTUnwrap(ImportCoordinator(store: catalog.store).importFiles([earlier], from: sessionFolder).first)
+        removed.rating = 5
+        removed.title = "Removed earlier"
+        removed.deleted = true
+        try catalog.store.upsert([removed])
+        try catalog.store.saveAlbum(Album(id: "al-earlier", name: "Earlier", assetIds: [removed.id]))
+        var edits = DevelopSettings()
+        edits.exposure = 1
+        try catalog.store.saveDevelopSettings([removed.id: edits])
+        // Move to Trash took the file
+        try FileManager.default.removeItem(at: earlier)
+
+        let app = makeApp()
+        XCTAssertTrue(app.openCatalog(at: catalog.url))
+        var settings = TetherSettings()
+        settings.sessionName = "Studio"
+        settings.destinationPath = root.appendingPathComponent("Sessions").path
+        let camera = FakeTetherSource(fixture: fixture)
+        XCTAssertTrue(app.startTether(settings, source: camera))
+        camera.shoot()
+        try await waitUntil("The shot never joined the catalog", timeout: 10) {
+            app.tether?.shots == 1 && app.tether?.working == false
+        }
+
+        let shot = try XCTUnwrap(app.assets.first { !$0.deleted && $0.localPath == earlier.path })
+        XCTAssertNotEqual(shot.id, removed.id, "the shot took the removed photo's id")
+        XCTAssertEqual(shot.rating, 0)
+        XCTAssertNil(app.developSettings[shot.id])
+        XCTAssertFalse(app.albums.first { $0.id == "al-earlier" }?.assetIds.contains(shot.id) ?? false)
+        let row = try catalog.store.db.query("SELECT deleted, rating, title FROM assets WHERE id=?;",
+                                             [.text(removed.id)]).first
+        XCTAssertEqual(row?.bool("deleted"), true, "the removed photo came back as the shot")
+        XCTAssertEqual(row?.int("rating"), 5)
+        XCTAssertEqual(row?.text("title"), "Removed earlier")
+        XCTAssertEqual(try catalog.store.loadDevelopSettings()[removed.id], edits)
+        XCTAssertTrue(try catalog.store.loadAssets().contains { $0.id == shot.id }, "the shot is saved")
+    }
+
     // MARK: - catalogs that can't be read
 
     /// A catalog with a photo in an album, whose albums table can't be read.
