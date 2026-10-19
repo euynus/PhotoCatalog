@@ -1608,6 +1608,16 @@ final class CatalogStore: @unchecked Sendable {
                                                                  outcome: outcome, reason: result.reason)
             }
             fresh = ImportPostActionService.apply(to: fresh, actions: options.postActions)
+            // a returning photo comes back as the catalog had it, as its develop settings do below
+            if !revived.isEmpty {
+                let decoder = AssetRowDecoder(columns: Self.columnNames)
+                fresh = try fresh.map { asset in
+                    guard revived.contains(asset.id), let removed = try db.queryRows(
+                        "SELECT \(Self.columns) FROM assets WHERE id=?;", [.text(asset.id)],
+                        transform: decoder.asset(from:)).first else { return asset }
+                    return ImportCoordinator.returningPhoto(asset, removed: removed)
+                }
+            }
             let rootId = run.sourceId ?? fresh.first?.folderId ?? results.compactMap(\.asset).first?.folderId
             if let rootId {
                 let folder = URL(fileURLWithPath: run.sourcePath)

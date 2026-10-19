@@ -401,6 +401,39 @@ final class ImportCoordinator: @unchecked Sendable {
         asset.localPath = known.localPath
         asset.folderId = known.folderId
         asset.folderName = known.folderName
+        carryCatalogDescription(from: known, to: &asset)
+        asset.importedAt = known.importedAt
+        asset.deleted = known.deleted
+        asset.isDemo = known.isDemo
+        asset.masterId = known.masterId
+        asset.copyName = known.copyName
+        // faces found again only when the rescan looks for them
+        if !autoTag {
+            asset.faces = known.faces
+        }
+        return asset
+    }
+
+    /// `imported`, a photo removed from the catalog that an import brings back, with what the
+    /// catalog said about it taken from `removed` (its row as it was removed): what the file
+    /// holds is the import's read, while the import's defaults, metadata template and sidecar
+    /// don't replace the photo's own rating, keywords, text, capture time or place. It counts
+    /// as imported again (among Recent Imports), filed under the folder imported.
+    static func returningPhoto(_ imported: Asset, removed: Asset) -> Asset {
+        var asset = imported
+        carryCatalogDescription(from: removed, to: &asset)
+        asset.masterId = removed.masterId
+        asset.copyName = removed.copyName
+        // faces counted before stay, unless this import counted them
+        if asset.faces == 0 { asset.faces = removed.faces }
+        asset.deleted = false
+        return asset
+    }
+
+    /// What the catalog says about a photo beyond what its file holds — rating, flag and label,
+    /// keywords, text and credits, capture time and place — any of which may have been edited
+    /// since the file was read.
+    private static func carryCatalogDescription(from known: Asset, to asset: inout Asset) {
         asset.date = known.date
         asset.captureDateSource = known.captureDateSource
         asset.rating = known.rating
@@ -416,16 +449,6 @@ final class ImportCoordinator: @unchecked Sendable {
         asset.location = known.location
         asset.gps = known.gps
         asset.gpsAltitude = known.gpsAltitude
-        asset.importedAt = known.importedAt
-        asset.deleted = known.deleted
-        asset.isDemo = known.isDemo
-        asset.masterId = known.masterId
-        asset.copyName = known.copyName
-        // faces found again only when the rescan looks for them
-        if !autoTag {
-            asset.faces = known.faces
-        }
-        return asset
     }
 
     private func gpsLabel(_ gps: (Double, Double), hasGPS: Bool) -> String {

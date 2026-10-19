@@ -109,6 +109,7 @@ final class AssetIdentityTests: CatalogTestCase {
         try await waitUntil("first import finished") { !app.importing }
         let imported = try XCTUnwrap(app.assets.first { !$0.isDemo && $0.filename == "managed.jpg" })
         XCTAssertTrue(imported.localPath?.hasPrefix(store.originalsURL.path) == true)
+        XCTAssertTrue(app.mutate([imported.id], writingSidecars: false) { $0.rating = 3; $0.title = "Managed title" })
         XCTAssertTrue(app.mutate([imported.id], writingSidecars: false) { $0.deleted = true })
 
         app.importFolder(folder)
@@ -116,8 +117,88 @@ final class AssetIdentityTests: CatalogTestCase {
 
         XCTAssertEqual(app.assets.filter { $0.id == imported.id }.map(\.deleted), [false], "the removed photo is back")
         XCTAssertEqual(app.assets.filter { !$0.isDemo && !$0.deleted }.count, 1)
-        let row = try store.db.query("SELECT deleted FROM assets WHERE id=?;", [.text(imported.id)]).first
+        let back = app.assets.first { $0.id == imported.id }
+        XCTAssertEqual(back?.rating, 3, "with its rating")
+        XCTAssertEqual(back?.title, "Managed title")
+        let row = try store.db.query("SELECT deleted, rating, title FROM assets WHERE id=?;", [.text(imported.id)]).first
         XCTAssertEqual(row?.bool("deleted"), false)
+        XCTAssertEqual(row?.int("rating"), 3)
+        XCTAssertEqual(row?.text("title"), "Managed title")
+    }
+
+    /// Import Photo Folder…, edit what the catalog says about a photo, Remove from Catalog, the
+    /// same import again: the photo comes back with all of it — over the import's defaults and
+    /// over a sidecar left from before the edits — in memory and in the catalog.
+    @MainActor
+    func testReimportBringsBackRemovedPhotoWithItsMetadata() async throws {
+        let folder = scratch.appendingPathComponent("Source")
+        let photo = folder.appendingPathComponent("kept.jpg")
+        try makeTestJPEG(at: photo, shade: 4)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        _ = try CatalogStore(packageURL: package)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.importFolder(folder)
+        try await waitUntil("first import finished") { !app.importing }
+        let imported = try XCTUnwrap(app.assets.first { !$0.isDemo && $0.localPath == photo.path })
+        let shotAt = Date(timeIntervalSince1970: 1_600_000_000)
+        XCTAssertTrue(app.mutate([imported.id], writingSidecars: false) {
+            $0.rating = 4
+            $0.flag = .pick
+            $0.colorLabel = .green
+            $0.keywords = ["kept", "trip"]
+            $0.title = "Kept title"
+            $0.caption = "Kept caption"
+            $0.author = "Catalog Author"
+            $0.copyright = "© Catalog"
+            $0.project = "Project K"
+            $0.client = "Client K"
+            $0.gps = (31.2304, 121.4737)
+            $0.gpsAltitude = 12
+            $0.location = Asset.locationLabel($0.gps)
+            $0.date = shotAt
+            $0.captureDateSource = "手动设置"
+        })
+        let edited = try XCTUnwrap(app.assets.first { $0.id == imported.id })
+        XCTAssertTrue(app.mutate([imported.id], writingSidecars: false) { $0.deleted = true })
+        // a sidecar another app left before those edits
+        try """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+        <rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+          xmlns:dc="http://purl.org/dc/elements/1.1/" xmp:Rating="1">
+        <dc:subject><rdf:Bag><rdf:li>stale</rdf:li></rdf:Bag></dc:subject>
+        <dc:title><rdf:Alt><rdf:li xml:lang="x-default">Stale title</rdf:li></rdf:Alt></dc:title>
+        </rdf:Description></rdf:RDF></x:xmpmeta>
+        """.write(to: XMPSidecar.sidecarURL(for: photo), atomically: true, encoding: .utf8)
+
+        app.importFolder(folder)
+        try await waitUntil("second import finished") { !app.importing }
+
+        XCTAssertEqual(app.assets.filter { $0.id == imported.id }.map(\.deleted), [false], "the removed photo is back")
+        let reloaded = try XCTUnwrap(try CatalogStore(packageURL: package).loadAssets().first { $0.id == imported.id })
+        for back in [try XCTUnwrap(app.assets.first { $0.id == imported.id }), reloaded] {
+            XCTAssertEqual(back.rating, 4)
+            XCTAssertEqual(back.flag, .pick)
+            XCTAssertEqual(back.colorLabel, .green)
+            XCTAssertEqual(back.keywords, ["kept", "trip"])
+            XCTAssertEqual(back.title, "Kept title")
+            XCTAssertEqual(back.caption, "Kept caption")
+            XCTAssertEqual(back.author, "Catalog Author")
+            XCTAssertEqual(back.copyright, "© Catalog")
+            XCTAssertEqual(back.project, "Project K")
+            XCTAssertEqual(back.client, "Client K")
+            XCTAssertEqual(back.gps.0, 31.2304)
+            XCTAssertEqual(back.gps.1, 121.4737)
+            XCTAssertEqual(back.gpsAltitude, 12)
+            XCTAssertEqual(back.location, edited.location)
+            XCTAssertEqual(back.date, shotAt)
+            XCTAssertEqual(back.captureDateSource, "手动设置")
+            XCTAssertFalse(back.deleted)
+            XCTAssertEqual(back.localPath, photo.path)
+            XCTAssertGreaterThan(back.importedAt, edited.importedAt, "a returning photo is among the recent imports")
+        }
     }
 
     /// Edit In makes `a-Edit.tif`; it's moved to the Trash; Edit In again writes a new
