@@ -43,7 +43,7 @@ The import memory check reads the supplied image through distinct temporary syml
 
 ### Continuous integration
 
-GitHub Actions runs on pull requests, pushes to `main` and manual dispatches, on the standard `macos-26` ARM64 runner with Xcode 26.6 from the [runner image](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md). It checks localization and that the product site is built, builds the Debug app bundle, runs XCTest, then runs the full `selfcheck` and `pipeline` commands above. Checks run one after another because they share user defaults and build output. No signing credentials or external AI service is needed.
+GitHub Actions runs on pull requests, pushes to `main` and manual dispatches, on the standard `macos-26` ARM64 runner with Xcode 26.6 from the [runner image](https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md). It checks localization and that the product site is built, builds the Debug app bundle, builds Release with warnings treated as errors, runs XCTest, then runs the full `selfcheck` and `pipeline` commands above. Checks run one after another because they share user defaults and build output. No signing credentials or external AI service is needed.
 
 The full selfcheck exercises Metal kernels, the bundled Core ML models and video encoding; an unsupported runner fails these checks instead of silently skipping them. This is headless regression coverage, not interactive UI, physical-camera or real-RAW acceptance. Failed runs keep their check logs for seven days. The workflow does not publish the app.
 

@@ -17,7 +17,7 @@ jobs:
   macos:
     name: macOS checks
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       CONFIGURATION: debug
@@ -55,6 +55,10 @@ jobs:
       - name: Build Debug app bundle
         timeout-minutes: 15
         run: script/build_and_run.sh build 2>&1 | tee "$RUNNER_TEMP/photocatalog-ci-logs/build.log"
+
+      - name: Build Release with warnings as errors
+        timeout-minutes: 20
+        run: swift build -c release --sdk "$SDKROOT" -Xswiftc -warnings-as-errors 2>&1 | tee "$RUNNER_TEMP/photocatalog-ci-logs/release-build.log"
 
       - name: Run XCTest
         timeout-minutes: 10
