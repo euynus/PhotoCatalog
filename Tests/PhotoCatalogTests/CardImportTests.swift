@@ -181,6 +181,32 @@ final class CardImportTests: CatalogTestCase {
         XCTAssertEqual(contentsOfFiles(under: scratch.appendingPathComponent("Backup")).count, 1)
     }
 
+    /// A photo is copied under a hidden partial name, which no folder scan takes for a photo, and
+    /// moved into place whole; a partial an earlier attempt left (cut short by a crash) is
+    /// replaced, and the photo and its backup keep their own names.
+    func testCopyGoesThroughAPartialFileAndReplacesAStaleOne() throws {
+        let fm = FileManager.default
+        let photo = scratch.appendingPathComponent("Card/DCIM/100CANON/IMG_0003.JPG")
+        try makeShot(at: photo, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:10:00", shade: 4)
+        let bytes = try Data(contentsOf: photo)
+        let day = scratch.appendingPathComponent("Photos/2026/2026-10-12")
+        try fm.createDirectory(at: day, withIntermediateDirectories: true)
+        let stale = day.appendingPathComponent(".IMG_0003.JPG.partial")
+        try bytes.prefix(100).write(to: stale)
+        XCTAssertEqual(FileScanner.scan(day), [], "a partial file isn't a photo")
+        var options = CardImportOptions(destination: scratch.appendingPathComponent("Photos"))
+        let backup = scratch.appendingPathComponent("Backup")
+        options.backupEnabled = true
+        options.backup = backup
+
+        let copy = try CardCopier(options: options, files: [cardFile(photo)]).copy(photo)
+
+        XCTAssertEqual(copy.path, day.appendingPathComponent("IMG_0003.JPG").path)
+        XCTAssertEqual(try Data(contentsOf: copy), bytes)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: day.path), ["IMG_0003.JPG"], "no partial file is left")
+        XCTAssertEqual(contentsOfFiles(under: backup), [bytes], "the backup is whole, with no partial beside it")
+    }
+
     /// A card photo that couldn't be read fails the import; Retry Failed copies it off the card
     /// (and backs it up) like the others, rather than cataloging it on the card.
     @MainActor

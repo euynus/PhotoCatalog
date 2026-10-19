@@ -208,11 +208,7 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
             // not a copy an earlier attempt cut short
             guard Self.hasSize(destination, size) else { throw CocoaError(.fileWriteFileExists) }
         } else {
-            try fm.copyItem(at: source, to: destination)
-            guard Self.hasSize(destination, size) else {
-                try? fm.removeItem(at: destination)
-                throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: L("复制后大小不一致")])
-            }
+            try Self.placeCopy(of: source, at: destination, size: size)
         }
         let sidecar = XMPSidecar.sidecarURL(for: source)
         let copiedSidecar = XMPSidecar.sidecarURL(for: destination)
@@ -234,7 +230,7 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
                 copy = folder.appendingPathComponent("\(base)-\(counter)").appendingPathExtension(source.pathExtension)
                 counter += 1
             }
-            if !fm.fileExists(atPath: copy.path) { try fm.copyItem(at: source, to: copy) }
+            if !fm.fileExists(atPath: copy.path) { try Self.placeCopy(of: source, at: copy, size: size) }
         }
         return destination
     }
@@ -271,6 +267,27 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
             }
             baseNames[cacheKey] = candidate
             return candidate
+        }
+    }
+
+    /// Copies `source` to `destination` through a hidden partial file beside it (folder scans
+    /// pass over hidden files), moved into place once it has all `size` bytes: a copy cut short
+    /// (a crash, a card pulled out) never sits under the photo's name. A partial an earlier
+    /// attempt left is replaced.
+    private static func placeCopy(of source: URL, at destination: URL, size: Int64) throws {
+        let fm = FileManager.default
+        let partial = destination.deletingLastPathComponent()
+            .appendingPathComponent(".\(destination.lastPathComponent).partial")
+        try? fm.removeItem(at: partial)
+        do {
+            try fm.copyItem(at: source, to: partial)
+            guard hasSize(partial, size) else {
+                throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: L("复制后大小不一致")])
+            }
+            try fm.moveItem(at: partial, to: destination)
+        } catch {
+            try? fm.removeItem(at: partial)
+            throw error
         }
     }
 
