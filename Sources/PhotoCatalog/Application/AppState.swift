@@ -160,7 +160,7 @@ final class AppState {
     @ObservationIgnored private var keywordListCache: [KeywordCount]?
     @ObservationIgnored private var gearCountsCache: (cameras: [KeywordCount], lenses: [KeywordCount])?
     /// Every keyword's photo count, in first-seen order; metadata edits patch it in place.
-    @ObservationIgnored private var keywordCountsCache: (order: [String], counts: [String: Int])?
+    @ObservationIgnored private var keywordCountsCache: KeywordTally?
     @ObservationIgnored private var keywordSuggestionPoolCache: [String]?
     /// The project and client lists; metadata edits patch them in place.
     @ObservationIgnored private var projectCountsCache: MetadataValueCounts?
@@ -341,7 +341,8 @@ final class AppState {
     /// and re-sorting every asset.
     private func applyAssetEdits(_ edits: [(offset: Int, asset: Asset)], scope: AssetEditScope) {
         var patchedCounts: LibraryCounts?
-        var patchedKeywords: (order: [String], counts: [String: Int])?
+        var patchedKeywords: KeywordTally?
+        var dropsKeywordCounts = false
         var patchedSidebar: SidebarCountIndex?
         var projectChanges: [(offset: Int, old: String, new: String)] = []
         var clientChanges: [(offset: Int, old: String, new: String)] = []
@@ -373,17 +374,37 @@ final class AppState {
         }
         if scope.contains(.metadata), !scope.contains(.structure) {
             let pairing = assetPairing
-            patchedKeywords = keywordCountsCache.map { cache in
+            patchedKeywords = keywordCountsCache.flatMap { cache -> KeywordTally? in
                 var patched = cache
+                var added: [String: (offset: Int, index: Int)] = [:]   // new keywords → where first met
                 for edit in edits where pairing.shows(edit.asset) {
-                    for keyword in assets[edit.offset].keywords { patched.counts[keyword, default: 0] -= 1 }
-                    for keyword in edit.asset.keywords {
-                        if patched.counts[keyword] == nil { patched.order.append(keyword) }
+                    let old = assets[edit.offset].keywords
+                    guard old != edit.asset.keywords else { continue }
+                    // The photo a pass first meets a keyword on orders the list's ties. A change to
+                    // that photo's keywords, or a keyword put on a photo before it, moves a keyword
+                    // there: recounted then, rather than patched out of the order a recount gives.
+                    if (old + edit.asset.keywords).contains(where: { (patched.first[$0] ?? -1) >= edit.offset }) {
+                        return nil
+                    }
+                    for keyword in old { patched.counts[keyword, default: 0] -= 1 }
+                    for (index, keyword) in edit.asset.keywords.enumerated() {
+                        if patched.first[keyword] == nil,
+                           added[keyword].map({ (edit.offset, index) < ($0.offset, $0.index) }) ?? true {
+                            added[keyword] = (edit.offset, index)
+                        }
                         patched.counts[keyword, default: 0] += 1
                     }
                 }
+                // a keyword new to the photos goes where a pass first meets it (on a photo no other
+                // keyword is first met on, or it would have been recounted above)
+                for (keyword, place) in added.sorted(by: { ($0.value.offset, $0.value.index) < ($1.value.offset, $1.value.index) }) {
+                    let at = patched.order.firstIndex { (patched.first[$0] ?? .max) > place.offset } ?? patched.order.endIndex
+                    patched.order.insert(keyword, at: at)
+                    patched.first[keyword] = place.offset
+                }
                 return patched
             }
+            if patchedKeywords == nil { dropsKeywordCounts = keywordCountsCache != nil }
             // the project and client lists move only with a project or client: a title, keyword
             // or location edit keeps them as they are
             for edit in edits {
@@ -403,7 +424,7 @@ final class AppState {
             for edit in edits { buffer[edit.offset] = edit.asset }
         }
         if let patchedCounts { libraryCountsCache = patchedCounts }
-        if let patchedKeywords { keywordCountsCache = patchedKeywords }
+        if let patchedKeywords { keywordCountsCache = patchedKeywords } else if dropsKeywordCounts { keywordCountsCache = nil }
         if let patchedSidebar { sidebarCountIndexCache = patchedSidebar }
         patch(&projectCountsCache, projectChanges, \.project)
         patch(&clientCountsCache, clientChanges, \.client)
@@ -8207,49 +8228,60 @@ final class AppState {
     }
 
     // ---------- keyword sidebar list ----------
-    private var keywordCounts: (order: [String], counts: [String: Int]) {
+    private var keywordCounts: KeywordTally {
         if let cache = keywordCountsCache { return cache }
         let result = Self.keywordCounts(of: assets, pairing: assetPairing)
         keywordCountsCache = result
         return result
     }
 
-    /// Every keyword of the photos as shown, by how many it's on, in the order a pass meets them.
+    /// Every keyword of the photos as shown: how many it's on, the order a pass meets them in
+    /// (which orders the keyword list's ties), and the photo each is first met on.
+    typealias KeywordTally = (order: [String], counts: [String: Int], first: [String: Int])
+
     /// Counted in chunks on every core and added up chunk by chunk, which keeps that order: one
     /// thread took ~0.4 s at 500k photos, and the sidebar waits for it after every import batch.
     nonisolated static func keywordCounts(of assets: [Asset], pairing: AssetPairing, chunk: Int = 32_768)
-        -> (order: [String], counts: [String: Int]) {
-        func count(_ range: Range<Int>) -> (order: [String], counts: [String: Int]) {
+        -> KeywordTally {
+        func count(_ range: Range<Int>) -> KeywordTally {
             var order: [String] = []
             var counts: [String: Int] = [:]
+            var first: [String: Int] = [:]
             for position in range {
                 let a = assets[position]
                 guard pairing.shows(a) else { continue }
                 for k in a.keywords {
-                    if counts[k] == nil { order.append(k) }
+                    if counts[k] == nil {
+                        order.append(k)
+                        first[k] = position
+                    }
                     counts[k, default: 0] += 1
                 }
             }
-            return (order, counts)
+            return (order, counts, first)
         }
         let chunk = max(chunk, 1)
         let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
         guard chunks > 1 else { return count(assets.indices) }
         let lock = NSLock()
-        var parts = [(order: [String], counts: [String: Int])](repeating: ([], [:]), count: chunks)
+        var parts = [KeywordTally](repeating: ([], [:], [:]), count: chunks)
         DispatchQueue.concurrentPerform(iterations: chunks) { index in
             let part = count(index * chunk ..< min(assets.count, (index + 1) * chunk))
             lock.withLock { parts[index] = part }
         }
         var order: [String] = []
         var counts: [String: Int] = [:]
+        var first: [String: Int] = [:]
         for part in parts {
             for keyword in part.order {
-                if counts[keyword] == nil { order.append(keyword) }
+                if counts[keyword] == nil {
+                    order.append(keyword)
+                    first[keyword] = part.first[keyword]
+                }
                 counts[keyword, default: 0] += part.counts[keyword] ?? 0
             }
         }
-        return (order, counts)
+        return (order, counts, first)
     }
 
     /// What the sidebar and inspector derive from a whole catalog, computed on the loading
@@ -8257,7 +8289,7 @@ final class AppState {
     struct CatalogDerivedData: @unchecked Sendable {
         let pairing: AssetPairing
         let indexById: [String: Int]
-        let keywordCounts: (order: [String], counts: [String: Int])
+        let keywordCounts: KeywordTally
         let captureDateGroups: [CaptureDateBucket]
         let projects: MetadataValueCounts
         let clients: MetadataValueCounts
@@ -8293,13 +8325,17 @@ final class AppState {
         if let cache = keywordListCache { return cache }
         // Preserve first-encounter order (like a JS Map) so ties sort stably,
         // matching the prototype's keyword sidebar order.
-        let (order, counts) = keywordCounts
-        let result = order.compactMap { name in counts[name].flatMap { $0 > 0 ? KeywordCount(name: name, count: $0) : nil } }
+        let result = Self.keywordList(from: keywordCounts)
+        keywordListCache = result
+        return result
+    }
+
+    private static func keywordList(from keywordCounts: KeywordTally) -> [KeywordCount] {
+        let (order, counts, _) = keywordCounts
+        return order.compactMap { name in counts[name].flatMap { $0 > 0 ? KeywordCount(name: name, count: $0) : nil } }
             .sorted { $0.count > $1.count }   // Swift 5 sort is stable
             .prefix(8)
             .map { $0 }
-        keywordListCache = result
-        return result
     }
 
     var keywordSuggestionPool: [String] {
@@ -8307,7 +8343,7 @@ final class AppState {
         if let cache = keywordSuggestionPoolCache { return cache }
         // the distinct keywords the counts already know, not every photo's list again
         // (normalizing 1.2M keyword lists took 1.4 s at 500k photos)
-        let (order, counts) = keywordCounts
+        let (order, counts, _) = keywordCounts
         var seen = Set<String>()
         var result: [String] = []
         for keyword in KeywordService.normalize(order.filter { (counts[$0] ?? 0) > 0 })
@@ -8319,6 +8355,11 @@ final class AppState {
         }
         keywordSuggestionPoolCache = result
         return result
+    }
+
+    /// The keyword list as counted afresh from every photo, leaving the cached one alone (for tests).
+    func recountedKeywordList() -> [KeywordCount] {
+        Self.keywordList(from: Self.keywordCounts(of: assets, pairing: assetPairing))
     }
 
     /// How often the project and client lists were counted from every photo (for tests).

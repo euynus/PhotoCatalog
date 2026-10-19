@@ -338,3 +338,53 @@ extension SidebarCountTests {
         XCTAssertEqual(app.sidebarCounts, app.recountedSidebarCounts())
     }
 }
+
+extension SidebarCountTests {
+    /// The keyword list's ties keep the order a pass over the photos meets them in, after edits as
+    /// after a recount: a new keyword on an early photo, or a keyword taken off the photo it was
+    /// first met on, moves among its ties as a recount would put it.
+    @MainActor
+    func testKeywordListTiesStayInTheOrderARecountGives() throws {
+        let app = AppState.selfCheckFixture()
+        let first = photo("first", "IMG_0001.JPG", raw: false, keywords: ["beach"])
+        let second = photo("second", "IMG_0002.JPG", raw: false, offset: 10, keywords: ["city"])
+        let later = photo("later", "IMG_0003.JPG", raw: false, offset: 20, keywords: ["beach"])
+        let others = (0..<4).map { photo("filler-\($0)", "IMG_1\($0).JPG", raw: false, offset: 100 + Double($0)) }
+        app.assets = [first, second, later] + others
+        app.duplicateGroupsCache = []
+        XCTAssertEqual(app.keywordList.map(\.name), ["beach", "city"])
+        XCTAssertEqual(app.keywordList, app.recountedKeywordList())
+
+        // a new keyword on the first photo is met before city
+        XCTAssertTrue(app.mutate([first.id]) { $0.keywords = ["beach", "dawn"] })
+        XCTAssertEqual(app.keywordList, app.recountedKeywordList(), "a new keyword sits where a pass meets it")
+
+        // beach taken off the photo it was first met on is next met after city, so among the ties
+        // of one photo each it comes after it
+        XCTAssertTrue(app.mutate([first.id]) { $0.keywords = ["dawn"] })
+        XCTAssertEqual(app.keywordList, app.recountedKeywordList(), "a keyword's first photo losing it moves it")
+
+        // put back on a photo before any that has it
+        XCTAssertTrue(app.mutate([second.id]) { $0.keywords = ["city", "dawn"] })
+        XCTAssertTrue(app.mutate([first.id]) { $0.keywords = ["city"] })
+        XCTAssertEqual(app.keywordList, app.recountedKeywordList(), "a keyword put on an earlier photo moves up")
+
+        // an edit away from any keyword's first photo patches the counts and keeps the order
+        XCTAssertTrue(app.mutate([later.id]) { $0.keywords = ["beach", "city"] })
+        XCTAssertEqual(app.keywordList, app.recountedKeywordList())
+
+        // new keywords on photos no keyword is first met on are put in their place, not recounted
+        _ = app.keywordList
+        XCTAssertTrue(app.mutate([others[2].id, others[0].id]) { $0.keywords = ["night", "stars"] })
+        XCTAssertTrue(app.mutate([later.id]) { $0.keywords = ["beach", "city", "sunset"] })
+        XCTAssertEqual(app.keywordList, app.recountedKeywordList(), "new keywords sit where a pass meets them")
+
+        // single-pass and chunked counts agree on where each keyword is first met
+        let counted = AppState.keywordCounts(of: app.assets, pairing: app.assetPairing)
+        for chunk in [1, 2, 3] {
+            let chunked = AppState.keywordCounts(of: app.assets, pairing: app.assetPairing, chunk: chunk)
+            XCTAssertEqual(chunked.order, counted.order)
+            XCTAssertEqual(chunked.first, counted.first, "in chunks of \(chunk)")
+        }
+    }
+}
