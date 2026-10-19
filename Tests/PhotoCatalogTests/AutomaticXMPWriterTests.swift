@@ -8,14 +8,14 @@ final class AutomaticXMPWriterTests: CatalogTestCase {
 
     override func setUp() {
         super.setUp()
-        savedAutoWrite = UserDefaults.standard.object(forKey: "pc_autoWriteXMP")
+        savedAutoWrite = UserDefaults.app.object(forKey: "pc_autoWriteXMP")
     }
 
     override func tearDown() {
         if let savedAutoWrite {
-            UserDefaults.standard.set(savedAutoWrite, forKey: "pc_autoWriteXMP")
+            UserDefaults.app.set(savedAutoWrite, forKey: "pc_autoWriteXMP")
         } else {
-            UserDefaults.standard.removeObject(forKey: "pc_autoWriteXMP")
+            UserDefaults.app.removeObject(forKey: "pc_autoWriteXMP")
         }
         super.tearDown()
     }
@@ -62,7 +62,7 @@ final class AutomaticXMPWriterTests: CatalogTestCase {
 
     /// A RAW and its JPEG share one sidecar: writing the RAW's isn't a change to the JPEG's.
     func testPairWrittenTogetherIsNotHeldBack() async throws {
-        UserDefaults.standard.set(true, forKey: "pc_pairRawJpeg")
+        UserDefaults.app.set(true, forKey: "pc_pairRawJpeg")
         let raw = scratch.appendingPathComponent("IMG_0002.CR3")
         let jpeg = scratch.appendingPathComponent("IMG_0002.JPG")
         try Data("raw".utf8).write(to: raw)

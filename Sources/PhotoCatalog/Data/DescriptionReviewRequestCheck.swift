@@ -6,7 +6,7 @@ enum DescriptionReviewRequestCheck {
     static func run() {
         MainActor.assumeIsolated {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("pc-description-request-\(UUID().uuidString)")
-            let defaults = UserDefaults.standard
+            let defaults = UserDefaults.app
             let previous = ["pc_llm", "pc_autoWriteXMP"].map { ($0, defaults.object(forKey: $0)) }
             defer {
                 for (key, value) in previous {

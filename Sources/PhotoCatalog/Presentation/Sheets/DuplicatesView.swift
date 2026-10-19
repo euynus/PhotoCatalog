@@ -22,7 +22,7 @@ struct DuplicatesView: View {
     enum Kind: Hashable { case exact, similar }
     @State private var kind: Kind?
     /// How alike two photos must look to count: a burst's frames sit around 85%.
-    @AppStorage("pc_similarMinScore") private var minScore = 0.9
+    @AppStorage("pc_similarMinScore", store: .app) private var minScore = 0.9
     @State private var keep: [String: String] = [:]
     @State private var resolved: [String: String] = [:]
 

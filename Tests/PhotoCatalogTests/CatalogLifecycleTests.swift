@@ -59,7 +59,7 @@ final class CatalogLifecycleTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         for key in Self.defaultsKeys {
             if let value = defaults.object(forKey: key) { previousDefaults[key] = value }
         }
@@ -71,7 +71,7 @@ final class CatalogLifecycleTests: XCTestCase {
     }
 
     override func tearDown() {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         for key in Self.defaultsKeys {
             if let value = previousDefaults[key] {
                 defaults.set(value, forKey: key)
@@ -187,7 +187,7 @@ final class CatalogLifecycleTests: XCTestCase {
         registerStep()
         app.closeCatalog()
         XCTAssertFalse(undo.canUndo, "undo steps survive Close Catalog")
-        UserDefaults.standard.set(first.url, forKey: "pc_catalogURL")
+        UserDefaults.app.set(first.url, forKey: "pc_catalogURL")
 
         app.onboarded = true
         XCTAssertTrue(app.openCatalog(at: first.url))
@@ -450,7 +450,7 @@ final class CatalogLifecycleTests: XCTestCase {
         XCTAssertTrue(app.openCatalog(at: catalog.url))
         app.closeCatalog()
         // the configured catalog after Close Catalog (the default library) is this scratch one
-        UserDefaults.standard.set(catalog.url, forKey: "pc_catalogURL")
+        UserDefaults.app.set(catalog.url, forKey: "pc_catalogURL")
         XCTAssertTrue(app.assets.contains { $0.isDemo })
 
         // Welcome → Add Photo Folder: enters the app, then imports a folder
@@ -476,7 +476,7 @@ final class CatalogLifecycleTests: XCTestCase {
     @MainActor
     func testFirstRunImportCreatesCatalogWithoutDemoSet() async throws {
         let url = root.appendingPathComponent("First Run.photolibrary")
-        UserDefaults.standard.set(url, forKey: "pc_catalogURL")
+        UserDefaults.app.set(url, forKey: "pc_catalogURL")
         let app = makeApp()
         XCTAssertFalse(app.hasOpenCatalog)
         XCTAssertTrue(app.assets.contains { $0.isDemo })

@@ -73,16 +73,16 @@ final class DuplicateGroupMemberTests: CatalogTestCase {
     override func setUp() {
         super.setUp()
         for key in Self.defaultsKeys {
-            if let value = UserDefaults.standard.object(forKey: key) { savedDefaults[key] = value }
+            if let value = UserDefaults.app.object(forKey: key) { savedDefaults[key] = value }
         }
     }
 
     override func tearDown() {
         for key in Self.defaultsKeys {
             if let value = savedDefaults[key] {
-                UserDefaults.standard.set(value, forKey: key)
+                UserDefaults.app.set(value, forKey: key)
             } else {
-                UserDefaults.standard.removeObject(forKey: key)
+                UserDefaults.app.removeObject(forKey: key)
             }
         }
         savedDefaults = [:]

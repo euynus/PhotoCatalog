@@ -7,14 +7,14 @@ final class NaturalSearchTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        savedConfiguration = UserDefaults.standard.data(forKey: "pc_llm")
+        savedConfiguration = UserDefaults.app.data(forKey: "pc_llm")
     }
 
     override func tearDown() {
         if let savedConfiguration {
-            UserDefaults.standard.set(savedConfiguration, forKey: "pc_llm")
+            UserDefaults.app.set(savedConfiguration, forKey: "pc_llm")
         } else {
-            UserDefaults.standard.removeObject(forKey: "pc_llm")
+            UserDefaults.app.removeObject(forKey: "pc_llm")
         }
         super.tearDown()
     }

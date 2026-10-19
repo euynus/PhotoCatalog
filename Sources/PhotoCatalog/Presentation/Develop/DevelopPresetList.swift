@@ -10,7 +10,7 @@ struct DevelopPresetList: View {
     let asset: Asset
     @State private var hovered: String?
     /// Groups folded shut, one id per line.
-    @AppStorage("pc_collapsedPresetGroups") private var collapsed = ""
+    @AppStorage("pc_collapsedPresetGroups", store: .app) private var collapsed = ""
     /// A preset being renamed, or given a new group, in place.
     private enum Editing: Equatable {
         case rename(String)

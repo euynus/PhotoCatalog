@@ -44,7 +44,7 @@ private final class CatalogOpenPanelDelegate: NSObject, NSOpenSavePanelDelegate 
 @Observable
 final class AppState {
     // ----- onboarding -----
-    var onboarded: Bool = UserDefaults.standard.string(forKey: "pc_onboarded") == "1"
+    var onboarded: Bool = UserDefaults.app.string(forKey: "pc_onboarded") == "1"
     var welcomeAnim = false
 
     // ----- core data -----
@@ -144,9 +144,9 @@ final class AppState {
     @ObservationIgnored private var captureTimeGroupsCache: (version: Int, seconds: Double, groups: [[String]])?
     /// Auto-stacking by capture time: photos from one camera taken within this many seconds of
     /// each other stack together, as Lightroom's Auto-Stack by Capture Time (nil: off).
-    var autoStackSeconds: Double? = UserDefaults.standard.object(forKey: "pc_autoStackSeconds") as? Double {
+    var autoStackSeconds: Double? = UserDefaults.app.object(forKey: "pc_autoStackSeconds") as? Double {
         didSet {
-            UserDefaults.standard.set(autoStackSeconds, forKey: "pc_autoStackSeconds")
+            UserDefaults.app.set(autoStackSeconds, forKey: "pc_autoStackSeconds")
             captureTimeGroupsCache = nil
             photoStacksCache = nil
             stackByAssetCache = nil
@@ -496,39 +496,39 @@ final class AppState {
 
     // ----- settings (PRD §17) -----
     var importMode: ImportMode =
-        ImportMode(rawValue: UserDefaults.standard.string(forKey: "pc_importMode") ?? "") ?? .referenced {
-        didSet { UserDefaults.standard.set(importMode.rawValue, forKey: "pc_importMode") }
+        ImportMode(rawValue: UserDefaults.app.string(forKey: "pc_importMode") ?? "") ?? .referenced {
+        didSet { UserDefaults.app.set(importMode.rawValue, forKey: "pc_importMode") }
     }
     var managedArchiveRule: ManagedArchiveRule =
-        ManagedArchiveRule(rawValue: UserDefaults.standard.string(forKey: "pc_managedArchive") ?? "") ?? .date {
-        didSet { UserDefaults.standard.set(managedArchiveRule.rawValue, forKey: "pc_managedArchive") }
+        ManagedArchiveRule(rawValue: UserDefaults.app.string(forKey: "pc_managedArchive") ?? "") ?? .date {
+        didSet { UserDefaults.app.set(managedArchiveRule.rawValue, forKey: "pc_managedArchive") }
     }
     var importDuplicateStrategy: ImportDuplicateStrategy =
-        ImportDuplicateStrategy(rawValue: UserDefaults.standard.string(forKey: "pc_importDuplicateStrategy") ?? "")
+        ImportDuplicateStrategy(rawValue: UserDefaults.app.string(forKey: "pc_importDuplicateStrategy") ?? "")
             ?? .groupExact {
         didSet {
-            UserDefaults.standard.set(importDuplicateStrategy.rawValue, forKey: "pc_importDuplicateStrategy")
+            UserDefaults.app.set(importDuplicateStrategy.rawValue, forKey: "pc_importDuplicateStrategy")
         }
     }
-    var importPostKeywords = UserDefaults.standard.string(forKey: "pc_importPostKeywords") ?? "" {
-        didSet { UserDefaults.standard.set(importPostKeywords, forKey: "pc_importPostKeywords") }
+    var importPostKeywords = UserDefaults.app.string(forKey: "pc_importPostKeywords") ?? "" {
+        didSet { UserDefaults.app.set(importPostKeywords, forKey: "pc_importPostKeywords") }
     }
-    var importPostColorLabel = UserDefaults.standard.string(forKey: "pc_importPostColorLabel") ?? "" {
-        didSet { UserDefaults.standard.set(importPostColorLabel, forKey: "pc_importPostColorLabel") }
+    var importPostColorLabel = UserDefaults.app.string(forKey: "pc_importPostColorLabel") ?? "" {
+        didSet { UserDefaults.app.set(importPostColorLabel, forKey: "pc_importPostColorLabel") }
     }
     /// Metadata template applied to every import (§ roadmap 4.2).
-    var importAuthor = UserDefaults.standard.string(forKey: "pc_importAuthor") ?? "" {
-        didSet { UserDefaults.standard.set(importAuthor, forKey: "pc_importAuthor") }
+    var importAuthor = UserDefaults.app.string(forKey: "pc_importAuthor") ?? "" {
+        didSet { UserDefaults.app.set(importAuthor, forKey: "pc_importAuthor") }
     }
-    var importCopyright = UserDefaults.standard.string(forKey: "pc_importCopyright") ?? "" {
-        didSet { UserDefaults.standard.set(importCopyright, forKey: "pc_importCopyright") }
+    var importCopyright = UserDefaults.app.string(forKey: "pc_importCopyright") ?? "" {
+        didSet { UserDefaults.app.set(importCopyright, forKey: "pc_importCopyright") }
     }
-    var importPostAlbumName = UserDefaults.standard.string(forKey: "pc_importPostAlbumName") ?? "" {
-        didSet { UserDefaults.standard.set(importPostAlbumName, forKey: "pc_importPostAlbumName") }
+    var importPostAlbumName = UserDefaults.app.string(forKey: "pc_importPostAlbumName") ?? "" {
+        didSet { UserDefaults.app.set(importPostAlbumName, forKey: "pc_importPostAlbumName") }
     }
     /// The develop preset every import applies ("" for none), as Lightroom's import panel does.
-    var importDevelopPresetId = UserDefaults.standard.string(forKey: "pc_importDevelopPreset") ?? "" {
-        didSet { UserDefaults.standard.set(importDevelopPresetId, forKey: "pc_importDevelopPreset") }
+    var importDevelopPresetId = UserDefaults.app.string(forKey: "pc_importDevelopPreset") ?? "" {
+        didSet { UserDefaults.app.set(importDevelopPresetId, forKey: "pc_importDevelopPreset") }
     }
     /// The import preset, while it still exists.
     var importDevelopPreset: DevelopPreset? {
@@ -537,12 +537,12 @@ final class AppState {
     /// RAW defaults, as in Lightroom: the preset a camera's RAW files start from, by camera
     /// model; "" is every camera without its own, and "none" keeps a camera as shot.
     var rawDefaultPresetIds: [String: String] =
-        (UserDefaults.standard.dictionary(forKey: "pc_rawDefaults") as? [String: String]) ?? [:] {
-        didSet { UserDefaults.standard.set(rawDefaultPresetIds, forKey: "pc_rawDefaults") }
+        (UserDefaults.app.dictionary(forKey: "pc_rawDefaults") as? [String: String]) ?? [:] {
+        didSet { UserDefaults.app.set(rawDefaultPresetIds, forKey: "pc_rawDefaults") }
     }
     /// After a rating / flag / color key on one photo, move to the next (Shift does it once).
-    var autoAdvance: Bool = UserDefaults.standard.bool(forKey: "pc_autoAdvance") {
-        didSet { UserDefaults.standard.set(autoAdvance, forKey: "pc_autoAdvance") }
+    var autoAdvance: Bool = UserDefaults.app.bool(forKey: "pc_autoAdvance") {
+        didSet { UserDefaults.app.set(autoAdvance, forKey: "pc_autoAdvance") }
     }
     /// Sidebar column visibility; Tab hides it together with the inspector for culling.
     var sidebarVisible = true
@@ -557,10 +557,10 @@ final class AppState {
     }
 
     /// Show a RAW and its same-name JPEG/HEIC as one photo; off lists every file separately.
-    var pairRawAndJpeg: Bool = (UserDefaults.standard.object(forKey: "pc_pairRawJpeg") as? Bool) ?? true {
+    var pairRawAndJpeg: Bool = (UserDefaults.app.object(forKey: "pc_pairRawJpeg") as? Bool) ?? true {
         didSet {
             guard pairRawAndJpeg != oldValue else { return }
-            UserDefaults.standard.set(pairRawAndJpeg, forKey: "pc_pairRawJpeg")
+            UserDefaults.app.set(pairRawAndJpeg, forKey: "pc_pairRawJpeg")
             invalidatePresentationCaches()
             reseedSidecarBaselines(pairingWas: oldValue)
         }
@@ -631,7 +631,7 @@ final class AppState {
 
     var appearance: AppAppearance = .stored {
         didSet {
-            UserDefaults.standard.set(appearance.rawValue, forKey: AppAppearance.defaultsKey)
+            UserDefaults.app.set(appearance.rawValue, forKey: AppAppearance.defaultsKey)
             appearance.apply()
         }
     }
@@ -639,49 +639,49 @@ final class AppState {
     var language: AppLanguage = .stored {
         didSet { if language != oldValue { language.store() } }
     }
-    var exportWritesXMP = UserDefaults.standard.bool(forKey: "pc_exportXMP") {
-        didSet { UserDefaults.standard.set(exportWritesXMP, forKey: "pc_exportXMP") }
+    var exportWritesXMP = UserDefaults.app.bool(forKey: "pc_exportXMP") {
+        didSet { UserDefaults.app.set(exportWritesXMP, forKey: "pc_exportXMP") }
     }
-    var readXMPSidecar: Bool = (UserDefaults.standard.object(forKey: "pc_readXMP") as? Bool) ?? true {
-        didSet { UserDefaults.standard.set(readXMPSidecar, forKey: "pc_readXMP") }
+    var readXMPSidecar: Bool = (UserDefaults.app.object(forKey: "pc_readXMP") as? Bool) ?? true {
+        didSet { UserDefaults.app.set(readXMPSidecar, forKey: "pc_readXMP") }
     }
-    var autoWriteXMPSidecar = UserDefaults.standard.bool(forKey: "pc_autoWriteXMP") {
-        didSet { UserDefaults.standard.set(autoWriteXMPSidecar, forKey: "pc_autoWriteXMP") }
+    var autoWriteXMPSidecar = UserDefaults.app.bool(forKey: "pc_autoWriteXMP") {
+        didSet { UserDefaults.app.set(autoWriteXMPSidecar, forKey: "pc_autoWriteXMP") }
     }
     var exportDirectoryStructure: ExportDirectoryStructure =
-        ExportDirectoryStructure(rawValue: UserDefaults.standard.string(forKey: "pc_exportDirectoryStructure") ?? "")
+        ExportDirectoryStructure(rawValue: UserDefaults.app.string(forKey: "pc_exportDirectoryStructure") ?? "")
             ?? .flat {
         didSet {
-            UserDefaults.standard.set(exportDirectoryStructure.rawValue, forKey: "pc_exportDirectoryStructure")
+            UserDefaults.app.set(exportDirectoryStructure.rawValue, forKey: "pc_exportDirectoryStructure")
         }
     }
     var exportPresets: [ExportPreset] = AppState.loadJSON([ExportPreset].self, forKey: "pc_exportPresets") ?? [] {
         didSet { AppState.store(exportPresets, forKey: "pc_exportPresets") }
     }
-    var recentImportDays: Int = (UserDefaults.standard.object(forKey: "pc_recentDays") as? Int) ?? 14 {
-        didSet { UserDefaults.standard.set(recentImportDays, forKey: "pc_recentDays"); libraryCountsCache = nil }
+    var recentImportDays: Int = (UserDefaults.app.object(forKey: "pc_recentDays") as? Int) ?? 14 {
+        didSet { UserDefaults.app.set(recentImportDays, forKey: "pc_recentDays"); libraryCountsCache = nil }
     }
     var openLastCatalogOnLaunch: Bool =
-        (UserDefaults.standard.object(forKey: "pc_openLast") as? Bool) ?? true {
-        didSet { UserDefaults.standard.set(openLastCatalogOnLaunch, forKey: "pc_openLast") }
+        (UserDefaults.app.object(forKey: "pc_openLast") as? Bool) ?? true {
+        didSet { UserDefaults.app.set(openLastCatalogOnLaunch, forKey: "pc_openLast") }
     }
     var reduceBackgroundOnLowPower: Bool =
-        (UserDefaults.standard.object(forKey: "pc_lowPower") as? Bool) ?? true {
-        didSet { UserDefaults.standard.set(reduceBackgroundOnLowPower, forKey: "pc_lowPower") }
+        (UserDefaults.app.object(forKey: "pc_lowPower") as? Bool) ?? true {
+        didSet { UserDefaults.app.set(reduceBackgroundOnLowPower, forKey: "pc_lowPower") }
     }
 
     var recentCutoff: Date { Date().addingTimeInterval(-86400 * Double(max(1, recentImportDays))) }
-    var visionEnabled = UserDefaults.standard.bool(forKey: "pc_vision") {
-        didSet { UserDefaults.standard.set(visionEnabled, forKey: "pc_vision") }
+    var visionEnabled = UserDefaults.app.bool(forKey: "pc_vision") {
+        didSet { UserDefaults.app.set(visionEnabled, forKey: "pc_vision") }
     }
     /// The cache limit chosen in Settings, in MB; 0 until one is chosen, and then the limit follows
     /// the catalog (`CacheLimit.automaticMB`). Never over what Settings offers: stepping down from an
     /// automatic limit above that used to save one over it.
-    var cacheLimitMB: Int = min(max(0, UserDefaults.standard.integer(forKey: "pc_cacheLimitMB")),
+    var cacheLimitMB: Int = min(max(0, UserDefaults.app.integer(forKey: "pc_cacheLimitMB")),
                                 CacheLimit.rangeMB.upperBound) {
         didSet {
-            if cacheLimitMB > 0 { UserDefaults.standard.set(cacheLimitMB, forKey: "pc_cacheLimitMB") }
-            else { UserDefaults.standard.removeObject(forKey: "pc_cacheLimitMB") }
+            if cacheLimitMB > 0 { UserDefaults.app.set(cacheLimitMB, forKey: "pc_cacheLimitMB") }
+            else { UserDefaults.app.removeObject(forKey: "pc_cacheLimitMB") }
         }
     }
     /// The limit that applies, as Settings shows it: the chosen one, or the automatic one for the
@@ -696,25 +696,25 @@ final class AppState {
                           volume: store?.packageURL)
     }
     var previewMaxPixel: Int = {
-        let saved = UserDefaults.standard.integer(forKey: "pc_previewMaxPixel")
+        let saved = UserDefaults.app.integer(forKey: "pc_previewMaxPixel")
         return saved == 1600 ? 1600 : 2_048
     }() {
-        didSet { UserDefaults.standard.set(previewMaxPixel, forKey: Self.previewMaxPixelKey) }
+        didSet { UserDefaults.app.set(previewMaxPixel, forKey: Self.previewMaxPixelKey) }
     }
     private var automaticBackupFrequencyStorage = AppState.normalizedAutomaticBackupFrequency(
-        UserDefaults.standard.string(forKey: "pc_autoBackupFrequency") ?? "weekly"
+        UserDefaults.app.string(forKey: "pc_autoBackupFrequency") ?? "weekly"
     )
     var automaticBackupFrequency: String {
         get { automaticBackupFrequencyStorage }
         set {
             automaticBackupFrequencyStorage = Self.normalizedAutomaticBackupFrequency(newValue)
-            UserDefaults.standard.set(automaticBackupFrequencyStorage, forKey: "pc_autoBackupFrequency")
+            UserDefaults.app.set(automaticBackupFrequencyStorage, forKey: "pc_autoBackupFrequency")
         }
     }
     var healthReport: HealthReport?
     private var statusMetrics = StatusMetrics()
     private var recentCatalogPaths =
-        UserDefaults.standard.stringArray(forKey: "pc_recentCatalogs") ?? []
+        UserDefaults.app.stringArray(forKey: "pc_recentCatalogs") ?? []
 
     // ----- catalog (real persistence / scanning) -----
     private(set) var store: CatalogStore? {
@@ -809,12 +809,12 @@ final class AppState {
     var thumbSize: CGFloat = 168
     var showInspector = true
     /// The file name row under each grid photo (I); remembered across launches.
-    var showInfo = UserDefaults.standard.object(forKey: "pc_gridShowInfo") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(showInfo, forKey: "pc_gridShowInfo") }
+    var showInfo = UserDefaults.app.object(forKey: "pc_gridShowInfo") as? Bool ?? true {
+        didSet { UserDefaults.app.set(showInfo, forKey: "pc_gridShowInfo") }
     }
     /// Grid photos cropped to fill their squares, without the letterbox around portraits.
-    var gridFill = UserDefaults.standard.bool(forKey: "pc_gridFill") {
-        didSet { UserDefaults.standard.set(gridFill, forKey: "pc_gridFill") }
+    var gridFill = UserDefaults.app.bool(forKey: "pc_gridFill") {
+        didSet { UserDefaults.app.set(gridFill, forKey: "pc_gridFill") }
     }
     var insTab = "org"
     private var pinnedSidebarItems = AppState.loadJSON([PinnedSidebarItem].self, forKey: pinnedSidebarItemsKey) ?? [] {
@@ -1710,7 +1710,7 @@ final class AppState {
     private static let developTransferFieldsKey = "pc_developTransferFields"
 
     private static func store<T: Encodable>(_ value: T, forKey key: String) {
-        if let data = try? JSONEncoder().encode(value) { UserDefaults.standard.set(data, forKey: key) }
+        if let data = try? JSONEncoder().encode(value) { UserDefaults.app.set(data, forKey: key) }
     }
 
     private var primaryCanDevelop: Bool { primary.map(canDevelop) ?? false }
@@ -2531,7 +2531,7 @@ final class AppState {
                 push(verbatim: catalogOpenFailureMessage(error), "warning")
             }
             if onboarded && store == nil {
-                UserDefaults.standard.set("0", forKey: "pc_onboarded")
+                UserDefaults.app.set("0", forKey: "pc_onboarded")
                 onboarded = false
             }
         }
@@ -2637,7 +2637,7 @@ final class AppState {
     }
 
     private var configuredCatalogURL: URL {
-        UserDefaults.standard.url(forKey: Self.catalogURLKey) ?? CatalogStore.defaultURL
+        UserDefaults.app.url(forKey: Self.catalogURLKey) ?? CatalogStore.defaultURL
     }
 
     @discardableResult
@@ -2835,7 +2835,7 @@ final class AppState {
                     self.hasCatalogPreview = false
                     self.isLoadingCatalog = false
                     self.loadingCatalogURL = nil
-                    UserDefaults.standard.set("1", forKey: "pc_onboarded")
+                    UserDefaults.app.set("1", forKey: "pc_onboarded")
                     self.onboarded = true
                     self.seedInitialSelection()
                     self.runAutomaticBackupIfNeeded()
@@ -2901,7 +2901,7 @@ final class AppState {
         isLoadingCatalog = false
         loadingCatalogURL = nil
         resetCatalog(toDemo: true)
-        UserDefaults.standard.set("0", forKey: "pc_onboarded")
+        UserDefaults.app.set("0", forKey: "pc_onboarded")
         onboarded = false
         if let message { push(verbatim: message, "warning") }
     }
@@ -3130,7 +3130,7 @@ final class AppState {
             coordinator = ImportCoordinator(store: nextStore)
             setActiveCatalog(url)
             refreshStatusMetrics()
-            UserDefaults.standard.set("1", forKey: "pc_onboarded")
+            UserDefaults.app.set("1", forKey: "pc_onboarded")
             onboarded = true
             push("已创建目录库 · \(url.lastPathComponent)", "check")
             return true
@@ -3169,8 +3169,8 @@ final class AppState {
         view = .grid
         sheet = nil
         resetCatalog(toDemo: true)
-        UserDefaults.standard.removeObject(forKey: Self.catalogURLKey)
-        UserDefaults.standard.set("0", forKey: "pc_onboarded")
+        UserDefaults.app.removeObject(forKey: Self.catalogURLKey)
+        UserDefaults.app.set("0", forKey: "pc_onboarded")
         onboarded = false
         push("已关闭目录库", "check")
     }
@@ -3214,7 +3214,7 @@ final class AppState {
             push(verbatim: catalogOpenFailureMessage(error), "warning")
             return false
         } else {
-            UserDefaults.standard.set("1", forKey: "pc_onboarded")
+            UserDefaults.app.set("1", forKey: "pc_onboarded")
             onboarded = true
             push("已打开目录库 · \(url.lastPathComponent)", "check")
             return true
@@ -3261,7 +3261,7 @@ final class AppState {
         let active = configuredCatalogURL.standardizedFileURL.path
         for path in recentCatalogPaths where path != active { FileAccessService.forget(URL(fileURLWithPath: path)) }
         recentCatalogPaths = []
-        UserDefaults.standard.set(recentCatalogPaths, forKey: Self.recentCatalogsKey)
+        UserDefaults.app.set(recentCatalogPaths, forKey: Self.recentCatalogsKey)
         push("已清除最近目录库", "trash")
     }
 
@@ -3296,7 +3296,7 @@ final class AppState {
     }
 
     private func setActiveCatalog(_ url: URL) {
-        UserDefaults.standard.set(url, forKey: Self.catalogURLKey)
+        UserDefaults.app.set(url, forKey: Self.catalogURLKey)
         // so a sandboxed copy can open it again in a later launch
         FileAccessService.remember(url)
         rememberCatalog(url)
@@ -3309,12 +3309,12 @@ final class AppState {
         if recentCatalogPaths.count > 8 {
             recentCatalogPaths.removeLast(recentCatalogPaths.count - 8)
         }
-        UserDefaults.standard.set(recentCatalogPaths, forKey: Self.recentCatalogsKey)
+        UserDefaults.app.set(recentCatalogPaths, forKey: Self.recentCatalogsKey)
     }
 
     private func forgetCatalog(_ url: URL) {
         recentCatalogPaths.removeAll { $0 == url.path }
-        UserDefaults.standard.set(recentCatalogPaths, forKey: Self.recentCatalogsKey)
+        UserDefaults.app.set(recentCatalogPaths, forKey: Self.recentCatalogsKey)
         if url.standardizedFileURL != configuredCatalogURL.standardizedFileURL { FileAccessService.forget(url) }
     }
 
@@ -4855,8 +4855,8 @@ final class AppState {
     @ObservationIgnored private var xmpCheckPending = false
     private static let xmpCheckInterval: TimeInterval = 15
     /// Reads sidecar changes other apps make as soon as they're noticed.
-    var autoReadChangedXMP = UserDefaults.standard.bool(forKey: "pc_autoReadChangedXMP") {
-        didSet { UserDefaults.standard.set(autoReadChangedXMP, forKey: "pc_autoReadChangedXMP") }
+    var autoReadChangedXMP = UserDefaults.app.bool(forKey: "pc_autoReadChangedXMP") {
+        didSet { UserDefaults.app.set(autoReadChangedXMP, forKey: "pc_autoReadChangedXMP") }
     }
 
     /// Remembers sidecars as they are now: our own writes and reads never count as changes.
@@ -5126,8 +5126,8 @@ final class AppState {
 
     // ---------- editing in another app ----------
     /// The app photos open in for pixel editing (Photoshop, Pixelmator Pro…); asked the first time.
-    var externalEditorPath: String? = UserDefaults.standard.string(forKey: "pc_externalEditor") {
-        didSet { UserDefaults.standard.set(externalEditorPath, forKey: "pc_externalEditor") }
+    var externalEditorPath: String? = UserDefaults.app.string(forKey: "pc_externalEditor") {
+        didSet { UserDefaults.app.set(externalEditorPath, forKey: "pc_externalEditor") }
     }
 
     var externalEditorName: String? {
@@ -5592,11 +5592,11 @@ final class AppState {
     func mayDevelopByTextSendPhoto() -> Bool {
         let destination = PhotoDescriber.Destination(configuration: llmConfiguration)
         guard !destination.isLoopback, let endpoint = destination.endpoint else { return true }
-        var allowed = UserDefaults.standard.stringArray(forKey: Self.photoSendingConsentKey) ?? []
+        var allowed = UserDefaults.app.stringArray(forKey: Self.photoSendingConsentKey) ?? []
         guard !allowed.contains(endpoint) else { return true }
         guard confirmSendingPhoto(destination.provider, endpoint) else { return false }
         allowed.append(endpoint)
-        UserDefaults.standard.set(allowed, forKey: Self.photoSendingConsentKey)
+        UserDefaults.app.set(allowed, forKey: Self.photoSendingConsentKey)
         return true
     }
 
@@ -5655,7 +5655,7 @@ final class AppState {
     /// The photos the Enhance dialog works on.
     var enhanceTargets: [Asset] = []
     var enhanceOptions: Enhance.Options = {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         var options = Enhance.Options()
         if let denoise = defaults.object(forKey: "pc_enhanceDenoise") as? Bool { options.denoise = denoise }
         if let amount = defaults.object(forKey: "pc_enhanceAmount") as? Double { options.denoiseAmount = amount }
@@ -5663,7 +5663,7 @@ final class AppState {
         return options
     }() {
         didSet {
-            let defaults = UserDefaults.standard
+            let defaults = UserDefaults.app
             defaults.set(enhanceOptions.denoise, forKey: "pc_enhanceDenoise")
             defaults.set(enhanceOptions.denoiseAmount, forKey: "pc_enhanceAmount")
             defaults.set(enhanceOptions.superResolution, forKey: "pc_enhanceSuperResolution")
@@ -5920,8 +5920,8 @@ final class AppState {
 
     /// The last rename template, offered again next time.
     var renameTemplate: String {
-        get { UserDefaults.standard.string(forKey: "pc_renameTemplate") ?? "{original}" }
-        set { UserDefaults.standard.set(newValue, forKey: "pc_renameTemplate") }
+        get { UserDefaults.app.string(forKey: "pc_renameTemplate") ?? "{original}" }
+        set { UserDefaults.app.set(newValue, forKey: "pc_renameTemplate") }
     }
 
     /// The photos the open rename dialog reaches, taken as it opened: its preview and the
@@ -6236,8 +6236,8 @@ final class AppState {
     }
 
     /// Settings → 自动检查更新: at most once a day, shortly after launch.
-    var autoCheckForUpdates: Bool = (UserDefaults.standard.object(forKey: "pc_autoCheckUpdates") as? Bool) ?? true {
-        didSet { UserDefaults.standard.set(autoCheckForUpdates, forKey: "pc_autoCheckUpdates") }
+    var autoCheckForUpdates: Bool = (UserDefaults.app.object(forKey: "pc_autoCheckUpdates") as? Bool) ?? true {
+        didSet { UserDefaults.app.set(autoCheckForUpdates, forKey: "pc_autoCheckUpdates") }
     }
 
     /// The version being downloaded and installed.
@@ -6246,7 +6246,7 @@ final class AppState {
     /// The daily check: quiet unless there's a newer release the user hasn't chosen to skip.
     func checkForUpdatesAutomatically() {
         guard autoCheckForUpdates, !Distribution.isAppStore else { return }
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let last = defaults.object(forKey: "pc_lastUpdateCheck") as? Date ?? .distantPast
         guard Date().timeIntervalSince(last) > 20 * 3600 else { return }
         Task { [weak self] in
@@ -6284,7 +6284,7 @@ final class AppState {
         case .alertFirstButtonReturn:
             if installable { installUpdate(release) } else { NSWorkspace.shared.open(release.htmlURL) }
         case .alertThirdButtonReturn:
-            UserDefaults.standard.set(release.version, forKey: "pc_skippedVersion")
+            UserDefaults.app.set(release.version, forKey: "pc_skippedVersion")
         default:
             break
         }
@@ -6349,8 +6349,8 @@ final class AppState {
 
     private func presentNewCrashReport(bundleID: String) {
         let key = "pc_crashReportsCheckedAt"
-        let checked = UserDefaults.standard.object(forKey: key) as? Date
-        UserDefaults.standard.set(Date(), forKey: key)
+        let checked = UserDefaults.app.object(forKey: key) as? Date
+        UserDefaults.app.set(Date(), forKey: key)
         // the first launch with this check only sets the mark; older reports aren't news
         guard let checked, let report = CrashReports.find(bundleID: bundleID, since: checked).first else { return }
         let alert = NSAlert()
@@ -7011,9 +7011,9 @@ final class AppState {
         ?? ExportSettings() {
         didSet { AppState.store(renderedExportSettings, forKey: "pc_renderedExportSettings") }
     }
-    var renderedExportFolder: String = UserDefaults.standard.string(forKey: "pc_renderedExportFolder")
+    var renderedExportFolder: String = UserDefaults.app.string(forKey: "pc_renderedExportFolder")
         ?? FileAccessService.picturesFolder.appendingPathComponent(L("PhotoCatalog 导出")).path {
-        didSet { UserDefaults.standard.set(renderedExportFolder, forKey: "pc_renderedExportFolder") }
+        didSet { UserDefaults.app.set(renderedExportFolder, forKey: "pc_renderedExportFolder") }
     }
     var renderedExportPresets: [RenderedExportPreset] =
         AppState.loadJSON([RenderedExportPreset].self, forKey: "pc_renderedExportPresets") ?? [] {
@@ -7641,7 +7641,7 @@ final class AppState {
     }
 
     private static func loadJSON<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
-        UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(type, from: $0) }
+        UserDefaults.app.data(forKey: key).flatMap { try? JSONDecoder().decode(type, from: $0) }
     }
 
     // ---------- export originals (§6.11) ----------
@@ -7773,13 +7773,13 @@ final class AppState {
         }
 
         let backupKey = Self.lastAutoBackupKey(for: store.packageURL)
-        let last = UserDefaults.standard.object(forKey: backupKey) as? Date
+        let last = UserDefaults.app.object(forKey: backupKey) as? Date
         if let last, now.timeIntervalSince(last) < interval {
             return
         }
 
         backUpCatalog(store, title: L("自动目录库快照（不含原件）"), at: now,
-                      saved: { _ in UserDefaults.standard.set(now, forKey: backupKey) }) { app, url, error in
+                      saved: { _ in UserDefaults.app.set(now, forKey: backupKey) }) { app, url, error in
             if let url {
                 app.push("已自动备份目录库 · \(url.lastPathComponent)", "check")
             } else {
@@ -10831,7 +10831,7 @@ final class AppState {
         Task { [weak self, action] in
             try? await Task.sleep(for: .seconds(0.42))
             guard let self else { return }
-            UserDefaults.standard.set("1", forKey: "pc_onboarded")
+            UserDefaults.app.set("1", forKey: "pc_onboarded")
             self.onboarded = true
             if action == "import" { self.sheet = "import" }
         }
@@ -11157,7 +11157,7 @@ final class AppState {
 extension AppAppearance {
     static let defaultsKey = "pc_appearance"
     static var stored: AppAppearance {
-        AppAppearance(rawValue: UserDefaults.standard.string(forKey: defaultsKey) ?? "") ?? .system
+        AppAppearance(rawValue: UserDefaults.app.string(forKey: defaultsKey) ?? "") ?? .system
     }
 
     /// AppKit-level so menus, sheets and alerts follow along; `nil` tracks the system.
@@ -11176,15 +11176,15 @@ extension AppLanguage {
 
     /// The choice kept in this app's own AppleLanguages, which macOS reads at launch.
     static var stored: AppLanguage {
-        let domain = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")
+        let domain = UserDefaults.app.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")
         return (domain?[defaultsKey] as? [String])?.first.flatMap(AppLanguage.init(rawValue:)) ?? .system
     }
 
     func store() {
         if self == .system {
-            UserDefaults.standard.removeObject(forKey: Self.defaultsKey)
+            UserDefaults.app.removeObject(forKey: Self.defaultsKey)
         } else {
-            UserDefaults.standard.set([rawValue], forKey: Self.defaultsKey)
+            UserDefaults.app.set([rawValue], forKey: Self.defaultsKey)
         }
     }
 }

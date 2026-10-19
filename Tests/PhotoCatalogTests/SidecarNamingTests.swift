@@ -8,15 +8,15 @@ final class SidecarNamingTests: CatalogTestCase {
 
     override func setUp() {
         super.setUp()
-        savedAutoWrite = UserDefaults.standard.object(forKey: "pc_autoWriteXMP")
-        UserDefaults.standard.set(true, forKey: "pc_pairRawJpeg")
+        savedAutoWrite = UserDefaults.app.object(forKey: "pc_autoWriteXMP")
+        UserDefaults.app.set(true, forKey: "pc_pairRawJpeg")
     }
 
     override func tearDown() {
         if let savedAutoWrite {
-            UserDefaults.standard.set(savedAutoWrite, forKey: "pc_autoWriteXMP")
+            UserDefaults.app.set(savedAutoWrite, forKey: "pc_autoWriteXMP")
         } else {
-            UserDefaults.standard.removeObject(forKey: "pc_autoWriteXMP")
+            UserDefaults.app.removeObject(forKey: "pc_autoWriteXMP")
         }
         super.tearDown()
     }
@@ -66,7 +66,7 @@ final class SidecarNamingTests: CatalogTestCase {
     }
 
     func testWithPairingOffTheJpegKeepsItsOwn() throws {
-        UserDefaults.standard.set(false, forKey: "pc_pairRawJpeg")
+        UserDefaults.app.set(false, forKey: "pc_pairRawJpeg")
         let folder = try folder("Unpaired", files: ["IMG_0001.CR3", "IMG_0001.JPG"])
         XCTAssertEqual(sidecarName("IMG_0001.CR3", in: folder), "IMG_0001.xmp", "the RAW keeps the name")
         XCTAssertEqual(sidecarName("IMG_0001.JPG", in: folder), "IMG_0001.JPG.xmp")
@@ -87,7 +87,7 @@ final class SidecarNamingTests: CatalogTestCase {
         let folder = try folder("Many", files: files)
         let originals = files.map { folder.appendingPathComponent($0) }
         for pairing in [true, false] {
-            UserDefaults.standard.set(pairing, forKey: "pc_pairRawJpeg")
+            UserDefaults.app.set(pairing, forKey: "pc_pairRawJpeg")
             XCTAssertEqual(XMPSidecar.sidecarURLs(for: originals).map(\.lastPathComponent),
                            originals.map { XMPSidecar.sidecarURL(for: $0).lastPathComponent }, "pairing \(pairing)")
             XCTAssertEqual(XMPSidecar.sidecarURLs(for: Array(originals.prefix(1))).map(\.lastPathComponent),

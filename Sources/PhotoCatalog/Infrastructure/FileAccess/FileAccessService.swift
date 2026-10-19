@@ -72,10 +72,10 @@ enum FileAccessService {
 
     private static var remembered: [Remembered] {
         get {
-            UserDefaults.standard.data(forKey: rememberedKey)
+            UserDefaults.app.data(forKey: rememberedKey)
                 .flatMap { try? JSONDecoder().decode([Remembered].self, from: $0) } ?? []
         }
-        set { UserDefaults.standard.set(try? JSONEncoder().encode(newValue), forKey: rememberedKey) }
+        set { UserDefaults.app.set(try? JSONEncoder().encode(newValue), forKey: rememberedKey) }
     }
 
     /// Remembers access to `url`, which the user just chose (or the app can reach anyway).

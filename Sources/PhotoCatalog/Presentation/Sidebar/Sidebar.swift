@@ -22,15 +22,15 @@ struct Sidebar: View {
     @Environment(AppState.self) var app
     let assetRevision: Int
 
-    @AppStorage("pc_sidebarLibraryExpanded") private var libraryExpanded = true
-    @AppStorage("pc_sidebarReviewExpanded") private var reviewExpanded = true
-    @AppStorage("pc_sidebarCollectionsExpanded") private var collectionsExpanded = true
-    @AppStorage("pc_sidebarDatesExpanded") private var datesExpanded = true
-    @AppStorage("pc_sidebarFoldersExpanded") private var foldersExpanded = true
-    @AppStorage("pc_sidebarTagsExpanded") private var tagsExpanded = false
-    @AppStorage("pc_sidebarMaintenanceExpanded") private var maintenanceExpanded = true
+    @AppStorage("pc_sidebarLibraryExpanded", store: .app) private var libraryExpanded = true
+    @AppStorage("pc_sidebarReviewExpanded", store: .app) private var reviewExpanded = true
+    @AppStorage("pc_sidebarCollectionsExpanded", store: .app) private var collectionsExpanded = true
+    @AppStorage("pc_sidebarDatesExpanded", store: .app) private var datesExpanded = true
+    @AppStorage("pc_sidebarFoldersExpanded", store: .app) private var foldersExpanded = true
+    @AppStorage("pc_sidebarTagsExpanded", store: .app) private var tagsExpanded = false
+    @AppStorage("pc_sidebarMaintenanceExpanded", store: .app) private var maintenanceExpanded = true
     /// The duplicates page's similarity, so the count here is of the groups it shows.
-    @AppStorage("pc_similarMinScore") private var similarMinScore = 0.9
+    @AppStorage("pc_similarMinScore", store: .app) private var similarMinScore = 0.9
 
     var body: some View {
         let _ = assetRevision

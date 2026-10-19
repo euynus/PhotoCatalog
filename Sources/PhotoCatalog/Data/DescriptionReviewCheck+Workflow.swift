@@ -6,7 +6,7 @@ extension DescriptionReviewCheck {
         MainActor.assumeIsolated {
             let root = FileManager.default.temporaryDirectory
                 .appendingPathComponent("pc-description-review-\(UUID().uuidString)")
-            let defaults = UserDefaults.standard
+            let defaults = UserDefaults.app
             let oldXMP = defaults.object(forKey: "pc_autoWriteXMP")
             defer {
                 if let oldXMP { defaults.set(oldXMP, forKey: "pc_autoWriteXMP") }

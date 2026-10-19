@@ -634,10 +634,10 @@ enum PipelineCheck {
         // rewritten by the read, and our own writes don't count
         let externalXMP: [String: Bool] = MainActor.assumeIsolated {
             let scratch = fm.temporaryDirectory.appendingPathComponent("pc-xmp-\(UUID().uuidString)")
-            let previousAutoRead = UserDefaults.standard.object(forKey: "pc_autoReadChangedXMP")
+            let previousAutoRead = UserDefaults.app.object(forKey: "pc_autoReadChangedXMP")
             defer {
                 try? fm.removeItem(at: scratch)
-                UserDefaults.standard.set(previousAutoRead, forKey: "pc_autoReadChangedXMP")
+                UserDefaults.app.set(previousAutoRead, forKey: "pc_autoReadChangedXMP")
             }
             try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
             guard let sourcePath = reloaded[4].localPath,
@@ -777,10 +777,10 @@ enum PipelineCheck {
         // renaming photos: the preview matches what happens on disk and in the catalog
         let renaming: [String: Bool] = MainActor.assumeIsolated {
             let scratch = fm.temporaryDirectory.appendingPathComponent("pc-rename-\(UUID().uuidString)")
-            let previousTemplate = UserDefaults.standard.string(forKey: "pc_renameTemplate")
+            let previousTemplate = UserDefaults.app.string(forKey: "pc_renameTemplate")
             defer {
                 try? fm.removeItem(at: scratch)
-                UserDefaults.standard.set(previousTemplate, forKey: "pc_renameTemplate")
+                UserDefaults.app.set(previousTemplate, forKey: "pc_renameTemplate")
             }
             try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
             guard let renameStore = try? CatalogStore(packageURL: scratch.appendingPathComponent("Rename.photolibrary"))

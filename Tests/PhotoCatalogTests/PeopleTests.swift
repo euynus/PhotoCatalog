@@ -8,16 +8,16 @@ final class PeopleTests: CatalogTestCase {
 
     override func setUp() {
         super.setUp()
-        savedAutoWriteXMP = UserDefaults.standard.object(forKey: "pc_autoWriteXMP")
+        savedAutoWriteXMP = UserDefaults.app.object(forKey: "pc_autoWriteXMP")
         undo = UndoManager()
         undo.groupsByEvent = false   // no run loop here to close event groups
     }
 
     override func tearDown() {
         if let savedAutoWriteXMP {
-            UserDefaults.standard.set(savedAutoWriteXMP, forKey: "pc_autoWriteXMP")
+            UserDefaults.app.set(savedAutoWriteXMP, forKey: "pc_autoWriteXMP")
         } else {
-            UserDefaults.standard.removeObject(forKey: "pc_autoWriteXMP")
+            UserDefaults.app.removeObject(forKey: "pc_autoWriteXMP")
         }
         undo = nil
         super.tearDown()

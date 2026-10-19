@@ -231,8 +231,8 @@ extension LLMCheck {
                "a camera or lens the catalog doesn't have filters nothing")
 
         // the whole of it, against the stand-in: the filter bar and the search box end up set
-        let saved = UserDefaults.standard.data(forKey: "pc_llm")
-        defer { UserDefaults.standard.set(saved, forKey: "pc_llm") }
+        let saved = UserDefaults.app.data(forKey: "pc_llm")
+        defer { UserDefaults.app.set(saved, forKey: "pc_llm") }
         let app = AppState.selfCheckFixture()
         app.assets = Array(DemoData.assets.prefix(40))
         app.llmConfiguration = LLMConfiguration(kind: .openAICompatible, baseURL: "http://127.0.0.1:\(server.port)/v1", model: "stand-in")
@@ -283,8 +283,8 @@ extension LLMCheck {
                "a repeated as-shot tint stays as shot beside a changed temperature")
 
         // the whole of it, against the stand-in: the photo in Develop takes the look
-        let saved = UserDefaults.standard.data(forKey: "pc_llm")
-        defer { UserDefaults.standard.set(saved, forKey: "pc_llm") }
+        let saved = UserDefaults.app.data(forKey: "pc_llm")
+        defer { UserDefaults.app.set(saved, forKey: "pc_llm") }
         let app = AppState.selfCheckFixture()
         guard var photo = DemoData.assets.first(where: { !$0.isRaw }) ?? DemoData.assets.first else { return }
         photo.isDemo = false
@@ -303,9 +303,9 @@ extension LLMCheck {
                "a described look is applied to the photo in Develop (\(String(describing: settings)))")
 
         // a photo goes to a service off this Mac only once the user agrees, asked once per service
-        let savedConsent = UserDefaults.standard.object(forKey: "pc_developByTextConsent")
-        defer { UserDefaults.standard.set(savedConsent, forKey: "pc_developByTextConsent") }
-        UserDefaults.standard.removeObject(forKey: "pc_developByTextConsent")
+        let savedConsent = UserDefaults.app.object(forKey: "pc_developByTextConsent")
+        defer { UserDefaults.app.set(savedConsent, forKey: "pc_developByTextConsent") }
+        UserDefaults.app.removeObject(forKey: "pc_developByTextConsent")
         var asked: [String] = []
         app.confirmSendingPhoto = { _, endpoint in asked.append(endpoint); return endpoint.contains("agreed") }
         var remote = LLMConfiguration(kind: .openAICompatible, baseURL: "https://agreed.example/v1", model: "m")

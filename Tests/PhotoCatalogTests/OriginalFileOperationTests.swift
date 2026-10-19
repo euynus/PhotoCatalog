@@ -6,7 +6,7 @@ import XCTest
 final class OriginalFileOperationTests: CatalogTestCase {
     override func setUp() {
         super.setUp()
-        UserDefaults.standard.set(true, forKey: "pc_pairRawJpeg")
+        UserDefaults.app.set(true, forKey: "pc_pairRawJpeg")
     }
 
     private var demo = DemoData.assets.makeIterator()

@@ -38,13 +38,13 @@ final class CacheLimitTests: CatalogTestCase {
 
     @MainActor
     func testChosenLimitAboveWhatSettingsOffersIsClamped() {
-        let saved = UserDefaults.standard.object(forKey: "pc_cacheLimitMB")
+        let saved = UserDefaults.app.object(forKey: "pc_cacheLimitMB")
         defer {
-            if let saved { UserDefaults.standard.set(saved, forKey: "pc_cacheLimitMB") }
-            else { UserDefaults.standard.removeObject(forKey: "pc_cacheLimitMB") }
+            if let saved { UserDefaults.app.set(saved, forKey: "pc_cacheLimitMB") }
+            else { UserDefaults.app.removeObject(forKey: "pc_cacheLimitMB") }
         }
         // stepped down from an automatic limit that was above the Stepper's range
-        UserDefaults.standard.set(149_744, forKey: "pc_cacheLimitMB")
+        UserDefaults.app.set(149_744, forKey: "pc_cacheLimitMB")
         let app = AppState()
         XCTAssertEqual(app.cacheLimitMB, CacheLimit.rangeMB.upperBound)
         XCTAssertEqual(app.effectiveCacheLimitMB, CacheLimit.rangeMB.upperBound)

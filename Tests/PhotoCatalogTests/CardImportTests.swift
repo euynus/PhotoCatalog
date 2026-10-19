@@ -46,14 +46,14 @@ final class CardImportTests: CatalogTestCase {
 
     override func setUp() {
         super.setUp()
-        savedOptions = UserDefaults.standard.object(forKey: "pc_cardImportOptions")
+        savedOptions = UserDefaults.app.object(forKey: "pc_cardImportOptions")
     }
 
     override func tearDown() {
         if let savedOptions {
-            UserDefaults.standard.set(savedOptions, forKey: "pc_cardImportOptions")
+            UserDefaults.app.set(savedOptions, forKey: "pc_cardImportOptions")
         } else {
-            UserDefaults.standard.removeObject(forKey: "pc_cardImportOptions")
+            UserDefaults.app.removeObject(forKey: "pc_cardImportOptions")
         }
         super.tearDown()
     }

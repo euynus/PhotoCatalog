@@ -492,8 +492,8 @@ enum DevelopCheck {
 
     @MainActor
     private static func checkSoftProofingState() {
-        let saved = UserDefaults.standard.data(forKey: "pc_softProof")
-        defer { UserDefaults.standard.set(saved, forKey: "pc_softProof") }
+        let saved = UserDefaults.app.data(forKey: "pc_softProof")
+        defer { UserDefaults.app.set(saved, forKey: "pc_softProof") }
         let app = AppState.selfCheckFixture()
         app.view = .grid
         app.toggleSoftProofing()

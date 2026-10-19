@@ -106,10 +106,10 @@ final class FolderWatchTests: CatalogTestCase {
     @MainActor
     func testRescanLeavesOutDuplicateTheImportSkipped() async throws {
         let key = "pc_importDuplicateStrategy"
-        let previous = UserDefaults.standard.object(forKey: key)
+        let previous = UserDefaults.app.object(forKey: key)
         defer {
-            if let previous { UserDefaults.standard.set(previous, forKey: key) }
-            else { UserDefaults.standard.removeObject(forKey: key) }
+            if let previous { UserDefaults.app.set(previous, forKey: key) }
+            else { UserDefaults.app.removeObject(forKey: key) }
         }
         let source = scratch.appendingPathComponent("Source")
         let photo = source.appendingPathComponent("a.jpg")

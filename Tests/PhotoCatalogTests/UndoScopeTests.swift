@@ -15,19 +15,19 @@ final class UndoScopeTests: XCTestCase {
     override func setUp() {
         super.setUp()
         for key in Self.defaultsKeys {
-            previousDefaults[key] = UserDefaults.standard.object(forKey: key)
+            previousDefaults[key] = UserDefaults.app.object(forKey: key)
         }
-        UserDefaults.standard.set(false, forKey: "pc_openLast")
-        UserDefaults.standard.removeObject(forKey: "pc_pinnedSidebarItems")
+        UserDefaults.app.set(false, forKey: "pc_openLast")
+        UserDefaults.app.removeObject(forKey: "pc_pinnedSidebarItems")
         scratch = FileManager.default.temporaryDirectory.appendingPathComponent("pc-undo-scope-\(UUID().uuidString)")
     }
 
     override func tearDown() {
         for key in Self.defaultsKeys {
             if let value = previousDefaults[key] {
-                UserDefaults.standard.set(value, forKey: key)
+                UserDefaults.app.set(value, forKey: key)
             } else {
-                UserDefaults.standard.removeObject(forKey: key)
+                UserDefaults.app.removeObject(forKey: key)
             }
         }
         if let scratch { try? FileManager.default.removeItem(at: scratch) }

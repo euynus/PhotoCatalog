@@ -995,7 +995,7 @@ struct DevelopSection<Accessory: View, Content: View>: View {
     let group: [String]
     let accessory: () -> Accessory
     let content: () -> Content
-    @AppStorage(DevelopSections.storageKey) private var collapsed = DevelopSections.initiallyFolded
+    @AppStorage(DevelopSections.storageKey, store: .app) private var collapsed = DevelopSections.initiallyFolded
 
     init(_ title: String, id: String, group: [String], @ViewBuilder accessory: @escaping () -> Accessory,
          @ViewBuilder content: @escaping () -> Content) {

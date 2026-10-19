@@ -6,7 +6,7 @@ import XCTest
 final class CatalogOpenListTests: CatalogTestCase {
     @MainActor
     func testOpenedCatalogShowsRawJpegPairAsOnePhoto() throws {
-        UserDefaults.standard.set(true, forKey: "pc_pairRawJpeg")
+        UserDefaults.app.set(true, forKey: "pc_pairRawJpeg")
         let folder = scratch.appendingPathComponent("Shoot")
         var raw = try XCTUnwrap(DemoData.assets.first { $0.isRaw })
         raw.date = Date(timeIntervalSince1970: 1_700_000_000)

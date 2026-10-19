@@ -14,9 +14,9 @@ class CatalogTestCase: XCTestCase {
     override func setUp() {
         super.setUp()
         for key in Self.isolatedKeys {
-            if let value = UserDefaults.standard.object(forKey: key) { savedDefaults[key] = value }
+            if let value = UserDefaults.app.object(forKey: key) { savedDefaults[key] = value }
         }
-        UserDefaults.standard.set(false, forKey: "pc_openLast")
+        UserDefaults.app.set(false, forKey: "pc_openLast")
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-\(type(of: self))-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -28,9 +28,9 @@ class CatalogTestCase: XCTestCase {
     override func tearDown() {
         for key in Self.isolatedKeys {
             if let value = savedDefaults[key] {
-                UserDefaults.standard.set(value, forKey: key)
+                UserDefaults.app.set(value, forKey: key)
             } else {
-                UserDefaults.standard.removeObject(forKey: key)
+                UserDefaults.app.removeObject(forKey: key)
             }
         }
         savedDefaults = [:]

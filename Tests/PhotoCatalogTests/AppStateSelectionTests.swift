@@ -21,46 +21,46 @@ final class AppStateSelectionTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        previousOpenLast = UserDefaults.standard.object(forKey: "pc_openLast")
-        previousCatalogURL = UserDefaults.standard.object(forKey: "pc_catalogURL")
-        previousOnboarded = UserDefaults.standard.object(forKey: "pc_onboarded")
-        previousPinnedSidebarItems = UserDefaults.standard.object(forKey: "pc_pinnedSidebarItems")
-        previousRecentCatalogs = UserDefaults.standard.object(forKey: "pc_recentCatalogs")
-        previousRenameTemplate = UserDefaults.standard.object(forKey: "pc_renameTemplate")
-        UserDefaults.standard.set(false, forKey: "pc_openLast")
-        UserDefaults.standard.removeObject(forKey: "pc_pinnedSidebarItems")
+        previousOpenLast = UserDefaults.app.object(forKey: "pc_openLast")
+        previousCatalogURL = UserDefaults.app.object(forKey: "pc_catalogURL")
+        previousOnboarded = UserDefaults.app.object(forKey: "pc_onboarded")
+        previousPinnedSidebarItems = UserDefaults.app.object(forKey: "pc_pinnedSidebarItems")
+        previousRecentCatalogs = UserDefaults.app.object(forKey: "pc_recentCatalogs")
+        previousRenameTemplate = UserDefaults.app.object(forKey: "pc_renameTemplate")
+        UserDefaults.app.set(false, forKey: "pc_openLast")
+        UserDefaults.app.removeObject(forKey: "pc_pinnedSidebarItems")
     }
 
     override func tearDown() {
         if let previousOpenLast {
-            UserDefaults.standard.set(previousOpenLast, forKey: "pc_openLast")
+            UserDefaults.app.set(previousOpenLast, forKey: "pc_openLast")
         } else {
-            UserDefaults.standard.removeObject(forKey: "pc_openLast")
+            UserDefaults.app.removeObject(forKey: "pc_openLast")
         }
         if let previousCatalogURL {
-            UserDefaults.standard.set(previousCatalogURL, forKey: "pc_catalogURL")
+            UserDefaults.app.set(previousCatalogURL, forKey: "pc_catalogURL")
         } else {
-            UserDefaults.standard.removeObject(forKey: "pc_catalogURL")
+            UserDefaults.app.removeObject(forKey: "pc_catalogURL")
         }
         if let previousOnboarded {
-            UserDefaults.standard.set(previousOnboarded, forKey: "pc_onboarded")
+            UserDefaults.app.set(previousOnboarded, forKey: "pc_onboarded")
         } else {
-            UserDefaults.standard.removeObject(forKey: "pc_onboarded")
+            UserDefaults.app.removeObject(forKey: "pc_onboarded")
         }
         if let previousPinnedSidebarItems {
-            UserDefaults.standard.set(previousPinnedSidebarItems, forKey: "pc_pinnedSidebarItems")
+            UserDefaults.app.set(previousPinnedSidebarItems, forKey: "pc_pinnedSidebarItems")
         } else {
-            UserDefaults.standard.removeObject(forKey: "pc_pinnedSidebarItems")
+            UserDefaults.app.removeObject(forKey: "pc_pinnedSidebarItems")
         }
         if let previousRecentCatalogs {
-            UserDefaults.standard.set(previousRecentCatalogs, forKey: "pc_recentCatalogs")
+            UserDefaults.app.set(previousRecentCatalogs, forKey: "pc_recentCatalogs")
         } else {
-            UserDefaults.standard.removeObject(forKey: "pc_recentCatalogs")
+            UserDefaults.app.removeObject(forKey: "pc_recentCatalogs")
         }
         if let previousRenameTemplate {
-            UserDefaults.standard.set(previousRenameTemplate, forKey: "pc_renameTemplate")
+            UserDefaults.app.set(previousRenameTemplate, forKey: "pc_renameTemplate")
         } else {
-            UserDefaults.standard.removeObject(forKey: "pc_renameTemplate")
+            UserDefaults.app.removeObject(forKey: "pc_renameTemplate")
         }
         super.tearDown()
     }
@@ -498,7 +498,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testAutoXMPWritesSkipMissingOriginals() throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previousAutoWrite = defaults.object(forKey: "pc_autoWriteXMP")
         defer {
             if let previousAutoWrite {
@@ -563,7 +563,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testIndexedMetadataMutationQueuesAutomaticXMPWrite() async throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previousAutoWrite = defaults.object(forKey: "pc_autoWriteXMP")
         defer {
             if let previousAutoWrite {
@@ -663,7 +663,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testRecentCatalogsHideInvalidPackages() throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
         defer {
             if let previousRecent {
@@ -695,7 +695,7 @@ final class AppStateSelectionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         _ = try CatalogStore(packageURL: package)
 
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         defaults.set(true, forKey: "pc_openLast")
         defaults.set(package, forKey: "pc_catalogURL")
         defaults.set("0", forKey: "pc_onboarded")
@@ -712,7 +712,7 @@ final class AppStateSelectionTests: XCTestCase {
         let missing = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-missing-launch-\(UUID().uuidString)")
             .appendingPathComponent("Missing.photolibrary")
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         defaults.set(true, forKey: "pc_openLast")
         defaults.set(missing, forKey: "pc_catalogURL")
         defaults.set("1", forKey: "pc_onboarded")
@@ -732,7 +732,7 @@ final class AppStateSelectionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         _ = try makeCatalogWithOneAsset(at: target, assetIndex: 1)
 
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         defaults.set(true, forKey: "pc_openLast")
         defaults.set("1", forKey: "pc_onboarded")
         defaults.set(root.appendingPathComponent("Missing.photolibrary"), forKey: "pc_catalogURL")
@@ -754,7 +754,7 @@ final class AppStateSelectionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         _ = try makeCatalogWithOneAsset(at: target, assetIndex: 1)
 
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         defaults.set(true, forKey: "pc_openLast")
         defaults.set("1", forKey: "pc_onboarded")
 
@@ -812,7 +812,7 @@ final class AppStateSelectionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         _ = try makeCatalogWithOneAsset(at: configured, assetIndex: 2)
 
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         defaults.set(true, forKey: "pc_openLast")
         defaults.set("1", forKey: "pc_onboarded")
         defaults.set(configured, forKey: "pc_catalogURL")
@@ -1018,7 +1018,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testEmptyCatalogManagementTextUsesConfiguredImportMode() {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previous = defaults.object(forKey: "pc_importMode")
         defer {
             if let previous {
@@ -1625,7 +1625,7 @@ final class AppStateSelectionTests: XCTestCase {
             "pc_exportPresets", "pc_recentDays", "pc_lowPower", "pc_vision",
             "pc_cacheLimitMB", "pc_previewMaxPixel", "pc_autoBackupFrequency",
         ]
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let saved = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
         keys.forEach { defaults.removeObject(forKey: $0) }
         defer {
@@ -1683,7 +1683,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testAutomaticBackupFrequencyRejectsInvalidDefaults() {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previous = defaults.object(forKey: "pc_autoBackupFrequency")
         defer {
             if let previous {
@@ -1992,7 +1992,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testClearingSecurityBookmarksRequiresSourceReauthorization() throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
         let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
         defer {
@@ -2038,7 +2038,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testRenamedSourceFolderReopensWithItsPhotos() throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let saved = ["pc_catalogURL", "pc_recentCatalogs", "pc_rememberedLocations"].map { ($0, defaults.object(forKey: $0)) }
         defer {
             for (key, value) in saved {
@@ -2133,7 +2133,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testManagedSourceModeRestoresIntoCatalogAndInspectorText() throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
         let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
         defer {
@@ -2537,7 +2537,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testRecoveredEmptyImportDoesNotWatchSourceRoot() async throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previousOnboarded = defaults.object(forKey: "pc_onboarded")
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
         let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
@@ -2591,7 +2591,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testRecoveredImportDoesNotPublishUnsavedAssetsWhenCatalogSaveFails() async throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previousOnboarded = defaults.object(forKey: "pc_onboarded")
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
         let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
@@ -2700,7 +2700,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testRescanUsesExistingSourceRootIdentityForNewAssets() async throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
         let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
         defer {
@@ -2950,7 +2950,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testOpeningCatalogRepairsOrphanedSourceFolderIds() throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
         let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
         defer {
@@ -3003,7 +3003,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testMaintenanceActionsCleanLocalCatalogState() async throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
         let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
         defer {
@@ -3230,7 +3230,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testAutomaticBackupIsTrackedPerCatalog() async throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let keys = [
             "pc_catalogURL", "pc_openLast", "pc_onboarded",
             "pc_autoBackupFrequency", "pc_lastAutoBackupAt",
@@ -3294,7 +3294,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testPruneCacheToLimitUpdatesStatusAsynchronously() async throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previousLimit = defaults.object(forKey: "pc_cacheLimitMB")
         defer {
             if let previousLimit {
@@ -3435,7 +3435,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testSourcePriorityReordersRealCatalogFolders() throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
         let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
         let previousPriorities = defaults.object(forKey: "pc_sourcePriorities")
@@ -3515,7 +3515,7 @@ final class AppStateSelectionTests: XCTestCase {
 
     @MainActor
     func testOpeningRealCatalogSelectsFirstVisibleAsset() throws {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
         let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
         defer {

@@ -9,12 +9,12 @@ final class CacheRepairTests: CatalogTestCase {
 
     override func setUp() {
         super.setUp()
-        savedLimit = UserDefaults.standard.object(forKey: "pc_cacheLimitMB")
+        savedLimit = UserDefaults.app.object(forKey: "pc_cacheLimitMB")
     }
 
     override func tearDown() {
-        if let savedLimit { UserDefaults.standard.set(savedLimit, forKey: "pc_cacheLimitMB") }
-        else { UserDefaults.standard.removeObject(forKey: "pc_cacheLimitMB") }
+        if let savedLimit { UserDefaults.app.set(savedLimit, forKey: "pc_cacheLimitMB") }
+        else { UserDefaults.app.removeObject(forKey: "pc_cacheLimitMB") }
         super.tearDown()
     }
 

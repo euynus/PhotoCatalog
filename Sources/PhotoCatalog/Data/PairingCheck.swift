@@ -4,11 +4,11 @@ import Observation
 /// RAW+JPEG pairs present as one photo and edit as one.
 enum PairingCheck {
     static func run() {
-        let pairing = UserDefaults.standard.object(forKey: "pc_pairRawJpeg")
-        let autoStack = UserDefaults.standard.object(forKey: "pc_autoStackSeconds")
+        let pairing = UserDefaults.app.object(forKey: "pc_pairRawJpeg")
+        let autoStack = UserDefaults.app.object(forKey: "pc_autoStackSeconds")
         defer {
-            UserDefaults.standard.set(pairing, forKey: "pc_pairRawJpeg")
-            UserDefaults.standard.set(autoStack, forKey: "pc_autoStackSeconds")
+            UserDefaults.app.set(pairing, forKey: "pc_pairRawJpeg")
+            UserDefaults.app.set(autoStack, forKey: "pc_autoStackSeconds")
         }
         checkPathStrings()
         MainActor.assumeIsolated {

@@ -15,7 +15,7 @@ final class CatalogDocumentTypeTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         for key in Self.defaultsKeys {
             if let value = defaults.object(forKey: key) { previousDefaults[key] = value }
         }
@@ -27,7 +27,7 @@ final class CatalogDocumentTypeTests: XCTestCase {
     }
 
     override func tearDown() {
-        let defaults = UserDefaults.standard
+        let defaults = UserDefaults.app
         for key in Self.defaultsKeys {
             if let value = previousDefaults[key] {
                 defaults.set(value, forKey: key)
@@ -118,8 +118,8 @@ final class CatalogDocumentTypeTests: XCTestCase {
         asset.isDemo = false
         asset.deleted = false
         try CatalogStore(packageURL: url).upsert([asset])
-        UserDefaults.standard.set("0", forKey: "pc_onboarded")
-        UserDefaults.standard.set([String](), forKey: "pc_recentCatalogs")
+        UserDefaults.app.set("0", forKey: "pc_onboarded")
+        UserDefaults.app.set([String](), forKey: "pc_recentCatalogs")
 
         let app = AppState()
         app.runsBackgroundMaintenance = false

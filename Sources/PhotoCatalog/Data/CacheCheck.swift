@@ -21,10 +21,10 @@ enum CacheCheck {
         }
         let app = AppState.selfCheckFixture(importingInto: store)
         app.runsBackgroundMaintenance = false
-        let savedLimit = UserDefaults.standard.object(forKey: "pc_cacheLimitMB")
+        let savedLimit = UserDefaults.app.object(forKey: "pc_cacheLimitMB")
         defer {
-            if let savedLimit { UserDefaults.standard.set(savedLimit, forKey: "pc_cacheLimitMB") }
-            else { UserDefaults.standard.removeObject(forKey: "pc_cacheLimitMB") }
+            if let savedLimit { UserDefaults.app.set(savedLimit, forKey: "pc_cacheLimitMB") }
+            else { UserDefaults.app.removeObject(forKey: "pc_cacheLimitMB") }
         }
         app.importFolder(photos)
         spin { !app.importing && app.assets.filter { !$0.isDemo }.count == count }
@@ -38,7 +38,7 @@ enum CacheCheck {
 
         // unset, the limit follows the catalog and is never under 2 GB
         app.cacheLimitMB = 0
-        check(UserDefaults.standard.object(forKey: "pc_cacheLimitMB") == nil && app.effectiveCacheLimitMB >= 2_048,
+        check(UserDefaults.app.object(forKey: "pc_cacheLimitMB") == nil && app.effectiveCacheLimitMB >= 2_048,
               "cache: no chosen limit means the automatic one, at least 2 GB")
 
         // room for the thumbnails and about half the previews

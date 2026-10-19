@@ -92,7 +92,7 @@ enum XMPSidecar {
 
     /// Whether RAWs and their JPEGs are shown as pairs (Settings): a pair shares one sidecar,
     /// while with pairing off the JPEG is a photo of its own, with a sidecar of its own.
-    static var pairsRawAndJpeg: Bool { UserDefaults.standard.object(forKey: "pc_pairRawJpeg") as? Bool ?? true }
+    static var pairsRawAndJpeg: Bool { UserDefaults.app.object(forKey: "pc_pairRawJpeg") as? Bool ?? true }
 
     /// The formats a file of the same name is looked for in: those the app imports.
     private static let namesakeExtensions: Set<String> = FileScanner.knownExtensions.union(["psd", "psb", "avif", "jxl"])

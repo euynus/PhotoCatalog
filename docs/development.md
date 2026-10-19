@@ -35,7 +35,7 @@ swift test --filter SmartMatcherTests   # one XCTest class
 
 The selfcheck and the `--…-check` modes verify with `assert`, so they need a Debug build: a Release binary refuses them with exit status 2 rather than report a pass it never checked. `--pipeline`, `--import-memory-check` and `--scale` judge their own results and run in either configuration.
 
-For `swift test`, pass `--sdk /path/to/MacOSX.sdk` when the default SDK is incompatible with the active compiler; the SDK must come from a full Xcode installation.
+For `swift test`, pass `--sdk /path/to/MacOSX.sdk` when the default SDK is incompatible with the active compiler; the SDK must come from a full Xcode installation. Under XCTest the app's preferences (`UserDefaults.app`) are a suite of the checkout's own (`PhotoCatalogTests.<hash>`) rather than the test runner's domain, which every `swift test` on the Mac shares, so test runs in two checkouts at once don't change each other's open catalog or settings.
 
 The scale benchmark generates a synthetic catalog of the given size once (later runs reuse it), then times loading, list changes, counts and edits and reports memory. Build Release first (`CONFIGURATION=release script/build_and_run.sh build`). It edits the benchmark catalog, so never point it at a real library.
 

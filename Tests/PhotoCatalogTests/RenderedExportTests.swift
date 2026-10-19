@@ -11,16 +11,16 @@ final class RenderedExportTests: CatalogTestCase {
     override func setUp() {
         super.setUp()
         for key in Self.exportKeys {
-            if let value = UserDefaults.standard.object(forKey: key) { savedExportDefaults[key] = value }
+            if let value = UserDefaults.app.object(forKey: key) { savedExportDefaults[key] = value }
         }
     }
 
     override func tearDown() {
         for key in Self.exportKeys {
             if let value = savedExportDefaults[key] {
-                UserDefaults.standard.set(value, forKey: key)
+                UserDefaults.app.set(value, forKey: key)
             } else {
-                UserDefaults.standard.removeObject(forKey: key)
+                UserDefaults.app.removeObject(forKey: key)
             }
         }
         savedExportDefaults = [:]
