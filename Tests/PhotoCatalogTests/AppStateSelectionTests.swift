@@ -2647,7 +2647,8 @@ final class AppStateSelectionTests: XCTestCase {
             app.importRun?.errorMessage?.contains("写入目录库失败") == true
         }
         XCTAssertEqual(app.importRun?.phase, .failed)
-        XCTAssertFalse(app.importing)
+        // the import holds on until the file it was on is done (a slow machine is still in it)
+        try await waitUntil("Timed out waiting for the failed import to stop", timeout: 10) { !app.importing }
         XCTAssertFalse(app.assets.contains { $0.filename == photo.lastPathComponent })
         XCTAssertTrue(try store.loadAssets().isEmpty)
         XCTAssertTrue(try store.loadSourceRoots().isEmpty)
