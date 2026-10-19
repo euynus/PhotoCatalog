@@ -12,7 +12,7 @@ script/build_and_run.sh run        # build (Release) and launch the app
 script/build_and_run.sh verify     # build (Release), launch, and verify a visible window
 ```
 
-Launch modes (`run`, `verify`, `logs`, `telemetry`) build the optimized Release configuration; `build`, `selfcheck` and `pipeline` use Debug because the checks rely on `assert`. Set `CONFIGURATION=debug` or `CONFIGURATION=release` to override.
+Launch modes (`run`, `verify`, `logs`, `telemetry`) build the optimized Release configuration; `build`, `selfcheck` and `pipeline` use Debug because the checks rely on `assert`, which Release compiles out. Set `CONFIGURATION=debug` or `CONFIGURATION=release` to override.
 
 The script honors `SDKROOT` when set. Otherwise it probes the installed macOS SDKs and selects one compatible with the active Swift compiler, which also handles temporarily out-of-sync Command Line Tools installations.
 
@@ -32,6 +32,8 @@ swift test --filter SmartMatcherTests   # one XCTest class
 ./.build/debug/PhotoCatalog --import-memory-check "/path/to/sample.CR3" 200
 ./.build/release/PhotoCatalog --scale 500000 /tmp/scale.photolibrary   # large-catalog benchmark
 ```
+
+The selfcheck and the `--…-check` modes verify with `assert`, so they need a Debug build: a Release binary refuses them with exit status 2 rather than report a pass it never checked. `--pipeline`, `--import-memory-check` and `--scale` judge their own results and run in either configuration.
 
 For `swift test`, pass `--sdk /path/to/MacOSX.sdk` when the default SDK is incompatible with the active compiler; the SDK must come from a full Xcode installation.
 
