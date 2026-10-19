@@ -198,7 +198,8 @@ enum ExportService {
         // don't clobber a copied original sharing this name (a flat export of a photo literally
         // named metadata.json); fall back to a numbered name, as the originals themselves do.
         guard let target = resolve(fileURL, conflict: .rename, fm: .default) else { return false }
-        return (try? data.write(to: target)) != nil
+        // atomic, as the CSV is: a write cut short never leaves half a file under the name
+        return (try? data.write(to: target, options: .atomic)) != nil
     }
 
     /// Export per-asset metadata as CSV for spreadsheet workflows (PRD §6.11 EXP-003).
