@@ -16,11 +16,21 @@ struct FlowLayout: Layout {
     var spacing: CGFloat = 6
     var lineSpacing: CGFloat = 6
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    /// Each subview's ideal size. It doesn't depend on the proposal, so it's measured once per
+    /// change of the subviews (SwiftUI remakes the cache then) rather than in every sizing pass
+    /// and again when placing.
+    struct Cache {
+        var sizes: [CGSize]
+    }
+
+    func makeCache(subviews: Subviews) -> Cache {
+        Cache(sizes: subviews.map { $0.sizeThatFits(.unspecified) })
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
         let maxWidth = proposal.width ?? .infinity
         var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, totalWidth: CGFloat = 0
-        for sub in subviews {
-            let s = sub.sizeThatFits(.unspecified)
+        for s in cache.sizes {
             if x > 0 && x + s.width > maxWidth {
                 y += rowHeight + lineSpacing
                 x = 0; rowHeight = 0
@@ -32,11 +42,10 @@ struct FlowLayout: Layout {
         return CGSize(width: min(totalWidth, maxWidth), height: y + rowHeight)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
         let maxWidth = bounds.width
         var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
-        for sub in subviews {
-            let s = sub.sizeThatFits(.unspecified)
+        for (sub, s) in zip(subviews, cache.sizes) {
             if x > 0 && x + s.width > maxWidth {
                 y += rowHeight + lineSpacing
                 x = 0; rowHeight = 0

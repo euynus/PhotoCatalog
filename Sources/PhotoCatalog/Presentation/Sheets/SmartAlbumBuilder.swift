@@ -119,8 +119,8 @@ struct SmartAlbumBuilder: View {
 
             ScrollView {
                 VStack(spacing: 8) {
-                    ForEach(Array(conditions.enumerated()), id: \.element.id) { i, _ in
-                        conditionRow(i)
+                    ForEach(conditions) { condition in
+                        conditionRow(binding(for: condition))
                             .frame(height: 32)
                     }
                 }
@@ -171,19 +171,32 @@ struct SmartAlbumBuilder: View {
         .padding(18)
     }
 
-    private func conditionRow(_ i: Int) -> some View {
-        let field = SmartFields.field(conditions[i].field)
+    /// A row's condition, found by its id whenever it's read or written rather than by its place:
+    /// a row SwiftUI still updates after its condition was removed reads its own last value, never
+    /// another row's or one past the end.
+    private func binding(for condition: SmartCondition) -> Binding<SmartCondition> {
+        Binding(
+            get: { conditions.first { $0.id == condition.id } ?? condition },
+            set: { updated in
+                guard let index = conditions.firstIndex(where: { $0.id == condition.id }) else { return }
+                conditions[index] = updated
+            })
+    }
+
+    private func conditionRow(_ condition: Binding<SmartCondition>) -> some View {
+        let field = SmartFields.field(condition.wrappedValue.field)
+        let id = condition.wrappedValue.id
         return HStack(spacing: 7) {
-            SASelect(value: conditions[i].field,
+            SASelect(value: condition.wrappedValue.field,
                      options: SmartFields.all.map { ($0.key, $0.label) }, width: 110) { newField in
-                updateField(i, newField)
+                updateField(condition, newField)
             }
-            SASelect(value: conditions[i].op, options: field.ops.map { ($0, SmartField.opLabel($0, field: field.key)) }, width: 96) {
-                conditions[i].op = $0
+            SASelect(value: condition.wrappedValue.op, options: field.ops.map { ($0, SmartField.opLabel($0, field: field.key)) }, width: 96) {
+                condition.wrappedValue.op = $0
             }
-            valueControl(i, field)
+            valueControl(condition, field)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Button { conditions.remove(at: i) } label: {
+            Button { conditions.removeAll { $0.id == id } } label: {
                 Icon("minus", size: 14, weight: .bold).foregroundStyle(Theme.text3)
                     .frame(width: 30, height: 30).background(Theme.surface)
                     .overlay(RoundedRectangle(cornerRadius: Theme.rSm).strokeBorder(Theme.line2, lineWidth: 1))
@@ -197,58 +210,60 @@ struct SmartAlbumBuilder: View {
         }
     }
 
-    private func updateField(_ i: Int, _ newField: String) {
+    private func updateField(_ condition: Binding<SmartCondition>, _ newField: String) {
         let conf = SmartFields.field(newField)
-        conditions[i].field = newField
-        conditions[i].op = conf.ops[0]
+        var updated = condition.wrappedValue
+        updated.field = newField
+        updated.op = conf.ops[0]
         switch conf.input {
-        case .rating: conditions[i].value = "4"
-        case .flag: conditions[i].value = "pick"
-        case .type: conditions[i].value = "RAW"
-        case .status: conditions[i].value = "ready"
-        case .datePreset: conditions[i].value = "thisYear"
-        case .date: conditions[i].value = CaptureDates.key(.now)
-        case .gps: conditions[i].value = "yes"
-        case .year: conditions[i].value = "2026"
-        case .color: conditions[i].value = "red"
-        case .text: conditions[i].value = ""
+        case .rating: updated.value = "4"
+        case .flag: updated.value = "pick"
+        case .type: updated.value = "RAW"
+        case .status: updated.value = "ready"
+        case .datePreset: updated.value = "thisYear"
+        case .date: updated.value = CaptureDates.key(.now)
+        case .gps: updated.value = "yes"
+        case .year: updated.value = "2026"
+        case .color: updated.value = "red"
+        case .text: updated.value = ""
         }
+        condition.wrappedValue = updated
     }
 
     @ViewBuilder
-    private func valueControl(_ i: Int, _ field: SmartField) -> some View {
+    private func valueControl(_ condition: Binding<SmartCondition>, _ field: SmartField) -> some View {
         switch field.input {
         case .rating:
-            SASelect(value: conditions[i].value, options: (0...5).map { ("\($0)", L("\($0) 星")) }) { conditions[i].value = $0 }
+            SASelect(value: condition.wrappedValue.value, options: (0...5).map { ("\($0)", L("\($0) 星")) }) { condition.wrappedValue.value = $0 }
         case .flag:
-            SASelect(value: conditions[i].value, options: [("pick", L("精选", table: "Context")), ("reject", L("拒绝", table: "Context")), ("none", L("无"))]) { conditions[i].value = $0 }
+            SASelect(value: condition.wrappedValue.value, options: [("pick", L("精选", table: "Context")), ("reject", L("拒绝", table: "Context")), ("none", L("无"))]) { condition.wrappedValue.value = $0 }
         case .color:
-            SASelect(value: conditions[i].value, options: [("", L("无"))] + ColorLabel.allCases.map { ($0.rawValue, $0.name) }) { conditions[i].value = $0 }
+            SASelect(value: condition.wrappedValue.value, options: [("", L("无"))] + ColorLabel.allCases.map { ($0.rawValue, $0.name) }) { condition.wrappedValue.value = $0 }
         case .type:
-            SASelect(value: conditions[i].value, options: ["RAW", "HEIC", "ARW", "CR3", "NEF", "RAF", "DNG"].map { ($0, $0) } + [("VIDEO", L("视频"))]) { conditions[i].value = $0 }
+            SASelect(value: condition.wrappedValue.value, options: ["RAW", "HEIC", "ARW", "CR3", "NEF", "RAF", "DNG"].map { ($0, $0) } + [("VIDEO", L("视频"))]) { condition.wrappedValue.value = $0 }
         case .status:
-            SASelect(value: conditions[i].value, options: [("ready", L("可访问")), ("offline", L("离线")), ("missing", L("缺失"))]) { conditions[i].value = $0 }
+            SASelect(value: condition.wrappedValue.value, options: [("ready", L("可访问")), ("offline", L("离线")), ("missing", L("缺失"))]) { condition.wrappedValue.value = $0 }
         case .datePreset:
-            SASelect(value: conditions[i].value, options: CaptureDates.presets) { conditions[i].value = $0 }
+            SASelect(value: condition.wrappedValue.value, options: CaptureDates.presets) { condition.wrappedValue.value = $0 }
         case .date:
             DatePicker("拍摄日期", selection: Binding(
-                get: { CaptureDates.interval(for: conditions[i].value)?.start ?? .now },
-                set: { conditions[i].value = CaptureDates.key($0) }
+                get: { CaptureDates.interval(for: condition.wrappedValue.value)?.start ?? .now },
+                set: { condition.wrappedValue.value = CaptureDates.key($0) }
             ), displayedComponents: .date)
             .labelsHidden()
             .environment(\.calendar, Calendar.captureWallClock)
             .environment(\.timeZone, TimeZone.captureWallClock)
         case .gps:
-            SASelect(value: conditions[i].value, options: [("yes", L("有 GPS")), ("no", L("无 GPS"))]) { conditions[i].value = $0 }
+            SASelect(value: condition.wrappedValue.value, options: [("yes", L("有 GPS")), ("no", L("无 GPS"))]) { condition.wrappedValue.value = $0 }
         case .year:
-            TextField("", text: Binding(get: { conditions[i].value }, set: { conditions[i].value = $0 }))
+            TextField("", text: condition.value)
                 .textFieldStyle(.plain).font(.system(size: 13))
                 .padding(.horizontal, 9).padding(.vertical, 7)
                 .background(Theme.surface)
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line2, lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         case .text:
-            TextField("输入…", text: Binding(get: { conditions[i].value }, set: { conditions[i].value = $0 }))
+            TextField("输入…", text: condition.value)
                 .textFieldStyle(.plain).font(.system(size: 13))
                 .padding(.horizontal, 9).padding(.vertical, 7)
                 .background(Theme.surface)

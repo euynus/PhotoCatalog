@@ -181,14 +181,22 @@ struct CardImportSheet: View {
 
     private var visibleFiles: [CardFile] { hideImported ? files.filter { !$0.alreadyImported } : files }
 
+    /// The day keys `days` groups by and `dayTitle` reads back, in this Mac's locale and time zone
+    /// — followed as they change, as the formatter made on every redraw followed them.
+    private static let dayKey: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
     /// Photos grouped by the day they were shot, oldest first.
     private var days: [(key: String, files: [CardFile])] {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
         var order: [String] = []
         var groups: [String: [CardFile]] = [:]
         for file in visibleFiles {
-            let key = formatter.string(from: file.modified)
+            let key = Self.dayKey.string(from: file.modified)
             if groups[key] == nil { order.append(key) }
             groups[key, default: []].append(file)
         }
@@ -270,9 +278,7 @@ struct CardImportSheet: View {
     }
 
     private func dayTitle(_ key: String) -> String {
-        let parser = DateFormatter()
-        parser.dateFormat = "yyyy-MM-dd"
-        guard let date = parser.date(from: key) else { return key }
+        guard let date = Self.dayKey.date(from: key) else { return key }
         return DateFmt.long(date, withTime: false)
     }
 

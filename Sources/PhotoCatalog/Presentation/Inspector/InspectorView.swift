@@ -405,8 +405,7 @@ private struct MakerNotesGroup: View {
 }
 
 // ---------- Info group / row ----------
-struct InfoRowData: Identifiable {
-    let id = UUID()
+struct InfoRowData {
     let label: String
     let value: String
     var mono: Bool = false
@@ -433,7 +432,9 @@ struct InsGroup: View {
                     .padding(.bottom, 6)
                     .accessibilityAddTraits(.isHeader)
             }
-            ForEach(rows) { r in
+            // Rows go by their place in the group: a fresh id per body made every row new on each
+            // redraw, and labels can repeat in maker notes (two vendors' ColorSpace, several notes).
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(r.label).font(.system(size: compact ? 11 : 13)).foregroundStyle(Theme.text3)
                         .frame(width: compact ? 96 : 68, alignment: .leading)
