@@ -53,10 +53,12 @@ final class ImportCoordinator: @unchecked Sendable {
     /// The id a file being cataloged gets. It's made from the file's path, but a photo keeps its
     /// id when renamed or moved, so the path's id may already be another photo's: then the path
     /// is hashed again with a counter until the id is free. A photo already cataloged at this
-    /// path is this file and keeps its id — a removed one too, so importing it again brings it
-    /// back in place, unless `reusingRemoved` is false: a file the app has just written where a
-    /// removed (trashed) one was is a new photo.
-    func newAssetId(forPath path: String, reusingRemoved: Bool = true) -> String {
+    /// path is this file and keeps its id. So does a removed one that `isRemovedPhoto` finds the
+    /// file still is, so importing it again brings it back in place; any other file where a
+    /// removed photo was — a new shot by its name, a file put in its place, one the app has just
+    /// written there — is a new photo, and the removed one stays as it was removed.
+    func newAssetId(forPath path: String,
+                    reusingRemoved isRemovedPhoto: (CatalogStore.AssetPathRecord) -> Bool) -> String {
         var removed: String?
         for attempt in 0... {
             let id = "r" + shortHash(attempt == 0 ? path : path + "\u{0}" + String(attempt))
@@ -65,9 +67,21 @@ final class ImportCoordinator: @unchecked Sendable {
             guard samePath else { continue }
             // a live photo at this path wins over a removed one
             if !row.deleted { return id }
-            if reusingRemoved, removed == nil { removed = id }
+            // the path may have held more than one photo since: each removed one is asked
+            if removed == nil, isRemovedPhoto(row) { removed = id }
         }
         return removed ?? "r" + shortHash(path)
+    }
+
+    /// Whether a file — the hash of its bytes, and the shot its metadata says it is — is the
+    /// removed photo `removed`: the same bytes, or, changed while the photo was out of the
+    /// catalog (an editor saved over it), the same shot, by the rule copies are named by (one
+    /// camera, within a second or two). Another photo by its name — a camera's counter come
+    /// round again, a file replaced — is a different shot.
+    static func isSamePhoto(_ removed: CatalogStore.AssetPathRecord, contentHash: String?,
+                            camera: String, captureDate: Date) -> Bool {
+        if let contentHash, contentHash == removed.contentHash { return true }
+        return AssetPairing.isSameShot((camera, captureDate), (removed.camera, removed.captureDate))
     }
 
     /// Full import of a folder (managed mode copies originals into Originals/YYYY/MM/DD;
@@ -90,7 +104,7 @@ final class ImportCoordinator: @unchecked Sendable {
     /// `preparer` turns each file into the one to catalog first — a card import's copy of it.
     /// `sourceRootId` and `folderName` file the photos under a source folder that contains
     /// `folder` rather than under `folder` itself. `reusingRemovedIds` false: the files are new
-    /// output (an edit, merge or enhance), never a removed photo coming back.
+    /// output (an edit, merge or enhance, a tethered shot), never a removed photo coming back.
     func importFiles(_ files: [URL], from folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
                      archiveRule: ManagedArchiveRule = .date, readSidecar: Bool = true,
                      previewMaxPixel: Int = 2048,
@@ -299,10 +313,14 @@ final class ImportCoordinator: @unchecked Sendable {
             finalURL = url
         }
 
-        let assetId = knownId ?? newAssetId(forPath: finalURL.path, reusingRemoved: reusingRemovedIds)
+        let content = HashService.contentHash(finalURL)
+        // a photo removed from the catalog at this path comes back only if this file is still it
+        let assetId = knownId ?? newAssetId(forPath: finalURL.path) { removed in
+            reusingRemovedIds && Self.isSamePhoto(removed, contentHash: content, camera: meta.camera,
+                                                  captureDate: meta.captureDate)
+        }
         let pid = (Int(assetId.dropFirst().prefix(6), radix: 16) ?? 0) % 100000
         let quick = HashService.quickHash(finalURL, fileSize: meta.fileSize)
-        let content = HashService.contentHash(finalURL)
         let (thumb, preview) = thumbnails.generateAll(from: finalURL, assetId: assetId,
                                                       previewMaxPixel: previewMaxPixel)
         let ext = finalURL.pathExtension.uppercased()

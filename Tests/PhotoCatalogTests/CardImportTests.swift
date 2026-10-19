@@ -207,6 +207,43 @@ final class CardImportTests: CatalogTestCase {
         XCTAssertEqual(contentsOfFiles(under: backup), [bytes], "the backup is whole, with no partial beside it")
     }
 
+    /// A photo copied off a card, then removed from the catalog and moved to the Trash, leaves
+    /// its name in the destination free: a new shot by that name (the counter come round again)
+    /// that the next card import copies there is a new photo, not the removed one back.
+    @MainActor
+    func testNewShotCopiedToTrashedPhotosNameIsANewPhoto() async throws {
+        let shot = scratch.appendingPathComponent("Card/DCIM/100CANON/IMG_0001.JPG")
+        try makeShot(at: shot, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:00", shade: 1)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        let options = CardImportOptions(destination: scratch.appendingPathComponent("Photos"))
+        app.importFromCard(nil, files: [cardFile(shot)], options: options)
+        try await waitUntil("first card import finished") { !app.importing }
+        let first = try XCTUnwrap(app.assets.first { !$0.isDemo && !$0.deleted && $0.filename == "IMG_0001.JPG" })
+        let copy = try XCTUnwrap(first.localPath)
+        XCTAssertTrue(app.mutate([first.id], writingSidecars: false) { $0.rating = 3; $0.title = "First" })
+        // Move to Trash: the copy goes, the photo leaves the catalog
+        XCTAssertTrue(app.mutate([first.id], writingSidecars: false) { $0.deleted = true })
+        try FileManager.default.removeItem(atPath: copy)
+        try makeShot(at: shot, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 18:00:00", shade: 9)
+
+        app.importFromCard(nil, files: [cardFile(shot)], options: options)
+        try await waitUntil("second card import finished") { !app.importing }
+
+        let second = try XCTUnwrap(app.assets.first { !$0.isDemo && !$0.deleted && $0.localPath == copy },
+                                   "the new shot is copied to the trashed photo's name")
+        XCTAssertNotEqual(second.id, first.id, "the new shot took the removed photo's place")
+        XCTAssertNotEqual(second.rating, 3)
+        XCTAssertEqual(app.assets.first { $0.id == first.id }?.deleted, true)
+        let row = try store.db.query("SELECT deleted, rating, title FROM assets WHERE id=?;", [.text(first.id)]).first
+        XCTAssertEqual(row?.bool("deleted"), true)
+        XCTAssertEqual(row?.int("rating"), 3)
+        XCTAssertEqual(row?.text("title"), "First")
+    }
+
     /// A card photo that couldn't be read fails the import; Retry Failed copies it off the card
     /// (and backs it up) like the others, rather than cataloging it on the card.
     @MainActor

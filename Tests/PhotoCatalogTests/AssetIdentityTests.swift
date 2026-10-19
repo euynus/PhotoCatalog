@@ -238,6 +238,120 @@ final class AssetIdentityTests: CatalogTestCase {
         XCTAssertTrue(try store.loadAssets().contains { $0.id == added.id })
     }
 
+    /// A photo removed from the catalog (rated, keyworded, titled, in an album, edited), then a
+    /// different photo at its path — the camera's counter come round again — and Import Photo
+    /// Folder…: the file is a new photo, and the removed one stays removed with all it had.
+    @MainActor
+    func testDifferentPhotoAtRemovedPhotosPathIsANewPhoto() async throws {
+        let folder = scratch.appendingPathComponent("Source")
+        let photo = folder.appendingPathComponent("IMG_0001.JPG")
+        try makeShot(at: photo, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:00", shade: 1)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        var removed = try XCTUnwrap(ImportCoordinator(store: store).importFiles([photo], from: folder).first)
+        removed.rating = 4
+        removed.keywords = ["old shot"]
+        removed.title = "Old shot"
+        removed.deleted = true
+        try store.upsert([removed])
+        try store.saveAlbum(Album(id: "al-old", name: "Old", assetIds: [removed.id]))
+        var edits = DevelopSettings()
+        edits.exposure = 1
+        try store.saveDevelopSettings([removed.id: edits])
+        // the counter came round again: another shot by the same name
+        try makeShot(at: photo, make: "Canon", model: "Canon EOS R5", taken: "2026:11:02 09:30:00", shade: 9)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.importFolder(folder)
+        try await waitUntil("import finished") { !app.importing }
+
+        let newcomer = try XCTUnwrap(app.assets.first { !$0.isDemo && !$0.deleted && $0.localPath == photo.path })
+        XCTAssertNotEqual(newcomer.id, removed.id, "the new photo took the removed one's place")
+        XCTAssertNotEqual(newcomer.rating, 4)
+        XCTAssertFalse(newcomer.keywords.contains("old shot"))
+        XCTAssertNotEqual(newcomer.title, "Old shot")
+        XCTAssertNotEqual(newcomer.date, removed.date, "the new photo has its own capture time")
+        XCTAssertNotEqual(newcomer.thumb, removed.thumb)
+        XCTAssertNotEqual(app.developSettings[newcomer.id], edits)
+        XCTAssertFalse(app.albums.first { $0.id == "al-old" }?.assetIds.contains(newcomer.id) ?? true)
+        let row = try store.db.query("SELECT deleted, rating, title FROM assets WHERE id=?;", [.text(removed.id)]).first
+        XCTAssertEqual(row?.bool("deleted"), true, "the removed photo came back")
+        XCTAssertEqual(row?.int("rating"), 4)
+        XCTAssertEqual(row?.text("title"), "Old shot")
+        XCTAssertEqual(try store.loadDevelopSettings()[removed.id], edits)
+        XCTAssertTrue(try store.loadAssets().contains { $0.id == newcomer.id }, "the new photo is saved")
+    }
+
+    /// The same in managed mode: Move to Trash frees the photo's name in Originals, and a new
+    /// shot by that name, taken the same day, is copied to it.
+    @MainActor
+    func testNewShotCopiedToTrashedManagedPhotosNameIsANewPhoto() async throws {
+        let card = scratch.appendingPathComponent("Card")
+        let shot = card.appendingPathComponent("IMG_0001.JPG")
+        try makeShot(at: shot, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:00", shade: 1)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        let app = AppState()
+        app.onboarded = true
+        app.importMode = .managed
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.importFolder(card)
+        try await waitUntil("first import finished") { !app.importing }
+        let first = try XCTUnwrap(app.assets.first { !$0.isDemo && !$0.deleted && $0.filename == "IMG_0001.JPG" })
+        let copy = try XCTUnwrap(first.localPath)
+        XCTAssertTrue(copy.hasPrefix(store.originalsURL.path))
+        XCTAssertTrue(app.mutate([first.id], writingSidecars: false) { $0.rating = 3; $0.title = "First" })
+        // Move to Trash: the copy goes, the photo leaves the catalog
+        XCTAssertTrue(app.mutate([first.id], writingSidecars: false) { $0.deleted = true })
+        try FileManager.default.removeItem(atPath: copy)
+        try makeShot(at: shot, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 18:00:00", shade: 9)
+
+        app.importFolder(card)
+        try await waitUntil("second import finished") { !app.importing }
+
+        let second = try XCTUnwrap(app.assets.first { !$0.isDemo && !$0.deleted && $0.localPath == copy },
+                                   "the new shot is copied to the trashed photo's name")
+        XCTAssertNotEqual(second.id, first.id, "the new shot took the removed photo's place")
+        XCTAssertNotEqual(second.rating, 3)
+        XCTAssertEqual(app.assets.first { $0.id == first.id }?.deleted, true)
+        let row = try store.db.query("SELECT deleted, rating, title FROM assets WHERE id=?;", [.text(first.id)]).first
+        XCTAssertEqual(row?.bool("deleted"), true)
+        XCTAssertEqual(row?.int("rating"), 3)
+        XCTAssertEqual(row?.text("title"), "First")
+    }
+
+    /// A removed photo whose file an editor saved over while it was out of the catalog is still
+    /// that photo — other bytes, the same shot — and Import Photo Folder… brings it back.
+    @MainActor
+    func testRemovedPhotoAnEditorSavedOverComesBack() async throws {
+        let folder = scratch.appendingPathComponent("Source")
+        let photo = folder.appendingPathComponent("IMG_0001.JPG")
+        try makeShot(at: photo, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:00", shade: 1)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        var removed = try XCTUnwrap(ImportCoordinator(store: store).importFiles([photo], from: folder).first)
+        removed.rating = 4
+        removed.title = "Kept"
+        removed.deleted = true
+        try store.upsert([removed])
+        try makeShot(at: photo, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:00", shade: 9)
+        XCTAssertNotEqual(HashService.contentHash(photo), removed.contentHash, "the editor's save changed the bytes")
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.importFolder(folder)
+        try await waitUntil("import finished") { !app.importing }
+
+        XCTAssertEqual(app.assets.filter { !$0.isDemo && !$0.deleted }.map(\.id), [removed.id], "the photo is back, once")
+        let back = app.assets.first { $0.id == removed.id }
+        XCTAssertEqual(back?.rating, 4)
+        XCTAssertEqual(back?.title, "Kept")
+        XCTAssertNotEqual(back?.contentHash, removed.contentHash, "with what its file holds now")
+    }
+
     func testImportOfRemovedPhotoAtItsPathKeepsItsId() throws {
         let source = scratch.appendingPathComponent("Source")
         let photo = source.appendingPathComponent("removed.jpg")

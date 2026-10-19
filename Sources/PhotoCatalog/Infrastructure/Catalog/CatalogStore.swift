@@ -1550,12 +1550,26 @@ final class CatalogStore: @unchecked Sendable {
             .compactMap(Self.importCheckpoint(from:))
     }
 
-    /// The original's path, and whether the photo was removed, for the photo with `id` if the
-    /// catalog has one — removed photos included, as their ids stay taken.
-    func assetPathRecord(id: String) -> (localPath: String?, deleted: Bool)? {
-        guard let row = try? db.query("SELECT local_path, deleted FROM assets WHERE id=?;", [.text(id)]).first
-        else { return nil }
-        return (row.text("local_path"), row.bool("deleted"))
+    /// What the catalog has of a photo to tell whether a file is its: where its original is,
+    /// whether it was removed, and what it knows of the file — the hash of its bytes, and the
+    /// shot (camera, and capture time as the catalog has it).
+    struct AssetPathRecord: Sendable {
+        let localPath: String?
+        let deleted: Bool
+        let contentHash: String?
+        let camera: String
+        let captureDate: Date
+    }
+
+    /// That record for the photo with `id`, if the catalog has one — removed photos included,
+    /// as their ids stay taken.
+    func assetPathRecord(id: String) -> AssetPathRecord? {
+        guard let row = try? db.query("""
+        SELECT local_path, deleted, content_hash, camera, capture_date FROM assets WHERE id=?;
+        """, [.text(id)]).first else { return nil }
+        return AssetPathRecord(localPath: row.text("local_path"), deleted: row.bool("deleted"),
+                               contentHash: row.text("content_hash"), camera: row.text("camera") ?? "",
+                               captureDate: Date(timeIntervalSince1970: row.double("capture_date") ?? 0))
     }
 
     /// Where the originals of photos removed from the catalog are (virtual copies aside): files
