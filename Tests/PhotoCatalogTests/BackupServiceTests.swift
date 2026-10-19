@@ -137,6 +137,50 @@ final class BackupServiceTests: XCTestCase {
         XCTAssertEqual(try copy.query("PRAGMA integrity_check;").first?.text("integrity_check"), "ok")
     }
 
+    /// A link planted under the next backup's name, even one pointing nowhere, takes that name:
+    /// the backup is never written through it.
+    func testBackupIsNeverWrittenThroughALink() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("pc-backup-link-\(UUID().uuidString)")
+        let store = try CatalogStore(packageURL: dir.appendingPathComponent("Library.photolibrary"))
+        defer { try? fm.removeItem(at: dir) }
+        let outside = dir.appendingPathComponent("Elsewhere/planted.sqlite")
+        try fm.createDirectory(at: outside.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let link = store.backupsURL.appendingPathComponent("catalog-2026-10-19-120000.sqlite")
+        try fm.createSymbolicLink(atPath: link.path, withDestinationPath: outside.path)
+
+        let backup = try store.backup(stamp: "2026-10-19-120000")
+
+        XCTAssertFalse(fm.fileExists(atPath: outside.path), "nothing is written where the link points")
+        XCTAssertEqual(try fm.destinationOfSymbolicLink(atPath: link.path), outside.path, "the link is left as it was")
+        XCTAssertEqual(backup.lastPathComponent, "catalog-2026-10-19-120000-1.sqlite")
+        XCTAssertEqual(try fm.attributesOfItem(atPath: backup.path)[.type] as? FileAttributeType, .typeRegular)
+        let copy = try Database(path: backup.path)
+        XCTAssertEqual(try copy.query("PRAGMA integrity_check;").first?.text("integrity_check"), "ok")
+    }
+
+    /// A catalog reached through a linked folder still backs up, into its own Backups folder.
+    func testBackupOfACatalogReachedThroughALinkedFolder() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("pc-backup-linked-\(UUID().uuidString)")
+        let real = dir.appendingPathComponent("Real")
+        try fm.createDirectory(at: real, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+        let linked = dir.appendingPathComponent("Linked")
+        try fm.createSymbolicLink(atPath: linked.path, withDestinationPath: real.path)
+        var asset = DemoData.assets[0]
+        asset.isDemo = false
+        let store = try CatalogStore(packageURL: linked.appendingPathComponent("Library.photolibrary"))
+        try store.upsert([asset])
+
+        let backup = try BackupService.backup(store)
+
+        XCTAssertEqual(backup.deletingLastPathComponent().path, store.backupsURL.path)
+        let copy = try Database(path: real.appendingPathComponent("Library.photolibrary/Backups")
+            .appendingPathComponent(backup.lastPathComponent).path)
+        XCTAssertEqual(try copy.query("SELECT id FROM assets;").compactMap { $0.text("id") }, [asset.id])
+    }
+
     /// A damaged snapshot (one torn while it was copied, say) is refused, even though the tables
     /// a catalog has are all there; the live catalog stays as it is.
     func testRestoreRefusesADamagedBackup() throws {

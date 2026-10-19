@@ -1825,18 +1825,23 @@ final class CatalogStore: @unchecked Sendable {
         let src = packageURL.appendingPathComponent("catalog.sqlite")
         // the stamp is 1-second granular, so a pre-restore safety backup can collide with an
         // auto-backup from the same second — never overwrite an existing backup; pick -N instead.
+        // Anything by that name takes it, a symbolic link too, even one pointing nowhere (which
+        // fileExists doesn't see): the copy would be written wherever it points.
         let fm = FileManager.default
         var dest = backupsURL.appendingPathComponent("catalog-\(stamp).sqlite")
         var n = 1
-        while fm.fileExists(atPath: dest.path) {
+        while (try? fm.attributesOfItem(atPath: dest.path)) != nil {
             dest = backupsURL.appendingPathComponent("catalog-\(stamp)-\(n).sqlite")
             n += 1
         }
         // SQLite's own copy, as of one commit and WAL included: a self-contained file (the restore
         // path deletes -wal/-shm sidecars) that writes made meanwhile can't tear, as they could a
-        // byte copy of the file on a volume without clones
+        // byte copy of the file on a volume without clones. It refuses a link planted at the name
+        // meanwhile; as SQLite refuses one anywhere in a path, the folders' links are resolved first.
         do {
-            try Database.snapshot(from: src, to: dest)
+            try Database.snapshot(from: Self.physical(src),
+                                  to: Self.physical(backupsURL).appendingPathComponent(dest.lastPathComponent),
+                                  followingLinks: false)
         } catch {
             for path in [dest.path, dest.path + "-journal", dest.path + "-wal", dest.path + "-shm"] {
                 try? fm.removeItem(atPath: path)
@@ -1844,6 +1849,13 @@ final class CatalogStore: @unchecked Sendable {
             throw error
         }
         return dest
+    }
+
+    /// `url` with every symbolic link in its path resolved, or as it is when it can't be.
+    private static func physical(_ url: URL) -> URL {
+        guard let resolved = realpath(url.path, nil) else { return url }
+        defer { free(resolved) }
+        return URL(fileURLWithPath: String(cString: resolved))
     }
 
     // ---------- manifest.json (§9) ----------
