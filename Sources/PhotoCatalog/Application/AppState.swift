@@ -4500,14 +4500,19 @@ final class AppState {
                     }
                 }
                 var knownPaths = Set(knownAssetsByPath.keys)
-                // a photo removed from the catalog stays removed: its file isn't a new one (only an
-                // import brings it back). Removed in an earlier session, it isn't in `snapshot`.
-                for asset in snapshot where asset.deleted && !asset.isVirtualCopy {
-                    if let path = asset.localPath { knownPaths.insert(path) }
-                }
-                knownPaths.formUnion((try? store.removedLocalPaths()) ?? [])
-                // as do files an import skipped as exact duplicates of photos it cataloged
+                // files an import skipped as exact duplicates of photos it cataloged stay out
                 knownPaths.formUnion((try? store.skippedDuplicatePaths()) ?? [])
+                // a photo removed from the catalog stays removed: its file, there still or saved over
+                // by an editor, isn't a new one (only an import brings it back); another photo saved
+                // at its path is. Removed in an earlier session, it isn't in `snapshot`.
+                var removedByPath: [String: [Asset]] = [:]
+                var removedIds: Set<String> = []
+                let removedEarlier = (try? store.removedOriginals()) ?? []
+                for asset in snapshot.filter({ $0.deleted && !$0.isVirtualCopy }) + removedEarlier
+                where removedIds.insert(asset.id).inserted {
+                    guard let path = asset.localPath else { continue }
+                    for alias in PathIdentity.aliases(forPath: path) { removedByPath[alias, default: []].append(asset) }
+                }
                 var fresh: [Asset] = []
                 var changed: [Asset] = []
                 // a folder watched inside another is walked by both: each file goes to the first
@@ -4520,6 +4525,12 @@ final class AppState {
                        ![.mounted, .unchecked].contains(probe.placement(of: root.path, onVolume: volume)) { continue }
                     let scanned = ImportCoordinator.scanWithAliases(root).filter { $0.aliases.isDisjoint(with: claimed) }
                     for file in scanned { claimed.formUnion(file.aliases) }
+                    for file in scanned {
+                        let removed = file.aliases.flatMap { removedByPath[$0] ?? [] }
+                        if removed.contains(where: { ImportCoordinator.isRemovedPhoto(file.url, removed: $0) }) {
+                            knownPaths.insert(file.url.path)
+                        }
+                    }
                     fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
                                                                  mode: .referenced, autoTag: vision,
                                                                  readSidecar: readXMP,
@@ -4535,7 +4546,8 @@ final class AppState {
                                                                        folderName: sourceInfo?.name,
                                                                        scanned: scanned))
                 }
-                return (fresh: fresh, changed: changed)
+                // the photo a rescan reads is never a removed one, whatever the file turned out to be
+                return (fresh: fresh.filter { !removedIds.contains($0.id) }, changed: changed)
             }.value
             guard let self else { return }
             guard self.incrementalRescanGeneration == generation else { return }

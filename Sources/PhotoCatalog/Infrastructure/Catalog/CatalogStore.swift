@@ -1572,13 +1572,14 @@ final class CatalogStore: @unchecked Sendable {
                                captureDate: Date(timeIntervalSince1970: row.double("capture_date") ?? 0))
     }
 
-    /// Where the originals of photos removed from the catalog are (virtual copies aside): files
-    /// folder watching leaves alone, as only an import brings a removed photo back.
-    func removedLocalPaths() throws -> Set<String> {
-        Set(try db.query("""
-        SELECT local_path FROM assets
+    /// The photos removed from the catalog that have an original (virtual copies aside): folder
+    /// watching leaves their files alone, as only an import brings a removed photo back.
+    func removedOriginals() throws -> [Asset] {
+        let decoder = AssetRowDecoder(columns: Self.columnNames)
+        return try db.queryRows("""
+        SELECT \(Self.columns) FROM assets
         WHERE deleted=1 AND is_demo=0 AND master_id IS NULL AND local_path IS NOT NULL;
-        """).compactMap { $0.text("local_path") })
+        """, transform: decoder.asset(from:))
     }
 
     /// Files an import left out as exact duplicates of photos in the catalog (Skip Exact

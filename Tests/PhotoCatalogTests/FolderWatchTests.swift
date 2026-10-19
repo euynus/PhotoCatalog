@@ -54,6 +54,53 @@ final class FolderWatchTests: CatalogTestCase {
         XCTAssertEqual(try store.db.query("SELECT id FROM assets;").count, 1)
     }
 
+    /// A different photo saved where a removed one was — the camera's counter come round again —
+    /// is a new photo to the folder's rescan, while the removed photo stays as it was removed; a
+    /// removed photo's own file that an editor saved over (the same shot) stays out with it.
+    @MainActor
+    func testRescanCatalogsADifferentPhotoAtARemovedPhotosPath() async throws {
+        let source = scratch.appendingPathComponent("Source")
+        let reused = source.appendingPathComponent("IMG_0001.JPG")
+        let edited = source.appendingPathComponent("IMG_0002.JPG")
+        try makeShot(at: reused, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:00", shade: 1)
+        try makeShot(at: edited, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:05:00", shade: 2)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+        var removed = ImportCoordinator(store: store)
+            .importFiles([reused, edited], from: source, sourceRootId: "source-1", folderName: "Source")
+        XCTAssertEqual(removed.count, 2)
+        for index in removed.indices {
+            removed[index].rating = 3
+            removed[index].deleted = true
+        }
+        try store.upsert(removed)
+        // another shot by the first name; the second photo's file saved over by an editor
+        try makeShot(at: reused, make: "Canon", model: "Canon EOS R5", taken: "2026:11:02 09:30:00", shade: 9)
+        try makeShot(at: edited, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:05:00", shade: 7)
+
+        let app = AppState()
+        app.onboarded = true
+        XCTAssertTrue(app.openCatalog(at: package))
+        try await rescanToCompletion(app)
+
+        let live = app.assets.filter { !$0.isDemo && !$0.deleted }
+        let newcomer = try XCTUnwrap(live.first { $0.localPath == reused.path }, "the new shot is cataloged")
+        XCTAssertFalse(removed.map(\.id).contains(newcomer.id), "the new shot is a photo of its own")
+        XCTAssertEqual(newcomer.rating, 0)
+        XCTAssertFalse(live.contains { $0.localPath == edited.path }, "the removed photo's own file stays out")
+        for photo in removed {
+            let row = try store.db.query("SELECT deleted, rating FROM assets WHERE id=?;", [.text(photo.id)]).first
+            XCTAssertEqual(row?.bool("deleted"), true, "\(photo.filename) stays removed")
+            XCTAssertEqual(row?.int("rating"), 3)
+        }
+        XCTAssertTrue(try store.loadAssets().contains { $0.id == newcomer.id }, "the new shot is saved")
+
+        // a second rescan finds nothing more
+        try await rescanToCompletion(app)
+        XCTAssertEqual(app.assets.filter { !$0.isDemo && !$0.deleted }.count, live.count)
+    }
+
     /// Import Photo Folder… under Skip Exact Duplicates leaves out a byte-identical copy of a
     /// photo it imports; the watched folder's rescan leaves it out too.
     @MainActor

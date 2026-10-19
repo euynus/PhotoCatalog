@@ -84,6 +84,22 @@ final class ImportCoordinator: @unchecked Sendable {
         return AssetPairing.isSameShot((camera, captureDate), (removed.camera, removed.captureDate))
     }
 
+    /// Whether the file at a removed photo's path is still that photo, as folder watching sees
+    /// it: the file it was (its size and modification time, or else its quick hash, unchanged), or
+    /// the same shot saved over by an editor. Another photo saved there (a camera's counter come
+    /// round again) is a new one. A file that can't be read is left alone, as the photo's.
+    static func isRemovedPhoto(_ url: URL, removed: Asset) -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? Int64 else { return true }
+        if size == removed.fileBytes {
+            if let known = removed.fileModifiedAt, let modified = attributes[.modificationDate] as? Date,
+               abs(modified.timeIntervalSince(known)) < 1 { return true }
+            if let quick = HashService.quickHash(url, fileSize: size), quick == removed.quickHash { return true }
+        }
+        let meta = MetadataReader.read(url)
+        return AssetPairing.isSameShot((meta.camera, meta.captureDate), (removed.camera, removed.date))
+    }
+
     /// Full import of a folder (managed mode copies originals into Originals/YYYY/MM/DD;
     /// autoTag runs on-device Vision scene tagging + face detection).
     func importFolder(_ folder: URL, mode: ImportMode = .referenced, autoTag: Bool = false,
