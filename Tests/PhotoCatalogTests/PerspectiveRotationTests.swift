@@ -34,8 +34,15 @@ final class PerspectiveRotationTests: XCTestCase {
         let w = Double(frame.width), h = Double(frame.height), f = 1.4 * hypot(w, h) / 2
         let pitch = -vertical / 100 * 35 * .pi / 180, yaw = horizontal / 100 * 35 * .pi / 180
         let (cp, sp, cy, sy) = (cos(pitch), sin(pitch), cos(yaw), sin(yaw))
+        // spelled out: as one map-of-maps expression, CI's compiler gave up type-checking it
         func times(_ a: [Double], _ b: [Double]) -> [Double] {
-            (0..<9).map { i in (0..<3).map { a[i / 3 * 3 + $0] * b[$0 * 3 + i % 3] }.reduce(0, +) }
+            var product = [Double](repeating: 0, count: 9)
+            for row in 0..<3 {
+                for column in 0..<3 {
+                    for k in 0..<3 { product[row * 3 + column] += a[row * 3 + k] * b[k * 3 + column] }
+                }
+            }
+            return product
         }
         func move(_ dx: Double, _ dy: Double) -> [Double] { [1, 0, dx, 0, 1, dy, 0, 0, 1] }
         func apply(_ m: [Double], _ x: Double, _ y: Double) -> (Double, Double) {
