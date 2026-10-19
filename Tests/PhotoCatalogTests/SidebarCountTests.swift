@@ -119,4 +119,59 @@ extension SidebarCountTests {
         XCTAssertEqual(app.countForSmartAlbum(today), 0, "an edit the next day doesn't patch yesterday's count")
         XCTAssertEqual(app.sidebarCounts, app.recountedSidebarCounts())
     }
+
+    /// Counted in chunks on several threads, the sidebar's tallies come out as one pass's, and a
+    /// smart album's count is the photos shown that its rule, read field by field, matches.
+    func testChunkedTalliesAreOnePassCounts() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-31T18:00:00Z"))
+        var photos = try SmartMatcherTests.variedPhotos(now: now)
+        photos[3].deleted = true
+        photos[4].client = "Acme"
+        // a RAW and the JPEG shown behind it, in a folder of their own
+        photos.insert(photo("raw", "IMG_0002.CR3", raw: true, rating: 4, keywords: ["Café"], project: "Wedding"), at: 5)
+        photos.insert(photo("jpeg", "IMG_0002.JPG", raw: false, rating: 4, keywords: ["Café"], project: "Wedding"), at: 9)
+        let pairing = AssetPairing.rawJpeg(photos)
+        XCTAssertTrue(pairing.isHiddenCompanion("jpeg"))
+        func rule(_ match: String, _ conditions: [(String, String, String)]) -> SmartRule {
+            SmartRule(match: match, conditions: conditions.map { SmartCondition(field: $0.0, op: $0.1, value: $0.2) })
+        }
+        let rules = [
+            rule("all", [("rating", ">=", "4")]),
+            rule("all", [("keywords", "包含", "cafe")]),
+            rule("all", [("captureYear", "=", "2023"), ("flag", "=", "pick")]),
+            rule("any", [("datePreset", "=", "thisYear"), ("captureDate", ">=", "2025-06-01")]),
+            rule("all", [("camera", "包含", "canon"), ("keywords", "包含", "旅行"), ("rating", ">=", "3")]),
+            rule("any", [("search", "包含", "wedding"), ("lens", "包含", "rf"), ("captureYear", "<=", "1")]),
+            rule("all", []),
+        ]
+        let compiled = rules.map { SmartMatcher.Prepared($0, now: now) }
+
+        let whole = AppState.sidebarTallies(of: photos, pairing: pairing, rules: compiled, chunk: .max)
+        for chunk in [1, 3, 7] {
+            XCTAssertEqual(AppState.sidebarTallies(of: photos, pairing: pairing, rules: compiled, chunk: chunk), whole,
+                           "in chunks of \(chunk)")
+        }
+        let shown = photos.filter(pairing.shows)
+        XCTAssertEqual(shown.count, photos.count - 2)
+        for (rule, count) in zip(rules, whole.smartAlbums) {
+            let expected = shown.filter { photo in
+                let each = rule.conditions.map { SmartMatcherTests.fieldByField(photo, $0, now: now) }
+                return rule.match == "all" ? !each.contains(false) : each.contains(true)
+            }.count
+            XCTAssertEqual(count, expected, "\(rule.conditions.map(\.value))")
+        }
+        XCTAssertEqual(whole.folders, Dictionary(grouping: shown, by: \.folderId).mapValues(\.count))
+        XCTAssertEqual(whole.projects, ["Wedding": shown.filter { $0.project == "Wedding" }.count])
+        XCTAssertEqual(whole.clients, ["Acme": 1])
+
+        // keyword counts too, each keyword where a single pass first meets it
+        let keywords = shown.flatMap(\.keywords)
+        var firstSeen: [String] = []
+        for keyword in keywords where !firstSeen.contains(keyword) { firstSeen.append(keyword) }
+        for chunk in [1, 3, 7, Int.max] {
+            let counted = AppState.keywordCounts(of: photos, pairing: pairing, chunk: chunk)
+            XCTAssertEqual(counted.order, firstSeen, "in chunks of \(chunk)")
+            XCTAssertEqual(counted.counts, Dictionary(keywords.map { ($0, 1) }, uniquingKeysWith: +))
+        }
+    }
 }

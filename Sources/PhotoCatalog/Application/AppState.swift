@@ -8194,14 +8194,39 @@ final class AppState {
         return result
     }
 
-    nonisolated static func keywordCounts(of assets: [Asset], pairing: AssetPairing)
+    /// Every keyword of the photos as shown, by how many it's on, in the order a pass meets them.
+    /// Counted in chunks on every core and added up chunk by chunk, which keeps that order: one
+    /// thread took ~0.4 s at 500k photos, and the sidebar waits for it after every import batch.
+    nonisolated static func keywordCounts(of assets: [Asset], pairing: AssetPairing, chunk: Int = 32_768)
         -> (order: [String], counts: [String: Int]) {
+        func count(_ range: Range<Int>) -> (order: [String], counts: [String: Int]) {
+            var order: [String] = []
+            var counts: [String: Int] = [:]
+            for position in range {
+                let a = assets[position]
+                guard pairing.shows(a) else { continue }
+                for k in a.keywords {
+                    if counts[k] == nil { order.append(k) }
+                    counts[k, default: 0] += 1
+                }
+            }
+            return (order, counts)
+        }
+        let chunk = max(chunk, 1)
+        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
+        guard chunks > 1 else { return count(assets.indices) }
+        let lock = NSLock()
+        var parts = [(order: [String], counts: [String: Int])](repeating: ([], [:]), count: chunks)
+        DispatchQueue.concurrentPerform(iterations: chunks) { index in
+            let part = count(index * chunk ..< min(assets.count, (index + 1) * chunk))
+            lock.withLock { parts[index] = part }
+        }
         var order: [String] = []
         var counts: [String: Int] = [:]
-        for a in assets where pairing.shows(a) {
-            for k in a.keywords {
-                if counts[k] == nil { order.append(k) }
-                counts[k, default: 0] += 1
+        for part in parts {
+            for keyword in part.order {
+                if counts[keyword] == nil { order.append(keyword) }
+                counts[keyword, default: 0] += part.counts[keyword] ?? 0
             }
         }
         return (order, counts)
@@ -8656,26 +8681,19 @@ final class AppState {
         let pairing = assetPairing
         let now = sidebarClock()
         let rules = smartAlbums.map { (id: $0.id, rule: SmartMatcher.Prepared($0.rule, now: now)) }
-        var smartCounts = Array(repeating: 0, count: rules.count)
         var index = SidebarCountIndex()
         index.day = CaptureDates.startOfToday(now: now)
         index.smartRules = rules
         index.counts.keywords = keywordCounts.filter { $0.value != 0 }   // the list's patches keep emptied ones
-        for asset in assets where pairing.shows(asset) {
-            index.counts.folders[asset.folderId, default: 0] += 1
-            if !asset.project.isEmpty {
-                index.counts.projects[asset.project, default: 0] += 1
-            }
-            if !asset.client.isEmpty {
-                index.counts.clients[asset.client, default: 0] += 1
-            }
-            for (offset, rule) in rules.enumerated() where rule.rule.matches(asset) {
-                smartCounts[offset] += 1
-            }
-        }
-        for (rule, count) in zip(rules, smartCounts) {
+        let tallies = Self.sidebarTallies(of: assets, pairing: pairing, rules: rules.map(\.rule))
+        index.counts.folders = tallies.folders
+        index.counts.projects = tallies.projects
+        index.counts.clients = tallies.clients
+        for (rule, count) in zip(rules, tallies.smartAlbums) {
             index.counts.smartAlbums[rule.id] = count
         }
+        // the id index is dropped by every structural change: rebuilt only for albums to count
+        guard !albums.isEmpty else { return index }
         let positions = assetIndex
         for album in albums {
             index.counts.albums[album.id] = album.assetIds.reduce(0) { count, id in
@@ -8684,6 +8702,76 @@ final class AppState {
             }
         }
         return index
+    }
+
+    /// The photos as shown, counted by folder, project and client, and by the smart albums each
+    /// matches.
+    struct SidebarTallies: Equatable {
+        var folders: [String: Int] = [:]
+        var projects: [String: Int] = [:]
+        var clients: [String: Int] = [:]
+        var smartAlbums: [Int]
+
+        fileprivate mutating func add(_ other: SidebarTallies) {
+            folders.merge(other.folders, uniquingKeysWith: +)
+            projects.merge(other.projects, uniquingKeysWith: +)
+            clients.merge(other.clients, uniquingKeysWith: +)
+            for (offset, count) in other.smartAlbums.enumerated() { smartAlbums[offset] += count }
+        }
+    }
+
+    /// Counts the photos as shown in chunks of `chunk`, on every core, each thread with its own
+    /// memo of the rules' text tests; the chunks' counts add up to one pass's. On one thread,
+    /// matching five smart albums against 500k photos took ~0.6 s, and the sidebar waits for it.
+    nonisolated static func sidebarTallies(of assets: [Asset], pairing: AssetPairing, rules: [SmartMatcher.Prepared],
+                                           chunk: Int = 16_384) -> SidebarTallies {
+        let empty = SidebarTallies(smartAlbums: Array(repeating: 0, count: rules.count))
+        func tally(_ range: Range<Int>, into tallies: inout SidebarTallies, memos: inout [SmartMatcher.Memo]) {
+            // a run of photos in one folder is added once, not hashed photo by photo
+            var folder = "", run = 0
+            for position in range {
+                let asset = assets[position]
+                guard pairing.shows(asset) else { continue }
+                if asset.folderId != folder {
+                    if run > 0 { tallies.folders[folder, default: 0] += run }
+                    folder = asset.folderId
+                    run = 0
+                }
+                run += 1
+                if !asset.project.isEmpty { tallies.projects[asset.project, default: 0] += 1 }
+                if !asset.client.isEmpty { tallies.clients[asset.client, default: 0] += 1 }
+                for offset in rules.indices where rules[offset].matches(asset, memo: &memos[offset]) {
+                    tallies.smartAlbums[offset] += 1
+                }
+            }
+            if run > 0 { tallies.folders[folder, default: 0] += run }
+        }
+        let chunk = max(chunk, 1)
+        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
+        guard chunks > 1 else {
+            var tallies = empty
+            var memos = rules.map(SmartMatcher.Memo.init(for:))
+            tally(assets.indices, into: &tallies, memos: &memos)
+            return tallies
+        }
+        let lock = NSLock()
+        var next = 0
+        var total = empty
+        DispatchQueue.concurrentPerform(iterations: min(chunks, ProcessInfo.processInfo.activeProcessorCount)) { _ in
+            var tallies = empty
+            var memos = rules.map(SmartMatcher.Memo.init(for:))
+            while true {
+                let index: Int? = lock.withLock {
+                    guard next < chunks else { return nil }
+                    next += 1
+                    return next - 1
+                }
+                guard let index else { break }
+                tally(index * chunk ..< min(assets.count, (index + 1) * chunk), into: &tallies, memos: &memos)
+            }
+            lock.withLock { total.add(tallies) }
+        }
+        return total
     }
 
     private func moveSelectedSourcePriority(up: Bool) {
@@ -8755,7 +8843,8 @@ final class AppState {
         case .smart:
             guard let sa = smartAlbums.first(where: { $0.id == selection.id }) else { return [] }
             let rule = SmartMatcher.Prepared(sa.rule)
-            belongs = rule.matches
+            var memo = SmartMatcher.Memo(for: rule)
+            belongs = { rule.matches($0, memo: &memo) }
         case .keyword:
             belongs = { $0.keywords.contains(selection.id) }
         case .project:

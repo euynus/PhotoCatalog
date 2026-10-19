@@ -40,10 +40,15 @@ enum ScaleCheck {
         let beforeApply = footprint()
         let (_, applyTime) = timed { app.applyLoadedCatalogForScaleCheck(live, from: store) }
         report("apply catalog: \(applyTime) ms, \(delta(footprint(), beforeApply)) MB")
+        // settings other runs of the app may have changed, which move the numbers
+        report("RAW+JPEG pairing \(app.pairRawAndJpeg ? "on" : "off"), auto-stack "
+            + (app.autoStackSeconds.map { "\($0) s" } ?? "off"))
 
-        // PC_SCALE_LOOP=rate|name|keywords|dates|hydrate|apply|keyword-edit repeats one operation for 20 s, to sample it
+        // PC_SCALE_LOOP=rate|name|keywords|dates|hydrate|apply|keyword-edit|sidebar repeats one operation
+        // for 20 s, to sample it
         if let loop = ProcessInfo.processInfo.environment["PC_SCALE_LOOP"] {
             let ids = app.list.prefix(1000).map(\.id)
+            if loop == "sidebar" { app.smartAlbums = sidebarSmartAlbums }
             let end = Date().addingTimeInterval(20)
             var rounds = 0
             while Date() < end {
@@ -69,6 +74,9 @@ enum ScaleCheck {
                 case "keyword-edit":
                     app.selectedIds = Set(ids)
                     app.addKeyword("循环\(rounds)")
+                case "sidebar":
+                    app.smartAlbums = app.smartAlbums   // drops the sidebar's counts, and only them
+                    _ = app.countForSmartAlbum(app.smartAlbums[0])
                 default:
                     break
                 }
@@ -109,6 +117,11 @@ enum ScaleCheck {
         }
         step("folder") {
             app.select(Selection(type: .folder, id: "src-scale-3", name: "Root 3"))
+            _ = app.list.count
+        }
+        app.smartAlbums = sidebarSmartAlbums
+        step("smart album") {
+            app.select(Selection(type: .smart, id: "scale-smart-canon-portraits", name: "canon-portraits"))
             _ = app.list.count
         }
         app.select(Selection(type: .lib, id: "all", name: "全部照片"))
@@ -153,6 +166,37 @@ enum ScaleCheck {
             rounds.append(Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15)
         }
         line.append("rate 1 + sidebar " + String(format: "%.1f", rounds.sorted()[rounds.count / 2]))
+        report("edits ms: " + line.joined(separator: " · "))
+
+        // A structural change (an import batch, Move to Trash, a move or rename) drops what's
+        // derived from every photo. The sidebar's recount alone; then a change, and what the
+        // window works out again as it redraws, part by part; then the first ratings after it.
+        line = []
+        step("recount") {
+            app.smartAlbums = app.smartAlbums   // drops the sidebar's counts, and only them
+            readSidebar()
+        }
+        step("change") { app.assets = app.assets }
+        step("pairing") { _ = app.assetPairing }
+        step("keywords") { _ = app.keywordList }
+        step("sidebar") { readSidebar() }
+        step("grid") {
+            _ = app.list.count
+            _ = app.libraryCounts
+        }
+        step("first rate") {
+            app.setPrimary(ids[7])
+            _ = app.handleKey("2", hasCommand: false)
+            readSidebar()
+        }
+        step("next rate") {
+            app.setPrimary(ids[8])
+            _ = app.handleKey("3", hasCommand: false)
+            readSidebar()
+        }
+        report("structure ms: " + line.joined(separator: " · "))
+
+        line = []
         step("select all") { _ = app.handleKey("a", hasCommand: true) }
         app.selectedIds = Set(ids)
         app.primaryId = ids.first
@@ -170,7 +214,7 @@ enum ScaleCheck {
             edit.contrast = Double(run % 100)
             _ = try? store.appendDevelopHistory(Dictionary(uniqueKeysWithValues: ids.map { ($0, (name: "测试", settings: edit)) }))
         }
-        report("edits ms: " + line.joined(separator: " · "))
+        report("batch edits ms: " + line.joined(separator: " · "))
         report("footprint \(delta(footprint(), baseline)) MB since start, \(megabytes(footprint())) MB total")
         return 0
     }
