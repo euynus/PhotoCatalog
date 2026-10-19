@@ -141,6 +141,95 @@ final class AutomaticXMPWriterTests: CatalogTestCase {
         XCTAssertEqual(app.externallyChangedXMPIds, [])
     }
 
+    /// A catalog holding one imported photo, `name`, open in an app that writes sidecars
+    /// automatically and runs no background checks; the photo is selected.
+    @MainActor
+    private func appWithPhoto(_ name: String, shade: Int) throws -> (app: AppState, photo: Asset, sidecar: URL) {
+        let source = scratch.appendingPathComponent("Source")
+        let original = source.appendingPathComponent(name)
+        try makeTestJPEG(at: original, shade: shade)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+        let imported = try XCTUnwrap(ImportCoordinator(store: store)
+            .importFiles([original], from: source, sourceRootId: "source-1", folderName: "Source").first)
+        try store.upsert([imported])
+        let app = AppState()
+        app.onboarded = true
+        app.runsBackgroundMaintenance = false
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.autoWriteXMPSidecar = true
+        app.selectedIds = [imported.id]
+        app.setPrimary(imported.id)
+        return (app, imported, XMPSidecar.sidecarURL(for: original))
+    }
+
+    /// Save Metadata to Files after an edit whose automatic write is still queued, with a later
+    /// edit made while automatic writing was off: the saved (newer) values stay in the sidecar.
+    @MainActor
+    func testSavedMetadataIsNotOverwrittenByAnOlderQueuedWrite() async throws {
+        let (app, photo, sidecar) = try appWithPhoto("saved.jpg", shade: 7)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sidecar.path))
+
+        XCTAssertTrue(app.setRating(3, on: [photo.id]))   // queued, not yet written
+        app.autoWriteXMPSidecar = false
+        XCTAssertTrue(app.setRating(5, on: [photo.id]))
+        app.autoWriteXMPSidecar = true
+        app.writeXMPForSelection()
+        try await waitUntil("the save is reported") { app.toastCenter.toasts.last?.message == "已写入 1 个 XMP 附属文件" }
+        try await Task.sleep(for: .milliseconds(300))   // the queued write has had its turn
+
+        XCTAssertEqual(XMPSidecar.read(sidecar)?.rating, 5, "the saved values win over the older queued ones")
+        XCTAssertEqual(app.externallyChangedXMPIds, [])
+    }
+
+    /// Saving while an automatic write for the photo is still queued: our own save isn't taken
+    /// for another app's change to the sidecar.
+    @MainActor
+    func testSaveIsNotAChangeElsewhereToAQueuedWrite() async throws {
+        let (app, photo, sidecar) = try appWithPhoto("queued.jpg", shade: 8)
+        _ = try writeOldSidecar(for: photo)
+        app.checkExternalXMPChangesNow()
+        XCTAssertNotNil(app.xmpSyncTime(for: photo.id), "the sidecar's starting point is known")
+
+        XCTAssertTrue(app.setRating(4, on: [photo.id]))   // queued, not yet written
+        app.writeXMPForSelection()
+        try await waitUntil("the save is reported") { app.toastCenter.toasts.last?.message == "已写入 1 个 XMP 附属文件" }
+        try await Task.sleep(for: .milliseconds(300))   // the queued write has had its turn
+
+        XCTAssertEqual(XMPSidecar.read(sidecar)?.rating, 4)
+        XCTAssertEqual(app.externallyChangedXMPIds, [], "our own save isn't a change made elsewhere")
+        app.checkExternalXMPChangesNow()
+        XCTAssertEqual(app.externallyChangedXMPIds, [])
+    }
+
+    /// Another app changes a sidecar after a background check looked at it, and an automatic
+    /// write finds the change before the check's result comes in: the photo stays flagged.
+    @MainActor
+    func testCheckFromBeforeAChangeKeepsTheWritersFlag() async throws {
+        let (app, photo, sidecar) = try appWithPhoto("flagged.jpg", shade: 9)
+        _ = try writeOldSidecar(for: photo)
+        app.checkExternalXMPChangesNow()
+        let synced = try XCTUnwrap(app.xmpSyncTime(for: photo.id))
+
+        // the check starts and finds the sidecar as we left it
+        let snapshot = app.xmpSyncSnapshot()
+        let found = AppState.findChangedSidecars(app.xmpCheckCandidates(), known: [photo.id: synced])
+        XCTAssertEqual(found.changed, [:])
+        // meanwhile another app writes the sidecar, and an edit's automatic write finds that
+        var theirs = photo
+        theirs.rating = 2
+        XCTAssertTrue(XMPSidecar.write(theirs, to: sidecar))
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(50)], ofItemAtPath: sidecar.path)
+        XCTAssertTrue(app.setRating(4, on: [photo.id]))
+        try await waitUntil("the write is held back") { app.externallyChangedXMPIds == [photo.id] }
+
+        app.applyExternalXMPCheck(seeded: found.seeded, changed: found.changed,
+                                  pairingDependent: found.pairingDependent, since: snapshot)
+        XCTAssertEqual(app.externallyChangedXMPIds, [photo.id], "the check saw the sidecar before the change")
+        XCTAssertEqual(XMPSidecar.read(sidecar)?.rating, 2, "another app's version isn't written over")
+    }
+
     /// Undo and redo queue each photo's sidecar write once, as the edit itself did.
     @MainActor
     func testUndoQueuesOneSidecarWrite() throws {

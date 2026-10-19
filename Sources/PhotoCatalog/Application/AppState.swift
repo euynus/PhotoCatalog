@@ -208,6 +208,7 @@ final class AppState {
     var thumbnailCacheGeneration = 0
     @ObservationIgnored private var listCache: (signature: ListSignature, value: [Asset])?
     @ObservationIgnored private var uncollapsedListCache: (signature: ListSignature, value: [Asset])?
+    /// Every sidecar write, automatic or asked for, goes through the writer with the next sequence.
     @ObservationIgnored private var automaticXMPWriter = AutomaticXMPWriter()
     @ObservationIgnored private var automaticXMPWriteSequence: UInt64 = 0
     fileprivate struct ListSignature: Equatable {
@@ -4716,25 +4717,32 @@ final class AppState {
     }
 
     // ---------- XMP sidecar write (§6.5 META-007) ----------
-    func writeXMPForSelection() {
+    /// Photo → 将元数据写入文件: writes the selection's sidecars, even one another app changed
+    /// (asked for, it isn't held back). It takes its turn with the automatic writes: one queued
+    /// before it, with older values, is skipped rather than landing after it, and its own write
+    /// isn't taken for another app's change. Reported once written; the task is for checks.
+    @discardableResult
+    func writeXMPForSelection() -> Task<Void, Never>? {
         let ids = targetIds
         // virtual copies share their master's sidecar and never write it
         let real = assets.filter { ids.contains($0.id) && !$0.isVirtualCopy && hasExistingOriginal($0) }
-        guard !real.isEmpty else { push("仅可为已导入照片写入 XMP", "warning"); return }
-        var count = 0
-        var written: [String: Double] = [:]
-        let located = real.compactMap { a in a.localPath.map { (asset: a, original: URL(fileURLWithPath: $0)) } }
-        let sidecars = XMPSidecar.sidecarURLs(for: located.map(\.original))
-        for (a, url) in zip(located.map(\.asset), sidecars) where XMPSidecar.write(a, to: url) {
-            count += 1
-            written[a.id] = XMPSidecar.modificationTime(of: url)
-        }
-        recordXMPSync(written)
-        let failures = real.count - count
-        if failures > 0 {
-            push("已写入 \(count) 个 · \(failures) 失败", "warning")
-        } else {
-            push("已写入 \(count) 个 XMP 附属文件", "check")
+        guard !real.isEmpty else { push("仅可为已导入照片写入 XMP", "warning"); return nil }
+        automaticXMPWriteSequence &+= 1
+        let sequence = automaticXMPWriteSequence
+        let writer = automaticXMPWriter
+        let catalogURL = store?.packageURL
+        return Task { [weak self, writer, real, sequence, catalogURL] in
+            let result = await writer.write(real, sequence: sequence, overwritingChanges: true)
+            guard let self else { return }
+            if self.store?.packageURL == catalogURL { self.recordWrittenSidecars(result) }
+            // a photo a newer write got to first has that one's values: written all the same
+            let failures = result.failures + result.unavailable.count
+            let count = real.count - failures
+            if failures > 0 {
+                self.push("已写入 \(count) 个 · \(failures) 失败", "warning")
+            } else {
+                self.push("已写入 \(count) 个 XMP 附属文件", "check")
+            }
         }
     }
 
@@ -4772,10 +4780,13 @@ final class AppState {
         for id in times.keys { xmpSyncRecordedAt[id] = xmpSyncCount }
     }
 
-    /// A running count of sidecar times remembered, and when each photo's was: what a check or
-    /// re-seed worked out in the background from before then is older, and doesn't replace it.
+    /// A running count of sidecar times remembered (and changes found), and when each photo's
+    /// was: what a check or re-seed worked out in the background from before then is older, and
+    /// doesn't replace it.
     @ObservationIgnored private var xmpSyncCount: UInt64 = 0
     @ObservationIgnored private var xmpSyncRecordedAt: [String: UInt64] = [:]
+    /// When an automatic write last found a photo's sidecar changed elsewhere, on the same count.
+    @ObservationIgnored private var xmpChangeFoundAt: [String: UInt64] = [:]
 
     /// What a sidecar time worked out in the background was worked out against.
     struct XMPSyncSnapshot: Sendable {
@@ -4939,10 +4950,12 @@ final class AppState {
         // the check looked at a snapshot: a sidecar we wrote or read meanwhile has moved on
         let fresh = seeded.filter { xmpSyncTimes[$0.key] == nil }
         if !fresh.isEmpty { storeXMPSync(fresh) }
-        let live = Set(changed.filter { id, time in
+        var live = Set(changed.filter { id, time in
             guard let index = assetIndex[id], !assets[index].deleted else { return false }
             return xmpSyncTimes[id].map { abs(time - $0) > 1 } ?? true
         }.keys)
+        // a change an automatic write found since the check started is one it couldn't see
+        live.formUnion(externallyChangedXMPIds.filter { (xmpChangeFoundAt[$0] ?? 0) > snapshot.count })
         if externallyChangedXMPIds != live { externallyChangedXMPIds = live }
         // taken in the background, so not something ⌘Z should take back
         if autoReadChangedXMP, !live.isEmpty { readMetadataFromFiles(live, undoable: false) }
@@ -7984,11 +7997,14 @@ final class AppState {
     /// Takes in what an automatic write did, once it's done: our write is the newest a sidecar
     /// has been, unless pairing was switched since and the sidecar is no longer the photo's.
     func applyAutomaticXMPWrite(_ result: AutomaticXMPWriter.Result, catalogURL: URL?) {
-        let swapped = result.pairing == pairRawAndJpeg ? [] : result.pairingDependent
-        recordXMPSync(result.written.filter { !swapped.contains($0.key) })
+        let swapped = recordWrittenSidecars(result)
         // another app's change waits to be read rather than being written over
         let changedElsewhere = result.changedElsewhere.subtracting(swapped)
-        if !changedElsewhere.isEmpty { externallyChangedXMPIds.formUnion(changedElsewhere) }
+        if !changedElsewhere.isEmpty {
+            xmpSyncCount &+= 1
+            for id in changedElsewhere { xmpChangeFoundAt[id] = xmpSyncCount }
+            externallyChangedXMPIds.formUnion(changedElsewhere)
+        }
         // an original on a drive that's away gets its sidecar once it's back
         if store?.packageURL == catalogURL {
             pendingXMPWriteIds.subtract(result.written.keys)
@@ -7997,6 +8013,15 @@ final class AppState {
         }
         guard result.failures > 0 else { return }
         push("\(result.failures) 个 XMP 附属文件写入失败", "warning")
+    }
+
+    /// Remembers the sidecars a write wrote as they are now, but not one pairing has swapped
+    /// since (a RAW's JPEG, the RAW): it's no longer that photo's. Returns those swapped.
+    @discardableResult
+    private func recordWrittenSidecars(_ result: AutomaticXMPWriter.Result) -> Set<String> {
+        let swapped = result.pairing == pairRawAndJpeg ? [] : result.pairingDependent
+        recordXMPSync(result.written.filter { !swapped.contains($0.key) })
+        return swapped
     }
 
     /// Photos edited while their original was out of reach (its drive unplugged), whose sidecar

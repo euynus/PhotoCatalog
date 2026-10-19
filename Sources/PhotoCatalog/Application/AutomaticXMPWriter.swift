@@ -1,5 +1,8 @@
 import Foundation
 
+/// Writes the app's sidecars, automatic and on request alike, one at a time and in the order
+/// they were asked for: each write carries the next sequence, and one older than the last
+/// written for a photo is skipped rather than landing after it with older values.
 actor AutomaticXMPWriter {
     private var latestSequenceByAssetID: [String: UInt64] = [:]
     /// Each sidecar's modification time right after our own last write to it, by path. A write
@@ -22,8 +25,10 @@ actor AutomaticXMPWriter {
         var pairingDependent = Set<String>()
     }
 
-    /// Writes each photo's sidecar.
-    func write(_ assets: [Asset], sequence: UInt64, baselines: [String: Double] = [:]) -> Result {
+    /// Writes each photo's sidecar. `overwritingChanges` writes one another app changed too, as
+    /// Save Metadata to Files does when asked.
+    func write(_ assets: [Asset], sequence: UInt64, baselines: [String: Double] = [:],
+               overwritingChanges: Bool = false) -> Result {
         var result = Result()
         result.pairing = XMPSidecar.pairsRawAndJpeg
         let paths = assets.compactMap(\.localPath)
@@ -37,8 +42,9 @@ actor AutomaticXMPWriter {
             let choices = asset.localPath.flatMap { choicesByPath[$0] }
             if let choices, choices.paired != choices.unpaired { result.pairingDependent.insert(asset.id) }
             let sidecar = choices.map { result.pairing ? $0.paired : $0.unpaired }
-            let ownWrite = sidecar.flatMap { ownWriteTimes[$0.path] }
-            switch Self.writeUnlessChanged(asset, baseline: baselines[asset.id], ownWrite: ownWrite, sidecar: sidecar) {
+            let ownWrite = overwritingChanges ? nil : sidecar.flatMap { ownWriteTimes[$0.path] }
+            let baseline = overwritingChanges ? nil : baselines[asset.id]
+            switch Self.writeUnlessChanged(asset, baseline: baseline, ownWrite: ownWrite, sidecar: sidecar) {
             case .written(let time):
                 result.written[asset.id] = time
                 if let sidecar, let time { ownWriteTimes[sidecar.path] = time }

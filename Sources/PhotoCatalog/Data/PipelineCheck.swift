@@ -679,7 +679,15 @@ enum PipelineCheck {
             app.selectedIds = [photo.id]
             app.setPrimary(photo.id)
             _ = app.setRating(5)
-            app.writeXMPForSelection()
+            // the save is written in turn with the automatic writes: wait for it
+            let saving = app.writeXMPForSelection()
+            var saved = saving == nil
+            Task { @MainActor in
+                await saving?.value
+                saved = true
+            }
+            while !saved { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01)) }
+            results["the save is written"] = XMPSidecar.read(sidecarURL)?.rating == 5
             app.checkExternalXMPChangesNow()
             results["our own write isn't a change"] = app.externallyChangedXMPIds.isEmpty
             // a sidecar put back with an older date is another version too
