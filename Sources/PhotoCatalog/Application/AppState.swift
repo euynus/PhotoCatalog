@@ -262,6 +262,7 @@ final class AppState {
             replayedOld.append(stepOld)
             replayedNew.append(stepNew)
         }
+        // saved, and their sidecar writes queued
         guard !edits.isEmpty, persistChanged(edits.map(\.asset)) else { return }
         let deletionChanged = zip(current, edits).contains { $0.deleted != $1.asset.deleted }
         let scope = zip(current, edits).reduce(into: AssetEditScope()) {
@@ -269,7 +270,6 @@ final class AppState {
         }
         applyAssetEdits(edits, scope: scope)
         ensurePrimaryValid()
-        enqueueAutomaticXMPWrite(edits.map(\.asset).filter { !$0.isDemo && !$0.deleted })
         if deletionChanged { recomputeDuplicates() }
         registerUndo(from: replayedOld, to: replayedNew, actionName: actionName)
     }
@@ -8023,6 +8023,9 @@ final class AppState {
 
     /// For checks: whether a photo's sidecar waits for its original to be back.
     func xmpWriteIsPending(for id: String) -> Bool { pendingXMPWriteIds.contains(id) }
+
+    /// For checks: how many sidecar writes have been queued (each takes the next sequence).
+    var xmpWriteSequence: UInt64 { automaticXMPWriteSequence }
 
     // ---------- toasts ----------
     /// A toast in the user's language (see `L`).

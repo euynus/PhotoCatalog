@@ -141,6 +141,43 @@ final class AutomaticXMPWriterTests: CatalogTestCase {
         XCTAssertEqual(app.externallyChangedXMPIds, [])
     }
 
+    /// Undo and redo queue each photo's sidecar write once, as the edit itself did.
+    @MainActor
+    func testUndoQueuesOneSidecarWrite() throws {
+        let source = scratch.appendingPathComponent("Source")
+        let original = source.appendingPathComponent("once.jpg")
+        try makeTestJPEG(at: original, shade: 6)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+        let imported = try XCTUnwrap(ImportCoordinator(store: store)
+            .importFiles([original], from: source, sourceRootId: "source-1", folderName: "Source").first)
+        try store.upsert([imported])
+
+        let app = AppState()
+        app.onboarded = true
+        app.runsBackgroundMaintenance = false
+        XCTAssertTrue(app.openCatalog(at: package))
+        app.autoWriteXMPSidecar = true
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        app.undoManager = undo
+
+        var queued = app.xmpWriteSequence
+        undo.beginUndoGrouping()
+        XCTAssertTrue(app.setRating(3, on: [imported.id]))
+        undo.endUndoGrouping()
+        XCTAssertEqual(app.xmpWriteSequence - queued, 1, "the edit queues one write")
+        queued = app.xmpWriteSequence
+        undo.undo()
+        XCTAssertEqual(app.asset(id: imported.id)?.rating, imported.rating)
+        XCTAssertEqual(app.xmpWriteSequence - queued, 1, "so does its undo")
+        queued = app.xmpWriteSequence
+        undo.redo()
+        XCTAssertEqual(app.asset(id: imported.id)?.rating, 3)
+        XCTAssertEqual(app.xmpWriteSequence - queued, 1, "and its redo")
+    }
+
     /// An edit made while the photo's drive is away is written to its sidecar once the original
     /// is back (the availability check that follows a mount finds it).
     @MainActor
