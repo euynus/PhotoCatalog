@@ -38,10 +38,7 @@ final class DescriptionReviewContext: @unchecked Sendable {
     var configurationError: LLMError? {
         if !configuration.isComplete { return .notConfigured }
         if !configuration.acceptsImages { return .imagesNotSupported }
-        if configuration.needsKey && (key ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return .missingKey
-        }
-        return nil
+        return configuration.keyError(for: key)
     }
 }
 
@@ -70,7 +67,7 @@ private struct DescriptionRequestFailure: Error, Sendable {
     init(error: Error) {
         // Service responses can echo credentials or request contents; never retain their raw text.
         switch error as? LLMError {
-        case .notConfigured, .missingKey, .imagesNotSupported:
+        case .notConfigured, .missingKey, .keyNeedsHTTPS, .imagesNotSupported:
             message = (error as? LLMError)?.message ?? L("AI 服务配置不可用")
             stopsBatch = true
         case .http(let status, _):
@@ -78,7 +75,7 @@ private struct DescriptionRequestFailure: Error, Sendable {
             stopsBatch = status == 401 || status == 403 || status == 404
         case .network:
             message = L("无法连接 AI 服务，请检查连接后重试")
-        case .malformed:
+        case .malformed, .replyTooLarge:
             message = L("没有得到可用的描述")
         case nil:
             message = L("生成描述失败，请重试")
@@ -349,7 +346,8 @@ extension AppState {
                             return (item.id, .success(description))
                         } catch {
                             switch error as? LLMError {
-                            case .http, .malformed, .notConfigured, .missingKey, .imagesNotSupported:
+                            case .http, .malformed, .replyTooLarge, .notConfigured, .missingKey, .keyNeedsHTTPS,
+                                 .imagesNotSupported:
                                 return (item.id, .failure(.init(error: error)))
                             default:
                                 return (item.id, .failure(cancellation.isSet || Task.isCancelled ? .cancelled : .init(error: error)))

@@ -2,7 +2,6 @@
 //  Photo describer — titles, captions and keywords from a model that reads images
 // ============================================================
 import CoreGraphics
-import Darwin
 import Foundation
 import ImageIO
 
@@ -44,23 +43,7 @@ enum PhotoDescriber {
             components?.query = nil
             components?.fragment = nil
             endpoint = components?.url?.absoluteString
-            isLoopback = Self.isLoopbackHost(url?.host)
-        }
-
-        private static func isLoopbackHost(_ host: String?) -> Bool {
-            guard var host = host?.lowercased() else { return false }
-            if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
-            if host == "localhost" || host == "localhost." { return true }
-            var ipv4 = in_addr()
-            if inet_pton(AF_INET, host, &ipv4) == 1 { return UInt32(bigEndian: ipv4.s_addr) >> 24 == 127 }
-            var ipv6 = in6_addr()
-            guard inet_pton(AF_INET6, host, &ipv6) == 1 else { return false }
-            return withUnsafeBytes(of: ipv6) { bytes in
-                let loopback = bytes.prefix(15).allSatisfy { $0 == 0 } && bytes[15] == 1
-                let mappedLoopback = bytes.prefix(10).allSatisfy { $0 == 0 }
-                    && bytes[10] == 255 && bytes[11] == 255 && bytes[12] == 127
-                return loopback || mappedLoopback
-            }
+            isLoopback = configuration.isOnThisMac
         }
     }
 

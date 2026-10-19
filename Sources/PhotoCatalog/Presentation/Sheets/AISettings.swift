@@ -45,7 +45,7 @@ struct AISettings: View {
             field(L("模型"), text: $app.llmConfiguration.model, prompt: L("模型名称，以服务商文档为准"))
             HStack(spacing: 10) {
                 Text("API Key").frame(width: 72, alignment: .leading)
-                SecureField(app.llmConfiguration.needsKey ? L("必填") : L("本机服务可不填"), text: $key)
+                SecureField(keyPrompt, text: $key)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { LLMKeychain.save(key, for: app.llmConfiguration) }
                 Button("保存") { LLMKeychain.save(key, for: app.llmConfiguration) }
@@ -70,6 +70,13 @@ struct AISettings: View {
             }
         }
         .onAppear { if !keyLoaded { loadKey() } }
+    }
+
+    /// What the key field asks for: a key only goes over https or to this Mac.
+    private var keyPrompt: String {
+        let configuration = app.llmConfiguration
+        if configuration.endpoint != nil, !configuration.canSendKey { return L("仅通过 https 发送") }
+        return configuration.needsKey ? L("必填") : L("本机服务可不填")
     }
 
     private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {

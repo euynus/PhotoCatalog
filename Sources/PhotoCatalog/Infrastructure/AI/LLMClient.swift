@@ -2,6 +2,7 @@
 //  LLM client — Anthropic's Messages API and OpenAI-compatible chat
 // ============================================================
 import CoreGraphics
+import Darwin
 import Foundation
 import ImageIO
 import Security
@@ -63,9 +64,42 @@ struct LLMConfiguration: Codable, Equatable, Sendable {
         }
     }
 
-    /// A key is needed: Anthropic always; an OpenAI-compatible service unless it's on this Mac.
+    /// Whether the service is on this Mac: its host is localhost or a loopback address.
+    var isOnThisMac: Bool { Self.isLoopbackHost(endpoint?.host) }
+
+    private static func isLoopbackHost(_ host: String?) -> Bool {
+        guard var host = host?.lowercased() else { return false }
+        if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+        if host == "localhost" || host == "localhost." { return true }
+        var ipv4 = in_addr()
+        if inet_pton(AF_INET, host, &ipv4) == 1 { return UInt32(bigEndian: ipv4.s_addr) >> 24 == 127 }
+        var ipv6 = in6_addr()
+        guard inet_pton(AF_INET6, host, &ipv6) == 1 else { return false }
+        return withUnsafeBytes(of: ipv6) { bytes in
+            let loopback = bytes.prefix(15).allSatisfy { $0 == 0 } && bytes[15] == 1
+            let mappedLoopback = bytes.prefix(10).allSatisfy { $0 == 0 }
+                && bytes[10] == 255 && bytes[11] == 255 && bytes[12] == 127
+            return loopback || mappedLoopback
+        }
+    }
+
+    /// Whether an API key may go to the service: only encrypted, over https, or to this Mac.
+    var canSendKey: Bool { endpoint?.scheme == "https" || isOnThisMac }
+
+    /// A key is needed: Anthropic always; an OpenAI-compatible service off this Mac over https.
+    /// One at a plain http address elsewhere (Ollama on another Mac, say) is never sent a key.
     var needsKey: Bool {
-        kind == .anthropic || !["localhost", "127.0.0.1", "::1"].contains(endpoint?.host ?? "")
+        kind == .anthropic || (endpoint?.scheme == "https" && !isOnThisMac)
+    }
+
+    /// Why requests can't go out with `key`, if they can't: a key the service needs is missing,
+    /// or there's a key (Anthropic always has one) for a plain http address off this Mac, where
+    /// it would travel in clear.
+    func keyError(for key: String?) -> LLMError? {
+        let key = key?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !canSendKey && (kind == .anthropic || !key.isEmpty) { return .keyNeedsHTTPS }
+        if needsKey && key.isEmpty { return .missingKey }
+        return nil
     }
 
     var isComplete: Bool { endpoint != nil && !model.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -82,31 +116,41 @@ struct LLMRequest: Sendable {
 enum LLMError: Error, Equatable {
     case notConfigured
     case missingKey
+    /// A key for a plain http address off this Mac: it would travel in clear, so nothing is sent.
+    case keyNeedsHTTPS
     case imagesNotSupported
     case http(status: Int, message: String)
     case network(String)
     case malformed
+    /// A reply past `LLMClient.replyLimit`.
+    case replyTooLarge
 
     var message: String {
         switch self {
         case .notConfigured: L("请先在“设置 → AI”中设置服务地址和模型")
         case .missingKey: L("请先在“设置 → AI”中填写 API Key")
+        case .keyNeedsHTTPS: L("API Key 只通过 HTTPS 发送给本机以外的服务：请改用 https:// 地址，不需要密钥的服务可清空 API Key")
         case .imagesNotSupported: L("所选模型不能识别图片")
         case .http(let status, let message):
             status == 401 || status == 403 ? L("API Key 无效或没有权限（\(status)）") : L("服务返回错误（\(status)）：\(message)")
         case .network(let message): L("无法连接服务：\(message)")
         case .malformed: L("服务的回复无法读取")
+        case .replyTooLarge: L("服务的回复过大")
         }
     }
 }
 
 enum LLMClient {
-    /// Sends `request` and returns the model's text.
+    /// The most of a reply that's read: an answer is a few kilobytes, and one past this is
+    /// refused rather than held in memory whole.
+    static let replyLimit = 16 * 1024 * 1024
+
+    /// Sends `request` and returns the model's text. A key goes only over https or to this Mac.
     static func complete(_ request: LLMRequest, configuration: LLMConfiguration, key: String?,
                          session: URLSession = .shared) async throws -> String {
         guard configuration.isComplete, let url = configuration.endpoint else { throw LLMError.notConfigured }
         let key = key?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if configuration.needsKey && key.isEmpty { throw LLMError.missingKey }
+        if let error = configuration.keyError(for: key) { throw error }
         if !request.images.isEmpty && !configuration.acceptsImages { throw LLMError.imagesNotSupported }
         // generous: a model on this Mac can take minutes over a photo
         var urlRequest = URLRequest(url: url, timeoutInterval: 300)
@@ -133,7 +177,9 @@ enum LLMClient {
         urlRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
         let data: Data, response: URLResponse
         do {
-            (data, response) = try await session.data(for: urlRequest)
+            (data, response) = try await reply(to: urlRequest, session: session)
+        } catch let error as LLMError {
+            throw error
         } catch {
             throw LLMError.network(error.localizedDescription)
         }
@@ -154,6 +200,26 @@ enum LLMClient {
         }
         guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw LLMError.malformed }
         return text
+    }
+
+    /// The reply to `request`, read up to `replyLimit`: one that says or turns out to be larger
+    /// is cancelled.
+    private static func reply(to request: URLRequest, session: URLSession) async throws -> (Data, URLResponse) {
+        let (bytes, response) = try await session.bytes(for: request)
+        guard response.expectedContentLength <= Int64(replyLimit) else {
+            bytes.task.cancel()
+            throw LLMError.replyTooLarge
+        }
+        var data = Data()
+        if response.expectedContentLength > 0 { data.reserveCapacity(Int(response.expectedContentLength)) }
+        for try await byte in bytes {
+            guard data.count < replyLimit else {
+                bytes.task.cancel()
+                throw LLMError.replyTooLarge
+            }
+            data.append(byte)
+        }
+        return (data, response)
     }
 
     /// The JSON object in a model's reply, which may come wrapped in prose or a code fence — and,

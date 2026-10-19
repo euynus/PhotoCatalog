@@ -1542,6 +1542,8 @@
 "服务返回错误（%lld）：%@" = "The service returned an error (%lld): %@";
 "无法连接服务：%@" = "Couldn't reach the service: %@";
 "服务的回复无法读取" = "The service's reply couldn't be read";
+"API Key 只通过 HTTPS 发送给本机以外的服务：请改用 https:// 地址，不需要密钥的服务可清空 API Key" = "The API key is only sent over HTTPS to a service off this Mac: use an https:// address, or clear the API key for a service that needs none";
+"服务的回复过大" = "The service's reply is too large";
 "连接成功：%@" = "Connected: %@";
 "用于 AI 描述照片、用自然语言查找和用文字修图。只在使用这些功能时联网，照片只发送缩小到 1024 像素的预览图；API Key 保存在钥匙串中。" = "Used to describe photos, find photos from a sentence and edit from a description. The app goes online only when you use these features and sends photos only as previews reduced to 1024 pixels; the API key is kept in the keychain.";
 "接口" = "Interface";
@@ -1551,6 +1553,7 @@
 "模型名称，以服务商文档为准" = "Model name, as the service documents it";
 "必填" = "Required";
 "本机服务可不填" = "Optional for a service on this Mac";
+"仅通过 https 发送" = "Sent only over https";
 "模型可以识别图片" = "The model reads images";
 "描述照片需要能识别图片的模型；只能处理文字的模型仍可用于查找和修图" = "Describing photos needs a model that reads images; a text-only model still works for finding and editing";
 "测试连接" = "Test Connection";

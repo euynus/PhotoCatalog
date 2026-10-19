@@ -5336,7 +5336,12 @@ final class AppState {
     /// The API key saved for the current service.
     var llmKey: String? { llmKeyOverride ?? LLMKeychain.key(for: llmConfiguration) }
 
-    var isLLMReady: Bool { llmConfiguration.isComplete && (!llmConfiguration.needsKey || !(llmKey ?? "").isEmpty) }
+    /// Why the AI features can't ask the service yet, if they can't.
+    var llmSetupError: LLMError? {
+        llmConfiguration.isComplete ? llmConfiguration.keyError(for: llmKey) : .notConfigured
+    }
+
+    var isLLMReady: Bool { llmSetupError == nil }
 
     /// Tests answer here instead of the configured service.
     @ObservationIgnored var llmOverride: ((LLMRequest) async throws -> String)?
@@ -5418,8 +5423,8 @@ final class AppState {
     func searchNaturally(_ query: String) async -> Bool {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, !naturalSearchRunning else { return false }
-        guard isLLMReady else {
-            push(verbatim: (llmConfiguration.isComplete ? LLMError.missingKey : LLMError.notConfigured).message, "warning")
+        if let error = llmSetupError {
+            push(verbatim: error.message, "warning")
             return false
         }
         naturalSearchRunning = true
@@ -5486,8 +5491,8 @@ final class AppState {
         guard !description.isEmpty, !developByTextRunning, view == .develop, let asset = primary, canDevelop(asset) else {
             return false
         }
-        guard isLLMReady else {
-            push(verbatim: (llmConfiguration.isComplete ? LLMError.missingKey : LLMError.notConfigured).message, "warning")
+        if let error = llmSetupError {
+            push(verbatim: error.message, "warning")
             return false
         }
         guard !llmConfiguration.acceptsImages || mayDevelopByTextSendPhoto() else { return false }
