@@ -176,4 +176,25 @@ enum SmartMatcher {
         let prepared = Prepared(rule)
         return assets.filter(prepared.matches)
     }
+
+    /// How many photos a rule matches, and the first of them.
+    struct Preview: Sendable {
+        let count: Int
+        let first: [Asset]
+    }
+
+    /// What the rule builder shows: the live (not trashed) photos the rule matches, counted in one
+    /// pass that keeps only the first `limit`. Nil when the task running it is cancelled.
+    static func preview(_ assets: [Asset], _ rule: SmartRule, limit: Int) -> Preview? {
+        let prepared = Prepared(rule)
+        var count = 0
+        var first: [Asset] = []
+        for (offset, asset) in assets.enumerated() {
+            if offset % 4096 == 0, Task.isCancelled { return nil }
+            guard !asset.deleted, prepared.matches(asset) else { continue }
+            count += 1
+            if first.count < limit { first.append(asset) }
+        }
+        return Preview(count: count, first: first)
+    }
 }

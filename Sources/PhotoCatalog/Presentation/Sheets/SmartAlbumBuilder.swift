@@ -10,6 +10,15 @@ struct SmartAlbumBuilder: View {
     @State private var name: String
     @State private var match: String
     @State private var conditions: [SmartCondition]
+    /// The last finished match and what it matched: the count and thumbnails stay up while the
+    /// next one runs. Nil until the first one is in.
+    @State private var shown: (input: PreviewInput, preview: SmartMatcher.Preview)?
+
+    /// What a match depends on: the rule, and the photos (by their edit version). Not the name.
+    private struct PreviewInput: Equatable {
+        let rule: SmartRule
+        let assets: Int
+    }
 
     init(album: SmartAlbum? = nil) {
         self.album = album
@@ -30,23 +39,39 @@ struct SmartAlbumBuilder: View {
     }
 
     private var rule: SmartRule { SmartRule(match: match, conditions: conditions) }
-    // exclude trashed assets so the preview count matches the sidebar/grid (all other
-    // SmartMatcher call sites filter !deleted)
-    private var matched: [Asset] { SmartMatcher.match(app.assets.filter { !$0.deleted }, rule) }
 
     var body: some View {
-        // one match pass per render — the preview count, empty state, thumbs
-        // and save button all share it, and it re-runs on every keystroke
-        let matched = self.matched
+        // Matching a large library takes a while, so it runs off the main thread and never in
+        // body: typing the name doesn't match at all, and typing a value matches once it pauses.
+        let input = PreviewInput(rule: rule, assets: app.assetRenderVersion)
         VStack(spacing: 0) {
             head
-            body_(matched)
-            foot(matchedCount: matched.count)
+            body_(shown?.preview, pending: shown?.input != input)
+            foot
         }
         .frame(width: 620)
         .font(.system(size: 13))
         .foregroundStyle(Theme.text)
         .background(Theme.bgPanel)
+        .task(id: input) { await refreshPreview(input) }
+    }
+
+    private func refreshPreview(_ input: PreviewInput) async {
+        if shown != nil {
+            do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+        }
+        // trashed photos are left out, as the sidebar and grid leave them out
+        let assets = app.assets
+        let worker = Task.detached(priority: .userInitiated) {
+            SmartMatcher.preview(assets, input.rule, limit: 14)
+        }
+        let preview = await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
+        guard let preview, !Task.isCancelled else { return }
+        shown = (input, preview)
     }
 
     private var head: some View {
@@ -61,7 +86,7 @@ struct SmartAlbumBuilder: View {
         .sheetHeaderBar()
     }
 
-    private func body_(_ matched: [Asset]) -> some View {
+    private func body_(_ preview: SmartMatcher.Preview?, pending: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 Text("名称").foregroundStyle(Theme.text2).frame(width: 40, alignment: .leading)
@@ -107,17 +132,18 @@ struct SmartAlbumBuilder: View {
                 HStack {
                     Text("预览").font(.system(size: 15, weight: .semibold))
                     Spacer()
-                    Text("\(matched.count) 张照片符合规则")
-                        .monospacedDigit().foregroundStyle(Theme.text2)
+                    if let preview {
+                        // the last count stays, dimmed, until the new one is in
+                        Text("\(preview.count) 张照片符合规则")
+                            .monospacedDigit().foregroundStyle(Theme.text2)
+                            .opacity(pending ? 0.5 : 1)
+                    } else {
+                        ProgressView().controlSize(.small)
+                    }
                 }
-                if matched.isEmpty {
-                    Text("没有照片符合当前规则")
-                        .foregroundStyle(Theme.canvasText3)
-                        .frame(maxWidth: .infinity, minHeight: 104)
-                        .background(Theme.canvas)
-                } else {
+                if let preview, !preview.first.isEmpty {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7), spacing: 6) {
-                        ForEach(matched.prefix(14)) { a in
+                        ForEach(preview.first) { a in
                             Thumb(asset: a, radius: 2, contentMode: .fit, maxDecodePixel: 160)
                                 .frame(height: 40)
                                 .help(a.filename)
@@ -126,6 +152,17 @@ struct SmartAlbumBuilder: View {
                     .padding(9)
                     .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
                     .background(Theme.canvas)
+                    .opacity(pending ? 0.5 : 1)
+                } else if preview != nil, !pending {
+                    Text("没有照片符合当前规则")
+                        .foregroundStyle(Theme.canvasText3)
+                        .frame(maxWidth: .infinity, minHeight: 104)
+                        .background(Theme.canvas)
+                } else {
+                    // no match yet isn't "no photos match": the rule is still being matched
+                    ProgressView().controlSize(.small)
+                        .frame(maxWidth: .infinity, minHeight: 104)
+                        .background(Theme.canvas)
                 }
             }
             .padding(.top, 12)
@@ -220,11 +257,12 @@ struct SmartAlbumBuilder: View {
         }
     }
 
-    private func foot(matchedCount: Int) -> some View {
+    private var foot: some View {
         HStack(spacing: 9) {
             Spacer()
             ghostButton(nil, L("取消")) { app.dismissSmartAlbumBuilder() }
-            Button { app.saveSmart(name: name, rule: rule, count: matchedCount) } label: {
+            // saving doesn't wait for a match: the sidebar counts the album itself
+            Button { app.saveSmart(name: name, rule: rule, count: shown?.preview.count ?? 0) } label: {
                 Label(album == nil ? "创建智能相册" : "保存更改", systemImage: "checkmark")
                     .fixedSize()
                     .sheetPrimaryLabel()
