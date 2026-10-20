@@ -496,8 +496,7 @@ final class AppState {
         (projectCountsCache, clientCountsCache, gearCountsCache, sidebarCountIndexCache) = (nil, nil, nil, nil)
         (captureDateGroupsCache, folderTreeCache, folderTreeCountCache) = (nil, nil, nil)
         nextAssetEditScope = .any
-        // the list is worked out again: let go first, it doesn't hold the photos when they're its own
-        (listCache, uncollapsedListCache) = (nil, nil)
+        letGoOfListCaches()
         assets.append(contentsOf: new)   // drops all else that's derived
         defer {
             didMutateAssets()
@@ -589,6 +588,17 @@ final class AppState {
             }
             folderTreeCountCache = counts
         }
+    }
+
+    /// Lets go of the photo list's caches before photos are added or changed (the list is worked out
+    /// again after it): a list that is the photos' own array would have them copied whole by the
+    /// change, and any other is freed off the main thread (at 500k photos, ~6 ms).
+    private func letGoOfListCaches() {
+        let photos = assets.withUnsafeBufferPointer { $0.baseAddress }
+        let lists = [listCache?.value, uncollapsedListCache?.value].compactMap { $0 }
+            .filter { list in list.withUnsafeBufferPointer { $0.baseAddress } != photos }
+        (listCache, uncollapsedListCache) = (nil, nil)
+        if !lists.isEmpty { DispatchQueue.global(qos: .utility).async { withExtendedLifetime(lists) {} } }
     }
 
     /// Folder counts with a count (none yet) for each folder a grown tree put in, as counting
@@ -837,8 +847,7 @@ final class AppState {
         let wasShown = carried.map { pairing in zip(edits, old).map { pairing.isShown($1, at: $0.offset) } }
         nextAssetEditScope = scope
         assert(edits.allSatisfy { assets[$0.offset].id == $0.asset.id }, "an edit keeps its photo's id")
-        // the list is worked out again: let go first, it doesn't hold the photos when they're its own
-        (listCache, uncollapsedListCache) = (nil, nil)
+        letGoOfListCaches()
         assets.withUnsafeMutableBufferPointer { buffer in
             for edit in edits { buffer[edit.offset] = edit.asset }
         }   // which drops all else that's derived, the photo list's caches with it
