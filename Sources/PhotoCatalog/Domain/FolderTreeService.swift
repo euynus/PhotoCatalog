@@ -57,6 +57,13 @@ enum FolderTreeService {
     }
 
     static func counts(for items: [FolderTreeItem], assets: [Asset]) -> [String: Int] {
+        counts(for: items, assets: assets, pairing: .empty)
+    }
+
+    /// Each item's photos among `assets` as `pairing` shows them, counted in chunks on every core
+    /// (one thread took ~0.3 s at 500k photos, and the sidebar waits for it after every import batch).
+    static func counts(for items: [FolderTreeItem], assets: [Asset], pairing: AssetPairing,
+                       chunk: Int = 32_768) -> [String: Int] {
         var counts = Dictionary(uniqueKeysWithValues: items.map { ($0.id, 0) })
         var rootIdsBySource: [String: [String]] = [:]
         var directoryIdsBySource: [String: [String: String]] = [:]
@@ -72,13 +79,46 @@ enum FolderTreeService {
         // photos share folders: count them per source and folder first, then walk each folder's
         // ancestors once rather than once per photo
         struct Place: Hashable { let source: String; let directory: String }
-        var perPlace: [Place: Int] = [:]
-        for asset in assets where !asset.deleted {
-            for rootId in rootIdsBySource[asset.folderId] ?? [] {
-                counts[rootId, default: 0] += 1
+        func count(_ range: Range<Int>) -> (sources: [String: Int], places: [Place: Int]) {
+            var perSource: [String: Int] = [:]
+            var perPlace: [Place: Int] = [:]
+            // a run of photos from one source is added once, not hashed photo by photo
+            var source = "", run = 0
+            for position in range {
+                let asset = assets[position]
+                guard pairing.isShown(asset, at: position) else { continue }
+                if asset.folderId != source {
+                    if run > 0 { perSource[source, default: 0] += run }
+                    source = asset.folderId
+                    run = 0
+                }
+                run += 1
+                guard let localPath = asset.localPath, directoryIdsBySource[asset.folderId] != nil else { continue }
+                perPlace[Place(source: asset.folderId, directory: PathString.directory(of: localPath)), default: 0] += 1
             }
-            guard let localPath = asset.localPath, directoryIdsBySource[asset.folderId] != nil else { continue }
-            perPlace[Place(source: asset.folderId, directory: PathString.directory(of: localPath)), default: 0] += 1
+            if run > 0 { perSource[source, default: 0] += run }
+            return (perSource, perPlace)
+        }
+        var perSource: [String: Int] = [:]
+        var perPlace: [Place: Int] = [:]
+        let chunk = max(chunk, 1)
+        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
+        if chunks > 1 {
+            let lock = NSLock()
+            DispatchQueue.concurrentPerform(iterations: chunks) { index in
+                let part = count(index * chunk ..< min(assets.count, (index + 1) * chunk))
+                lock.withLock {
+                    perSource.merge(part.sources, uniquingKeysWith: +)
+                    perPlace.merge(part.places, uniquingKeysWith: +)
+                }
+            }
+        } else {
+            (perSource, perPlace) = count(assets.indices)
+        }
+        for (source, number) in perSource {
+            for rootId in rootIdsBySource[source] ?? [] {
+                counts[rootId, default: 0] += number
+            }
         }
         for (place, number) in perPlace {
             guard let directoryIds = directoryIdsBySource[place.source] else { continue }

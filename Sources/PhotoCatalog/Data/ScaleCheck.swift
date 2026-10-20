@@ -223,6 +223,7 @@ enum ScaleCheck {
             readSidebar()
         }
         report("structure ms: " + line.joined(separator: " · "))
+        structureParts(app, readSidebar: readSidebar)
 
         line = []
         step("select all") { _ = app.handleKey("a", hasCommand: true) }
@@ -279,6 +280,38 @@ enum ScaleCheck {
         report("photo list ms: " + line.joined(separator: " · "))
         report("footprint \(delta(footprint(), baseline)) MB since start, \(megabytes(footprint())) MB total")
         return 0
+    }
+
+    /// What the window works out again from every photo after a structural change, part by part
+    /// (the photo list aside), as the sidebar, the filter bar and the inspector redraw.
+    @MainActor
+    private static func structureParts(_ app: AppState, readSidebar: () -> Void) {
+        var parts: [String] = []
+        var total = 0
+        func part(_ label: String, _ body: () -> Void) {
+            let (_, ms) = timed(body)
+            parts.append("\(label) \(ms)")
+            total += ms
+        }
+        func redraw() {
+            part("pairing") { _ = app.assetPairing }
+            part("index") { _ = app.assets.last.flatMap { app.asset(id: $0.id) } }
+            part("library") { _ = app.libraryCounts }
+            part("keywords") { _ = app.keywordList }
+            part("lists") {
+                _ = app.projectList
+                _ = app.clientList
+            }
+            part("gear") { _ = app.gearCounts }
+            part("sidebar") { readSidebar() }
+            part("dates") { _ = app.captureDateGroups }
+            part("folders") { for item in app.folderTree { _ = app.countForFolderTreeItem(item) } }
+        }
+        // every derived part dropped, the id index too (which edits in place, such as Move to
+        // Trash or a rename, keep)
+        part("change") { app.assets = app.assets }
+        redraw()
+        report("rederive ms: " + parts.joined(separator: " · ") + " · total \(total)")
     }
 
     /// Smart albums by rating, keyword, capture date and camera, matched against every photo.

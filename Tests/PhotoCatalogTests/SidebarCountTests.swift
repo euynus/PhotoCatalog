@@ -304,6 +304,45 @@ extension SidebarCountTests {
                                "\(field) in chunks of \(chunk)")
             }
         }
+
+        // the library's counts: of the photos shown, and of every live file for missing or offline
+        photos[1].status = .missing
+        photos[9].status = .offline   // the JPEG behind its RAW
+        let cutoff = now.addingTimeInterval(-90 * 86_400)
+        let library = AppState.libraryCounts(photos, pairing: pairing, recentCutoff: cutoff, chunk: .max)
+        XCTAssertEqual(library.all, shown.count)
+        XCTAssertEqual(library.recent, shown.filter { $0.importedAt > cutoff }.count)
+        XCTAssertEqual(library.unrated, shown.filter { $0.rating == 0 && $0.flag != .reject }.count)
+        XCTAssertEqual(library.picks, shown.filter { $0.flag == .pick }.count)
+        XCTAssertEqual(library.rejected, shown.filter { $0.flag == .reject }.count)
+        XCTAssertEqual(library.places, shown.filter(\.hasGPS).count)
+        XCTAssertEqual(library.missingOffline,
+                       photos.filter { !$0.deleted && ($0.status == .missing || $0.status == .offline) }.count)
+        for chunk in [1, 3, 7] {
+            XCTAssertEqual(AppState.libraryCounts(photos, pairing: pairing, recentCutoff: cutoff, chunk: chunk), library,
+                           "in chunks of \(chunk)")
+        }
+
+        // capture days, and each folder's photos
+        let days = Dictionary(shown.compactMap { CaptureDates.day(of: $0.date) }.map { ($0, 1) }, uniquingKeysWith: +)
+        for chunk in [1, 3, 7, Int.max] {
+            XCTAssertEqual(CaptureDates.dayCounts(photos, pairing: pairing, chunk: chunk), days, "in chunks of \(chunk)")
+        }
+        XCTAssertEqual(CaptureDates.groups(dayCounts: days), CaptureDates.groups(shown))
+        let directory = PathString.standardized(scratch.path)
+        let items = Set(photos.map(\.folderId)).sorted().map {
+            FolderTreeItem(id: $0, sourceId: $0, name: $0, status: "online", depth: 0, directoryPath: nil)
+        } + [FolderTreeItem(id: "subfolder:" + directory, sourceId: "day", name: "day", status: "online", depth: 1,
+                            directoryPath: directory)]
+        var folders = Dictionary(grouping: shown, by: \.folderId).mapValues(\.count)
+        folders["subfolder:" + directory] = shown.filter {
+            $0.folderId == "day" && $0.localPath.map { PathString.standardized(PathString.directory(of: $0)) } == directory
+        }.count
+        XCTAssertGreaterThan(folders["subfolder:" + directory] ?? 0, 0)
+        for chunk in [1, 3, 7, Int.max] {
+            XCTAssertEqual(FolderTreeService.counts(for: items, assets: photos, pairing: pairing, chunk: chunk), folders,
+                           "in chunks of \(chunk)")
+        }
     }
 }
 

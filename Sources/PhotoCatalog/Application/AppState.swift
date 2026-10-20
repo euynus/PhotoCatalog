@@ -97,10 +97,23 @@ final class AppState {
     private var assetIndex: [String: Int] {
         _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = assetIndexCache { return cache }
-        var map = [String: Int](minimumCapacity: assets.count)
-        for (i, a) in assets.enumerated() { map[a.id] = i }
+        let map = Self.positionsById(assets)
         assetIndexCache = map
         return map
+    }
+
+    /// Each photo's position by id (the last one's, should an id repeat).
+    nonisolated private static func positionsById(_ assets: [Asset]) -> [String: Int] {
+        var map = [String: Int](minimumCapacity: assets.count)
+        for (i, a) in assets.enumerated() { map[a.id] = i }
+        return map
+    }
+
+    /// In debug builds, for a catalog small enough: that an id index kept through a change of the
+    /// photos is the one building it again gives.
+    private func assertAssetIndexCurrent() {
+        assert(assets.count > 20_000 || assetIndexCache.map { $0 == Self.positionsById(assets) } ?? true,
+               "a kept id index gives each photo's position")
     }
     var albums: [Album] {
         didSet {
@@ -165,7 +178,8 @@ final class AppState {
     /// The project and client lists; metadata edits patch them in place.
     @ObservationIgnored private var projectCountsCache: MetadataValueCounts?
     @ObservationIgnored private var clientCountsCache: MetadataValueCounts?
-    @ObservationIgnored private var captureDateGroupsCache: [CaptureDateBucket]?
+    /// The capture-date tree, and the photos by day it was made from.
+    @ObservationIgnored private var captureDateGroupsCache: (days: [Int: Int], groups: [CaptureDateBucket])?
     private var captureStatisticsCache: (request: CaptureStatisticsRequest, value: CaptureStatistics)?
     @ObservationIgnored private var captureStatisticsTask: Task<CaptureStatistics, Error>?
     @ObservationIgnored private var captureStatisticsGeneration = 0
@@ -227,6 +241,33 @@ final class AppState {
     }
     struct LibraryCounts: Equatable {
         var all = 0, recent = 0, unrated = 0, picks = 0, rejected = 0, missingOffline = 0, places = 0, people = 0
+
+        /// A live photo's file: missing or offline counts every file, a JPEG behind its RAW too.
+        fileprivate mutating func countFile(_ a: Asset, _ sign: Int = 1) {
+            if a.status == .missing || a.status == .offline { missingOffline += sign }
+        }
+
+        /// A photo as the library shows it (or, with -1, one it no longer shows).
+        fileprivate mutating func count(_ a: Asset, recentCutoff cutoff: Date, withFaces: Set<String>, _ sign: Int = 1) {
+            all += sign
+            if a.importedAt > cutoff { recent += sign }
+            if a.rating == 0 && a.flag != .reject { unrated += sign }
+            if a.flag == .pick { picks += sign }
+            if a.flag == .reject { rejected += sign }
+            if a.hasGPS { places += sign }
+            if a.faces > 0 || (!withFaces.isEmpty && withFaces.contains(a.id)) { people += sign }
+        }
+
+        fileprivate mutating func add(_ other: LibraryCounts) {
+            all += other.all
+            recent += other.recent
+            unrated += other.unrated
+            picks += other.picks
+            rejected += other.rejected
+            missingOffline += other.missingOffline
+            places += other.places
+            people += other.people
+        }
 
         /// The only count a keyword / title / credit / location edit can move.
         mutating func applyMetadataChange(from old: Asset, to new: Asset) {
@@ -334,8 +375,34 @@ final class AppState {
 
     private func replaceAssetsForMutation(_ updated: [Asset]) {
         nextAssetEditScope = .any
-        assets = updated
+        // Most such changes edit photos where they are (a rename, a move, a relink, an offline
+        // check), at most adding some after them (a rescan): the id index, ~0.1 s to build again
+        // at 500k photos, then only gains the new ones.
+        let start = assets.count
+        var keptIndex = assetIndexCache.flatMap { Self.keepsPositions(of: assets, in: updated) ? $0 : nil }
+        assets = updated   // which drops the cache: the kept index is then its only copy, added to in place
+        if keptIndex != nil {
+            for position in start ..< assets.count { keptIndex?[assets[position].id] = position }
+            assetIndexCache = keptIndex
+            assertAssetIndexCurrent()
+        }
         didMutateAssets()
+    }
+
+    /// Whether `updated` has each of `photos` where it was, perhaps with more photos after them:
+    /// compared in chunks on every core.
+    nonisolated private static func keepsPositions(of photos: [Asset], in updated: [Asset], chunk: Int = 65_536) -> Bool {
+        guard updated.count >= photos.count else { return false }
+        func same(_ range: Range<Int>) -> Bool { range.allSatisfy { photos[$0].id == updated[$0].id } }
+        let chunks = photos.isEmpty ? 0 : (photos.count - 1) / chunk + 1
+        guard chunks > 1 else { return same(photos.indices) }
+        let lock = NSLock()
+        var kept = true
+        DispatchQueue.concurrentPerform(iterations: chunks) { index in
+            let part = same(index * chunk ..< min(photos.count, (index + 1) * chunk))
+            if !part { lock.withLock { kept = false } }
+        }
+        return kept
     }
 
     /// New photos added in one mutation, in place: `assets + new` copied the catalog for each
@@ -431,9 +498,14 @@ final class AppState {
             }
         }
         nextAssetEditScope = scope
+        // the photos stay where they are: the id index outlives even a structural edit
+        let index = assetIndexCache
+        assert(edits.allSatisfy { assets[$0.offset].id == $0.asset.id }, "an edit keeps its photo's id")
         assets.withUnsafeMutableBufferPointer { buffer in
             for edit in edits { buffer[edit.offset] = edit.asset }
         }
+        assetIndexCache = index
+        assertAssetIndexCurrent()
         if let patchedCounts { libraryCountsCache = patchedCounts }
         if let patchedKeywords { keywordCountsCache = patchedKeywords } else if dropsKeywordCounts { keywordCountsCache = nil }
         if let patchedSidebar { sidebarCountIndexCache = patchedSidebar }
@@ -8034,6 +8106,7 @@ final class AppState {
         let found = duplicateGroupsCache
         let version = structureVersion   // both read even on a cache hit, to register them
         if let cache = currentDuplicateGroupsCache, cache.version == version { return cache.groups }
+        guard !found.isEmpty else { return [] }   // without building the id index
         let index = assetIndex
         let current = found.map { group in
             DuplicateGroup(id: group.id, method: group.method, score: group.score,
@@ -8267,7 +8340,7 @@ final class AppState {
             var first: [String: Int] = [:]
             for position in range {
                 let a = assets[position]
-                guard pairing.shows(a) else { continue }
+                guard pairing.isShown(a, at: position) else { continue }
                 for k in a.keywords {
                     if counts[k] == nil {
                         order.append(k)
@@ -8308,6 +8381,7 @@ final class AppState {
         let pairing: AssetPairing
         let indexById: [String: Int]
         let keywordCounts: KeywordTally
+        let captureDayCounts: [Int: Int]
         let captureDateGroups: [CaptureDateBucket]
         let projects: MetadataValueCounts
         let clients: MetadataValueCounts
@@ -8315,12 +8389,12 @@ final class AppState {
 
         nonisolated static func derive(from assets: [Asset], pairsRawJpeg: Bool, recentCutoff: Date) -> CatalogDerivedData {
             let pairing = pairsRawJpeg ? AssetPairing.rawJpeg(assets) : .empty
-            var indexById = [String: Int](minimumCapacity: assets.count)
-            for (offset, asset) in assets.enumerated() { indexById[asset.id] = offset }
+            let indexById = AppState.positionsById(assets)
+            let days = CaptureDates.dayCounts(assets, pairing: pairing)
             return CatalogDerivedData(
                 pairing: pairing, indexById: indexById,
                 keywordCounts: AppState.keywordCounts(of: assets, pairing: pairing),
-                captureDateGroups: CaptureDates.groups(assets.filter(pairing.shows)),
+                captureDayCounts: days, captureDateGroups: CaptureDates.groups(dayCounts: days),
                 projects: AppState.metadataCounts(assets, pairing: pairing, \.project),
                 clients: AppState.metadataCounts(assets, pairing: pairing, \.client),
                 libraryCounts: AppState.libraryCounts(assets, pairing: pairing, recentCutoff: recentCutoff))
@@ -8332,7 +8406,7 @@ final class AppState {
         assetIndexCache = derived.indexById
         if pairRawAndJpeg { assetPairingCache = (structureVersion, derived.pairing) }
         keywordCountsCache = derived.keywordCounts
-        captureDateGroupsCache = derived.captureDateGroups
+        captureDateGroupsCache = (derived.captureDayCounts, derived.captureDateGroups)
         projectCountsCache = derived.projects
         clientCountsCache = derived.clients
         libraryCountsCache = derived.libraryCounts
@@ -8408,9 +8482,10 @@ final class AppState {
 
     var captureDateGroups: [CaptureDateBucket] {
         _ = listInputsVersion
-        if let cached = captureDateGroupsCache { return cached }
-        let grouped = CaptureDates.groups(presentedAssets())
-        captureDateGroupsCache = grouped
+        if let cached = captureDateGroupsCache { return cached.groups }
+        let days = CaptureDates.dayCounts(assets, pairing: assetPairing)
+        let grouped = CaptureDates.groups(dayCounts: days)
+        captureDateGroupsCache = (days, grouped)
         return grouped
     }
 
@@ -8481,21 +8556,30 @@ final class AppState {
         return counts
     }
 
+    /// Counted in chunks on every core: one thread took ~0.2 s at 500k photos, and the sidebar
+    /// waits for it after every structural change.
     nonisolated static func libraryCounts(_ assets: [Asset], pairing: AssetPairing, recentCutoff cutoff: Date,
-                                          withFaces: Set<String> = []) -> LibraryCounts {
-        var counts = LibraryCounts()
-        for a in assets where !a.deleted {
-            if a.status == .missing || a.status == .offline { counts.missingOffline += 1 }
-            guard !pairing.isHiddenCompanion(a.id) else { continue }
-            counts.all += 1
-            if a.importedAt > cutoff { counts.recent += 1 }
-            if a.rating == 0 && a.flag != .reject { counts.unrated += 1 }
-            if a.flag == .pick { counts.picks += 1 }
-            if a.flag == .reject { counts.rejected += 1 }
-            if a.hasGPS { counts.places += 1 }
-            if a.faces > 0 || withFaces.contains(a.id) { counts.people += 1 }
+                                          withFaces: Set<String> = [], chunk: Int = 32_768) -> LibraryCounts {
+        func count(_ range: Range<Int>) -> LibraryCounts {
+            var counts = LibraryCounts()
+            for position in range {
+                let a = assets[position]
+                guard !a.deleted else { continue }
+                counts.countFile(a)
+                if pairing.isShown(a, at: position) { counts.count(a, recentCutoff: cutoff, withFaces: withFaces) }
+            }
+            return counts
         }
-        return counts
+        let chunk = max(chunk, 1)
+        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
+        guard chunks > 1 else { return count(assets.indices) }
+        let lock = NSLock()
+        var total = LibraryCounts()
+        DispatchQueue.concurrentPerform(iterations: chunks) { index in
+            let part = count(index * chunk ..< min(assets.count, (index + 1) * chunk))
+            lock.withLock { total.add(part) }
+        }
+        return total
     }
 
     /// The library's cameras and lenses, most used first: what the filter bar offers.
@@ -8537,6 +8621,15 @@ final class AppState {
             let raw = asset[keyPath: keyPath]
             // most photos have no value: skip them before any lookup or Foundation call
             guard !raw.isEmpty, pairing.shows(asset) else { return "" }
+            return listedValue(raw)
+        }
+
+        /// `value(of:_:pairing:)` of the photo at `position` of the photos `pairing` was worked out from.
+        static func value(at position: Int, of assets: [Asset], _ keyPath: KeyPath<Asset, String>,
+                          pairing: AssetPairing) -> String {
+            let asset = assets[position]
+            let raw = asset[keyPath: keyPath]
+            guard !raw.isEmpty, pairing.isShown(asset, at: position) else { return "" }
             return listedValue(raw)
         }
 
@@ -8590,12 +8683,12 @@ final class AppState {
 
     /// Counted in chunks on every core, each chunk's counts added up and first photos kept.
     nonisolated static func metadataCounts(_ assets: [Asset], pairing: AssetPairing, _ keyPath: KeyPath<Asset, String>,
-                                           chunk: Int = 65_536) -> MetadataValueCounts {
+                                           chunk: Int = 32_768) -> MetadataValueCounts {
         func count(_ range: Range<Int>) -> (counts: [String: Int], first: [String: Int]) {
             var counts: [String: Int] = [:]
             var first: [String: Int] = [:]
             for position in range {
-                let value = MetadataValueCounts.value(of: assets[position], keyPath, pairing: pairing)
+                let value = MetadataValueCounts.value(at: position, of: assets, keyPath, pairing: pairing)
                 guard !value.isEmpty else { continue }
                 if counts[value] == nil { first[value] = position }
                 counts[value, default: 0] += 1
@@ -8630,7 +8723,7 @@ final class AppState {
         let photos = assets
         let pairing = assetPairing
         if counts.apply(changes, photos: photos.count, value: {
-            MetadataValueCounts.value(of: photos[$0], keyPath, pairing: pairing)
+            MetadataValueCounts.value(at: $0, of: photos, keyPath, pairing: pairing)
         }) {
             cache = counts
         }
@@ -8671,7 +8764,7 @@ final class AppState {
         _ = listInputsVersion   // register the dependency even on a cache hit
         if let cache = folderTreeCountCache { return cache }
         let items = folderTree
-        let counts = FolderTreeService.counts(for: items, assets: presentedAssets())
+        let counts = FolderTreeService.counts(for: items, assets: assets, pairing: assetPairing)
         folderTreeCountCache = counts
         return counts
     }
@@ -8894,7 +8987,7 @@ final class AppState {
         let positions = assetIndex
         for album in albums {
             index.counts.albums[album.id] = album.assetIds.reduce(0) { count, id in
-                guard let position = positions[id], pairing.shows(assets[position]) else { return count }
+                guard let position = positions[id], pairing.isShown(assets[position], at: position) else { return count }
                 return count + 1
             }
         }
@@ -8928,7 +9021,7 @@ final class AppState {
             var folder = "", run = 0
             for position in range {
                 let asset = assets[position]
-                guard pairing.shows(asset) else { continue }
+                guard pairing.isShown(asset, at: position) else { continue }
                 if asset.folderId != folder {
                     if run > 0 { tallies.folders[folder, default: 0] += run }
                     folder = asset.folderId
@@ -9951,6 +10044,7 @@ final class AppState {
     }
 
     var quickCollectionCount: Int {
+        guard !quickCollection.isEmpty else { return 0 }   // without building the id index
         let index = assetIndex, assets = self.assets
         return quickCollection.reduce(0) { count, id in count + (index[id].map { assets[$0].deleted ? 0 : 1 } ?? 0) }
     }
@@ -11657,7 +11751,13 @@ extension AppLanguage {
 /// A project or client (or camera) as the sidebar and the filter bar list it: without the spaces
 /// and line breaks around it, so " Wedding " and "Wedding" are one project.
 fileprivate func listedValue(_ raw: String) -> String {
-    raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    // Nearly every value starts and ends with a printable ASCII character, which no trimming
+    // takes off: only the others go through Foundation (a call per photo, at 500k photos a
+    // quarter of a second for the filter bar's cameras and lenses).
+    if let first = raw.utf8.first, let last = raw.utf8.last, (0x21...0x7E).contains(first), (0x21...0x7E).contains(last) {
+        return raw
+    }
+    return raw.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
 /// Grid layout shared by GridView and arrow-key navigation. `target` is the

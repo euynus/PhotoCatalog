@@ -469,6 +469,7 @@ struct Asset: Identifiable, Equatable, Sendable {
 
     static func hasGPSCoordinates(_ gps: (Double, Double), location: String) -> Bool {
         if !(gps.0 == 0 && gps.1 == 0) { return true }
+        guard !location.isEmpty else { return false }   // most photos: no coordinates in any form
         let parts = location.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         guard parts.count == 2,
               let latitude = Double(parts[0]),

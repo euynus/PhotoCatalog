@@ -1,6 +1,6 @@
 import Foundation
 
-struct CaptureDateBucket: Identifiable, Sendable {
+struct CaptureDateBucket: Identifiable, Sendable, Equatable {
     let id: String
     let label: String
     let count: Int
@@ -84,16 +84,43 @@ enum CaptureDates {
     }
 
     static func groups(_ assets: [Asset]) -> [CaptureDateBucket] {
-        // Capture times are UTC wall clock, so a photo's day is integer arithmetic; a Calendar
-        // call per photo was most of the half second this took at 500k photos.
-        var days: [Int: Int] = [:]
-        for asset in assets where !asset.deleted {
-            let seconds = asset.date.timeIntervalSince1970
-            guard seconds.isFinite else { continue }
-            days[Int((seconds / 86_400).rounded(.down)), default: 0] += 1
-        }
+        groups(dayCounts: dayCounts(assets, pairing: .empty))
+    }
+
+    /// The year / month / day tree of photos counted by day (see `dayCounts`).
+    static func groups(dayCounts days: [Int: Int]) -> [CaptureDateBucket] {
         let counts = days.map { (key: key(Date(timeIntervalSince1970: Double($0.key) * 86_400)), count: $0.value) }
         return buckets(counts, depth: 0)
+    }
+
+    /// How many of the photos as shown were taken on each day, by days since 1970, counted in
+    /// chunks on every core. Capture times are UTC wall clock, so a photo's day is integer
+    /// arithmetic; a Calendar call per photo was most of the half second this took at 500k photos.
+    static func dayCounts(_ assets: [Asset], pairing: AssetPairing, chunk: Int = 65_536) -> [Int: Int] {
+        func count(_ range: Range<Int>) -> [Int: Int] {
+            var days: [Int: Int] = [:]
+            for position in range where pairing.isShown(assets[position], at: position) {
+                guard let day = day(of: assets[position].date) else { continue }
+                days[day, default: 0] += 1
+            }
+            return days
+        }
+        let chunk = max(chunk, 1)
+        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
+        guard chunks > 1 else { return count(assets.indices) }
+        let lock = NSLock()
+        var days: [Int: Int] = [:]
+        DispatchQueue.concurrentPerform(iterations: chunks) { index in
+            let part = count(index * chunk ..< min(assets.count, (index + 1) * chunk))
+            lock.withLock { days.merge(part, uniquingKeysWith: +) }
+        }
+        return days
+    }
+
+    /// A capture time's day as `dayCounts` counts it, or nil for a time that isn't one.
+    static func day(of date: Date) -> Int? {
+        let seconds = date.timeIntervalSince1970
+        return seconds.isFinite ? Int((seconds / 86_400).rounded(.down)) : nil
     }
 
     /// Reuse the cached hierarchy instead of scanning every photo for each pinned date.
