@@ -63,13 +63,19 @@ enum PhotoStackService {
     /// A photo as capture order places it: by camera (its name's rank among the names), then
     /// capture time, then id. Compact, so that a catalog's photos sort in milliseconds: sorting
     /// the photos themselves by camera, time and id took ~2.5 s at 500k photos.
-    struct CaptureKey: Sendable {
+    struct CaptureKey: Sendable, Equatable {
         var camera: Int32
         /// The photo's position among the photos ordered.
         var position: Int32
         /// Its capture time as `Date` holds it, whose comparisons and differences are this
         /// number's (a `Date` field, outside Foundation, is copied and compared through calls).
         var time: TimeInterval
+    }
+
+    /// Photos in capture order, with the ranks of their cameras' names.
+    struct CaptureOrder: Sendable {
+        var keys: [CaptureKey]
+        var ranks: [String: Int32]
     }
 
     /// Each camera's rank as the names sort. Names Swift holds equal (one name in two Unicode

@@ -451,7 +451,7 @@ enum ScaleCheck {
     /// a screenful of tiles' badges. As the catalog is (auto-stacking as the run's settings have
     /// it: `-pc_autoStackSeconds '<real>5</real>'`, as a plain 5 is read as text), then with edited
     /// copies and duplicate groups, every stack folded, the photo list folding them, and after an
-    /// import batch. Median of five each.
+    /// import batch, worked out again or carried on. Median of five each.
     @MainActor
     private static func stackParts(_ app: AppState) {
         var parts: [String] = []
@@ -494,6 +494,20 @@ enum ScaleCheck {
             app.appendAssets(importBatch(for: app, count: 32))
             _ = app.assetPairing
         }, read)
+        // the same, what stacks are worked out from carried on to the batch (as `appendAssets`
+        // is to do, with the earlier photos the pairing hides or shows again found as it does)
+        var carry: (start: Int, flipped: [Int]) = (0, [])
+        median("import batch, carried", prepare: {
+            let (start, before) = (app.assets.count, app.assetPairing)
+            app.appendAssets(importBatch(for: app, count: 32))
+            let after = app.assetPairing
+            carry = (start, (0..<start).filter {
+                before.isShown(app.assets[$0], at: $0) != after.isShown(app.assets[$0], at: $0)
+            })
+        }) {
+            app.carryStacks(appendedFrom: carry.start, flipped: carry.flipped)
+            read()
+        }
         app.setAllStacksCollapsed(false)
         app.duplicateGroupsCache = []
         func photos(_ stacks: [PhotoStack]) -> Int { stacks.reduce(0) { $0 + $1.count } }

@@ -255,7 +255,7 @@ final class PhotoStackTests: CatalogTestCase {
         for chunk in [1, 3, 7, 64, 65_536] {
             XCTAssertEqual(EditedVersions.groups(photos, chunk: chunk).map { [$0.id, $0.method] + $0.items.map(\.id) },
                            expectedEdits, "edited copies, chunks of \(chunk)")
-            let order = AppState.captureOrder(of: photos, pairing: pairing, chunk: chunk, run: max(chunk, 2))
+            let order = AppState.captureOrder(of: photos, pairing: pairing, chunk: chunk, run: max(chunk, 2)).keys
             for seconds in Self.intervals.compactMap({ $0 }) {
                 XCTAssertEqual(PhotoStackService.groups(inCaptureOrder: order, of: photos, within: seconds),
                                Frozen.captureTimeGroups(photos.filter(pairing.shows), within: seconds),
@@ -415,6 +415,67 @@ final class PhotoStackTests: CatalogTestCase {
             check("an import batch")
             app.appendAssets(Array(batch.dropFirst(5)))
             check("another import batch")
+        }
+    }
+
+    /// An import batch carries what stacks are worked out from on to its photos
+    /// (`carryStacks`, which `appendAssets` calls) rather than working it out from every photo
+    /// again: the stacks are then the plain derivation's. Edited copies of names already edited,
+    /// originals arriving for copies that had none, a RAW taking over from a JPEG original or
+    /// hiding a burst's JPEG, a second RAW showing a JPEG again, shots tied in time with others:
+    /// carried. A camera no photo named, or a copy of a name never edited: worked out again.
+    @MainActor
+    func testImportBatchesCarryStacksOn() throws {
+        let (photos, duplicates) = catalog()
+        let a = "/Volumes/Stacks/A", b = "/Volumes/Stacks/B"
+        for (pairing, seconds) in [(true, 5), (false, 2), (true, nil), (true, 1e9)] as [(Bool, Double?)] {
+            let app = app(photos, duplicates, pairing: pairing, seconds: seconds)
+            _ = app.photoStacks
+            func append(_ batch: [Asset], carried: Bool = true, orderCarried: Bool = true,
+                        line: UInt = #line) {
+                let start = app.assets.count
+                let before = app.assetPairing
+                let derivations = app.stackSourceDerivations
+                app.appendAssets(batch)
+                let after = app.assetPairing
+                let flipped = (0..<start).filter {
+                    before.isShown(app.assets[$0], at: $0) != after.isShown(app.assets[$0], at: $0)
+                }
+                app.carryStacks(appendedFrom: start, flipped: flipped)
+                let expected = Frozen.stacks(app.assets, pairing: after, duplicates: duplicates, seconds: seconds)
+                XCTAssertEqual(app.photoStacks, expected, "pairing \(pairing), \(seconds.map { "\($0)" } ?? "off")",
+                               line: line)
+                assertBadges(app, app.assets, expected, collapsed: [], line: line)
+                let worked = (carried ? 0 : 1) + (seconds == nil || orderCarried ? 0 : 1)
+                XCTAssertEqual(app.stackSourceDerivations - derivations, worked, "worked out again", line: line)
+            }
+            append([
+                photo("b1", "\(a)/IMG_0001-Edit (3).tif", camera: "", at: 905),
+                photo("b2", "\(a)/IMG_0008.CR3", at: 8_999.5),   // sorts just before the JPEG it hides
+                photo("b3", "\(b)/C_3.CR3", at: 20_006.2),
+                photo("b4", "\(b)/H_1.CR3", camera: "NIKON Z 6_2", at: 24_000.5),
+                photo("b5", "\(b)/C_6.JPG", at: 20_016),
+                photo("t-b", "\(b)/T_0.JPG", camera: "SONY ILCE-7M4", at: 21_000),
+            ])
+            append([
+                photo("b6", "\(b)/N_1.NEF", camera: "Leica M11", at: 26_000),
+                photo("b7", "\(b)/N_2.NEF", camera: "Leica M11", at: 26_001),
+                photo("b8", "\(a)/IMG_0003.JPG", at: 4_200),
+            ], orderCarried: false)
+            append([
+                photo("b9", "\(a)/IMG_0009-Edit.tif", camera: "", at: 10_100),
+                photo("b10", "\(a)/IMG_0009.JPG", at: 10_000),
+                photo("b11", "\(b)/C_7.JPG", at: 20_020),
+            ], carried: false)
+            // a removed photo, a virtual copy of a burst's shot, and two batches with no redraw
+            // between them
+            append([photo("b12", "\(b)/C_8.JPG", at: 20_021, deleted: true),
+                    app.assets.first { $0.id == "c1" }!.virtualCopy(id: "b13", name: "副本 2")])
+            let start = app.assets.count
+            app.appendAssets([photo("b14", "\(b)/C_9.JPG", at: 20_024)])
+            app.carryStacks(appendedFrom: start, flipped: [])
+            append([photo("b15", "\(b)/C_10.JPG", at: 20_027),
+                    photo("b16", "\(a)/IMG_0001-编辑-4.tif", camera: "", at: 906)])
         }
     }
 }

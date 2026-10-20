@@ -166,7 +166,8 @@ final class AppState {
     @ObservationIgnored private var captureTimeGroupsCache: (version: Int, seconds: Double, groups: [[String]])?
     /// The photos auto-stacking reads, in capture order: sorted once per structure change (and
     /// pairing), whatever the interval, which the groups are then a pass over.
-    @ObservationIgnored private var captureOrderCache: (version: Int, pairs: Bool, order: [PhotoStackService.CaptureKey])?
+    @ObservationIgnored private var captureOrderCache: (version: Int, pairs: Bool, count: Int,
+                                                        order: PhotoStackService.CaptureOrder)?
     /// Auto-stacking by capture time: photos from one camera taken within this many seconds of
     /// each other stack together, as Lightroom's Auto-Stack by Capture Time (nil: off).
     var autoStackSeconds: Double? = UserDefaults.app.object(forKey: "pc_autoStackSeconds") as? Double {
@@ -181,7 +182,11 @@ final class AppState {
         }
     }
     /// Originals with their edited copies, derived from file names once per structure change.
-    @ObservationIgnored private var editGroupsCache: (version: Int, groups: [DuplicateGroup])?
+    @ObservationIgnored private var editGroupsCache: (version: Int, index: EditedVersions.Index,
+                                                      groups: [DuplicateGroup])?
+    /// How often what stacks are worked out from (edited copies, capture order) was worked out
+    /// from every photo (for tests).
+    @ObservationIgnored private(set) var stackSourceDerivations = 0
     @ObservationIgnored private var stackByAssetCache: [String: Int]?
     @ObservationIgnored private var keywordListCache: [KeywordCount]?
     @ObservationIgnored private var gearCountsCache: (cameras: MetadataValueCounts, lenses: MetadataValueCounts)?
@@ -9413,8 +9418,10 @@ final class AppState {
         if let cached = editGroupsCache, cached.version == structureVersion {
             edits = cached.groups
         } else {
-            edits = EditedVersions.groups(assets)
-            editGroupsCache = (structureVersion, edits)
+            let index = EditedVersions.Index(assets)
+            edits = index.groups(of: assets)
+            editGroupsCache = (structureVersion, index, edits)
+            stackSourceDerivations += 1
         }
         let stacks = PhotoStackService.stacks(from: edits + duplicateGroupsCache, captureTimeGroups: captureTimeGroups())
         photoStacksCache = stacks
@@ -9427,17 +9434,18 @@ final class AppState {
         if let cached = captureTimeGroupsCache, cached.version == structureVersion, cached.seconds == seconds {
             return cached.groups
         }
-        let groups = PhotoStackService.groups(inCaptureOrder: captureOrder, of: assets, within: seconds)
+        let groups = PhotoStackService.groups(inCaptureOrder: captureOrder.keys, of: assets, within: seconds)
         if seconds == autoStackSeconds { captureTimeGroupsCache = (structureVersion, seconds, groups) }
         return groups
     }
 
-    private var captureOrder: [PhotoStackService.CaptureKey] {
+    private var captureOrder: PhotoStackService.CaptureOrder {
         if let cache = captureOrderCache, cache.version == structureVersion, cache.pairs == pairRawAndJpeg {
             return cache.order
         }
         let order = Self.captureOrder(of: assets, pairing: assetPairing)
-        captureOrderCache = (structureVersion, pairRawAndJpeg, order)
+        captureOrderCache = (structureVersion, pairRawAndJpeg, assets.count, order)
+        stackSourceDerivations += 1
         return order
     }
 
@@ -9445,7 +9453,7 @@ final class AppState {
     /// `PhotoStackService.captureTimeGroups` orders them): their keys read in chunks side by
     /// side, then sorted in runs side by side and merged.
     nonisolated static func captureOrder(of assets: [Asset], pairing: AssetPairing, chunk: Int = 65_536,
-                                         run: Int = 16_384) -> [PhotoStackService.CaptureKey] {
+                                         run: Int = 16_384) -> PhotoStackService.CaptureOrder {
         typealias Key = PhotoStackService.CaptureKey
         let chunk = max(chunk, 1)
         let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
@@ -9490,7 +9498,101 @@ final class AppState {
                 }
             }
             concurrentSort(&order, run: run) { PhotoStackService.precedes($0, $1, in: photos) }
-            return order
+            return PhotoStackService.CaptureOrder(keys: order, ranks: ranks)
+        }
+    }
+
+    /// `order`, the capture order of `assets` up to `start`, carried on to all of them: the
+    /// photos from `start` on and those of `flipped` that `pairing` now shows put in where they
+    /// sort, those of `flipped` it now hides taken out. Nil when a new photo names a camera no
+    /// photo did, which moves the ranks.
+    nonisolated static func captureOrder(_ order: PhotoStackService.CaptureOrder, of assets: [Asset],
+                                         pairing: AssetPairing, appendedFrom start: Int,
+                                         flipped: [Int]) -> PhotoStackService.CaptureOrder? {
+        typealias Key = PhotoStackService.CaptureKey
+        var added: [Key] = [], removed: [Key] = []
+        for position in Set(flipped.filter { $0 < start }).sorted() + Array(start ..< assets.count) {
+            let asset = assets[position]
+            let shown = pairing.isShown(asset, at: position)
+            guard !asset.camera.isEmpty, shown || position < start else { continue }
+            guard let rank = order.ranks[asset.camera] else { return nil }
+            let key = Key(camera: rank, position: Int32(position), time: asset.date.timeIntervalSinceReferenceDate)
+            if shown { added.append(key) } else { removed.append(key) }
+        }
+        guard !added.isEmpty || !removed.isEmpty else { return order }
+        let keys = order.keys
+        let merged = assets.withUnsafeBufferPointer { photos -> [Key] in
+            // where a key goes among the keys: after each one before it (found by bisection)
+            func place(_ key: Key) -> Int {
+                var (lower, upper) = (0, keys.count)
+                while lower < upper {
+                    let middle = (lower + upper) / 2
+                    if PhotoStackService.precedes(keys[middle], key, in: photos) { lower = middle + 1 } else { upper = middle }
+                }
+                return lower
+            }
+            // (an earlier photo goes in only if not there yet, and comes out only if there)
+            let inserts = added.sorted { PhotoStackService.precedes($0, $1, in: photos) }
+                .map { (at: place($0), key: $0) }
+                .filter { $0.at == keys.count || keys[$0.at] != $0.key }
+            let removals = removed.map { (at: place($0), key: $0) }
+                .filter { $0.at < keys.count && keys[$0.at] == $0.key }.map(\.at).sorted()
+            var merged: [Key] = []
+            merged.reserveCapacity(keys.count + inserts.count - removals.count)
+            // the keys copied run by run between the places where one goes in or comes out
+            var (from, insert, removal) = (0, 0, 0)
+            while insert < inserts.count || removal < removals.count {
+                if insert < inserts.count, removal == removals.count || inserts[insert].at <= removals[removal] {
+                    merged.append(contentsOf: keys[from ..< inserts[insert].at])
+                    merged.append(inserts[insert].key)
+                    from = inserts[insert].at
+                    insert += 1
+                } else {
+                    merged.append(contentsOf: keys[from ..< removals[removal]])
+                    from = removals[removal] + 1
+                    removal += 1
+                }
+            }
+            merged.append(contentsOf: keys[from...])
+            return merged
+        }
+        return PhotoStackService.CaptureOrder(keys: merged, ranks: order.ranks)
+    }
+
+    /// What stacks are worked out from, carried on to photos just added after the others (an
+    /// import batch, a tethered shot) instead of worked out again from every photo when next
+    /// read: the edited copies and originals among the photos from `start` on, and the capture
+    /// order with them put in, and with the earlier photos the pairing now hides or shows again
+    /// (`flipped`, as `AssetPairing.append` gives them) taken out or put back. For `appendAssets`
+    /// to call once it has carried the pairing on; what can't be carried exactly is worked out
+    /// again when read.
+    func carryStacks(appendedFrom start: Int, flipped: [Int]) {
+        // what was worked out from the photos before them, just before they were added
+        let before = structureVersion &- 1
+        if let cache = editGroupsCache, cache.version == before, cache.index.count == start,
+           let carried = cache.index.adding(assets) {
+            editGroupsCache = (structureVersion, carried.index,
+                               carried.changed ? carried.index.groups(of: assets) : cache.groups)
+        }
+        if let cache = captureOrderCache, cache.version == before, cache.pairs == pairRawAndJpeg, cache.count == start,
+           let order = Self.captureOrder(cache.order, of: assets, pairing: assetPairing, appendedFrom: start,
+                                         flipped: flipped) {
+            captureOrderCache = (structureVersion, pairRawAndJpeg, assets.count, order)
+        }
+        assertStackSourcesCurrent()
+    }
+
+    /// In debug builds, for a catalog small enough: that what stacks are worked out from, as
+    /// carried on through a change, is what working it out again gives.
+    private func assertStackSourcesCurrent() {
+        guard assets.count <= 20_000 else { return }
+        if let cache = editGroupsCache, cache.version == structureVersion {
+            assert(cache.groups.map { $0.items.map(\.id) } == EditedVersions.groups(assets).map { $0.items.map(\.id) },
+                   "carried on, the edited copies are those found again")
+        }
+        if let cache = captureOrderCache, cache.version == structureVersion, cache.pairs == pairRawAndJpeg {
+            assert(cache.order.keys == Self.captureOrder(of: assets, pairing: assetPairing).keys,
+                   "carried on, the capture order is the one sorted again")
         }
     }
 

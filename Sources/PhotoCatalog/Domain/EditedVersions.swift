@@ -43,54 +43,112 @@ enum EditedVersions {
     }
 
     /// Each original with its edited copies, as groups for stacking. The original is the RAW
-    /// when a RAW and a JPEG share its name; virtual copies take no part. Both passes over the
-    /// photos run in chunks side by side, joined in catalog order: on one thread they took
-    /// ~60 ms at 500k photos without edited copies, ~500 ms with some, after every structural change.
+    /// when a RAW and a JPEG share its name; virtual copies take no part.
     static func groups(_ assets: [Asset], chunk: Int = 65_536) -> [DuplicateGroup] {
-        // the edited copies, each with its original's folder and case-folded name
-        let edits = PhotoStackService.found(in: assets, chunk: chunk) {
-            asset, position -> (position: Int, dir: String, key: String)? in
-            // a cheap test first: only names that could be an edited copy are parsed
-            guard !asset.deleted, !asset.isVirtualCopy, mightBeEditedCopy(asset.filename),
-                  let path = asset.localPath else { return nil }
-            let (dir, stem) = split(path)
-            guard let original = originalStem(of: stem) else { return nil }
-            return (position, dir, dir + "/" + original.lowercased())
-        }
-        guard !edits.isEmpty else { return [] }
-        let folders = Folders(edits.map(\.dir)), keys = Set(edits.map(\.key))
-        // the photos named as an original of theirs, in catalog order: each name's first RAW is
-        // its original, or else its first photo
-        let candidates = PhotoStackService.found(in: assets, chunk: chunk) {
-            asset, position -> (position: Int, key: String)? in
-            guard !asset.deleted, !asset.isVirtualCopy, let path = asset.localPath,
-                  folders.mightContain(folderOf: path) else { return nil }
-            let (dir, stem) = split(path)
-            guard folders.names.contains(Substring(dir)) else { return nil }
-            let key = dir + "/" + stem.lowercased()
-            // an edited copy's name (which no original has) says "edit" or "编": the costly
-            // pattern match is for names that might
-            guard keys.contains(key), !mightBeEditedCopy(stem) || originalStem(of: stem) == nil else { return nil }
-            return (position, key)
-        }
-        var originals: [String: Int] = [:]
-        for candidate in candidates {
-            if let existing = originals[candidate.key], assets[existing].isRaw || !assets[candidate.position].isRaw {
-                continue
+        Index(assets, chunk: chunk).groups(of: assets)
+    }
+
+    /// The edited copies among some photos, each name's original found: what `groups` makes the
+    /// groups of, which photos added after the others carry on (`adding(_:)`).
+    struct Index {
+        /// How many photos it was made from.
+        private(set) var count: Int
+        /// Each edited copy's position, with its original's name (folder and case-folded file
+        /// name) by number, in order: names are numbered as edited copies first name them.
+        private var edits: [(position: Int, name: Int)]
+        private let folders: Folders
+        private let names: [String: Int]
+        /// Each name's original by the name's number: its first RAW, or else its first photo
+        /// (-1 for none).
+        private var originals: [Int]
+
+        /// Both passes over the photos run in chunks side by side, joined in catalog order: on
+        /// one thread they took ~60 ms at 500k photos without edited copies, ~500 ms with some,
+        /// after every structural change.
+        init(_ assets: [Asset], chunk: Int = 65_536) {
+            count = assets.count
+            let found = PhotoStackService.found(in: assets, chunk: chunk) { asset, position in
+                EditedVersions.editedCopy(asset).map { (position: position, dir: $0.dir, key: $0.key) }
             }
-            originals[candidate.key] = candidate.position
+            var numbers: [String: Int] = [:]
+            edits = found.map { edit in
+                if let name = numbers[edit.key] { return (edit.position, name) }
+                numbers[edit.key] = numbers.count
+                return (edit.position, numbers.count - 1)
+            }
+            (names, folders) = (numbers, Folders(found.map(\.dir)))
+            originals = Array(repeating: -1, count: numbers.count)
+            guard !edits.isEmpty else { return }
+            // constants for the threads to read (they retained a variable's storage by turns)
+            let (folders, names) = (folders, numbers)
+            let candidates = PhotoStackService.found(in: assets, chunk: chunk) { asset, position in
+                EditedVersions.original(asset, in: folders, names: names).map { (position: position, name: $0) }
+            }
+            for candidate in candidates { take(candidate.position, as: candidate.name, of: assets) }
         }
-        var grouped: [String: [Asset]] = [:]
-        var order: [String] = []
-        for edit in edits {
-            guard originals[edit.key] != nil else { continue }
-            if grouped[edit.key] == nil { order.append(edit.key) }
-            grouped[edit.key, default: []].append(assets[edit.position])
+
+        /// This index carried on to `assets`, whose photos from `count` on were added after the
+        /// ones it was made from, and whether that changed it. Nil when one of them is an edited
+        /// copy of a name no earlier edited copy was of: its original may be any earlier photo.
+        func adding(_ assets: [Asset]) -> (index: Index, changed: Bool)? {
+            var index = self
+            index.count = assets.count
+            for position in count ..< assets.count {
+                guard let edit = EditedVersions.editedCopy(assets[position]) else { continue }
+                guard let name = names[edit.key] else { return nil }
+                index.edits.append((position, name))
+            }
+            guard !index.edits.isEmpty else { return (index, false) }
+            for position in count ..< assets.count {
+                guard let name = EditedVersions.original(assets[position], in: folders, names: names) else { continue }
+                index.take(position, as: name, of: assets)
+            }
+            return (index, index.edits.count != edits.count || index.originals != originals)
         }
-        return order.compactMap { key in
-            guard let original = originals[key].map({ assets[$0] }), let copies = grouped[key] else { return nil }
-            return DuplicateGroup(id: "edit-" + original.id, method: "edit", score: 1, items: [original] + copies)
+
+        /// The photo at `position`, after all those taken so far, as the original of name number
+        /// `name` if it's the first photo of that name or the first RAW.
+        private mutating func take(_ position: Int, as name: Int, of assets: [Asset]) {
+            let existing = originals[name]
+            if existing >= 0, assets[existing].isRaw || !assets[position].isRaw { return }
+            originals[name] = position
         }
+
+        /// The groups, in the order edited copies first name their originals.
+        func groups(of assets: [Asset]) -> [DuplicateGroup] {
+            var copies = [[Asset]](repeating: [], count: originals.count)
+            for edit in edits where originals[edit.name] >= 0 { copies[edit.name].append(assets[edit.position]) }
+            return originals.indices.compactMap { name in
+                guard originals[name] >= 0, !copies[name].isEmpty else { return nil }
+                let original = assets[originals[name]]
+                return DuplicateGroup(id: "edit-" + original.id, method: "edit", score: 1, items: [original] + copies[name])
+            }
+        }
+    }
+
+    /// The folder of `asset` and the folder and case-folded name of its original, when it's an
+    /// edited copy.
+    private static func editedCopy(_ asset: Asset) -> (dir: String, key: String)? {
+        // a cheap test first: only names that could be an edited copy are parsed
+        guard !asset.deleted, !asset.isVirtualCopy, mightBeEditedCopy(asset.filename),
+              let path = asset.localPath else { return nil }
+        let (dir, stem) = split(path)
+        guard let original = originalStem(of: stem) else { return nil }
+        return (dir, dir + "/" + original.lowercased())
+    }
+
+    /// The number of `asset`'s name (folder and case-folded file name) among `names`, when it's
+    /// one of them and could be an original: not an edited copy itself.
+    private static func original(_ asset: Asset, in folders: Folders, names: [String: Int]) -> Int? {
+        guard !asset.deleted, !asset.isVirtualCopy, let path = asset.localPath,
+              folders.mightContain(folderOf: path) else { return nil }
+        let (dir, stem) = split(path)
+        guard folders.names.contains(Substring(dir)) else { return nil }
+        let key = dir + "/" + stem.lowercased()
+        // an edited copy's name (which no original has) says "edit" or "编": the costly
+        // pattern match is for names that might
+        guard let name = names[key], !mightBeEditedCopy(stem) || originalStem(of: stem) == nil else { return nil }
+        return name
     }
 
     /// A path's folder and its file's name without the extension, as `PathString` takes them
