@@ -6,115 +6,15 @@ import XCTest
 /// library, keyword, project, client, camera and lens counts, the sidebar's counts, the capture
 /// dates and the folders — exactly as working it all out again would give it, including for the
 /// earlier photos a new RAW hides or a second RAW of their name shows again.
-final class AssetAppendTests: CatalogTestCase {
-    private let shot = Date(timeIntervalSince1970: 1_791_800_000)
-    private var root: URL { scratch.appendingPathComponent("Photos") }
-    private let everything = ["index", "pairing", "library", "keywords", "projects", "clients", "cameras", "lenses",
-                              "sidebar", "dates", "folder tree", "folder counts"]
-
-    private func photo(_ id: String, _ file: String, raw: Bool? = nil, camera: String = "Canon EOS R5",
-                       lens: String = "RF50mm F1.2 L USM", offset: TimeInterval = 0, rating: Int = 0,
-                       flag: Flag = .none, keywords: [String] = [], project: String = "", client: String = "",
-                       gps: (Double, Double) = (0, 0), status: AssetStatus = .ready, deleted: Bool = false) -> Asset {
-        let ext = PathString.splitExtension(file).ext.uppercased()
-        var asset = Asset(id: id, pid: 0, ori: "l", thumb: "", preview: "", filename: PathString.lastComponent(file),
-                          type: ext, isRaw: raw ?? ["CR3", "NEF"].contains(ext), folderId: "src", folderName: "Photos",
-                          date: shot.addingTimeInterval(offset), width: 6000, height: 4000, orientation: 1,
-                          camera: camera, lens: lens, focal: 50, aperture: 2, shutter: "1/200", iso: 100,
-                          colorSpace: "sRGB", fileMB: 1, rating: rating, flag: flag, keywords: keywords, title: "",
-                          caption: "", location: Asset.locationLabel(gps.0 == 0 ? nil : gps), gps: gps,
-                          status: status, importedAt: shot, deleted: deleted,
-                          localPath: root.appendingPathComponent(file).path, isDemo: false)
-        asset.project = project
-        asset.client = client
-        return asset
-    }
-
-    /// A catalog of one source folder with subfolders, smart albums and an album, every derived
-    /// part of it worked out.
-    @MainActor
-    private func catalog() throws -> AppState {
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let store = try CatalogStore(packageURL: scratch.appendingPathComponent("Library.photolibrary"))
-        try store.addSourceRoot(id: "src", displayName: "Photos", path: root.path, bookmark: nil)
-        let app = AppState.selfCheckFixture(store: store)
-        app.runsBackgroundMaintenance = false
-        app.pairRawAndJpeg = true
-        let photos = [
-            photo("a1", "IMG_0001.CR3", rating: 4, flag: .pick, keywords: ["trip"], project: "Wedding", client: "Acme"),
-            photo("a2r", "IMG_0002.CR3", keywords: ["trip", "beach"]),
-            photo("a2j", "IMG_0002.JPG", keywords: ["trip", "beach"]),
-            photo("a3j", "IMG_0003.JPG", offset: 20, keywords: ["home"], project: " Garden ", client: "Bob"),
-            photo("a4j", "IMG_0004.JPG", offset: 30, keywords: ["trip"]),
-            photo("a4h", "IMG_0004.HEIC", offset: 30, keywords: ["trip"], client: "Bob"),
-            photo("a5j", "IMG_0005.JPG", camera: "Apple iPhone 15 Pro", lens: "iPhone back camera", offset: 3 * 3600),
-            photo("a6r", "IMG_0006.CR3", offset: 60, rating: 3),
-            photo("a6j", "IMG_0006.JPG", offset: 60, rating: 3, keywords: ["trip"]),
-            photo("b1", "sub/IMG_0100.JPG", offset: 86_400, gps: (30.5, 114.3), status: .missing),
-            photo("b2", "sub/deep/IMG_0101.CR3", offset: 2 * 86_400, rating: 2, flag: .reject, keywords: ["beach"]),
-        ] + (0..<6).map {
-            photo("f\($0)", "IMG_09\($0).JPG", offset: Double($0) * 40 * 86_400, rating: $0 % 3,
-                  keywords: $0 % 2 == 0 ? ["trip"] : ["city"], project: $0 % 3 == 0 ? "Wedding" : "")
-        }
-        app.applyLoadedCatalogForScaleCheck(photos, from: store)
-        app.duplicateGroupsCache = []
-        func smart(_ id: String, _ field: String, _ op: String, _ value: String) -> SmartAlbum {
-            SmartAlbum(id: id, name: id, rule: SmartRule(conditions: [SmartCondition(field: field, op: op, value: value)]),
-                       count: 0)
-        }
-        app.smartAlbums = [smart("rated", "rating", ">=", "3"), smart("trip", "keywords", "包含", "trip"),
-                           smart("picks", "flag", "=", "pick"), smart("wedding", "search", "包含", "Wedding"),
-                           smart("canon", "camera", "包含", "canon")]
-        app.albums = [Album(id: "album", name: "Album", assetIds: ["a3j", "a4j", "a4h", "n10"])]
-        XCTAssertEqual(app.assets.count, photos.count)
-        XCTAssertTrue(app.assetPairing.isHiddenCompanion("a2j") && app.assetPairing.isHiddenCompanion("a6j"))
-        XCTAssertGreaterThan(app.folderTree.count, 2, "the source and its subfolders")
-        work(app)
-        return app
-    }
-
-    /// What the sidebar, the filter bar and the inspector read as the window redraws.
-    @MainActor
-    private func work(_ app: AppState) {
-        _ = app.assetPairing
-        _ = app.asset(id: "a1")
-        _ = app.libraryCounts
-        _ = app.keywordList
-        _ = app.projectList
-        _ = app.clientList
-        _ = app.gearCounts
-        _ = app.sidebarCounts
-        _ = app.captureDateGroups
-        for item in app.folderTree { _ = app.countForFolderTreeItem(item) }
-    }
-
+final class AssetAppendTests: DerivedCacheTestCase {
     /// Adds `photos` as an import batch does, then checks that what's derived was carried on as
-    /// `held` says and is what a recount gives, and that the list and the id lookups follow.
+    /// `dropped` says and is what a recount gives, and that the list and the id lookups follow.
     @MainActor
     private func append(_ photos: [Asset], to app: AppState, _ name: String, dropping dropped: [String] = [],
                         file: StaticString = #filePath, line: UInt = #line) {
-        work(app)
-        let rebuilds = (app.sidebarCountIndexRebuilds, app.metadataListRebuilds)
-        app.appendAssets(photos)
-        XCTAssertEqual(app.heldDerivedCaches, everything.filter { !dropped.contains($0) },
-                       "\(name): carried on, not dropped", file: file, line: line)
-        XCTAssertEqual(app.cachesDifferingFromRecount(), [], "\(name): as a recount gives", file: file, line: line)
-        XCTAssertEqual(app.sidebarCounts, app.recountedSidebarCounts(), name, file: file, line: line)
-        XCTAssertEqual(app.keywordList, app.recountedKeywordList(), name, file: file, line: line)
-        let lists = app.recountedMetadataLists()
-        XCTAssertEqual(app.projectList, lists.projects, name, file: file, line: line)
-        XCTAssertEqual(app.clientList, lists.clients, name, file: file, line: line)
-        XCTAssertEqual(app.captureDateGroups, CaptureDates.groups(app.assets.filter(app.assetPairing.shows)), name,
-                       file: file, line: line)
-        let sidebarRebuilt = dropped.contains("sidebar") ? 1 : 0
-        let listsRebuilt = dropped.filter { ["projects", "clients"].contains($0) }.count
-        XCTAssertEqual(app.sidebarCountIndexRebuilds, rebuilds.0 + sidebarRebuilt, name, file: file, line: line)
-        XCTAssertEqual(app.metadataListRebuilds, rebuilds.1 + listsRebuilt, name, file: file, line: line)
-        // the photo list is worked out again, the new photos in it as shown
-        XCTAssertEqual(Set(app.list.map(\.id)), Set(app.assets.filter(app.assetPairing.shows).map(\.id)), name,
-                       file: file, line: line)
-        for asset in app.assets { XCTAssertEqual(app.asset(id: asset.id)?.id, asset.id, name, file: file, line: line) }
+        check(app, name, dropping: dropped, { app.appendAssets(photos) }, file: file, line: line)
     }
+
 
     @MainActor
     func testImportBatchesCarryWhatsDerivedOnAsARecountWouldGiveIt() throws {
@@ -160,9 +60,11 @@ final class AssetAppendTests: CatalogTestCase {
         XCTAssertTrue(app.assetPairing.isHiddenCompanion("n6j"))
         XCTAssertEqual(app.countForAlbum(app.albums[0]), 1, "a new photo the album already lists")
 
-        append([photo("n11", "new/IMG_0300.JPG")], to: app, "a photo in a folder the tree hasn't got",
-               dropping: ["folder tree", "folder counts"])
-        XCTAssertNotNil(app.folderTree.first { $0.directoryPath?.hasSuffix("/new") == true })
+        append([photo("n11", "new/IMG_0300.JPG"), photo("n11b", "sub/later/on/IMG_0301.JPG")], to: app,
+               "photos in folders the tree hasn't got, put in it")
+        XCTAssertNotNil(folder("new", in: app))
+        XCTAssertEqual(folder("sub/later", in: app).map(app.countForFolderTreeItem), 1)
+        XCTAssertEqual(folder("sub", in: app).map(app.countForFolderTreeItem), 5, "its four and the new one below it")
 
         // with pairing off, every file is a photo of its own
         app.pairRawAndJpeg = false

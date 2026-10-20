@@ -48,29 +48,76 @@ enum FolderTreeService {
         return result
     }
 
-    /// Whether `build` would make `tree` again with `assets` among the photos: none of them is in
-    /// a folder under its source that the tree doesn't have yet (photos added to a folder already
-    /// listed, as an import batch nearly always is, change no folder but their own counts).
-    static func covers(_ assets: ArraySlice<Asset>, in tree: [FolderTreeItem], sourceRootPaths: [String: String]) -> Bool {
-        struct Place: Hashable { let source: String; let directory: String }
-        var sources = Set<String>()
-        var places = Set<Place>()
-        for item in tree {
-            if let directoryPath = item.directoryPath {
-                places.insert(Place(source: item.sourceId, directory: directoryPath))
-            } else {
-                sources.insert(item.sourceId)
-            }
-        }
+    /// The ids of the subfolders `build` lists for `assets` in `tree`'s sources (live photos in a
+    /// folder under their source's own): the folders a photo leaves when it's moved or removed.
+    static func subfolderIds(of assets: some Sequence<Asset>, in tree: [FolderTreeItem],
+                             sourceRootPaths: [String: String]) -> Set<String> {
+        let sources = Set(tree.lazy.filter { $0.directoryPath == nil }.map(\.sourceId))
+        var ids = Set<String>()
         for asset in assets where !asset.deleted && !asset.isDemo && sources.contains(asset.folderId) {
             guard let rootPath = normalizedDirectory(sourceRootPaths[asset.folderId]),
                   let localPath = asset.localPath else { continue }
-            let assetDir = normalizedPath(PathString.standardized(PathString.directory(of: localPath)))
+            let assetDir = assetDirectoryPath(localPath)
             guard assetDir != rootPath, isDescendant(assetDir, of: rootPath) else { continue }
-            // `build` lists the folder and every one between it and the source: all there when it is
-            guard places.contains(Place(source: asset.folderId, directory: assetDir)) else { return false }
+            ids.insert(subfolderId(for: assetDir))
         }
-        return true
+        return ids
+    }
+
+    /// `tree` with the folders `assets` are in that it hasn't got yet, and those between them and
+    /// their source, as `build` would list them with those photos among the others: a source's
+    /// subfolders in order again, with its status.
+    static func adding(_ assets: some Sequence<Asset>, to tree: [FolderTreeItem],
+                       sourceRootPaths: [String: String]) -> [FolderTreeItem] {
+        let listed = Set(tree.lazy.map(\.id))
+        let sources = Set(tree.lazy.filter { $0.directoryPath == nil }.map(\.sourceId))
+        var discovered: [String: [String: Int]] = [:]   // a source's folders to add → their depth
+        for asset in assets where !asset.deleted && !asset.isDemo && sources.contains(asset.folderId) {
+            guard let rootPath = normalizedDirectory(sourceRootPaths[asset.folderId]),
+                  let localPath = asset.localPath else { continue }
+            let assetDir = assetDirectoryPath(localPath)
+            guard assetDir != rootPath, isDescendant(assetDir, of: rootPath),
+                  !listed.contains(subfolderId(for: assetDir)) else { continue }
+            var current = rootPath
+            for (index, component) in relativeComponents(from: rootPath, to: assetDir).enumerated() {
+                current = (current as NSString).appendingPathComponent(component)
+                if !listed.contains(subfolderId(for: current)) { discovered[asset.folderId, default: [:]][current] = index + 1 }
+            }
+        }
+        guard !discovered.isEmpty else { return tree }
+        var result: [FolderTreeItem] = []
+        var start = 0
+        while start < tree.count {
+            var end = start + 1
+            while end < tree.count, tree[end].directoryPath != nil { end += 1 }
+            let source = tree[start]
+            result.append(source)
+            if source.directoryPath == nil, let added = discovered[source.sourceId] {
+                var depths = added
+                for item in tree[start + 1 ..< end] {
+                    if let path = item.directoryPath { depths[path] = item.depth }
+                }
+                for path in depths.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending }) {
+                    result.append(FolderTreeItem(id: subfolderId(for: path), sourceId: source.sourceId,
+                                                 name: PathString.lastComponent(path), status: source.status,
+                                                 depth: depths[path] ?? 1, directoryPath: path))
+                }
+            } else {
+                result += tree[start + 1 ..< end]
+            }
+            start = end
+        }
+        return result
+    }
+
+    /// `tree` with each source's rows showing its status in `folders`.
+    static func withStatuses(of folders: [Folder], in tree: [FolderTreeItem]) -> [FolderTreeItem] {
+        let statuses = Dictionary(folders.map { ($0.id, $0.status) }, uniquingKeysWith: { first, _ in first })
+        return tree.map { item in
+            guard let status = statuses[item.sourceId], status != item.status else { return item }
+            return FolderTreeItem(id: item.id, sourceId: item.sourceId, name: item.name, status: status,
+                                  depth: item.depth, directoryPath: item.directoryPath)
+        }
     }
 
     static func matches(_ asset: Asset, item: FolderTreeItem) -> Bool {

@@ -386,6 +386,10 @@ struct Asset: Identifiable, Equatable, Sendable {
               masterId: masterId ?? self.id, copyName: name, duration: duration)
     }
 
+    /// Whether this is `other` or a copy of it never changed since: they share their stored values.
+    /// (Two photos can be alike without that; `==` compares only ids.)
+    func sharesStorage(with other: Asset) -> Bool { storage === other.storage }
+
     /// Takes every editable field that `new` changed from `old`, leaving the rest as they are:
     /// undo and redo replay one step onto the photo as it is now, so whatever changed it since
     /// (a rename, a trash, an offline check, a rescan, a sidecar read) stays.
