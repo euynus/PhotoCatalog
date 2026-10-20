@@ -117,11 +117,14 @@ final class AppState {
     }
     var albums: [Album] {
         didSet {
-            sidebarCountIndexCache = nil
+            // photos put in an album just before they're added (an import batch) aren't in the
+            // sidebar's counts yet: adding them moves the album's count (appendAssets)
+            if albumsGainOnlyPhotosToCome { albumsGainOnlyPhotosToCome = false } else { sidebarCountIndexCache = nil }
             pinnedSidebarFavoritesCache = nil
             listInputsVersion &+= 1
         }
     }
+    @ObservationIgnored private var albumsGainOnlyPhotosToCome = false
     var smartAlbums: [SmartAlbum] {
         didSet {
             sidebarCountIndexCache = nil
@@ -533,6 +536,28 @@ final class AppState {
                 counts[id, default: 0] -= number
             }
             folderTreeCountCache = counts
+        }
+    }
+
+    /// An import batch's photos into the catalog shown (and into the import's album): new ones
+    /// added after the others, returning ones in place of their removed copies.
+    func addImportBatch(_ fresh: [Asset], revivedIds: Set<String>, album: (id: String, name: String)?) {
+        if let (albumId, albumName) = album {
+            albumsGainOnlyPhotosToCome = revivedIds.isEmpty   // new photos, none in the counts yet
+            if let index = albums.firstIndex(where: { $0.id == albumId }) {
+                // a returning photo may still be in the album from before
+                let added = revivedIds.isEmpty ? fresh.map(\.id)
+                    : fresh.map(\.id).filter { !albums[index].assetIds.contains($0) }
+                albums[index].assetIds.append(contentsOf: added)
+            } else {
+                albums.append(Album(id: albumId, name: albumName, assetIds: fresh.map(\.id)))
+            }
+        }
+        if revivedIds.isEmpty {
+            appendAssets(fresh)
+        } else {
+            // a returning photo replaces its removed copy, still here when it was removed this session
+            replaceAssetsForMutation(assets.filter { !revivedIds.contains($0.id) } + fresh)
         }
     }
 
@@ -4177,22 +4202,8 @@ final class AppState {
         let fresh = committed.assets
         if !fresh.isEmpty {
             developSettings.merge(committed.developSettings) { _, latest in latest }
-            if let albumId = options.albumId {
-                if let index = albums.firstIndex(where: { $0.id == albumId }) {
-                    // a returning photo may still be in the album from before
-                    let added = committed.revivedIds.isEmpty ? fresh.map(\.id)
-                        : fresh.map(\.id).filter { !albums[index].assetIds.contains($0) }
-                    albums[index].assetIds.append(contentsOf: added)
-                } else {
-                    albums.append(Album(id: albumId, name: options.albumName, assetIds: fresh.map(\.id)))
-                }
-            }
-            if committed.revivedIds.isEmpty {
-                appendAssets(fresh)
-            } else {
-                // a returning photo replaces its removed copy, still here when it was removed this session
-                replaceAssetsForMutation(assets.filter { !committed.revivedIds.contains($0.id) } + fresh)
-            }
+            addImportBatch(fresh, revivedIds: committed.revivedIds,
+                           album: options.albumId.map { ($0, options.albumName) })
             recordSidecarBaselines(fresh, returning: committed.revivedIds)
             clearDevelopRecordCaches()
         }

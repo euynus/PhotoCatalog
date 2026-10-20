@@ -195,4 +195,22 @@ final class AssetAppendTests: CatalogTestCase {
         var pairing = AssetPairing.rawJpeg([])
         XCTAssertNil(pairing.append(AssetPairingOracleTests.tangle(10, seed: 1), from: 5), "not the pairing of those photos")
     }
+
+    /// An import into an album (Add to Album in the import options) puts each batch's photos in
+    /// the album as it adds them: the album's count moves with them, and nothing in the sidebar is
+    /// counted again from every photo.
+    @MainActor
+    func testImportBatchIntoAnAlbumCarriesTheSidebarOn() throws {
+        let app = try catalog()
+        work(app)
+        let rebuilds = app.sidebarCountIndexRebuilds
+        app.addImportBatch([photo("n20", "IMG_0300.JPG", keywords: ["trip"]), photo("n21r", "IMG_0301.CR3"),
+                            photo("n21j", "IMG_0301.JPG")], revivedIds: [], album: ("album", "Album"))
+        XCTAssertEqual(app.countForAlbum(app.albums[0]), 5, "two new photos shown in it (the RAW's JPEG behind it)")
+        app.addImportBatch([photo("n22", "IMG_0302.JPG")], revivedIds: [], album: ("al-new", "New"))
+        XCTAssertEqual(app.albums.map(\.id), ["album", "al-new"])
+        XCTAssertEqual(app.countForAlbum(app.albums[1]), 1, "a new album, its batch counted in")
+        XCTAssertEqual(app.sidebarCounts, app.recountedSidebarCounts())
+        XCTAssertEqual(app.sidebarCountIndexRebuilds, rebuilds, "the sidebar's counts carried on, not recounted")
+    }
 }
