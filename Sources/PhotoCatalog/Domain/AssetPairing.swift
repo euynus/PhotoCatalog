@@ -25,8 +25,9 @@ struct AssetPairing: Sendable, Equatable {
 
     func isHiddenCompanion(_ id: String) -> Bool { primaryByCompanion[id] != nil }
 
-    /// Whether the catalog shows `asset`: not removed, and not the JPEG behind its RAW.
-    func shows(_ asset: Asset) -> Bool { !asset.deleted && !isHiddenCompanion(asset.id) }
+    /// Whether the catalog shows `asset`: not removed, and not the JPEG behind its RAW. A RAW is
+    /// never anyone's companion, so it's shown without looking its id up.
+    func shows(_ asset: Asset) -> Bool { !asset.deleted && (asset.isRaw || !isHiddenCompanion(asset.id)) }
 
     /// `shows(_:)` for the photo at `position` of the photos this pairing was worked out from,
     /// without looking its id up: what passes over all of those photos ask.
@@ -67,9 +68,10 @@ struct AssetPairing: Sendable, Equatable {
         // thread took ~0.55 s for this at 500k photos.
         let keys = Self.keys(of: assets, in: assets.indices)
         let bucketBits = 8
-        var starts = [Int](repeating: 0, count: (1 << bucketBits) + 1)
-        for key in keys { starts[Int(key.hash >> (64 - bucketBits)) + 1] += 1 }
-        for bucket in 0 ..< 1 << bucketBits { starts[bucket + 1] += starts[bucket] }
+        var counted = [Int](repeating: 0, count: (1 << bucketBits) + 1)
+        for key in keys { counted[Int(key.hash >> (64 - bucketBits)) + 1] += 1 }
+        for bucket in 0 ..< 1 << bucketBits { counted[bucket + 1] += counted[bucket] }
+        let starts = counted   // what the threads read is a constant, not a variable they'd all retain
         var sorted = [Key](unsafeUninitializedCapacity: keys.count) { buffer, count in
             var next = starts
             for key in keys {
@@ -184,24 +186,36 @@ struct AssetPairing: Sendable, Equatable {
         for pair in pairs {
             for position in pair.companions { hiddenAt[position] = true }
         }
-        // the two tables on two cores, each a lookup by id per photo paired
-        var byPrimary = companionsByPrimary, byCompanion = primaryByCompanion
-        (companionsByPrimary, primaryByCompanion) = ([:], [:])   // so the tables are changed in place
-        let both = pairs.count <= 1_000   // too few for a second thread to pay
-        DispatchQueue.concurrentPerform(iterations: both ? 1 : 2) { table in
-            if both || table == 0 {
-                byPrimary.reserveCapacity(byPrimary.count + pairs.count)
-                for pair in pairs { byPrimary[assets[pair.primary].id] = pair.companions.map { assets[$0].id } }
-            }
-            if both || table == 1 {
-                byCompanion.reserveCapacity(byCompanion.count + pairs.reduce(0) { $0 + $1.companions.count })
-                for pair in pairs {
-                    let primary = assets[pair.primary].id
-                    for position in pair.companions { byCompanion[assets[position].id] = primary }
-                }
+        func byPrimary(_ table: inout [String: [String]]) {
+            for pair in pairs { table[assets[pair.primary].id] = pair.companions.map { assets[$0].id } }
+        }
+        func byCompanion(_ table: inout [String: String]) {
+            for pair in pairs {
+                let primary = assets[pair.primary].id
+                for position in pair.companions { table[assets[position].id] = primary }
             }
         }
-        (companionsByPrimary, primaryByCompanion) = (byPrimary, byCompanion)
+        // a whole catalog's: the two tables on two cores, each a lookup by id per photo paired,
+        // each filled in a table of the thread's own
+        guard pairs.count > 1_000, companionsByPrimary.isEmpty, primaryByCompanion.isEmpty else {
+            byPrimary(&companionsByPrimary)
+            byCompanion(&primaryByCompanion)
+            return
+        }
+        let lock = NSLock()
+        var tables: (byPrimary: [String: [String]], byCompanion: [String: String]) = ([:], [:])
+        DispatchQueue.concurrentPerform(iterations: 2) { which in
+            if which == 0 {
+                var table = [String: [String]](minimumCapacity: pairs.count)
+                byPrimary(&table)
+                lock.withLock { tables.byPrimary = table }
+            } else {
+                var table = [String: String](minimumCapacity: pairs.reduce(0) { $0 + $1.companions.count })
+                byCompanion(&table)
+                lock.withLock { tables.byCompanion = table }
+            }
+        }
+        (companionsByPrimary, primaryByCompanion) = tables
     }
 
     /// The pairs among photos whose names hash alike (`members`, positions in order): grouped by

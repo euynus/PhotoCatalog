@@ -104,6 +104,9 @@ final class AssetPairingOracleTests: XCTestCase {
             XCTAssertEqual(pairing.primaryByCompanion, oracle.primaryByCompanion, "seed \(seed)")
             for (position, photo) in photos.enumerated() {
                 XCTAssertEqual(pairing.isShown(photo, at: position), pairing.shows(photo), "seed \(seed), \(photo.id)")
+                // a RAW, whatever its file is called, is never hidden: shown without a lookup
+                XCTAssertEqual(pairing.shows(photo), !photo.deleted && !pairing.isHiddenCompanion(photo.id),
+                               "seed \(seed), \(photo.id)")
             }
         }
     }
