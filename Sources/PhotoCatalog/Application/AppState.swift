@@ -256,6 +256,8 @@ final class AppState {
     @ObservationIgnored private var uncollapsedListCache: (signature: ListSignature, value: [Asset])?
     /// How many list positions patching edits into the list has looked at one by one (for tests).
     @ObservationIgnored private(set) var listPatchScannedPhotos = 0
+    /// How many times the list's photos have been worked out from the catalog (for tests).
+    @ObservationIgnored private(set) var listComputations = 0
     /// Every sidecar write, automatic or asked for, goes through the writer with the next sequence.
     @ObservationIgnored private var automaticXMPWriter = AutomaticXMPWriter()
     @ObservationIgnored private var automaticXMPWriteSequence: UInt64 = 0
@@ -265,9 +267,16 @@ final class AppState {
         let filters: Filters
         let search: String
         let sort: Sort
-        let collapsed: Set<String>
+        var collapsed: Set<String>
         let recentDays: Int
         let captureDay: Date
+
+        /// Whether `other` lists the same photos before stacks fold: only which are folded differs.
+        func hasPhotosBeforeFolding(of other: ListSignature) -> Bool {
+            var unfolded = self
+            unfolded.collapsed = other.collapsed
+            return unfolded == other
+        }
     }
 
     struct CaptureStatisticsRequest: Equatable {
@@ -9016,72 +9025,77 @@ final class AppState {
     // ---------- base collection from sidebar ----------
     /// Whether a photo can be in the list at all: not removed, and not a JPEG behind its RAW.
     /// Missing/offline is file-level: a lost JPEG must show even when its RAW is fine.
+    /// `AssetPairing.shows`, but a RAW, which pairing never hides (it hides JPEG and HEIC files
+    /// behind their RAW), isn't looked up: those lookups by id were most of the list's time.
     private var listShows: (Asset) -> Bool {
-        (selection.type == .lib && selection.id == "missing" ? .empty : assetPairing).shows
+        let pairing = selection.type == .lib && selection.id == "missing" ? .empty : assetPairing
+        return { !$0.deleted && ($0.isRaw || !pairing.isHiddenCompanion($0.id)) }
     }
 
-    var baseList: [Asset] {
-        // Observed inputs are read once, outside the per-asset predicates, and live +
-        // collection membership is one pass: no intermediate copy of every asset.
+    /// The selected collection's membership test, made afresh for each pass over the photos (a
+    /// smart album's keeps its text answers in a memo of its own), so passes can run side by
+    /// side. Nil when the collection is gone (an album deleted, a date that names no day).
+    private func collectionTest() -> (() -> (Asset) -> Bool)? {
+        // Observed inputs are read once, outside the per-asset tests.
         let selection = self.selection
-        let live = listShows
-        let belongs: (Asset) -> Bool
+        /// The same test for every pass: it keeps nothing.
+        func each(_ test: @escaping (Asset) -> Bool) -> () -> (Asset) -> Bool { { test } }
         switch selection.type {
         case .folder:
             if let item = folderTree.first(where: { $0.id == selection.id }) {
-                belongs = { FolderTreeService.matches($0, item: item) }
-            } else {
-                belongs = { $0.folderId == selection.id }
+                return each { FolderTreeService.matches($0, item: item) }
             }
+            return each { $0.folderId == selection.id }
         case .album:
-            guard let al = albums.first(where: { $0.id == selection.id }) else { return [] }
+            guard let al = albums.first(where: { $0.id == selection.id }) else { return nil }
             let memberIds = Set(al.assetIds)
-            belongs = { memberIds.contains($0.id) }
+            return each { memberIds.contains($0.id) }
         case .smart:
-            guard let sa = smartAlbums.first(where: { $0.id == selection.id }) else { return [] }
+            guard let sa = smartAlbums.first(where: { $0.id == selection.id }) else { return nil }
             let rule = SmartMatcher.Prepared(sa.rule)
-            var memo = SmartMatcher.Memo(for: rule)
-            belongs = { rule.matches($0, memo: &memo) }
+            return {
+                var memo = SmartMatcher.Memo(for: rule)
+                return { rule.matches($0, memo: &memo) }
+            }
         case .keyword:
-            belongs = { $0.keywords.contains(selection.id) }
+            return each { $0.keywords.contains(selection.id) }
         // a project or client is listed without the spaces around it, and shows what it counts
         case .project:
-            belongs = { $0.project == selection.id || (!$0.project.isEmpty && listedValue($0.project) == selection.id) }
+            return each { $0.project == selection.id || (!$0.project.isEmpty && listedValue($0.project) == selection.id) }
         case .client:
-            belongs = { $0.client == selection.id || (!$0.client.isEmpty && listedValue($0.client) == selection.id) }
+            return each { $0.client == selection.id || (!$0.client.isEmpty && listedValue($0.client) == selection.id) }
         case .captureDate:
-            guard let range = CaptureDates.interval(for: selection.id) else { return [] }
-            belongs = { CaptureDates.contains($0.date, in: range) }
+            guard let range = CaptureDates.interval(for: selection.id) else { return nil }
+            return each { CaptureDates.contains($0.date, in: range) }
         case .lib:
             switch selection.id {
             case "recent":
                 let cutoff = recentCutoff
-                belongs = { $0.importedAt > cutoff }
+                return each { $0.importedAt > cutoff }
             case "quick":
                 let members = quickCollection
-                belongs = { members.contains($0.id) }
+                return each { members.contains($0.id) }
             case "unrated":
-                belongs = { $0.rating == 0 && $0.flag != .reject }
+                return each { $0.rating == 0 && $0.flag != .reject }
             case "picks":
-                belongs = { $0.flag == .pick }
+                return each { $0.flag == .pick }
             case "rejected":
-                belongs = { $0.flag == .reject }
+                return each { $0.flag == .reject }
             case "missing":
-                belongs = { $0.status == .missing || $0.status == .offline }
+                return each { $0.status == .missing || $0.status == .offline }
             case "xmpChanged":
                 let changed = externallyChangedXMPIds
-                belongs = { changed.contains($0.id) }
+                return each { changed.contains($0.id) }
             case "places":
-                belongs = { $0.hasGPS }
+                return each { $0.hasGPS }
             case "people":
                 // faces found by the People analysis, or by Vision tagging at import
                 let withFaces = faceAssetIds
-                belongs = { $0.faces > 0 || withFaces.contains($0.id) }
+                return each { $0.faces > 0 || withFaces.contains($0.id) }
             default:
-                return assets.filter(live)
+                return each { _ in true }
             }
         }
-        return assets.filter { live($0) && belongs($0) }
     }
 
     // ---------- apply filter bar + search + sort ----------
@@ -9153,9 +9167,17 @@ final class AppState {
     var list: [Asset] {
         let signature = currentListSignature
         if let cache = listCache, cache.signature == signature { return cache.value }
-        let matching = computeList()
+        // folding a stack or opening one leaves the photos before folding as they were
+        let matching: [Asset]
+        if let cache = uncollapsedListCache, cache.signature.hasPhotosBeforeFolding(of: signature) {
+            matching = cache.value
+        } else {
+            matching = computeList()
+        }
         uncollapsedListCache = (signature, matching)
-        let value = PhotoStackService.visibleAssets(matching, stacks: photoStacks, collapsedStackIds: collapsedStackIds)
+        // the stacks are worked out for folded ones only
+        let value = collapsedStackIds.isEmpty ? matching
+            : PhotoStackService.visibleAssets(matching, stacks: photoStacks, collapsedStackIds: collapsedStackIds)
         listCache = (signature, value)
         listIdentity &+= 1
         return value
@@ -9191,7 +9213,12 @@ final class AppState {
         listIdentity &+= 1
     }
 
+    /// Photos per chunk when the list is worked out on every core, and per run its sort sorts
+    /// before merging (tests make them small, so chunks and runs split everywhere).
+    @ObservationIgnored var listChunk = 16_384
+
     private func computeList() -> [Asset] {
+        listComputations += 1
         // Snapshot observed properties: reading them inside the per-asset filter and the
         // sort comparator paid observation bookkeeping tens of thousands of times.
         let filters = self.filters
@@ -9208,59 +9235,209 @@ final class AppState {
         let cameraQuery = filters.camera.trimmingCharacters(in: .whitespacesAndNewlines)
         let lensQuery = filters.lens.trimmingCharacters(in: .whitespacesAndNewlines)
         let dateInterval = filters.captureDateInterval()
-        let base = baseList
-        let l = filters.isEmpty && q.isEmpty ? base : base.filter { a in
-            if filters.minRating > 0 && a.rating < filters.minRating { return false }
-            if filters.flag != "any" && a.flag.rawValue != filters.flag { return false }
-            if filters.color != "any" && a.colorLabel?.rawValue != filters.color { return false }
-            if filters.type != "any" && !a.matchesType(filters.type) { return false }
-            if !cameraQuery.isEmpty && !a.camera.localizedStandardContains(cameraQuery) { return false }
-            if !lensQuery.isEmpty && !a.lens.localizedStandardContains(lensQuery) { return false }
-            if filters.date != "any" {
-                guard let dateInterval, CaptureDates.contains(a.date, in: dateInterval) else { return false }
+        guard let collection = collectionTest() else { return [] }
+        let live = listShows
+        let filtered = !(filters.isEmpty && q.isEmpty)
+        // Live, in the collection and through the filter bar: one pass split across the cores (a
+        // smart album's in one pass). On one thread, looking up every photo's pairing alone took
+        // most of the ~0.3 s All Photographs took at 500k photos.
+        let chunk = selection.type == .smart ? .max : listChunk
+        let positions = Self.matchingPositions(in: assets, chunk: chunk) {
+            let belongs = collection()
+            return { a in
+                guard live(a), belongs(a) else { return false }
+                guard filtered else { return true }
+                if filters.minRating > 0 && a.rating < filters.minRating { return false }
+                if filters.flag != "any" && a.flag.rawValue != filters.flag { return false }
+                if filters.color != "any" && a.colorLabel?.rawValue != filters.color { return false }
+                if filters.type != "any" && !a.matchesType(filters.type) { return false }
+                if !cameraQuery.isEmpty && !a.camera.localizedStandardContains(cameraQuery) { return false }
+                if !lensQuery.isEmpty && !a.lens.localizedStandardContains(lensQuery) { return false }
+                if filters.date != "any" {
+                    guard let dateInterval, CaptureDates.contains(a.date, in: dateInterval) else { return false }
+                }
+                if filters.gps == "yes" && !a.hasGPS { return false }
+                if filters.gps == "no" && a.hasGPS { return false }
+                if filters.status != "any" && a.status.rawValue != filters.status { return false }
+                if !q.isEmpty {
+                    if let indexedSearchIds {
+                        if !indexedSearchIds.contains(a.id) { return false }
+                    } else {
+                        if !a.searchHaystack.localizedStandardContains(q) { return false }
+                    }
+                }
+                return true
             }
-            if filters.gps == "yes" && !a.hasGPS { return false }
-            if filters.gps == "no" && a.hasGPS { return false }
-            if filters.status != "any" && a.status.rawValue != filters.status { return false }
-            if !q.isEmpty {
-                if let indexedSearchIds {
-                    if !indexedSearchIds.contains(a.id) { return false }
-                } else {
-                    if !a.searchHaystack.localizedStandardContains(q) { return false }
+        }
+        return Self.sorted(assets, at: positions, by: sort, run: listChunk)
+    }
+
+    /// The positions in `assets` of the photos a test takes, in order. Tested in chunks of
+    /// `chunk` side by side on every core, each chunk with a test of its own from `makeTest`,
+    /// and the chunks' positions joined in order: the positions one pass finds.
+    nonisolated static func matchingPositions(in assets: [Asset], chunk: Int,
+                                              makeTest: () -> (Asset) -> Bool) -> [Int] {
+        let chunk = max(chunk, 1)
+        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
+        // the photos through a pointer: threads reading one array retained its buffer by turns
+        return assets.withUnsafeBufferPointer { photos in
+            func positions(_ range: Range<Int>) -> [Int] {
+                let test = makeTest()
+                var found: [Int] = []
+                for position in range where test(photos[position]) { found.append(position) }
+                return found
+            }
+            guard chunks > 1 else { return positions(photos.indices) }
+            var parts = [[Int]](repeating: [], count: chunks)
+            parts.withUnsafeMutableBufferPointer { parts in
+                let slots = Shared(parts)
+                DispatchQueue.concurrentPerform(iterations: chunks) { index in
+                    slots.buffer[index] = positions(index * chunk ..< min(assets.count, (index + 1) * chunk))
                 }
             }
-            return true
+            var joined: [Int] = []
+            joined.reserveCapacity(parts.reduce(0) { $0 + $1.count })
+            for part in parts { joined += part }
+            return joined
         }
-        return Self.sorted(l, by: sort)
     }
 
-    /// Sorts indices by precomputed keys rather than moving whole `Asset` values
-    /// (hundreds of bytes each). Ties keep collection order, as the stable sort did.
-    nonisolated static func sorted(_ assets: [Asset], by sort: Sort) -> [Asset] {
+    /// A photo's sort key, by its rank among the photos sorted.
+    private struct RankedKey {
+        let key: Double
+        let rank: Int
+    }
+
+    /// The photos at `positions` (in catalog order) sorted by `sort`, ties in catalog order.
+    /// Keys are read once, side by side, into a compact array that is sorted in runs side by side
+    /// and then merged: one thread sorting indices through the keys took 0.1–0.3 s at 500k photos.
+    nonisolated static func sorted(_ assets: [Asset], at positions: [Int], by sort: Sort, run: Int = 16_384) -> [Asset] {
+        let count = positions.count
         let descending = sort.descending
-        var order = Array(assets.indices)
-        if sort.field == .name {
-            let keys = assets.map { FileNameSortKey($0.filename) }
-            order.sort { i, j in
-                if keys[i] == keys[j] { return i < j }
-                return descending ? keys[j] < keys[i] : keys[i] < keys[j]
-            }
-        } else {
-            let keys: [Double] = switch sort.field {
-            case .capture: assets.map { $0.date.timeIntervalSince1970 }
-            case .imported: assets.map { $0.importedAt.timeIntervalSince1970 }
-            case .rating: assets.map { Double($0.rating) }
-            case .size: assets.map(\.fileMB)
-            case .name: []
-            }
-            order.sort { i, j in
-                if keys[i] == keys[j] { return i < j }
-                return descending ? keys[i] > keys[j] : keys[i] < keys[j]
+        // arrays through pointers: threads reading one array retained its buffer by turns
+        return assets.withUnsafeBufferPointer { assets in
+            positions.withUnsafeBufferPointer { positions in
+                // the rank in `positions` of each photo in sorted order
+                var order: [Int]
+                if sort.field == .name {
+                    let keys = concurrentMap(count, chunk: run) { FileNameSortKey(assets[positions[$0]].filename) }
+                    order = Array(0..<count)
+                    keys.withUnsafeBufferPointer { keys in
+                        concurrentSort(&order, run: run) { i, j in
+                            if keys[i] == keys[j] { return i < j }
+                            return descending ? keys[j] < keys[i] : keys[i] < keys[j]
+                        }
+                    }
+                } else {
+                    let key: (Asset) -> Double = switch sort.field {
+                    case .capture: { $0.date.timeIntervalSince1970 }
+                    case .imported: { $0.importedAt.timeIntervalSince1970 }
+                    case .rating: { Double($0.rating) }
+                    case .size: { $0.fileMB }
+                    case .name: { _ in 0 }
+                    }
+                    // descending is ascending by the negated keys: equal keys stay equal, ties by rank
+                    let sign: Double = descending ? -1 : 1
+                    var keyed = concurrentMap(count, chunk: run) {
+                        RankedKey(key: sign * key(assets[positions[$0]]), rank: $0)
+                    }
+                    concurrentSort(&keyed, run: run) { $0.key < $1.key || ($0.key == $1.key && $0.rank < $1.rank) }
+                    order = keyed.map(\.rank)
+                }
+                return order.withUnsafeBufferPointer { order in
+                    concurrentMap(count, chunk: run) { assets[positions[order[$0]]] }
+                }
             }
         }
-        return order.map { assets[$0] }
     }
 
+    /// Memory that work running side by side shares, each part of it on elements of its own.
+    private struct Shared<Element>: @unchecked Sendable {
+        let buffer: UnsafeMutableBufferPointer<Element>
+        init(_ buffer: UnsafeMutableBufferPointer<Element>) { self.buffer = buffer }
+    }
+
+    /// `transform` of each of `0..<count`, worked out in chunks side by side on every core.
+    nonisolated static func concurrentMap<T>(_ count: Int, chunk: Int, _ transform: (Int) -> T) -> [T] {
+        let chunk = max(chunk, 1)
+        guard count > chunk else { return (0..<count).map(transform) }
+        return [T](unsafeUninitializedCapacity: count) { buffer, initialized in
+            let memory = Shared(buffer)
+            DispatchQueue.concurrentPerform(iterations: (count - 1) / chunk + 1) { index in
+                for i in index * chunk ..< min(count, (index + 1) * chunk) {
+                    (memory.buffer.baseAddress! + i).initialize(to: transform(i))
+                }
+            }
+            initialized = count
+        }
+    }
+
+    /// Sorts `elements` by `less`, a strict total order (ties broken, so every sort gives the one
+    /// result): runs of `run` sorted side by side, then merged in pairs, each round's merges side
+    /// by side. For plain values (indices, keys), which merging copies.
+    nonisolated static func concurrentSort<T>(_ elements: inout [T], run: Int, by less: (T, T) -> Bool) {
+        let count = elements.count
+        let run = max(run, 2)
+        guard count > run else {
+            elements.sort(by: less)
+            return
+        }
+        var scratch = elements
+        elements.withUnsafeMutableBufferPointer { elements in
+            scratch.withUnsafeMutableBufferPointer { scratch in
+                let sorted = Shared(elements)
+                DispatchQueue.concurrentPerform(iterations: (count - 1) / run + 1) { index in
+                    var part = UnsafeMutableBufferPointer(rebasing: sorted.buffer[index * run ..< min(count, (index + 1) * run)])
+                    part.sort(by: less)
+                }
+                var source = sorted, target = Shared(scratch)
+                var width = run
+                while width < count {
+                    let from = source, to = target, span = width
+                    DispatchQueue.concurrentPerform(iterations: (count - 1) / (2 * span) + 1) { pair in
+                        merge(from.buffer, into: to.buffer, low: pair * 2 * span, middle: min(pair * 2 * span + span, count),
+                              high: min(pair * 2 * span + 2 * span, count), by: less)
+                    }
+                    (source, target) = (target, source)
+                    width *= 2
+                }
+                if source.buffer.baseAddress != elements.baseAddress {
+                    elements.baseAddress!.update(from: source.buffer.baseAddress!, count: count)
+                }
+            }
+        }
+    }
+
+    /// Merges the sorted `from[low..<middle]` and `from[middle..<high]` into `to[low..<high]`.
+    nonisolated private static func merge<T>(_ from: UnsafeMutableBufferPointer<T>, into to: UnsafeMutableBufferPointer<T>,
+                                 low: Int, middle: Int, high: Int, by less: (T, T) -> Bool) {
+        // runs already in order (a list sorted as the catalog is) are copied as they are
+        if middle == high || less(from[middle - 1], from[middle]) {
+            (to.baseAddress! + low).update(from: from.baseAddress! + low, count: high - low)
+            return
+        }
+        var i = low, j = middle, k = low
+        while i < middle, j < high {
+            if less(from[j], from[i]) {
+                to[k] = from[j]
+                j += 1
+            } else {
+                to[k] = from[i]
+                i += 1
+            }
+            k += 1
+        }
+        while i < middle {
+            to[k] = from[i]
+            i += 1
+            k += 1
+        }
+        while j < high {
+            to[k] = from[j]
+            j += 1
+            k += 1
+        }
+    }
 
     var primary: Asset? {
         _ = listInputsVersion

@@ -44,11 +44,12 @@ enum ScaleCheck {
         report("RAW+JPEG pairing \(app.pairRawAndJpeg ? "on" : "off"), auto-stack "
             + (app.autoStackSeconds.map { "\($0) s" } ?? "off"))
 
-        // PC_SCALE_LOOP=rate|name|keywords|dates|hydrate|apply|keyword-edit|sidebar repeats one operation
-        // for 20 s, to sample it
+        // PC_SCALE_LOOP=rate|name|keywords|dates|hydrate|apply|keyword-edit|sidebar|list|search-album repeats
+        // one operation for 20 s, to sample it
         if let loop = ProcessInfo.processInfo.environment["PC_SCALE_LOOP"] {
             let ids = app.list.prefix(1000).map(\.id)
             if loop == "sidebar" { app.smartAlbums = sidebarSmartAlbums }
+            if loop == "search-album" { app.smartAlbums = [searchSmartAlbum] }
             let end = Date().addingTimeInterval(20)
             var rounds = 0
             while Date() < end {
@@ -77,6 +78,16 @@ enum ScaleCheck {
                 case "sidebar":
                     app.smartAlbums = app.smartAlbums   // drops the sidebar's counts, and only them
                     _ = app.countForSmartAlbum(app.smartAlbums[0])
+                case "list":
+                    app.assets = app.assets
+                    _ = app.assetPairing
+                    _ = app.hasStacks
+                    _ = app.list.count
+                case "search-album":
+                    app.select(rounds % 2 == 0
+                        ? Selection(type: .smart, id: searchSmartAlbum.id, name: searchSmartAlbum.name)
+                        : Selection(type: .lib, id: "all", name: "全部照片"))
+                    _ = app.list.count
                 default:
                     break
                 }
@@ -232,6 +243,40 @@ enum ScaleCheck {
             _ = try? store.appendDevelopHistory(Dictionary(uniqueKeysWithValues: ids.map { ($0, (name: "测试", settings: edit)) }))
         }
         report("batch edits ms: " + line.joined(separator: " · "))
+
+        // The photo list: All Photographs worked out again after a structural change (the pairing
+        // and stacks first, which the grid's tiles and the menus read anyway), a smart album with
+        // a full-text search condition, and ratings of RAW+JPEG pairs, which reach the JPEG
+        // behind each tile (median of five).
+        line = []
+        app.select(Selection(type: .lib, id: "all", name: "全部照片"))
+        app.sort = Sort()
+        app.filters = Filters()
+        app.search = ""
+        app.assets = app.assets
+        _ = app.assetPairing
+        _ = app.hasStacks
+        step("list after change") { _ = app.list.count }
+        app.smartAlbums = sidebarSmartAlbums + [searchSmartAlbum]
+        step("search album") {
+            app.select(Selection(type: .smart, id: searchSmartAlbum.id, name: searchSmartAlbum.name))
+            _ = app.list.count
+        }
+        app.select(Selection(type: .lib, id: "all", name: "全部照片"))
+        let pairs = app.list.prefix(5_000).filter { !app.companions(of: $0).isEmpty }.prefix(5).map(\.id)
+        var pairRatings: [Double] = []
+        for (round, id) in pairs.enumerated() {
+            app.setPrimary(id)
+            _ = app.listPosition(of: id)
+            let start = ContinuousClock.now
+            _ = app.handleKey(String(round % 5 + 1), hasCommand: false)
+            let elapsed = ContinuousClock.now - start
+            pairRatings.append(Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15)
+        }
+        if !pairRatings.isEmpty {
+            line.append("rate pair " + String(format: "%.1f", pairRatings.sorted()[pairRatings.count / 2]))
+        }
+        report("photo list ms: " + line.joined(separator: " · "))
         report("footprint \(delta(footprint(), baseline)) MB since start, \(megabytes(footprint())) MB total")
         return 0
     }
@@ -253,6 +298,12 @@ enum ScaleCheck {
                                              ("rating", ">=", "3")]),
         ]
     }()
+
+    /// A smart album saved from a search: its 全文搜索 condition looks through every photo's text.
+    private static let searchSmartAlbum = SmartAlbum(
+        id: "scale-smart-search", name: "search",
+        rule: SmartRule(match: "all", conditions: [SmartCondition(field: "search", op: "包含", value: "IMG_12")]),
+        count: 0)
 
     // ---- synthetic catalog ----
 
