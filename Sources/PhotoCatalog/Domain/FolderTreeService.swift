@@ -104,6 +104,7 @@ enum FolderTreeService {
         // photos share folders: count them per source and folder first, then walk each folder's
         // ancestors once rather than once per photo
         struct Place: Hashable { let source: String; let directory: String }
+        let withSubfolders = Set(directoryIdsBySource.keys)   // a constant the threads read, not a variable
         func count(_ range: Range<Int>) -> (sources: [String: Int], places: [Place: Int]) {
             var perSource: [String: Int] = [:]
             var perPlace: [Place: Int] = [:]
@@ -118,7 +119,7 @@ enum FolderTreeService {
                     run = 0
                 }
                 run += 1
-                guard let localPath = asset.localPath, directoryIdsBySource[asset.folderId] != nil else { continue }
+                guard let localPath = asset.localPath, withSubfolders.contains(asset.folderId) else { continue }
                 perPlace[Place(source: asset.folderId, directory: PathString.directory(of: localPath)), default: 0] += 1
             }
             if run > 0 { perSource[source, default: 0] += run }
