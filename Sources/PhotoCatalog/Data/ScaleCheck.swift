@@ -44,7 +44,7 @@ enum ScaleCheck {
         report("RAW+JPEG pairing \(app.pairRawAndJpeg ? "on" : "off"), auto-stack "
             + (app.autoStackSeconds.map { "\($0) s" } ?? "off"))
 
-        // PC_SCALE_LOOP=rate|name|keywords|dates|hydrate|apply|keyword-edit|sidebar|list|search-album repeats
+        // PC_SCALE_LOOP=rate|name|keywords|dates|hydrate|apply|keyword-edit|sidebar|list|search-album|offline repeats
         // one operation for 20 s, to sample it
         if let loop = ProcessInfo.processInfo.environment["PC_SCALE_LOOP"] {
             let ids = app.list.prefix(1000).map(\.id)
@@ -83,6 +83,14 @@ enum ScaleCheck {
                     _ = app.assetPairing
                     _ = app.hasStacks
                     _ = app.list.count
+                case "offline":
+                    // 50,000 photos offline, then back (not a slice of the photos: held, it would be copied)
+                    let drive = Array(app.assets.prefix(50_000))
+                    app.applyAvailabilityChanges(drive.map {
+                        AssetAvailabilityUpdate(assetId: $0.id, status: rounds % 2 == 0 ? .offline : .ready,
+                                                localPath: $0.localPath)
+                    })
+                    _ = app.libraryCounts
                 case "search-album":
                     app.select(rounds % 2 == 0
                         ? Selection(type: .smart, id: searchSmartAlbum.id, name: searchSmartAlbum.name)
@@ -224,6 +232,7 @@ enum ScaleCheck {
         }
         report("structure ms: " + line.joined(separator: " · "))
         structureParts(app, readSidebar: readSidebar)
+        inPlaceChanges(app, readSidebar: readSidebar)
 
         line = []
         step("select all") { _ = app.handleKey("a", hasCommand: true) }
@@ -292,27 +301,13 @@ enum ScaleCheck {
         func part(_ label: String, _ body: () -> Void) {
             let start = ContinuousClock.now
             body()
-            let elapsed = ContinuousClock.now - start
-            let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
+            let ms = milliseconds(since: start)
             parts.append(label + " " + String(format: "%.1f", ms))
             total += ms
         }
-        func redraw() {
-            part("pairing") { _ = app.assetPairing }
-            part("index") { _ = app.assets.last.flatMap { app.asset(id: $0.id) } }
-            part("library") { _ = app.libraryCounts }
-            part("keywords") { _ = app.keywordList }
-            part("lists") {
-                _ = app.projectList
-                _ = app.clientList
-            }
-            part("gear") { _ = app.gearCounts }
-            part("sidebar") { readSidebar() }
-            part("dates") { _ = app.captureDateGroups }
-            part("folders") { for item in app.folderTree { _ = app.countForFolderTreeItem(item) } }
-        }
-        // every derived part dropped, the id index too (which edits in place, such as Move to
-        // Trash or a rename, keep)
+        func redraw() { rederive(app, readSidebar: readSidebar, part: part) }
+        // every derived part dropped, the id index too, as for a new set of photos (changes in
+        // place, such as Move to Trash or a rename, carry it all on: inPlaceChanges)
         part("change") { app.assets = app.assets }
         redraw()
         report("rederive ms: " + parts.joined(separator: " · ") + " · total " + String(format: "%.0f", total))
@@ -332,6 +327,117 @@ enum ScaleCheck {
         report("import batch ms: " + parts.joined(separator: " · ") + " · total " + String(format: "%.1f", total)
             + " · \(hidden) new JPEGs hidden, \(hiding) earlier ones hidden"
             + (differing.isEmpty ? " · as a recount gives" : " · unlike a recount: " + differing.joined(separator: ", ")))
+    }
+
+    /// What the sidebar, the filter bar and the inspector read as the window redraws (the photo
+    /// list aside), part by part.
+    @MainActor
+    private static func rederive(_ app: AppState, readSidebar: () -> Void, part: (String, () -> Void) -> Void) {
+        part("pairing") { _ = app.assetPairing }
+        part("index") { _ = app.assets.last.flatMap { app.asset(id: $0.id) } }
+        part("library") { _ = app.libraryCounts }
+        part("keywords") { _ = app.keywordList }
+        part("lists") {
+            _ = app.projectList
+            _ = app.clientList
+        }
+        part("gear") { _ = app.gearCounts }
+        withoutActuallyEscaping(readSidebar) { readSidebar in part("sidebar") { readSidebar() } }
+        part("dates") { _ = app.captureDateGroups }
+        part("folders") { for item in app.folderTree { _ = app.countForFolderTreeItem(item) } }
+    }
+
+    /// Changes that leave every photo where it is, each followed by what the window reads again as
+    /// it redraws: Move to Trash of a RAW+JPEG pair and of a thousand photos, a rename, a hundred
+    /// photos (their JPEGs with them) moved to another folder, a drive of 50,000 photos going
+    /// offline and coming back, ten photos removed and imported again. Each is reported as the
+    /// change (saving it included) + the redraw, in ms; then whether all that was carried on is
+    /// what working it out again gives.
+    @MainActor
+    private static func inPlaceChanges(_ app: AppState, readSidebar: () -> Void) {
+        var line: [String] = []
+        var redraws = 0.0
+        func step(_ label: String, _ change: () -> Void) {
+            let start = ContinuousClock.now
+            change()
+            let changed = milliseconds(since: start)
+            var redrawn = 0.0
+            rederive(app, readSidebar: readSidebar) { _, body in
+                let start = ContinuousClock.now
+                body()
+                redrawn += milliseconds(since: start)
+            }
+            redraws += redrawn
+            line.append(label + " " + String(format: "%.1f+%.1f", changed, redrawn))
+        }
+        rederive(app, readSidebar: readSidebar) { $1() }   // all worked out before the first change
+        let count = app.assets.count
+        /// Live originals the library shows, from a place in the catalog on.
+        func shown(from start: Int) -> [Int] {
+            let (photos, pairing) = (app.assets, app.assetPairing)
+            return (start ..< photos.count).filter {
+                pairing.isShown(photos[$0], at: $0) && !photos[$0].isVirtualCopy && photos[$0].localPath != nil
+            }
+        }
+
+        // a RAW and its JPEG, as Move to Trash takes them together
+        let pairing = app.assetPairing
+        let raw = shown(from: count / 2).first { pairing.companionsByPrimary[app.assets[$0].id] != nil } ?? count / 2
+        let pair = pairing.withCompanions([app.assets[raw].id])
+        step("trash 1") { app.applyTrashedOriginals(OriginalTrashReport(trashedIds: pair)) }
+        let thousand = app.assetPairing.withCompanions(Set(shown(from: count * 3 / 5).prefix(1_000).map { app.assets[$0].id }))
+        step("trash 1000") { app.applyTrashedOriginals(OriginalTrashReport(trashedIds: thousand)) }
+
+        let solo = shown(from: count * 13 / 20).first { app.assetPairing.companionsByPrimary[app.assets[$0].id] == nil }
+            ?? count * 13 / 20
+        let renamed = app.assets[solo]
+        let renamedURL = URL(fileURLWithPath: PathString.directory(of: renamed.localPath ?? "/"))
+            .appendingPathComponent("RENAMED_\(solo).\(renamed.type)")
+        step("rename 1") { _ = app.applyRenamedOriginals([renamed.id: renamedURL]) }
+
+        // to the folder of a photo far from them
+        let destination = URL(fileURLWithPath: PathString.directory(of: app.assets[shown(from: count / 10)[0]].localPath ?? "/"))
+        let moving = app.assetPairing.withCompanions(Set(shown(from: count * 7 / 10).prefix(100).map { app.assets[$0].id }))
+        var locations: [String: URL] = [:]
+        for photo in app.assets where moving.contains(photo.id) {
+            locations[photo.id] = destination.appendingPathComponent(photo.filename)
+        }
+        step("move 100") { _ = app.applyMovedOriginalLocations(locations) }
+
+        // whole source folders' photos, as a drive unplugged takes them, up to 50,000
+        var perSource: [String: Int] = [:]
+        for photo in app.assets where !photo.deleted && !photo.isDemo { perSource[photo.folderId, default: 0] += 1 }
+        var drive = Set<String>(), onDrive = 0
+        for (source, number) in perSource.sorted(by: { $0.key < $1.key }) where onDrive < 50_000 {
+            drive.insert(source)
+            onDrive += number
+        }
+        let unplugged = app.assets.filter { !$0.deleted && !$0.isDemo && drive.contains($0.folderId) }
+        step("offline \(unplugged.count)") {
+            app.applyAvailabilityChanges(unplugged.map {
+                AssetAvailabilityUpdate(assetId: $0.id, status: .offline, localPath: $0.localPath)
+            })
+        }
+        step("online") {
+            app.applyAvailabilityChanges(unplugged.map {
+                AssetAvailabilityUpdate(assetId: $0.id, status: .ready, localPath: $0.localPath)
+            })
+        }
+
+        // as they were before they were removed: the import reads them again
+        let returning = shown(from: count * 4 / 5).prefix(10).map { app.assets[$0] }
+        step("remove 10") { _ = app.mutate(Set(returning.map(\.id))) { $0.deleted = true } }
+        step("revive 10") { app.addImportBatch(returning, revivedIds: Set(returning.map(\.id)), album: nil) }
+
+        let differing = app.cachesDifferingFromRecount()
+        report("in place ms (change+redraw): " + line.joined(separator: " · ")
+            + " · redraws " + String(format: "%.0f", redraws)
+            + (differing.isEmpty ? " · as a recount gives" : " · unlike a recount: " + differing.joined(separator: ", ")))
+    }
+
+    private static func milliseconds(since start: ContinuousClock.Instant) -> Double {
+        let elapsed = ContinuousClock.now - start
+        return Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
     }
 
     /// New photos beside some already in the catalog: a quarter the JPEGs of RAWs shot without
