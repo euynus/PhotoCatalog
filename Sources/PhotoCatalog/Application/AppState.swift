@@ -529,6 +529,7 @@ final class AppState {
         let pairing = carried ?? .empty
         carried = nil   // `pairing` the only copy
         if pairRawAndJpeg { assetPairingCache = (structureVersion, pairing) }
+        carryStacks(appendedFrom: start, flipped: flipped)
         // the photos shown now and not before, or the other way round: the new ones shown, and
         // earlier ones that a new RAW hides or a second RAW of their name shows again
         var changes = flipped.map { (position: $0, shown: pairing.isShown(assets[$0], at: $0)) }

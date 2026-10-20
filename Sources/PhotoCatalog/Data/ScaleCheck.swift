@@ -490,24 +490,11 @@ enum ScaleCheck {
             app.setAllStacksCollapsed(true)
             _ = app.list.count
         }
-        median("import batch", prepare: {
+        // what stacks are worked out from, carried on to an import batch by `appendAssets`
+        median("import batch, carried", prepare: {
             app.appendAssets(importBatch(for: app, count: 32))
             _ = app.assetPairing
         }, read)
-        // the same, what stacks are worked out from carried on to the batch (as `appendAssets`
-        // is to do, with the earlier photos the pairing hides or shows again found as it does)
-        var carry: (start: Int, flipped: [Int]) = (0, [])
-        median("import batch, carried", prepare: {
-            let (start, before) = (app.assets.count, app.assetPairing)
-            app.appendAssets(importBatch(for: app, count: 32))
-            let after = app.assetPairing
-            carry = (start, (0..<start).filter {
-                before.isShown(app.assets[$0], at: $0) != after.isShown(app.assets[$0], at: $0)
-            })
-        }) {
-            app.carryStacks(appendedFrom: carry.start, flipped: carry.flipped)
-            read()
-        }
         app.setAllStacksCollapsed(false)
         app.duplicateGroupsCache = []
         func photos(_ stacks: [PhotoStack]) -> Int { stacks.reduce(0) { $0 + $1.count } }
