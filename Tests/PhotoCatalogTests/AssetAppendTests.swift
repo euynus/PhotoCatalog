@@ -136,6 +136,16 @@ final class AssetAppendTests: CatalogTestCase {
         append([photo("n4", "IMG_0005.CR3")], to: app, "another camera's photo by the same name, hours apart")
         XCTAssertNil(app.assetPairing.companionsByPrimary["n4"])
 
+        // edits patch the same caches in between: what they leave must carry on as exactly
+        XCTAssertTrue(app.setRating(5, on: ["f5"]))
+        XCTAssertTrue(app.mutate(["f2"]) { $0.keywords = ["city", "trip", "dusk"] })
+        XCTAssertTrue(app.mutate(["a1"]) { $0.project = "Moved" })   // Wedding's first photo
+        XCTAssertTrue(app.mutate(["f5"]) { $0.client = "Acme" })
+        append([photo("n4b", "IMG_095.CR3", offset: 5 * 40 * 86_400, keywords: ["dusk", "trip"], project: "Wedding",
+                      client: "Acme")],
+               to: app, "after edits, a RAW taking the JPEG of a photo they edited")
+        XCTAssertEqual(app.assetPairing.companionsByPrimary["n4b"], ["f5"])
+
         append([photo("n5", "IMG_0006.NEF", offset: 60)], to: app, "a second RAW of a name: the pair is ambiguous")
         XCTAssertFalse(app.assetPairing.isHiddenCompanion("a6j"), "its JPEG shown again")
 
