@@ -21,6 +21,37 @@ final class SQLiteTests: XCTestCase {
         XCTAssertFalse(matches.contains(deleted.id))
     }
 
+    /// The search index holds a photo's words: an edit that leaves them (a rating, a flag, Move to
+    /// Trash and back) doesn't write its row again, and one that changes them does, and finds by them.
+    func testSearchIndexIsWrittenOnlyWhenAPhotosWordsChange() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-search-words-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: dir.appendingPathComponent("Library.photolibrary"))
+        var photo = DemoData.assets[0]
+        photo.title = "harbour dawn"
+        try store.upsert([photo])
+        let writes = store.searchIndexWrites
+
+        photo.rating = 5
+        photo.flag = .pick
+        try store.upsert([photo])
+        photo.deleted = true
+        try store.upsert([photo])
+        photo.deleted = false
+        try store.upsert([photo])
+        XCTAssertEqual(store.searchIndexWrites, writes, "the words are as they were")
+        XCTAssertEqual(store.search("harbour"), [photo.id])
+
+        photo.title = "harbour dusk"
+        try store.upsert([photo])
+        XCTAssertEqual(store.searchIndexWrites, writes + 1, "a new title")
+        XCTAssertEqual(store.search("dusk"), [photo.id])
+        XCTAssertEqual(store.search("dawn"), [])
+    }
+
     func testTransactionThrowsWhenCommitFails() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-sqlite-\(UUID().uuidString)")

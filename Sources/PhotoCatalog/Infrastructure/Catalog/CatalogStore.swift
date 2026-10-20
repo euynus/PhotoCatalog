@@ -544,16 +544,26 @@ final class CatalogStore: @unchecked Sendable {
                 insert + " ON CONFLICT(id) DO UPDATE SET \(assignments) RETURNING rowid AS r;")
     }()
 
+    /// How many photos' rows the search index was written for (for tests).
+    private(set) var searchIndexWrites = 0
+
     private func upsertRows(_ assets: [Asset], updatingExisting: Bool = true) throws {
         let sql = updatingExisting ? Self.assetInsertSQL.upsert : Self.assetInsertSQL.insert
         for a in assets {
             // keep the FTS index in sync; its rows share the asset's rowid (schema v20)
             guard let rowid = try db.queryMap(sql, Self.params(a), transform: { $0.int("r") }).first else { continue }
+            // Its row changes only with the words it holds: a rating, a flag or Move to Trash leaves
+            // them, and writing them again (the trigrams of every word) cost ~0.4 ms a photo.
+            let content = Self.searchContent(a)
+            if updatingExisting, let row = try db.query("SELECT asset_id, content FROM asset_search WHERE rowid=?;",
+                                                        [.int(rowid)]).first,
+               row.text("asset_id") == a.id, row.text("content") == content { continue }
+            searchIndexWrites &+= 1
             try db.run("DELETE FROM asset_search WHERE rowid=?;", [.int(rowid)])
             try db.run("INSERT INTO asset_search(rowid, asset_id, content) VALUES(?,?,?);", [
                 .int(rowid),
                 .text(a.id),
-                .text(Self.searchContent(a)),
+                .text(content),
             ])
         }
     }
