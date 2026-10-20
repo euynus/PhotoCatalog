@@ -144,4 +144,22 @@ final class CaptureDateTests: XCTestCase {
         pickers.end = try day("2025-09-30").start
         XCTAssertEqual(pickers.applied(to: closed).dateEnd, try day("2025-09-30").start)
     }
+
+    /// The year / month / day tree dated with integer arithmetic is the one the calendar gives:
+    /// leap days, century years and year ends included, and any day beyond 1600–9999 dated by it.
+    func testDateTreeFromDayCountsIsTheCalendarsTree() {
+        var days: [Int: Int] = [:]
+        // every day of two years and more from 1600, 1900, 2000 and 2100, and days all the way to 9999
+        for start in [-135_140, -25_567, 10_957, 47_482] {
+            for day in start ..< start + 800 { days[day] = day % 7 + 1 }
+        }
+        for day in stride(from: -135_140, through: 2_932_896, by: 997) { days[day] = 2 }
+        days[2_932_896] = 3
+        let tree = CaptureDates.groups(dayCounts: days)
+        XCTAssertEqual(tree, CaptureDates.calendarGroups(dayCounts: days))
+        XCTAssertEqual(tree.first?.id, "9999")
+        XCTAssertEqual(tree.last?.children.last?.children.last?.id, "1600-01-01")
+        days[-200_000] = 1   // 1422: the calendar's way, for every day
+        XCTAssertEqual(CaptureDates.groups(dayCounts: days), CaptureDates.calendarGroups(dayCounts: days))
+    }
 }

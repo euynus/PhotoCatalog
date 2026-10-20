@@ -283,14 +283,18 @@ enum ScaleCheck {
     }
 
     /// What the window works out again from every photo after a structural change, part by part
-    /// (the photo list aside), as the sidebar, the filter bar and the inspector redraw.
+    /// (the photo list aside), as the sidebar, the filter bar and the inspector redraw; then the
+    /// same after an import batch, which carries it all on to the new photos instead.
     @MainActor
     private static func structureParts(_ app: AppState, readSidebar: () -> Void) {
         var parts: [String] = []
-        var total = 0
+        var total = 0.0
         func part(_ label: String, _ body: () -> Void) {
-            let (_, ms) = timed(body)
-            parts.append("\(label) \(ms)")
+            let start = ContinuousClock.now
+            body()
+            let elapsed = ContinuousClock.now - start
+            let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
+            parts.append(label + " " + String(format: "%.1f", ms))
             total += ms
         }
         func redraw() {
@@ -311,7 +315,56 @@ enum ScaleCheck {
         // Trash or a rename, keep)
         part("change") { app.assets = app.assets }
         redraw()
-        report("rederive ms: " + parts.joined(separator: " · ") + " · total \(total)")
+        report("rederive ms: " + parts.joined(separator: " · ") + " · total " + String(format: "%.0f", total))
+
+        // An import batch, as one arrives about once a second while importing: JPEGs of RAWs
+        // already there (hidden behind them at once), RAWs of JPEGs already there (which hides
+        // those), and photos of their own; then what the window reads again, and a check that
+        // what was carried on is what working it all out again gives.
+        let batch = importBatch(for: app, count: 32)
+        (parts, total) = ([], 0)
+        part("append \(batch.count)") { app.appendAssets(batch) }
+        redraw()
+        let differing = app.cachesDifferingFromRecount()
+        let pairing = app.assetPairing
+        let hidden = batch.filter { pairing.isHiddenCompanion($0.id) }.count
+        let hiding = batch.reduce(0) { $0 + (pairing.companionsByPrimary[$1.id]?.count ?? 0) }
+        report("import batch ms: " + parts.joined(separator: " · ") + " · total " + String(format: "%.1f", total)
+            + " · \(hidden) new JPEGs hidden, \(hiding) earlier ones hidden"
+            + (differing.isEmpty ? " · as a recount gives" : " · unlike a recount: " + differing.joined(separator: ", ")))
+    }
+
+    /// New photos beside some already in the catalog: a quarter the JPEGs of RAWs shot without
+    /// one, a quarter the RAWs of JPEGs shot alone, the rest photos of their own in the same folder.
+    @MainActor
+    private static func importBatch(for app: AppState, count: Int) -> [Asset] {
+        let pairing = app.assetPairing
+        var raws: [Asset] = [], jpegs: [Asset] = []
+        for asset in app.assets.reversed() where !asset.deleted && !asset.isVirtualCopy && asset.localPath != nil {
+            if asset.isRaw, pairing.companionsByPrimary[asset.id] == nil, raws.count < count / 4 {
+                raws.append(asset)
+            } else if !asset.isRaw, pairing.shows(asset), jpegs.count < count / 4 {
+                jpegs.append(asset)
+            }
+            if raws.count == count / 4, jpegs.count == count / 4 { break }
+        }
+        func twin(of model: Asset, ext: String, name: String? = nil) -> Asset {
+            let path = model.localPath ?? ""
+            let file = name.map { "\(PathString.directory(of: path))/\($0).\(ext)" } ?? "\(PathString.splitExtension(path).stem).\(ext)"
+            return Asset(id: "import-\(UUID().uuidString)", pid: model.pid, ori: model.ori, thumb: "",
+                         preview: "", filename: PathString.lastComponent(file), type: ext, isRaw: ext == "CR3",
+                         folderId: model.folderId, folderName: model.folderName, date: model.date, width: model.width,
+                         height: model.height, orientation: 1, camera: model.camera, lens: model.lens, focal: model.focal,
+                         aperture: model.aperture, shutter: model.shutter, iso: model.iso, colorSpace: model.colorSpace,
+                         hasICCProfile: true, fileMB: model.fileMB, rating: 0, flag: .none,
+                         keywords: name == nil ? model.keywords : model.keywords + ["导入批次"], title: "", caption: "",
+                         location: "", gps: (0, 0), status: .ready, importedAt: Date(), localPath: file, isDemo: false)
+        }
+        var batch = raws.map { twin(of: $0, ext: "JPG") } + jpegs.map { twin(of: $0, ext: "CR3") }
+        while batch.count < count, let model = jpegs.first ?? raws.first {
+            batch.append(twin(of: model, ext: "JPG", name: "IMPORT_\(batch.count)"))
+        }
+        return batch
     }
 
     /// Smart albums by rating, keyword, capture date and camera, matched against every photo.

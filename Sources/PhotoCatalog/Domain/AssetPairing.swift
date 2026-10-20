@@ -13,6 +13,9 @@ struct AssetPairing: Sendable, Equatable {
     /// those photos asks here instead of looking every photo's id up (at 500k photos, those
     /// lookups were most of what counting the library or its capture dates took).
     private var hiddenAt: [Bool] = []
+    /// The photos that can pair, sorted by the hash of their case-folded folder and base name (and
+    /// position): photos added later find the ones they may pair with here.
+    private var keys: [Key] = []
 
     static let empty = AssetPairing(companionsByPrimary: [:], primaryByCompanion: [:])
 
@@ -95,9 +98,77 @@ struct AssetPairing: Sendable, Equatable {
             }
         }
         var pairing = AssetPairing(companionsByPrimary: [:], primaryByCompanion: [:],
-                                   hiddenAt: Array(repeating: false, count: assets.count))
+                                   hiddenAt: Array(repeating: false, count: assets.count), keys: sorted)
         pairing.add(pairs, of: assets)
         return pairing
+    }
+
+    /// Carries this pairing of the photos before `start` on to `assets`, which has more photos
+    /// after them (an import batch, a tethered shot, virtual copies): only the names the new
+    /// photos share with others are paired again, as `rawJpeg(assets)` would pair them. A new
+    /// JPEG can hide behind a RAW already there, a new RAW can take JPEGs already there as its
+    /// companions, and a second RAW of a name makes it ambiguous, its JPEG shown again.
+    /// Returns the earlier photos whose being hidden changed; nil, and nothing changed, when this
+    /// isn't the pairing of exactly the photos before `start`.
+    mutating func append(_ assets: [Asset], from start: Int) -> [Int]? {
+        guard hiddenAt.count == start, start <= assets.count else { return nil }
+        var added = Self.keys(of: assets, in: start ..< assets.count)
+        added.sort { $0.hash != $1.hash ? $0.hash < $1.hash : $0.position < $1.position }
+        hiddenAt.append(contentsOf: repeatElement(false, count: assets.count - start))
+        var earlier: [(position: Int, wasHidden: Bool)] = []
+        var pairs: [Pair] = []
+        var next = 0
+        while next < added.count {
+            var end = next + 1
+            while end < added.count, added[end].hash == added[next].hash { end += 1 }
+            // the photos already there by the same hash: a binary search of the sorted keys
+            let hash = added[next].hash
+            var lower = 0, upper = keys.count
+            while lower < upper {
+                let middle = (lower + upper) / 2
+                if keys[middle].hash < hash { lower = middle + 1 } else { upper = middle }
+            }
+            var last = lower
+            while last < keys.count, keys[last].hash == hash { last += 1 }
+            let before = keys[lower..<last].map(\.position)
+            let members = before + added[next..<end].map(\.position)
+            if members.count > 1 {
+                // what they paired as goes (a RAW and its companions share a name, so a hash),
+                // and they're paired again with the new ones
+                for position in before {
+                    earlier.append((position, hiddenAt[position]))
+                    let id = assets[position].id
+                    companionsByPrimary[id] = nil
+                    primaryByCompanion[id] = nil
+                    hiddenAt[position] = false
+                }
+                Self.pairs(among: members, of: assets, into: &pairs)
+            }
+            next = end
+        }
+        add(pairs, of: assets)
+        if !added.isEmpty { keys = Self.merged(keys, added) }
+        return earlier.filter { hiddenAt[$0.position] != $0.wasHidden }.map(\.position)
+    }
+
+    /// Two key lists sorted alike, as one.
+    private static func merged(_ a: [Key], _ b: [Key]) -> [Key] {
+        var result: [Key] = []
+        result.reserveCapacity(a.count + b.count)
+        var (i, j) = (0, 0)
+        while i < a.count, j < b.count {
+            let first = a[i].hash != b[j].hash ? a[i].hash < b[j].hash : a[i].position < b[j].position
+            if first {
+                result.append(a[i])
+                i += 1
+            } else {
+                result.append(b[j])
+                j += 1
+            }
+        }
+        result += a[i...]
+        result += b[j...]
+        return result
     }
 
     /// A RAW and its companions, by position.

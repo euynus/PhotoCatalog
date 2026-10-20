@@ -89,8 +89,63 @@ enum CaptureDates {
 
     /// The year / month / day tree of photos counted by day (see `dayCounts`).
     static func groups(dayCounts days: [Int: Int]) -> [CaptureDateBucket] {
+        // Days of the years 1600 to 9999, as photos' nearly always are, are dated with integer
+        // arithmetic and the tree made from the dates: a calendar call, a key formatted and split
+        // again per day and level took ~30 ms for ten years of photos, after every import batch.
+        guard days.keys.allSatisfy(gregorianDays.contains) else { return calendarGroups(dayCounts: days) }
+        let dated = days.map { (date: civilDate(ofDay: $0.key), count: $0.value) }.sorted { $0.date > $1.date }
+        var labels: [Int: String] = [:]   // one call to localize each year, month and day
+        func label(_ value: Int, depth: Int) -> String {
+            let key = depth * 10_000 + value
+            if let known = labels[key] { return known }
+            let made = Self.label(value, depth: depth)
+            labels[key] = made
+            return made
+        }
+        func padded(_ value: Int) -> String { value < 10 ? "0\(value)" : String(value) }
+        var years: [CaptureDateBucket] = []
+        var next = 0
+        while next < dated.count {
+            let year = dated[next].date.year, yearId = String(year)
+            var months: [CaptureDateBucket] = []
+            while next < dated.count, dated[next].date.year == year {
+                let month = dated[next].date.month, monthId = yearId + "-" + padded(month)
+                var monthDays: [CaptureDateBucket] = []
+                while next < dated.count, dated[next].date.year == year, dated[next].date.month == month {
+                    let (date, count) = dated[next]
+                    monthDays.append(CaptureDateBucket(id: monthId + "-" + padded(date.day), label: label(date.day, depth: 2),
+                                                       count: count, children: []))
+                    next += 1
+                }
+                months.append(CaptureDateBucket(id: monthId, label: label(month, depth: 1),
+                                                count: monthDays.reduce(0) { $0 + $1.count }, children: monthDays))
+            }
+            years.append(CaptureDateBucket(id: yearId, label: label(year, depth: 0),
+                                           count: months.reduce(0) { $0 + $1.count }, children: months))
+        }
+        return years
+    }
+
+    /// `groups(dayCounts:)` by way of the calendar and each day's formatted key: how any day is
+    /// dated (the years before the Gregorian calendar was in use, or after 9999 included).
+    static func calendarGroups(dayCounts days: [Int: Int]) -> [CaptureDateBucket] {
         let counts = days.map { (key: key(Date(timeIntervalSince1970: Double($0.key) * 86_400)), count: $0.value) }
         return buckets(counts, depth: 0)
+    }
+
+    /// The days since 1970 from 1600-01-01 to 9999-12-31: four-digit years, all Gregorian.
+    private static let gregorianDays = -135_140 ... 2_932_896
+
+    /// A UTC day's Gregorian date (Hinnant's civil-from-days), as `key` dates it in `gregorianDays`.
+    private static func civilDate(ofDay day: Int) -> (year: Int, month: Int, day: Int) {
+        let shifted = day + 719_468
+        let era = (shifted >= 0 ? shifted : shifted - 146_096) / 146_097
+        let dayOfEra = shifted - era * 146_097
+        let yearOfEra = (dayOfEra - dayOfEra / 1_460 + dayOfEra / 36_524 - dayOfEra / 146_096) / 365
+        let dayOfYear = dayOfEra - (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100)
+        let shiftedMonth = (5 * dayOfYear + 2) / 153
+        let month = shiftedMonth < 10 ? shiftedMonth + 3 : shiftedMonth - 9
+        return (yearOfEra + era * 400 + (month <= 2 ? 1 : 0), month, dayOfYear - (153 * shiftedMonth + 2) / 5 + 1)
     }
 
     /// How many of the photos as shown were taken on each day, by days since 1970, counted in

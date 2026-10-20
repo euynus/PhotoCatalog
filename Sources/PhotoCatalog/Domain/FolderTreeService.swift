@@ -48,6 +48,31 @@ enum FolderTreeService {
         return result
     }
 
+    /// Whether `build` would make `tree` again with `assets` among the photos: none of them is in
+    /// a folder under its source that the tree doesn't have yet (photos added to a folder already
+    /// listed, as an import batch nearly always is, change no folder but their own counts).
+    static func covers(_ assets: ArraySlice<Asset>, in tree: [FolderTreeItem], sourceRootPaths: [String: String]) -> Bool {
+        struct Place: Hashable { let source: String; let directory: String }
+        var sources = Set<String>()
+        var places = Set<Place>()
+        for item in tree {
+            if let directoryPath = item.directoryPath {
+                places.insert(Place(source: item.sourceId, directory: directoryPath))
+            } else {
+                sources.insert(item.sourceId)
+            }
+        }
+        for asset in assets where !asset.deleted && !asset.isDemo && sources.contains(asset.folderId) {
+            guard let rootPath = normalizedDirectory(sourceRootPaths[asset.folderId]),
+                  let localPath = asset.localPath else { continue }
+            let assetDir = normalizedPath(PathString.standardized(PathString.directory(of: localPath)))
+            guard assetDir != rootPath, isDescendant(assetDir, of: rootPath) else { continue }
+            // `build` lists the folder and every one between it and the source: all there when it is
+            guard places.contains(Place(source: asset.folderId, directory: assetDir)) else { return false }
+        }
+        return true
+    }
+
     static func matches(_ asset: Asset, item: FolderTreeItem) -> Bool {
         guard asset.folderId == item.sourceId else { return false }
         guard let directoryPath = item.directoryPath else { return true }
