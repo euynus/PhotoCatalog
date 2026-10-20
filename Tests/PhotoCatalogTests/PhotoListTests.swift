@@ -213,6 +213,66 @@ final class PhotoListTests: CatalogTestCase {
                        Self.referenceSorted(Array(photos.prefix(5)).filter(app.assetPairing.shows), by: Sort()).map(\.id))
     }
 
+    /// A smart album is matched in chunks on every core, each with a memo of its own, and lists
+    /// what one pass over the photos matches: full-text search, keyword, date and mixed rules, in
+    /// chunks that split runs of matching photos.
+    @MainActor
+    func testSmartAlbumMatchedInChunksListsWhatOnePassMatches() throws {
+        let now = Date()
+        let photos = try SmartMatcherTests.variedPhotos(now: now)
+        let app = AppState.selfCheckFixture()
+        app.assets = photos
+        app.duplicateGroupsCache = []
+        func album(_ id: String, _ match: String, _ conditions: [(String, String, String)]) -> SmartAlbum {
+            SmartAlbum(id: id, name: id, rule: SmartRule(match: match, conditions: conditions.map {
+                SmartCondition(field: $0.0, op: $0.1, value: $0.2)
+            }), count: 0)
+        }
+        app.smartAlbums = [
+            album("search", "all", [("search", "包含", "cafe")]),
+            album("search across fields", "all", [("search", "包含", "R5 RF50")]),
+            album("keywords", "any", [("keywords", "包含", "旅行"), ("keywords", "包含", "CAFÉ")]),
+            album("dates", "any", [("datePreset", "=", "last7Days"), ("captureDate", ">=", "2023-06")]),
+            album("mixed", "all", [("search", "包含", "IMG_10"), ("keywords", "不包含", "e"), ("captureYear", "<=", "2024")]),
+            album("mixed any", "any", [("search", "包含", "wedding"), ("camera", "包含", "canon"), ("rating", ">=", "5")]),
+        ]
+        let shows = app.assetPairing.shows
+        for smart in app.smartAlbums {
+            app.select(Selection(type: .smart, id: smart.id, name: smart.name))
+            // one pass with one memo, as the album was matched before, and field by field
+            let onePass = SmartMatcher.match(photos.filter(shows), smart.rule)
+            XCTAssertEqual(onePass.map(\.id), photos.filter(shows).filter { photo in
+                let each = smart.rule.conditions.map { SmartMatcherTests.fieldByField(photo, $0, now: now) }
+                return smart.rule.match == "all" ? !each.contains(false) : each.contains(true)
+            }.map(\.id), smart.id)
+            XCTAssertFalse(onePass.isEmpty, smart.id)
+            XCTAssertLessThan(onePass.count, photos.count, smart.id)
+            for chunk in [1, 3, 7, .max] {
+                app.listChunk = chunk
+                app.assets = app.assets   // works the list out again
+                XCTAssertEqual(app.list.map(\.id), Self.referenceSorted(onePass, by: Sort()).map(\.id),
+                               "\(smart.id) in chunks of \(chunk)")
+            }
+        }
+    }
+
+    /// The list's and smart albums' text search answers as `localizedStandardContains` does, for
+    /// case, diacritics, widths, scripts, ligatures and combining marks alike.
+    func testLocalizedSearchAnswersAsLocalizedStandardContains() {
+        let texts = ["IMG_1234.CR3 Canon EOS R5", "Café au lait", "Cafe\u{301} decomposed", "CAFÉ", "résumé naïve",
+                     "ｃａｆｅ ｆｕｌｌ", "旅行/主题12 人像", "İstanbul ıi", "Straße STRASSE", "ﬁsh ligature", "Ω ω Ὠ",
+                     "emoji 📷 camera", "", "   ", "a\u{0}b", "IJssel ĳ", "30.500, 114.300"]
+        let needles = ["", "img_12", "cafe", "CAFÉ", "é", "e\u{301}", "café", "ｃａｆｅ", "cafe full", "主题", "人",
+                       "istanbul", "İ", "ı", "i", "strasse", "ß", "fish", "ﬁ", "ω", "📷", " ", "ij", "ĳ", "b", "114.3"]
+        let search = LocalizedSearch()
+        for text in texts {
+            for needle in needles {
+                XCTAssertEqual(search.text(text, contains: needle), text.localizedStandardContains(needle),
+                               "“\(needle)” in “\(text)”")
+            }
+        }
+    }
+
     /// The list looks up only non-RAW files in the pairing: it hides JPEG and HEIC files behind
     /// their RAW, never a RAW, whatever files share a name.
     func testPairingNeverHidesARaw() throws {

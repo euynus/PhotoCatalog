@@ -224,7 +224,7 @@ enum SmartMatcher {
             case .gps(let has): return a.hasGPS == has
             case .status(let status): return a.status == status
             // the joined text, as the search box searches it: a match can run across two fields
-            case .search(let needle): return a.searchHaystack.localizedStandardContains(needle)
+            case .search(let needle): return memo.search(a.searchHaystack, for: needle)
             }
         }
     }
@@ -234,6 +234,9 @@ enum SmartMatcher {
     /// gives the same answer. Each pass, and each thread of one, keeps its own.
     struct Memo {
         private var found: [[String: Bool]] = []
+        /// Full-text search (no answer to keep: each photo's text is its own), with the locale it
+        /// searches in bridged once for the pass.
+        private var searching: LocalizedSearch?
 
         init() {}
 
@@ -247,6 +250,12 @@ enum SmartMatcher {
             let result = text.localizedStandardContains(needle)
             found[slot][text] = result
             return result
+        }
+
+        fileprivate mutating func search(_ text: String, for needle: String) -> Bool {
+            let search = searching ?? LocalizedSearch()
+            searching = search
+            return search.text(text, contains: needle)
         }
     }
 

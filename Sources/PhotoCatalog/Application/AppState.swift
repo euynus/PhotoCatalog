@@ -9238,12 +9238,13 @@ final class AppState {
         guard let collection = collectionTest() else { return [] }
         let live = listShows
         let filtered = !(filters.isEmpty && q.isEmpty)
-        // Live, in the collection and through the filter bar: one pass split across the cores (a
-        // smart album's in one pass). On one thread, looking up every photo's pairing alone took
-        // most of the ~0.3 s All Photographs took at 500k photos.
-        let chunk = selection.type == .smart ? .max : listChunk
-        let positions = Self.matchingPositions(in: assets, chunk: chunk) {
+        // Live, in the collection and through the filter bar: one pass split across the cores. On
+        // one thread, looking up every photo's pairing alone took most of the ~0.3 s All
+        // Photographs took at 500k photos, and a smart album's full-text search (which no memo
+        // can answer: it searches each photo's own text) ~1.4 s.
+        let positions = Self.matchingPositions(in: assets, chunk: listChunk) {
             let belongs = collection()
+            let search = LocalizedSearch()   // its own, for the filter bar's text tests
             return { a in
                 guard live(a), belongs(a) else { return false }
                 guard filtered else { return true }
@@ -9251,8 +9252,8 @@ final class AppState {
                 if filters.flag != "any" && a.flag.rawValue != filters.flag { return false }
                 if filters.color != "any" && a.colorLabel?.rawValue != filters.color { return false }
                 if filters.type != "any" && !a.matchesType(filters.type) { return false }
-                if !cameraQuery.isEmpty && !a.camera.localizedStandardContains(cameraQuery) { return false }
-                if !lensQuery.isEmpty && !a.lens.localizedStandardContains(lensQuery) { return false }
+                if !cameraQuery.isEmpty && !search.text(a.camera, contains: cameraQuery) { return false }
+                if !lensQuery.isEmpty && !search.text(a.lens, contains: lensQuery) { return false }
                 if filters.date != "any" {
                     guard let dateInterval, CaptureDates.contains(a.date, in: dateInterval) else { return false }
                 }
@@ -9263,7 +9264,7 @@ final class AppState {
                     if let indexedSearchIds {
                         if !indexedSearchIds.contains(a.id) { return false }
                     } else {
-                        if !a.searchHaystack.localizedStandardContains(q) { return false }
+                        if !search.text(a.searchHaystack, contains: q) { return false }
                     }
                 }
                 return true
