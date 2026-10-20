@@ -125,6 +125,7 @@ final class CacheRepairTests: CatalogTestCase {
         undo.beginUndoGrouping()
         app.removeSelected()
         undo.endUndoGrouping()
+        app.waitForCachePurges()
         XCTAssertFalse(exists(thumb), "Remove from Catalog deletes the photo's cache files")
         undo.undo()
 
@@ -133,5 +134,30 @@ final class CacheRepairTests: CatalogTestCase {
         let again = await app.visibleImageSource(for: restored, requestedSource: restored.thumb, kind: .thumb512)
         XCTAssertEqual(again, thumb)
         XCTAssertTrue(exists(thumb), "the thumbnail of the photo brought back is made again")
+    }
+
+    /// Removed photos' cache files are deleted in the background; a photo brought back (undo) before
+    /// that happens keeps them rather than losing its thumbnail just after it shows again.
+    @MainActor
+    func testPhotoBroughtBackBeforeItsCacheIsDeletedKeepsIt() async throws {
+        let (app, asset, _) = try openCatalogWithPhoto()
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        app.undoManager = undo
+        let thumb = asset.thumb
+        _ = await app.visibleImageSource(for: asset, requestedSource: thumb, kind: .thumb512)
+        XCTAssertTrue(exists(thumb))
+
+        app.primaryId = asset.id
+        app.selectedIds = [asset.id]
+        app.holdingCachePurges {
+            undo.beginUndoGrouping()
+            app.removeSelected()
+            undo.endUndoGrouping()
+            undo.undo()
+        }
+        app.waitForCachePurges()
+        XCTAssertFalse(try XCTUnwrap(app.assets.first { $0.id == asset.id }).deleted)
+        XCTAssertTrue(exists(thumb), "the photo back in the catalog keeps its thumbnail")
     }
 }

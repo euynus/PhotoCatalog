@@ -735,7 +735,12 @@ final class AppState {
     /// filters and sort ignore review fields — the cached list, instead of rescanning
     /// and re-sorting every asset. Structural edits carry what's derived on through them.
     private func applyAssetEdits(_ edits: [(offset: Int, asset: Asset)], scope: AssetEditScope) {
-        guard !scope.contains(.structure) else { return applyStructuralEdits(edits, scope: scope) }
+        guard !scope.contains(.structure) else {
+            // a photo back in the catalog (undo, imported again) keeps cache files still to be deleted
+            let returning = edits.filter { assets[$0.offset].deleted && !$0.asset.deleted }.map(\.asset.id)
+            if !returning.isEmpty { cachePurges.cancel(returning) }
+            return applyStructuralEdits(edits, scope: scope)
+        }
         var patchedCounts: LibraryCounts?
         var patchedKeywords: KeywordTally?
         var dropsKeywordCounts = false
@@ -7703,15 +7708,43 @@ final class AppState {
     /// looked for on disk then.
     private func purgeCacheFiles<S: Sequence>(forAssetIds ids: S) where S.Element == String {
         guard let thumbnails = coordinator?.thumbnails else { return }
-        let fm = FileManager.default
-        let kinds: [ThumbnailService.Kind] = [.thumb256, .thumb512, .preview1600, .preview2048]
-        for id in ids {
-            verifiedCacheSources[id] = nil
-            for kind in kinds {
-                try? fm.removeItem(at: thumbnails.cachePath(assetId: id, kind: kind))
+        let ids = Array(ids)
+        for id in ids { verifiedCacheSources[id] = nil }
+        // Their thumbnails and previews go off the main thread: four files a photo, each path a
+        // hash of its id, took Move to Trash of 1,000 photos a quarter of a second. A photo back in
+        // the catalog before they're gone keeps them (`applyAssetEdits` takes it off the list).
+        let purges = cachePurges
+        purges.add(ids)
+        Self.cachePurgeQueue.async {
+            let fm = FileManager.default
+            let kinds: [ThumbnailService.Kind] = [.thumb256, .thumb512, .preview1600, .preview2048]
+            for id in ids where purges.take(id) {
+                for kind in kinds { try? fm.removeItem(at: thumbnails.cachePath(assetId: id, kind: kind)) }
             }
         }
     }
+
+    /// The photos whose cache files wait to be deleted, shared with the queue deleting them.
+    private final class CachePurges: @unchecked Sendable {
+        private let lock = NSLock()
+        private var waiting: Set<String> = []
+        func add(_ ids: [String]) { lock.withLock { waiting.formUnion(ids) } }
+        func cancel(_ ids: [String]) { lock.withLock { waiting.subtract(ids) } }
+        /// Whether `id`'s files are still to go; they're no longer waiting after this.
+        func take(_ id: String) -> Bool { lock.withLock { waiting.remove(id) != nil } }
+    }
+    @ObservationIgnored private let cachePurges = CachePurges()
+    private static let cachePurgeQueue = DispatchQueue(label: "PhotoCatalog.cachePurge", qos: .utility)
+
+    /// For checks: runs `body` with cache files held back from deletion, then lets them go.
+    func holdingCachePurges(_ body: () -> Void) {
+        Self.cachePurgeQueue.suspend()
+        defer { Self.cachePurgeQueue.resume() }
+        body()
+    }
+
+    /// For checks: waits until the cache files of photos removed so far are deleted.
+    func waitForCachePurges() { Self.cachePurgeQueue.sync {} }
 
     // ---------- export presets (§4.2) ----------
     func saveExportPreset(name: String) {
