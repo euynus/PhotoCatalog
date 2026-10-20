@@ -7,7 +7,8 @@ import UniformTypeIdentifiers
 /// are put back afterwards, and each test gets its own folder under the temporary directory.
 class CatalogTestCase: XCTestCase {
     private static let isolatedKeys = ["pc_openLast", "pc_catalogURL", "pc_onboarded", "pc_recentCatalogs",
-                                       "pc_pairRawJpeg", "pc_readXMP", "pc_vision", "pc_importMode"]
+                                       "pc_pairRawJpeg", "pc_readXMP", "pc_vision", "pc_importMode",
+                                       "pc_autoStackSeconds"]
     private var savedDefaults: [String: Any] = [:]
     private(set) var scratch: URL!
 
