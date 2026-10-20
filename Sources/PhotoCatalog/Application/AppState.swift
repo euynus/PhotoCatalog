@@ -164,12 +164,16 @@ final class AppState {
     private var collapsedStackIds: Set<String> = []
     @ObservationIgnored private var photoStacksCache: [PhotoStack]?
     @ObservationIgnored private var captureTimeGroupsCache: (version: Int, seconds: Double, groups: [[String]])?
+    /// The photos auto-stacking reads, in capture order: sorted once per structure change (and
+    /// pairing), whatever the interval, which the groups are then a pass over.
+    @ObservationIgnored private var captureOrderCache: (version: Int, pairs: Bool, order: [PhotoStackService.CaptureKey])?
     /// Auto-stacking by capture time: photos from one camera taken within this many seconds of
     /// each other stack together, as Lightroom's Auto-Stack by Capture Time (nil: off).
     var autoStackSeconds: Double? = UserDefaults.app.object(forKey: "pc_autoStackSeconds") as? Double {
         didSet {
             UserDefaults.app.set(autoStackSeconds, forKey: "pc_autoStackSeconds")
             captureTimeGroupsCache = nil
+            if autoStackSeconds == nil { captureOrderCache = nil }
             photoStacksCache = nil
             stackByAssetCache = nil
             stackInputsVersion &+= 1
@@ -178,7 +182,7 @@ final class AppState {
     }
     /// Originals with their edited copies, derived from file names once per structure change.
     @ObservationIgnored private var editGroupsCache: (version: Int, groups: [DuplicateGroup])?
-    @ObservationIgnored private var stackByAssetCache: [String: PhotoStack]?
+    @ObservationIgnored private var stackByAssetCache: [String: Int]?
     @ObservationIgnored private var keywordListCache: [KeywordCount]?
     @ObservationIgnored private var gearCountsCache: (cameras: MetadataValueCounts, lenses: MetadataValueCounts)?
     /// Every keyword's photo count, in first-seen order; metadata edits patch it in place.
@@ -9401,7 +9405,7 @@ final class AppState {
         return counts
     }
 
-    private var photoStacks: [PhotoStack] {
+    var photoStacks: [PhotoStack] {
         _ = stackInputsVersion   // register the dependency even on a cache hit
         if let cache = photoStacksCache { return cache }
         // edited copies first: a TIFF made for an editor stacks with its original before anything else
@@ -9423,11 +9427,71 @@ final class AppState {
         if let cached = captureTimeGroupsCache, cached.version == structureVersion, cached.seconds == seconds {
             return cached.groups
         }
-        let pairing = assetPairing
-        let groups = PhotoStackService.captureTimeGroups(
-            assets.filter(pairing.shows), within: seconds)
+        let groups = PhotoStackService.groups(inCaptureOrder: captureOrder, of: assets, within: seconds)
         if seconds == autoStackSeconds { captureTimeGroupsCache = (structureVersion, seconds, groups) }
         return groups
+    }
+
+    private var captureOrder: [PhotoStackService.CaptureKey] {
+        if let cache = captureOrderCache, cache.version == structureVersion, cache.pairs == pairRawAndJpeg {
+            return cache.order
+        }
+        let order = Self.captureOrder(of: assets, pairing: assetPairing)
+        captureOrderCache = (structureVersion, pairRawAndJpeg, order)
+        return order
+    }
+
+    /// The photos `pairing` shows that name a camera, in capture order (as
+    /// `PhotoStackService.captureTimeGroups` orders them): their keys read in chunks side by
+    /// side, then sorted in runs side by side and merged.
+    nonisolated static func captureOrder(of assets: [Asset], pairing: AssetPairing, chunk: Int = 65_536,
+                                         run: Int = 16_384) -> [PhotoStackService.CaptureKey] {
+        typealias Key = PhotoStackService.CaptureKey
+        let chunk = max(chunk, 1)
+        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
+        // the photos through a pointer: threads reading one array retained its buffer by turns
+        return assets.withUnsafeBufferPointer { photos in
+            // each chunk's keys, its cameras numbered as it comes to them
+            func keys(_ range: Range<Int>) -> (keys: [Key], cameras: [String]) {
+                var numbers: [String: Int32] = [:]
+                var cameras: [String] = []
+                var keys: [Key] = []
+                for position in range where pairing.isShown(photos[position], at: position) {
+                    let camera = photos[position].camera
+                    guard !camera.isEmpty else { continue }
+                    let number: Int32
+                    if let known = numbers[camera] {
+                        number = known
+                    } else {
+                        number = Int32(cameras.count)
+                        numbers[camera] = number
+                        cameras.append(camera)
+                    }
+                    keys.append(Key(camera: number, position: Int32(position),
+                                    time: photos[position].date.timeIntervalSinceReferenceDate))
+                }
+                return (keys, cameras)
+            }
+            var parts = [(keys: [Key], cameras: [String])](repeating: ([], []), count: chunks)
+            parts.withUnsafeMutableBufferPointer { parts in
+                let slots = Shared(parts)
+                DispatchQueue.concurrentPerform(iterations: chunks) { index in
+                    slots.buffer[index] = keys(index * chunk ..< min(assets.count, (index + 1) * chunk))
+                }
+            }
+            // the numbers then become the cameras' ranks
+            let ranks = PhotoStackService.cameraRanks(parts.lazy.flatMap(\.cameras))
+            var order: [Key] = []
+            order.reserveCapacity(parts.reduce(0) { $0 + $1.keys.count })
+            for part in parts {
+                let rank = part.cameras.map { ranks[$0] ?? 0 }
+                for key in part.keys {
+                    order.append(Key(camera: rank[Int(key.camera)], position: key.position, time: key.time))
+                }
+            }
+            concurrentSort(&order, run: run) { PhotoStackService.precedes($0, $1, in: photos) }
+            return order
+        }
     }
 
     /// How many stacks, of how many photos, auto-stacking with `seconds` makes.
@@ -9468,23 +9532,30 @@ final class AppState {
 
     var hasStacks: Bool { !photoStacks.isEmpty }
 
-    /// O(1) asset → stack lookup, rebuilt only when the stacks change (invalidated in didSet).
-    private var stackByAsset: [String: PhotoStack] {
+    /// O(1) asset → stack lookup (its place among `photoStacks`), rebuilt only when the stacks
+    /// change (invalidated in didSet).
+    private var stackByAsset: [String: Int] {
         _ = stackInputsVersion   // register the dependency even on a cache hit
         if let cache = stackByAssetCache { return cache }
-        var map: [String: PhotoStack] = [:]
-        for stack in photoStacks { for id in stack.assetIds { map[id] = stack } }
+        let stacks = photoStacks
+        var map = [String: Int](minimumCapacity: stacks.reduce(0) { $0 + $1.count })
+        for (index, stack) in stacks.enumerated() { for id in stack.assetIds { map[id] = index } }
         stackByAssetCache = map
         return map
     }
 
+    /// The stack `assetId` is in.
+    private func stack(containing assetId: String) -> PhotoStack? {
+        stackByAsset[assetId].map { photoStacks[$0] }
+    }
+
     func stackInfo(for asset: Asset) -> (count: Int, collapsed: Bool)? {
-        guard let stack = stackByAsset[asset.id] else { return nil }
+        guard let stack = stack(containing: asset.id) else { return nil }
         return (stack.count, collapsedStackIds.contains(stack.id))
     }
 
     func toggleStack(containing assetId: String) {
-        guard let stack = stackByAsset[assetId] else { return }
+        guard let stack = stack(containing: assetId) else { return }
         if collapsedStackIds.contains(stack.id) {
             collapsedStackIds.remove(stack.id)
             push("已展开堆栈")

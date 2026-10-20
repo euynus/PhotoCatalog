@@ -44,12 +44,13 @@ enum ScaleCheck {
         report("RAW+JPEG pairing \(app.pairRawAndJpeg ? "on" : "off"), auto-stack "
             + (app.autoStackSeconds.map { "\($0) s" } ?? "off"))
 
-        // PC_SCALE_LOOP=rate|name|keywords|dates|hydrate|apply|keyword-edit|sidebar|list|search-album|offline repeats
-        // one operation for 20 s, to sample it
+        // PC_SCALE_LOOP=rate|name|keywords|dates|hydrate|apply|keyword-edit|sidebar|list|stacks|stacked|search-album|offline
+        // repeats one operation for 20 s, to sample it
         if let loop = ProcessInfo.processInfo.environment["PC_SCALE_LOOP"] {
             let ids = app.list.prefix(1000).map(\.id)
             if loop == "sidebar" { app.smartAlbums = sidebarSmartAlbums }
             if loop == "search-album" { app.smartAlbums = [searchSmartAlbum] }
+            if loop == "stacked" { addStackSources(app) }
             let end = Date().addingTimeInterval(20)
             var rounds = 0
             while Date() < end {
@@ -91,6 +92,10 @@ enum ScaleCheck {
                                                 localPath: $0.localPath)
                     })
                     _ = app.libraryCounts
+                case "stacks", "stacked":
+                    app.assets = app.assets
+                    _ = app.assetPairing
+                    _ = app.hasStacks
                 case "search-album":
                     app.select(rounds % 2 == 0
                         ? Selection(type: .smart, id: searchSmartAlbum.id, name: searchSmartAlbum.name)
@@ -287,6 +292,7 @@ enum ScaleCheck {
             line.append("rate pair " + String(format: "%.1f", pairRatings.sorted()[pairRatings.count / 2]))
         }
         report("photo list ms: " + line.joined(separator: " · "))
+        stackParts(app)
         report("footprint \(delta(footprint(), baseline)) MB since start, \(megabytes(footprint())) MB total")
         return 0
     }
@@ -438,6 +444,85 @@ enum ScaleCheck {
     private static func milliseconds(since start: ContinuousClock.Instant) -> Double {
         let elapsed = ContinuousClock.now - start
         return Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
+    }
+
+    /// Stacks worked out again after a structural change, alone: the change, and the pairing they
+    /// read, come before the clock starts. Then what a redraw reads of them: the menu's state and
+    /// a screenful of tiles' badges. As the catalog is (auto-stacking as the run's settings have
+    /// it: `-pc_autoStackSeconds '<real>5</real>'`, as a plain 5 is read as text), then with edited
+    /// copies and duplicate groups, every stack folded, the photo list folding them, and after an
+    /// import batch. Median of five each.
+    @MainActor
+    private static func stackParts(_ app: AppState) {
+        var parts: [String] = []
+        func median(_ label: String, prepare: () -> Void, _ body: () -> Void) {
+            var times: [Double] = []
+            for _ in 0..<5 {
+                prepare()
+                let start = ContinuousClock.now
+                body()
+                let elapsed = ContinuousClock.now - start
+                times.append(Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15)
+            }
+            parts.append(label + " " + String(format: "%.1f", times.sorted()[times.count / 2]))
+        }
+        func change() {
+            app.assets = app.assets
+            _ = app.assetPairing
+        }
+        let tiles = Array(app.list.prefix(200))
+        func read() {
+            _ = app.hasStacks
+            for tile in tiles { _ = app.stackInfo(for: tile) }
+        }
+        median("derive", prepare: change, read)
+        let plain = app.photoStacks
+
+        addStackSources(app)
+        median("+ edits, duplicates", prepare: change, read)
+        let stacks = app.photoStacks
+        app.setAllStacksCollapsed(true)
+        median("folded", prepare: change, read)
+        median("fold list", prepare: {
+            app.setAllStacksCollapsed(false)
+            _ = app.list.count
+        }) {
+            app.setAllStacksCollapsed(true)
+            _ = app.list.count
+        }
+        median("import batch", prepare: {
+            app.appendAssets(importBatch(for: app, count: 32))
+            _ = app.assetPairing
+        }, read)
+        app.setAllStacksCollapsed(false)
+        app.duplicateGroupsCache = []
+        func photos(_ stacks: [PhotoStack]) -> Int { stacks.reduce(0) { $0 + $1.count } }
+        report("stacks ms: " + parts.joined(separator: " · ")
+            + " · \(plain.count) stacks of \(photos(plain)) photos, then \(stacks.count) of \(photos(stacks))")
+    }
+
+    /// An edited copy of one photo in fifty, and duplicates of two in twenty.
+    @MainActor
+    private static func addStackSources(_ app: AppState) {
+        let shown = app.list
+        app.appendAssets(stride(from: 0, to: shown.count, by: 50).compactMap { editedCopy(of: shown[$0]) })
+        app.duplicateGroupsCache = stride(from: 1, to: shown.count - 1, by: 20).map {
+            DuplicateGroup(id: "scale-dup-\($0)", method: "contentHash", score: 1, items: [shown[$0], shown[$0 + 1]])
+        }
+    }
+
+    /// The TIFF an external editor would write for `model`, beside it.
+    private static func editedCopy(of model: Asset) -> Asset? {
+        guard let path = model.localPath else { return nil }
+        let file = "\(PathString.splitExtension(path).stem)-Edit.tif"
+        return Asset(id: "edit-\(UUID().uuidString)", pid: model.pid, ori: model.ori, thumb: "", preview: "",
+                     filename: PathString.lastComponent(file), type: "TIF", isRaw: false, folderId: model.folderId,
+                     folderName: model.folderName, date: model.date, width: model.width, height: model.height,
+                     orientation: 1, camera: model.camera, lens: model.lens, focal: model.focal,
+                     aperture: model.aperture, shutter: model.shutter, iso: model.iso, colorSpace: "Adobe RGB",
+                     hasICCProfile: true, fileMB: model.fileMB * 4, rating: 0, flag: .none, keywords: model.keywords,
+                     title: "", caption: "", location: "", gps: (0, 0), status: .ready, importedAt: Date(),
+                     localPath: file, isDemo: false)
     }
 
     /// New photos beside some already in the catalog: a quarter the JPEGs of RAWs shot without
