@@ -9336,13 +9336,12 @@ final class AppState {
     }
 
     // ---------- base collection from sidebar ----------
-    /// Whether a photo can be in the list at all: not removed, and not a JPEG behind its RAW.
+    /// Whether a photo can be in the list at all: not removed, and not a JPEG behind its RAW
+    /// (`AssetPairing.shows`, which doesn't look a RAW up: pairing never hides one).
     /// Missing/offline is file-level: a lost JPEG must show even when its RAW is fine.
-    /// `AssetPairing.shows`, but a RAW, which pairing never hides (it hides JPEG and HEIC files
-    /// behind their RAW), isn't looked up: those lookups by id were most of the list's time.
     private var listShows: (Asset) -> Bool {
         let pairing = selection.type == .lib && selection.id == "missing" ? .empty : assetPairing
-        return { !$0.deleted && ($0.isRaw || !pairing.isHiddenCompanion($0.id)) }
+        return { pairing.shows($0) }
     }
 
     /// The selected collection's membership test, made afresh for each pass over the photos (a
