@@ -1042,7 +1042,14 @@ final class AppState {
             || old.fileModifiedAt != new.fileModifiedAt || old.fileCreatedAt != new.fileCreatedAt
             || old.captureDateSource != new.captureDateSource || old.contentHash != new.contentHash
             || old.quickHash != new.quickHash || old.isDemo != new.isDemo || old.perceptualHash != new.perceptualHash
-            || old.masterId != new.masterId || old.copyName != new.copyName {
+            || old.masterId != new.masterId || old.copyName != new.copyName
+            // what the file says of itself: a photo read again brings it with new hashes, but a
+            // photo replaced in place is taken as an edit, so none of it may pass unseen
+            || old.type != new.type || old.isRaw != new.isRaw || old.camera != new.camera || old.lens != new.lens
+            || old.width != new.width || old.height != new.height || old.orientation != new.orientation
+            || old.focal != new.focal || old.aperture != new.aperture || old.shutter != new.shutter
+            || old.iso != new.iso || old.colorSpace != new.colorSpace || old.duration != new.duration
+            || old.thumb != new.thumb || old.preview != new.preview || old.ori != new.ori || old.pid != new.pid {
             return .any
         }
         var scope = AssetEditScope()
