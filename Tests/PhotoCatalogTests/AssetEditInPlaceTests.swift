@@ -159,6 +159,34 @@ final class AssetEditInPlaceTests: DerivedCacheTestCase {
         XCTAssertEqual(app.libraryCounts.missingOffline, 1)
     }
 
+    /// A change of a file's time together with what the photo says (a rating, keywords, a project,
+    /// a place) moves each count it's in, the photo shown before and after.
+    @MainActor
+    func testTimeAndMetadataChangedTogetherCarryWhatsDerivedOn() throws {
+        let app = try catalog()
+        check(app, "a capture time, rating, keywords, project and place changed at once") {
+            XCTAssertTrue(app.mutate(["f3"]) {
+                $0.date = $0.date.addingTimeInterval(2 * 86_400)
+                $0.rating = 5
+                $0.keywords = ["city", "dusk"]
+                $0.project = "Launch"
+                $0.gps = (30.5, 114.3)
+                $0.location = Asset.locationLabel((30.5, 114.3))
+            })
+        }
+        XCTAssertEqual(app.libraryCounts.places, 2)
+        XCTAssertEqual(app.projectList.first { $0.name == "Launch" }?.count, 1)
+
+        check(app, "a capture time and a place changed, nothing else counted") {
+            XCTAssertTrue(app.mutate(["f4"]) {
+                $0.date = $0.date.addingTimeInterval(3600)
+                $0.gps = (1.5, 2.5)
+                $0.location = Asset.locationLabel((1.5, 2.5))
+            })
+        }
+        XCTAssertEqual(app.libraryCounts.places, 3)
+    }
+
     /// A rescan reads an original changed on disk again and puts it in place of the photo it was.
     @MainActor
     func testRescannedChangedFileCarriesWhatsDerivedOn() async throws {
@@ -219,5 +247,13 @@ final class AssetEditInPlaceTests: DerivedCacheTestCase {
         XCTAssertTrue(app.assetPairing.isHiddenCompanion("a6j"))
         check(app, "its redo") { undo.redo() }
         XCTAssertFalse(app.assetPairing.isHiddenCompanion("a6j"))
+
+        // a day and a half on: the capture dates move it to another day
+        app.selectedIds = ["f2"]
+        let day = app.captureDateGroups
+        check(app, "a capture time moved to another day") { step { app.shiftCaptureTime(hours: 36) } }
+        XCTAssertNotEqual(app.captureDateGroups, day)
+        check(app, "its undo") { undo.undo() }
+        XCTAssertEqual(app.captureDateGroups, day)
     }
 }

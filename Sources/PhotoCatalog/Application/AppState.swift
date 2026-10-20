@@ -813,6 +813,13 @@ final class AppState {
     /// stacks always are.
     private func applyStructuralEdits(_ edits: [(offset: Int, asset: Asset)], scope: AssetEditScope) {
         let old = edits.map { assets[$0.offset] }
+        carryStructuralEdits(edits, old: old, scope: scope)
+        // The photos as they were are let go of on another thread, the last to hold them once the
+        // carry's own lists are gone: freeing a drive's 50,000 took ~20 ms of the main thread.
+        DispatchQueue.global(qos: .utility).async { withExtendedLifetime(old) {} }
+    }
+
+    private func carryStructuralEdits(_ edits: [(offset: Int, asset: Asset)], old: [Asset], scope: AssetEditScope) {
         // taken out of their caches, so that each is the only copy and changes in place
         let index = assetIndexCache
         var carried: AssetPairing? = pairRawAndJpeg
@@ -902,12 +909,17 @@ final class AppState {
         }
         if keywords != nil, Self.patchKeywords(&keywords!, keywordChanges) { keywordCountsCache = keywords }
         let photos = assets
+        // the changes that can move a project, client, camera or lens (a status or path changes none)
+        let valueChanges = changes.filter {
+            $0.wasShown != $0.shown || $0.old.project != $0.new.project || $0.old.client != $0.new.client
+                || $0.old.camera != $0.new.camera || $0.old.lens != $0.new.lens
+        }
         func carry(_ counts: inout MetadataValueCounts?, _ keyPath: KeyPath<Asset, String>, _ field: (Asset) -> String) {
             func value(_ photo: Asset, shown: Bool) -> String {
                 let raw = field(photo)
                 return shown && !raw.isEmpty ? listedValue(raw) : ""
             }
-            let moves = changes.compactMap { change -> (offset: Int, old: String, new: String)? in
+            let moves = valueChanges.compactMap { change -> (offset: Int, old: String, new: String)? in
                 let (before, after) = (value(change.old, shown: change.wasShown), value(change.new, shown: change.shown))
                 return before == after ? nil : (change.position, before, after)
             }
@@ -5307,22 +5319,39 @@ final class AppState {
     /// Puts what a check of the originals found (saved already) on the photos: each one's status
     /// and path, and its source folder's status with them.
     func applyAvailabilityChanges(_ changes: [AssetAvailabilityUpdate]) {
-        // a photo listed twice gets a change for each listing, both alike
-        let changesById = Dictionary(changes.map { ($0.assetId, $0) }, uniquingKeysWith: { first, _ in first })
-        // found by the id index while every photo's id is its own, else in a pass
+        // found by the id index while every photo's id is its own, else in a pass (a photo listed
+        // twice gets a change for each listing, both alike)
         let index = assetIndex
-        let found: [(offset: Int, change: AssetAvailabilityUpdate)] = index.count == assets.count
-            ? changesById.compactMap { id, change in index[id].map { ($0, change) } }
-            : assets.indices.compactMap { offset in changesById[assets[offset].id].map { (offset, $0) } }
-        let edits = found.sorted { $0.offset < $1.offset }.compactMap { offset, change -> (offset: Int, asset: Asset)? in
-            var asset = assets[offset]
-            guard asset.status != change.status || asset.localPath != change.localPath else { return nil }
-            asset.status = change.status
-            asset.localPath = change.localPath
-            return (offset, asset)
+        var found: [(offset: Int, change: AssetAvailabilityUpdate)] = []
+        if index.count == assets.count {
+            var seen = [Bool](repeating: false, count: assets.count)
+            for change in changes {
+                guard let offset = index[change.assetId], !seen[offset] else { continue }
+                seen[offset] = true
+                found.append((offset, change))
+            }
+        } else {
+            let changesById = Dictionary(changes.map { ($0.assetId, $0) }, uniquingKeysWith: { first, _ in first })
+            found = assets.indices.compactMap { offset in changesById[assets[offset].id].map { (offset, $0) } }
         }
+        // read from the photos handed in (not each through the observed property), which are let go
+        // of before the edits are written
+        func edits(of photos: [Asset]) -> (edits: [(offset: Int, asset: Asset)], moved: [(before: Asset, after: Asset)]) {
+            var edits: [(offset: Int, asset: Asset)] = [], moved: [(before: Asset, after: Asset)] = []
+            for (offset, change) in found {
+                let before = photos[offset]
+                guard before.status != change.status || before.localPath != change.localPath else { continue }
+                var asset = before
+                asset.status = change.status
+                asset.localPath = change.localPath
+                edits.append((offset, asset))
+                if before.localPath != asset.localPath { moved.append((before, asset)) }
+            }
+            return (edits, moved)
+        }
+        let (edits, moved) = edits(of: assets)
         // a drive back under another name: its photos' fills come along
-        carryGeneratedFills(edits.map { (assets[$0.offset], $0.asset) })
+        carryGeneratedFills(moved)
         replaceInPlace(edits)
         updateFolderStatusesFromAssets()
     }
