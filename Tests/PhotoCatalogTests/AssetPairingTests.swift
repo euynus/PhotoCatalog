@@ -172,4 +172,54 @@ final class AssetPairingOracleTests: XCTestCase {
         for byte in bytes { hash = (hash ^ UInt64(byte)) &* 0x100_0000_01b3 }
         return hash
     }
+
+    /// A pairing carried on through photos changed in place pairs as working it out from all the
+    /// photos again does, whatever the changes: the tangle's photos removed, returned, renamed (to
+    /// names others have), re-dated, without a path or taken offline, a few or many at once.
+    func testPairingCarriedThroughEditsInPlaceIsTheWholePairing() {
+        for seed: UInt64 in [21, 22, 23] {
+            var photos = Self.tangle(1_500, seed: seed)
+            let paths = photos.compactMap(\.localPath) + Self.tangle(300, seed: seed + 100).compactMap(\.localPath)
+            var random = Random(state: seed)
+            var pairing = AssetPairing.rawJpeg(photos)
+            var flipped = 0
+            for round in 0..<60 {
+                let before = AssetPairing.rawJpeg(photos)
+                var edits: [(position: Int, old: Asset)] = []
+                var positions = Set<Int>()
+                while positions.count < [1, 2, 3, 8, 40, 300][round % 6] {
+                    positions.insert(Int(random.next() % UInt64(photos.count)))
+                }
+                for position in positions.sorted() {
+                    let old = photos[position]
+                    switch random.next() % 6 {
+                    case 0: photos[position].deleted.toggle()
+                    case 1: photos[position].localPath = random.pick(paths)
+                    case 2: photos[position].date = old.date.addingTimeInterval(random.pick([-3600, -2, 1, 2.5, 3600]))
+                    case 3: photos[position].status = .offline
+                    case 4: photos[position].localPath = nil
+                    default:
+                        photos[position].localPath = random.pick(paths)
+                        photos[position].deleted = false
+                    }
+                    edits.append((position, old))
+                }
+                guard let changed = pairing.replace(edits, in: photos) else {
+                    return XCTFail("seed \(seed), round \(round): carried on")
+                }
+                let whole = AssetPairing.rawJpeg(photos)
+                XCTAssertEqual(pairing, whole, "seed \(seed), round \(round)")
+                // the other photos whose being hidden changed, and only they
+                let expected = photos.indices.filter {
+                    !positions.contains($0)
+                        && before.isHiddenCompanion(photos[$0].id) != whole.isHiddenCompanion(photos[$0].id)
+                }
+                XCTAssertEqual(changed.sorted(), expected, "seed \(seed), round \(round)")
+                flipped += expected.count
+            }
+            XCTAssertGreaterThan(flipped, 0, "seed \(seed): some change hid or showed another photo")
+        }
+        var pairing = AssetPairing.rawJpeg([])
+        XCTAssertNil(pairing.replace([], in: Self.tangle(10, seed: 1)), "not a pairing of those photos")
+    }
 }

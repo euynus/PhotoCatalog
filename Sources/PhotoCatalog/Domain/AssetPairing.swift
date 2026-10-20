@@ -123,16 +123,8 @@ struct AssetPairing: Sendable, Equatable {
         while next < added.count {
             var end = next + 1
             while end < added.count, added[end].hash == added[next].hash { end += 1 }
-            // the photos already there by the same hash: a binary search of the sorted keys
-            let hash = added[next].hash
-            var lower = 0, upper = keys.count
-            while lower < upper {
-                let middle = (lower + upper) / 2
-                if keys[middle].hash < hash { lower = middle + 1 } else { upper = middle }
-            }
-            var last = lower
-            while last < keys.count, keys[last].hash == hash { last += 1 }
-            let before = keys[lower..<last].map(\.position)
+            // the photos already there by the same hash
+            let before = keys[keys(named: added[next].hash)].map(\.position)
             let members = before + added[next..<end].map(\.position)
             if members.count > 1 {
                 // what they paired as goes (a RAW and its companions share a name, so a hash),
@@ -151,6 +143,106 @@ struct AssetPairing: Sendable, Equatable {
         add(pairs, of: assets)
         if !added.isEmpty { keys = Self.merged(keys, added) }
         return earlier.filter { hiddenAt[$0.position] != $0.wasHidden }.map(\.position)
+    }
+
+    /// Carries this pairing on through photos changed where they are (`edits`: the position of
+    /// each, and what it was before) to `assets` as they are now: only the names those photos had
+    /// and have now are paired again, as `rawJpeg(assets)` would pair them. A RAW removed or
+    /// renamed away shows its JPEG again, a JPEG renamed or returning next to its RAW hides behind
+    /// it, a second RAW of a name makes it ambiguous. A change to nothing pairing reads (a status,
+    /// a rating) changes nothing. Returns the photos other than the changed ones whose being
+    /// hidden changed; nil, and nothing changed, when this isn't a pairing of as many photos.
+    mutating func replace(_ edits: [(position: Int, old: Asset)], in assets: [Asset]) -> [Int]? {
+        guard hiddenAt.count == assets.count else { return nil }
+        var gone: [Key] = [], added: [Key] = []
+        var names = Set<UInt64>()
+        var edited: [Int] = []
+        for (position, old) in edits {
+            let new = assets[position]
+            let (before, after) = (Self.nameHash(of: old), Self.nameHash(of: new))
+            if before == after {
+                // the same name (or none): paired again only when what else a pair is made of changed
+                guard let name = after, old.localPath != new.localPath || old.isRaw != new.isRaw
+                        || old.camera != new.camera || old.date != new.date else { continue }
+                names.insert(name)
+            } else {
+                if let before {
+                    gone.append(Key(hash: before, position: position))
+                    names.insert(before)
+                }
+                if let after {
+                    added.append(Key(hash: after, position: position))
+                    names.insert(after)
+                }
+            }
+            edited.append(position)
+        }
+        guard !edited.isEmpty else { return [] }
+        if !gone.isEmpty {
+            gone.sort(by: Self.precedes)
+            keys = Self.removing(gone, from: keys)
+        }
+        if !added.isEmpty {
+            added.sort(by: Self.precedes)
+            keys = Self.merged(keys, added)
+        }
+        // what the photos of those names paired as goes (a RAW and its companions share a name),
+        // the changed photos' pairs as they were with it, and they're paired again
+        var earlier: [(position: Int, wasHidden: Bool)] = []
+        var cleared = Set<Int>()
+        func clear(_ position: Int) {
+            guard cleared.insert(position).inserted else { return }
+            earlier.append((position, hiddenAt[position]))
+            let id = assets[position].id
+            companionsByPrimary[id] = nil
+            primaryByCompanion[id] = nil
+            hiddenAt[position] = false
+        }
+        for position in edited { clear(position) }
+        var groups: [[Int]] = []
+        for name in names {
+            let members = keys[keys(named: name)].map(\.position)
+            for position in members { clear(position) }
+            if members.count > 1 { groups.append(members) }
+        }
+        var pairs: [Pair] = []
+        for members in groups { Self.pairs(among: members, of: assets, into: &pairs) }
+        add(pairs, of: assets)
+        // the changed photos aren't among them, whatever pairing reads of them changed
+        let changed = Set(edits.map(\.position))
+        return earlier.filter { !changed.contains($0.position) && hiddenAt[$0.position] != $0.wasHidden }.map(\.position)
+    }
+
+    /// Where the photos whose names hash to `hash` are among the sorted keys: a binary search.
+    private func keys(named hash: UInt64) -> Range<Int> {
+        var lower = 0, upper = keys.count
+        while lower < upper {
+            let middle = (lower + upper) / 2
+            if keys[middle].hash < hash { lower = middle + 1 } else { upper = middle }
+        }
+        var last = lower
+        while last < keys.count, keys[last].hash == hash { last += 1 }
+        return lower ..< last
+    }
+
+    /// The order keys are sorted in: by hash, then position.
+    private static func precedes(_ a: Key, _ b: Key) -> Bool {
+        a.hash != b.hash ? a.hash < b.hash : a.position < b.position
+    }
+
+    /// `keys` without `gone`, which are among them, both sorted alike.
+    private static func removing(_ gone: [Key], from keys: [Key]) -> [Key] {
+        var result: [Key] = []
+        result.reserveCapacity(keys.count)
+        var next = 0
+        for key in keys {
+            if next < gone.count, key == gone[next] {
+                next += 1
+            } else {
+                result.append(key)
+            }
+        }
+        return result
     }
 
     /// Two key lists sorted alike, as one.
