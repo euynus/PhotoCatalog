@@ -159,6 +159,9 @@ struct AssetPairing: Sendable, Equatable {
         var edited: [Int] = []
         for (position, old) in edits {
             let new = assets[position]
+            // nothing a pair is made of changed (a status, a rating): not even hashed
+            if old.deleted == new.deleted, old.isVirtualCopy == new.isVirtualCopy, old.isRaw == new.isRaw,
+               old.localPath == new.localPath, old.camera == new.camera, old.date == new.date { continue }
             let (before, after) = (Self.nameHash(of: old), Self.nameHash(of: new))
             if before == after {
                 // the same name (or none): paired again only when what else a pair is made of changed

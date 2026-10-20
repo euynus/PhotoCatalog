@@ -218,12 +218,17 @@ final class AppState {
         /// midnight, so the counts are of that day only.
         var day = Date.distantPast
 
-        /// Moves a shown photo from what it was to what an edit made it, for an edit that keeps
-        /// its file, folder and deletion: its smart albums, keywords, project and client can change.
-        mutating func applyChange(from old: Asset, to new: Asset) {
-            for (id, rule) in smartRules {
-                let change = (rule.matches(new) ? 1 : 0) - (rule.matches(old) ? 1 : 0)
+        /// Moves a photo shown before and after an edit from what it was to what the edit made it:
+        /// its smart albums, folder, keywords, project and client can change (what `count` takes
+        /// out and puts in, without touching what didn't), the rules' text tests kept in `memos`.
+        mutating func move(from old: Asset, to new: Asset, memos: inout [SmartMatcher.Memo]) {
+            for (offset, (id, rule)) in smartRules.enumerated() {
+                let change = (rule.matches(new, memo: &memos[offset]) ? 1 : 0) - (rule.matches(old, memo: &memos[offset]) ? 1 : 0)
                 if change != 0 { counts.smartAlbums[id, default: 0] += change }
+            }
+            if old.folderId != new.folderId {
+                Self.add(-1, to: old.folderId, in: &counts.folders)
+                Self.add(1, to: new.folderId, in: &counts.folders)
             }
             if old.keywords != new.keywords {
                 for keyword in old.keywords { Self.add(-1, to: keyword, in: &counts.keywords) }
@@ -279,6 +284,13 @@ final class AppState {
             if a.flag == .reject { rejected += sign }
             if a.hasGPS { places += sign }
             if a.faces > 0 || (!withFaces.isEmpty && withFaces.contains(a.id)) { people += sign }
+        }
+
+        /// Whether two states of a photo are counted alike as shown: `count` reads nothing else
+        /// (a status or a path changes none of these counts).
+        fileprivate static func countAlike(_ a: Asset, _ b: Asset) -> Bool {
+            a.importedAt == b.importedAt && a.rating == b.rating && a.flag == b.flag && a.faces == b.faces
+                && a.gps == b.gps && a.location == b.location
         }
 
         fileprivate mutating func add(_ other: LibraryCounts) {
@@ -396,11 +408,11 @@ final class AppState {
         registerUndo(from: replayedOld, to: replayedNew, actionName: actionName)
     }
 
-    /// The photos as a change made to a copy of them left them. Such changes edit photos where they
-    /// are (a rename, a move, a relink, an offline check, duplicates removed), at most adding some
-    /// after them (a rescan, an external editor's copy): they go in as edits in place and an
-    /// append, which carry on what's derived from every photo. Anything else is a new set of
-    /// photos, all of it worked out again.
+    /// The photos as a change made to a copy of them left them (duplicates resolved). Such a change
+    /// edits photos where they are, perhaps adding some after them: it goes in as edits in place
+    /// and an append, which carry on what's derived from every photo. Anything else is a new set
+    /// of photos, all of it worked out again. (Changes that know their photos' places make the
+    /// edits themselves, without copying the catalog: `replaceInPlace`.)
     private func replaceAssetsForMutation(_ updated: [Asset]) {
         guard let edits = Self.editsInPlace(from: assets, to: updated) else {
             nextAssetEditScope = .any
@@ -408,13 +420,26 @@ final class AppState {
             didMutateAssets()
             return
         }
-        if !edits.isEmpty {
-            let scope = edits.reduce(into: AssetEditScope()) {
-                $0.formUnion(Self.editScope(from: assets[$1.offset], to: $1.asset))
-            }
-            applyAssetEdits(edits, scope: scope)
-        }
+        replaceInPlace(edits)
         if updated.count > assets.count { appendAssets(Array(updated[assets.count...])) }
+    }
+
+    /// Photos changed where they are (by position) written back, with all their changes' effects.
+    private func replaceInPlace(_ edits: [(offset: Int, asset: Asset)]) {
+        guard !edits.isEmpty else { return }
+        applyAssetEdits(edits, scope: edits.reduce(into: AssetEditScope()) {
+            $0.formUnion(Self.editScope(from: assets[$1.offset], to: $1.asset))
+        })
+    }
+
+    /// Where the photos with these ids are, in order: looked up in the id index while every photo's
+    /// id is its own (as it is but for a photo listed twice), else found in a pass. A pass over
+    /// 500k photos' ids, hashing each, took ~0.1 s on the main thread.
+    private func positions(of ids: Set<String>) -> [Int] {
+        guard !ids.isEmpty else { return [] }
+        let index = assetIndex
+        guard index.count == assets.count else { return assets.indices.filter { ids.contains(assets[$0].id) } }
+        return ids.compactMap { index[$0] }.sorted()
     }
 
     /// The photos `updated` changed in place, by position, when it has each of `photos` where it
@@ -471,7 +496,9 @@ final class AppState {
         (projectCountsCache, clientCountsCache, gearCountsCache, sidebarCountIndexCache) = (nil, nil, nil, nil)
         (captureDateGroupsCache, folderTreeCache, folderTreeCountCache) = (nil, nil, nil)
         nextAssetEditScope = .any
-        assets.append(contentsOf: new)   // drops all else that's derived, the photo list's caches with it
+        // the list is worked out again: let go first, it doesn't hold the photos when they're its own
+        (listCache, uncollapsedListCache) = (nil, nil)
+        assets.append(contentsOf: new)   // drops all else that's derived
         defer {
             didMutateAssets()
             assertDerivedCachesCurrent()
@@ -592,9 +619,7 @@ final class AppState {
         }
         guard !returning.isEmpty else { return appendAssets(fresh) }
         let edits = returning.sorted { $0.offset < $1.offset }
-        applyAssetEdits(edits, scope: edits.reduce(into: AssetEditScope()) {
-            $0.formUnion(Self.editScope(from: assets[$1.offset], to: $1.asset))
-        })
+        replaceInPlace(edits)
         let replaced = Set(edits.map(\.asset.id))
         let added = fresh.filter { !replaced.contains($0.id) }
         if !added.isEmpty { appendAssets(added) }
@@ -712,8 +737,9 @@ final class AppState {
         // Matching each edited photo before and after against every smart album: past half
         // the library, recounting it (once, when the sidebar next reads) is the cheaper way.
         if var index = sidebarCountIndexCache, index.day == sidebarDay, edits.count * 2 <= assets.count {
+            var memos = index.smartRules.map { SmartMatcher.Memo(for: $0.rule) }
             for edit in edits where pairing.shows(edit.asset) {
-                index.applyChange(from: assets[edit.offset], to: edit.asset)
+                index.move(from: assets[edit.offset], to: edit.asset, memos: &memos)
             }
             patchedSidebar = index
         }
@@ -804,6 +830,8 @@ final class AppState {
         let wasShown = carried.map { pairing in zip(edits, old).map { pairing.isShown($1, at: $0.offset) } }
         nextAssetEditScope = scope
         assert(edits.allSatisfy { assets[$0.offset].id == $0.asset.id }, "an edit keeps its photo's id")
+        // the list is worked out again: let go first, it doesn't hold the photos when they're its own
+        (listCache, uncollapsedListCache) = (nil, nil)
         assets.withUnsafeMutableBufferPointer { buffer in
             for edit in edits { buffer[edit.offset] = edit.asset }
         }   // which drops all else that's derived, the photo list's caches with it
@@ -854,26 +882,29 @@ final class AppState {
         // (Stacks are worked out again, dropped by the didSet; a carry for them, from `changes`,
         // would go here.)
 
+        // A photo shown before and after (a status, a path, a capture time changed) only moves
+        // where what it's counted by changed: a drive unplugged changes no count but missing/offline.
         if var counts = library {
             let (cutoff, faces) = (recentCutoff, faceAssetIds)
             for (before, edit) in zip(old, edits) {
                 if !before.deleted { counts.countFile(before, -1) }
                 if !edit.asset.deleted { counts.countFile(edit.asset) }
             }
-            for change in changes {
+            for change in changes where !(change.wasShown && change.shown && LibraryCounts.countAlike(change.old, change.new)) {
                 if change.wasShown { counts.count(change.old, recentCutoff: cutoff, withFaces: faces, -1) }
                 if change.shown { counts.count(change.new, recentCutoff: cutoff, withFaces: faces) }
             }
             libraryCountsCache = counts
         }
-        let keywordChanges = changes.map {
-            (offset: $0.position, old: $0.wasShown ? $0.old.keywords : [], new: $0.shown ? $0.new.keywords : [])
+        let keywordChanges = changes.compactMap { change -> (offset: Int, old: [String], new: [String])? in
+            let (before, after) = (change.wasShown ? change.old.keywords : [], change.shown ? change.new.keywords : [])
+            return before == after ? nil : (change.position, before, after)
         }
         if keywords != nil, Self.patchKeywords(&keywords!, keywordChanges) { keywordCountsCache = keywords }
         let photos = assets
-        func carry(_ counts: inout MetadataValueCounts?, _ keyPath: KeyPath<Asset, String>) {
+        func carry(_ counts: inout MetadataValueCounts?, _ keyPath: KeyPath<Asset, String>, _ field: (Asset) -> String) {
             func value(_ photo: Asset, shown: Bool) -> String {
-                let raw = photo[keyPath: keyPath]
+                let raw = field(photo)
                 return shown && !raw.isEmpty ? listedValue(raw) : ""
             }
             let moves = changes.compactMap { change -> (offset: Int, old: String, new: String)? in
@@ -885,11 +916,12 @@ final class AppState {
             }) == true
             if !kept { counts = nil }
         }
-        carry(&projects, \.project)
-        carry(&clients, \.client)
+        // the fields read directly: through a key path, a drive's 50,000 photos took ~0.1 s
+        carry(&projects, \.project) { $0.project }
+        carry(&clients, \.client) { $0.client }
         (projectCountsCache, clientCountsCache) = (projects, clients)
-        carry(&cameras, \.camera)
-        carry(&lenses, \.lens)
+        carry(&cameras, \.camera) { $0.camera }
+        carry(&lenses, \.lens) { $0.lens }
         if let cameras, let lenses { gearCountsCache = (cameras, lenses) }
         // matching each photo against every smart album, out and in: past half the library,
         // recounting it (once, when the sidebar next reads) is the cheaper way
@@ -897,9 +929,13 @@ final class AppState {
             var memos = sidebar?.smartRules.map { SmartMatcher.Memo(for: $0.rule) } ?? []
             var moved: [String: Int] = [:]
             for change in changes {
+                if change.wasShown, change.shown {
+                    sidebar?.move(from: change.old, to: change.new, memos: &memos)
+                    continue
+                }
                 if change.wasShown { sidebar?.count(change.old, -1, memos: &memos) }
                 if change.shown { sidebar?.count(change.new, 1, memos: &memos) }
-                if change.wasShown != change.shown { moved[change.new.id, default: 0] += change.shown ? 1 : -1 }
+                moved[change.new.id, default: 0] += change.shown ? 1 : -1
             }
             if !moved.isEmpty {
                 for album in albums {
@@ -5064,69 +5100,72 @@ final class AppState {
         }
         let volumesById = sourceRootRecordsById(from: store).compactMapValues(\.volumeIdentifier)
         let probe = volumeProbe
-        Task { [weak self, coordinator, store, roots, snapshot, vision, previewSize, readXMP, sourceInfoByPath,
-                volumesById, probe] in
-            let delta = await Task.detached(priority: .utility) {
-                // build the path index off the main thread (resolvingSymlinksInPath stats each asset)
-                var knownAssetsByPath: [String: Asset] = [:]
-                // a path belongs to the photo that owns the file, never to its virtual copies
-                for asset in snapshot where !asset.deleted && !asset.isVirtualCopy {
-                    if let path = asset.localPath {
-                        for alias in PathIdentity.aliases(forPath: path) {
-                            knownAssetsByPath[alias] = asset
-                        }
+        // the photos read off the main thread are let go of once read: still held while the
+        // results go in, they'd be copied whole by the first change in place
+        let scan = Task.detached(priority: .utility) { [coordinator, store, roots, snapshot, vision, previewSize,
+                                                         readXMP, sourceInfoByPath, volumesById, probe] in
+            // build the path index off the main thread (resolvingSymlinksInPath stats each asset)
+            var knownAssetsByPath: [String: Asset] = [:]
+            // a path belongs to the photo that owns the file, never to its virtual copies
+            for asset in snapshot where !asset.deleted && !asset.isVirtualCopy {
+                if let path = asset.localPath {
+                    for alias in PathIdentity.aliases(forPath: path) {
+                        knownAssetsByPath[alias] = asset
                     }
                 }
-                var knownPaths = Set(knownAssetsByPath.keys)
-                // files an import skipped as exact duplicates of photos it cataloged stay out
-                knownPaths.formUnion((try? store.skippedDuplicatePaths()) ?? [])
-                // a photo removed from the catalog stays removed: its file, there still or saved over
-                // by an editor, isn't a new one (only an import brings it back); another photo saved
-                // at its path is. Removed in an earlier session, it isn't in `snapshot`.
-                var removedByPath: [String: [Asset]] = [:]
-                var removedIds: Set<String> = []
-                let removedEarlier = (try? store.removedOriginals()) ?? []
-                for asset in snapshot.filter({ $0.deleted && !$0.isVirtualCopy }) + removedEarlier
-                where removedIds.insert(asset.id).inserted {
-                    guard let path = asset.localPath else { continue }
-                    for alias in PathIdentity.aliases(forPath: path) { removedByPath[alias, default: []].append(asset) }
-                }
-                var fresh: [Asset] = []
-                var changed: [Asset] = []
-                // a folder watched inside another is walked by both: each file goes to the first
-                var claimed: Set<String> = []
-                for root in roots {
-                    let sourceInfo = PathIdentity.aliases(for: root).lazy.compactMap { sourceInfoByPath[$0] }.first
-                    // a folder whose drive isn't the one mounted at its path now (another drive
-                    // took that drive's name) isn't read: its files aren't the folder's
-                    if let id = sourceInfo?.id, let volume = volumesById[id],
-                       ![.mounted, .unchecked].contains(probe.placement(of: root.path, onVolume: volume)) { continue }
-                    let scanned = ImportCoordinator.scanWithAliases(root).filter { $0.aliases.isDisjoint(with: claimed) }
-                    for file in scanned { claimed.formUnion(file.aliases) }
-                    for file in scanned {
-                        let removed = file.aliases.flatMap { removedByPath[$0] ?? [] }
-                        if removed.contains(where: { ImportCoordinator.isRemovedPhoto(file.url, removed: $0) }) {
-                            knownPaths.insert(file.url.path)
-                        }
+            }
+            var knownPaths = Set(knownAssetsByPath.keys)
+            // files an import skipped as exact duplicates of photos it cataloged stay out
+            knownPaths.formUnion((try? store.skippedDuplicatePaths()) ?? [])
+            // a photo removed from the catalog stays removed: its file, there still or saved over
+            // by an editor, isn't a new one (only an import brings it back); another photo saved
+            // at its path is. Removed in an earlier session, it isn't in `snapshot`.
+            var removedByPath: [String: [Asset]] = [:]
+            var removedIds: Set<String> = []
+            let removedEarlier = (try? store.removedOriginals()) ?? []
+            for asset in snapshot.filter({ $0.deleted && !$0.isVirtualCopy }) + removedEarlier
+            where removedIds.insert(asset.id).inserted {
+                guard let path = asset.localPath else { continue }
+                for alias in PathIdentity.aliases(forPath: path) { removedByPath[alias, default: []].append(asset) }
+            }
+            var fresh: [Asset] = []
+            var changed: [Asset] = []
+            // a folder watched inside another is walked by both: each file goes to the first
+            var claimed: Set<String> = []
+            for root in roots {
+                let sourceInfo = PathIdentity.aliases(for: root).lazy.compactMap { sourceInfoByPath[$0] }.first
+                // a folder whose drive isn't the one mounted at its path now (another drive
+                // took that drive's name) isn't read: its files aren't the folder's
+                if let id = sourceInfo?.id, let volume = volumesById[id],
+                   ![.mounted, .unchecked].contains(probe.placement(of: root.path, onVolume: volume)) { continue }
+                let scanned = ImportCoordinator.scanWithAliases(root).filter { $0.aliases.isDisjoint(with: claimed) }
+                for file in scanned { claimed.formUnion(file.aliases) }
+                for file in scanned {
+                    let removed = file.aliases.flatMap { removedByPath[$0] ?? [] }
+                    if removed.contains(where: { ImportCoordinator.isRemovedPhoto(file.url, removed: $0) }) {
+                        knownPaths.insert(file.url.path)
                     }
-                    fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
-                                                                 mode: .referenced, autoTag: vision,
-                                                                 readSidecar: readXMP,
-                                                                 previewMaxPixel: previewSize,
-                                                                 sourceRootId: sourceInfo?.id,
-                                                                 folderName: sourceInfo?.name, scanned: scanned))
-                    changed.append(contentsOf: coordinator.scanChanged(in: root,
-                                                                       knownAssetsByPath: knownAssetsByPath,
-                                                                       mode: .referenced,
-                                                                       autoTag: vision,
-                                                                       previewMaxPixel: previewSize,
-                                                                       sourceRootId: sourceInfo?.id,
-                                                                       folderName: sourceInfo?.name,
-                                                                       scanned: scanned))
                 }
-                // the photo a rescan reads is never a removed one, whatever the file turned out to be
-                return (fresh: fresh.filter { !removedIds.contains($0.id) }, changed: changed)
-            }.value
+                fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
+                                                             mode: .referenced, autoTag: vision,
+                                                             readSidecar: readXMP,
+                                                             previewMaxPixel: previewSize,
+                                                             sourceRootId: sourceInfo?.id,
+                                                             folderName: sourceInfo?.name, scanned: scanned))
+                changed.append(contentsOf: coordinator.scanChanged(in: root,
+                                                                   knownAssetsByPath: knownAssetsByPath,
+                                                                   mode: .referenced,
+                                                                   autoTag: vision,
+                                                                   previewMaxPixel: previewSize,
+                                                                   sourceRootId: sourceInfo?.id,
+                                                                   folderName: sourceInfo?.name,
+                                                                   scanned: scanned))
+            }
+            // the photo a rescan reads is never a removed one, whatever the file turned out to be
+            return (fresh: fresh.filter { !removedIds.contains($0.id) }, changed: changed)
+        }
+        Task { [weak self, scan, store, vision] in
+            let delta = await scan.value
             guard let self else { return }
             guard self.incrementalRescanGeneration == generation else { return }
             defer {
@@ -5140,11 +5179,13 @@ final class AppState {
             var freshIds: Set<String> = []
             let trulyNew = delta.fresh.filter { indexById[$0.id] == nil && freshIds.insert($0.id).inserted }
             // read against the snapshot: what the files hold goes onto the photos as they are now,
-            // so an edit made meanwhile stays and a photo removed meanwhile stays removed
-            let current = self.assets
+            // so an edit made meanwhile stays and a photo removed meanwhile stays removed (each read
+            // where it is: a copy of the photos held on would be copied whole by the change)
             let changedAssets = delta.changed.compactMap { refreshed -> Asset? in
-                guard let index = indexById[refreshed.id], !current[index].deleted else { return nil }
-                return ImportCoordinator.preservingCatalogMetadata(from: current[index], in: refreshed, autoTag: vision)
+                guard let index = indexById[refreshed.id] else { return nil }
+                let current = self.assets[index]
+                guard !current.deleted else { return nil }
+                return ImportCoordinator.preservingCatalogMetadata(from: current, in: refreshed, autoTag: vision)
             }
             if !trulyNew.isEmpty || !changedAssets.isEmpty {
                 do {
@@ -5153,16 +5194,13 @@ final class AppState {
                     self.push("重新扫描保存失败", "warning")
                     return
                 }
-                var updated = self.assets
-                // appending leaves existing indices valid, so indexById stays correct for replacements
-                updated.append(contentsOf: trulyNew)
-                for asset in changedAssets {
-                    if let index = indexById[asset.id] { updated[index] = asset }
-                }
+                // the changed files in place of what they were, the new ones after the others
+                var edits = changedAssets.compactMap { asset in indexById[asset.id].map { (offset: $0, asset: asset) } }
                 // the changed files' virtual copies take on their new state too
-                let copies = self.carryFileChanges(from: Set(changedAssets.map(\.id)), in: &updated)
-                if !copies.isEmpty { try? store.upsert(updated.filter { copies.contains($0.id) }) }
-                self.replaceAssetsForMutation(updated)
+                let copies = self.carryFileChanges(from: changedAssets, into: &edits)
+                if !copies.isEmpty { try? store.upsert(edits.map(\.asset).filter { copies.contains($0.id) }) }
+                self.replaceInPlace(edits)
+                if !trulyNew.isEmpty { self.appendAssets(trulyNew) }
                 self.recordSidecarBaselines(trulyNew)
                 self.recomputeDuplicates()
                 self.enforceCacheLimitIfNeeded()
@@ -5226,21 +5264,24 @@ final class AppState {
         let probe = volumeProbe
         isCheckingOriginals = true
 
-        availabilityScanTask = Task { [weak self, store, snapshot, sourceRootsById, probe] in
-            let worker = Task.detached(priority: .utility) { () -> ([AssetAvailabilityUpdate]?, Bool) in
-                guard let changes = AssetAvailabilityService.changes(
-                    in: snapshot,
-                    sourceRootsById: sourceRootsById,
-                    probe: probe
-                ) else { return (nil, true) }
-                guard !Task.isCancelled else { return (nil, true) }
-                do {
-                    try store.updateAssetAvailability(changes)
-                    return (changes, true)
-                } catch {
-                    return (changes, false)
-                }
+        // the photos read off the main thread are let go of once read: still held while the
+        // results go in, they'd be copied whole by the first change in place
+        let worker = Task.detached(priority: .utility) { [store, snapshot, sourceRootsById, probe]
+            () -> ([AssetAvailabilityUpdate]?, Bool) in
+            guard let changes = AssetAvailabilityService.changes(
+                in: snapshot,
+                sourceRootsById: sourceRootsById,
+                probe: probe
+            ) else { return (nil, true) }
+            guard !Task.isCancelled else { return (nil, true) }
+            do {
+                try store.updateAssetAvailability(changes)
+                return (changes, true)
+            } catch {
+                return (changes, false)
             }
+        }
+        availabilityScanTask = Task { [weak self, worker] in
             let result = await withTaskCancellationHandler {
                 await worker.value
             } onCancel: {
@@ -5268,21 +5309,21 @@ final class AppState {
     func applyAvailabilityChanges(_ changes: [AssetAvailabilityUpdate]) {
         // a photo listed twice gets a change for each listing, both alike
         let changesById = Dictionary(changes.map { ($0.assetId, $0) }, uniquingKeysWith: { first, _ in first })
-        var updated = assets
-        var didChange = false
-        for index in updated.indices {
-            guard let change = changesById[updated[index].id] else { continue }
-            if updated[index].status != change.status || updated[index].localPath != change.localPath {
-                updated[index].status = change.status
-                updated[index].localPath = change.localPath
-                didChange = true
-            }
+        // found by the id index while every photo's id is its own, else in a pass
+        let index = assetIndex
+        let found: [(offset: Int, change: AssetAvailabilityUpdate)] = index.count == assets.count
+            ? changesById.compactMap { id, change in index[id].map { ($0, change) } }
+            : assets.indices.compactMap { offset in changesById[assets[offset].id].map { (offset, $0) } }
+        let edits = found.sorted { $0.offset < $1.offset }.compactMap { offset, change -> (offset: Int, asset: Asset)? in
+            var asset = assets[offset]
+            guard asset.status != change.status || asset.localPath != change.localPath else { return nil }
+            asset.status = change.status
+            asset.localPath = change.localPath
+            return (offset, asset)
         }
-        if didChange {
-            // a drive back under another name: its photos' fills come along
-            carryGeneratedFills(from: assets, to: updated, ids: Set(changesById.keys))
-            replaceAssetsForMutation(updated)
-        }
+        // a drive back under another name: its photos' fills come along
+        carryGeneratedFills(edits.map { (assets[$0.offset], $0.asset) })
+        replaceInPlace(edits)
         updateFolderStatusesFromAssets()
     }
 
@@ -5297,9 +5338,12 @@ final class AppState {
         }
     }
 
-    /// Each source folder's name and worst original status (offline, then missing, else
-    /// online), in one pass — per-folder scans were 20M comparisons at 500k photos.
-    private static func folderSummaries(_ sourceAssets: [Asset]) -> [String: (name: String, status: String)] {
+    /// Each source folder's name (its first photo's) and worst original status (offline, then
+    /// missing, else online), in one pass — per-folder scans were 20M comparisons at 500k photos.
+    /// Counted in chunks on every core, a run of one folder's photos looked up once: hashing every
+    /// photo's folder on one thread took ~0.1 s at 500k photos after each check of the originals.
+    nonisolated private static func folderSummaries(_ sourceAssets: [Asset], chunk: Int = 65_536)
+        -> [String: (name: String, status: String)] {
         func rank(_ status: AssetStatus) -> Int {
             switch status {
             case .offline: 2
@@ -5307,13 +5351,45 @@ final class AppState {
             case .ready: 0
             }
         }
-        var worst: [String: (name: String, status: AssetStatus)] = [:]
-        for asset in sourceAssets where !asset.deleted && !asset.isDemo {
-            if let current = worst[asset.folderId] {
-                if rank(asset.status) > rank(current.status) { worst[asset.folderId] = (current.name, asset.status) }
+        typealias Worst = [String: (name: String, status: AssetStatus)]
+        func add(_ folder: String, _ name: String, _ status: AssetStatus, to worst: inout Worst) {
+            if let current = worst[folder] {
+                if rank(status) > rank(current.status) { worst[folder] = (current.name, status) }
             } else {
-                worst[asset.folderId] = (asset.folderName, asset.status)
+                worst[folder] = (name, status)
             }
+        }
+        func summaries(_ range: Range<Int>) -> Worst {
+            var worst: Worst = [:]
+            var run: (folder: String, name: String, status: AssetStatus)?
+            for position in range {
+                let asset = sourceAssets[position]
+                guard !asset.deleted, !asset.isDemo else { continue }
+                if let current = run, current.folder == asset.folderId {
+                    if rank(asset.status) > rank(current.status) { run?.status = asset.status }
+                } else {
+                    if let run { add(run.folder, run.name, run.status, to: &worst) }
+                    run = (asset.folderId, asset.folderName, asset.status)
+                }
+            }
+            if let run { add(run.folder, run.name, run.status, to: &worst) }
+            return worst
+        }
+        let chunks = sourceAssets.isEmpty ? 0 : (sourceAssets.count - 1) / chunk + 1
+        var worst: Worst = [:]
+        if chunks > 1 {
+            let lock = NSLock()
+            var parts = [Worst](repeating: [:], count: chunks)
+            DispatchQueue.concurrentPerform(iterations: chunks) { index in
+                let part = summaries(index * chunk ..< min(sourceAssets.count, (index + 1) * chunk))
+                lock.withLock { parts[index] = part }
+            }
+            // in the catalog's order, so a folder keeps its first photo's name
+            for part in parts {
+                for (folder, summary) in part { add(folder, summary.name, summary.status, to: &worst) }
+            }
+        } else {
+            worst = summaries(sourceAssets.indices)
         }
         return worst.mapValues { summary in
             (summary.name, summary.status == .offline ? "offline" : summary.status == .missing ? "missing" : "online")
@@ -5849,11 +5925,11 @@ final class AppState {
                 push("外部编辑的副本未能加入目录库", "warning")
                 return ([], L("副本未能加入目录库：\(error.localizedDescription)"))
             }
-            var updated = assets
-            for copy in fresh {
-                if let index = assetIndex[copy.id] { updated[index] = copy } else { updated.append(copy) }
-            }
-            replaceAssetsForMutation(updated)
+            // in place of the entry folder watching made of it, else after the others
+            let index = assetIndex
+            replaceInPlace(fresh.compactMap { copy in index[copy.id].map { (offset: $0, asset: copy) } })
+            let added = fresh.filter { index[$0.id] == nil }
+            if !added.isEmpty { appendAssets(added) }
             recordSidecarBaselines(fresh)
             if let albumId, let index = albums.firstIndex(where: { $0.id == albumId }) {
                 var album = albums[index]
@@ -6575,17 +6651,18 @@ final class AppState {
     /// Gives the photos renamed on disk (by id) their new names, their virtual copies with them,
     /// and saves them; false, and nothing changed, when the catalog couldn't be saved.
     func applyRenamedOriginals(_ map: [String: URL]) -> Bool {
-        var changedIds = Set(map.keys)
-        var updated = assets
-        for index in updated.indices {
-            guard let url = map[updated[index].id] else { continue }
-            updated[index].filename = url.lastPathComponent
-            updated[index].localPath = url.path
+        var edits = positions(of: Set(map.keys)).map { offset -> (offset: Int, asset: Asset) in
+            var asset = assets[offset]
+            if let url = map[asset.id] {
+                asset.filename = url.lastPathComponent
+                asset.localPath = url.path
+            }
+            return (offset, asset)
         }
-        changedIds.formUnion(carryFileChanges(from: changedIds, in: &updated))
-        guard persist(changedIds, in: updated) else { return false }
-        carryGeneratedFills(from: assets, to: updated, ids: changedIds)
-        replaceAssetsForMutation(updated)
+        carryFileChanges(from: edits.map(\.asset), into: &edits)
+        guard persistChanged(edits.map(\.asset)) else { return false }
+        carryGeneratedFills(edits.map { (assets[$0.offset], $0.asset) })
+        replaceInPlace(edits)
         return true
     }
 
@@ -6680,23 +6757,37 @@ final class AppState {
         return Set(assets.lazy.filter { !$0.deleted && $0.masterId.map(ids.contains) == true }.map(\.id))
     }
 
-    /// Gives each virtual copy of the photos in `ids` its master's file path, name and state, in
-    /// `updated`; returns the copies changed.
-    private func carryFileChanges(from ids: Set<String>, in updated: inout [Asset]) -> Set<String> {
-        var masters: [String: Asset] = [:]
-        for asset in updated where ids.contains(asset.id) { masters[asset.id] = asset }
+    /// Gives each virtual copy of `masters` (photos as they are or are about to be) its master's
+    /// file path, name and state: an edit beside `edits`, or a change to the copy's edit among
+    /// them. Returns the copies changed.
+    @discardableResult
+    private func carryFileChanges(from masters: [Asset], into edits: inout [(offset: Int, asset: Asset)]) -> Set<String> {
+        let byId = Dictionary(masters.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        guard !byId.isEmpty else { return [] }
+        var editAt: [Int: Int]?   // a position's edit among `edits`, made once there's a copy
         var changed = Set<String>()
-        for index in updated.indices {
-            guard let masterId = updated[index].masterId, let master = masters[masterId] else { continue }
-            updated[index].filename = master.filename
-            updated[index].localPath = master.localPath
-            updated[index].fileMB = master.fileMB
-            updated[index].fileModifiedAt = master.fileModifiedAt
-            updated[index].fileCreatedAt = master.fileCreatedAt
-            updated[index].quickHash = master.quickHash
-            updated[index].contentHash = master.contentHash
-            updated[index].status = master.status
-            changed.insert(updated[index].id)
+        for offset in assets.indices {
+            // a photo's master read without hashing its id: most photos are no one's copy
+            guard let masterId = assets[offset].masterId, let master = byId[masterId] else { continue }
+            if editAt == nil {
+                editAt = Dictionary(edits.enumerated().map { ($1.offset, $0) }, uniquingKeysWith: { first, _ in first })
+            }
+            var copy = editAt?[offset].map { edits[$0].asset } ?? assets[offset]
+            copy.filename = master.filename
+            copy.localPath = master.localPath
+            copy.fileMB = master.fileMB
+            copy.fileModifiedAt = master.fileModifiedAt
+            copy.fileCreatedAt = master.fileCreatedAt
+            copy.quickHash = master.quickHash
+            copy.contentHash = master.contentHash
+            copy.status = master.status
+            if let slot = editAt?[offset] {
+                edits[slot].asset = copy
+            } else {
+                editAt?[offset] = edits.count
+                edits.append((offset, copy))
+            }
+            changed.insert(copy.id)
         }
         return changed
     }
@@ -6735,34 +6826,35 @@ final class AppState {
     func applyMovedOriginalLocations(_ locations: [String: URL], expectedCatalogURL: URL? = nil) -> Bool {
         guard !locations.isEmpty else { return true }
         if let expectedCatalogURL, store?.packageURL != expectedCatalogURL { return false }
-        var ids = Set(locations.keys)
-        var updated = assets
-        for index in updated.indices {
-            guard let url = locations[updated[index].id] else { continue }
-            let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-            updated[index].filename = url.lastPathComponent
-            updated[index].localPath = url.path
-            updated[index].fileModifiedAt = attrs?[.modificationDate] as? Date
-            updated[index].fileCreatedAt = attrs?[.creationDate] as? Date
-            updated[index].status = .ready
+        var edits = positions(of: Set(locations.keys)).map { offset -> (offset: Int, asset: Asset) in
+            var asset = assets[offset]
+            if let url = locations[asset.id] {
+                let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+                asset.filename = url.lastPathComponent
+                asset.localPath = url.path
+                asset.fileModifiedAt = attrs?[.modificationDate] as? Date
+                asset.fileCreatedAt = attrs?[.creationDate] as? Date
+                asset.status = .ready
+            }
+            return (offset, asset)
         }
-        ids.formUnion(carryFileChanges(from: ids, in: &updated))
-        guard persist(ids, in: updated) else { return false }
-        carryGeneratedFills(from: assets, to: updated, ids: ids)
-        replaceAssetsForMutation(updated)
+        carryFileChanges(from: edits.map(\.asset), into: &edits)
+        guard persistChanged(edits.map(\.asset)) else { return false }
+        carryGeneratedFills(edits.map { (assets[$0.offset], $0.asset) })
+        replaceInPlace(edits)
         return true
     }
 
-    /// Photos among `ids` whose file moved from `before` to `after` (the same photos in the same
-    /// order) take their generative fills along — those of their edit, history and snapshots —
-    /// off the main thread. A fill left under the old path would be made again by the next
-    /// render, and a full backup, which never makes one, would stop for want of it.
-    private func carryGeneratedFills(from before: [Asset], to after: [Asset], ids: Set<String>) {
+    /// Photos whose file moved (each as it was and as it is now) take their generative fills
+    /// along — those of their edit, history and snapshots — off the main thread. A fill left under
+    /// the old path would be made again by the next render, and a full backup, which never makes
+    /// one, would stop for want of it.
+    private func carryGeneratedFills(_ changes: [(before: Asset, after: Asset)]) {
         var moves: [(id: String, from: String, modified: Date?, to: String)] = []
-        for index in after.indices where index < before.count && ids.contains(after[index].id) {
-            guard before[index].id == after[index].id,
-                  let from = before[index].localPath, let to = after[index].localPath, from != to else { continue }
-            moves.append((after[index].id, from, before[index].fileModifiedAt, to))
+        for (before, after) in changes {
+            guard before.id == after.id,
+                  let from = before.localPath, let to = after.localPath, from != to else { continue }
+            moves.append((after.id, from, before.fileModifiedAt, to))
         }
         guard !moves.isEmpty, let store else { return }
         let edits = moves.reduce(into: [String: DevelopSettings]()) { $0[$1.id] = developSettings[$1.id] }
@@ -10396,11 +10488,11 @@ final class AppState {
             return
         }
         if !ids.isEmpty {
-            var updated = assets
-            for index in updated.indices where ids.contains(updated[index].id) {
-                updated[index].deleted = true
-            }
-            replaceAssetsForMutation(updated)
+            replaceInPlace(positions(of: ids).map { offset in
+                var asset = assets[offset]
+                asset.deleted = true
+                return (offset, asset)
+            })
             ensurePrimaryValid()
             purgeCacheFiles(forAssetIds: ids)
         }
@@ -10477,22 +10569,21 @@ final class AppState {
     }
 
     func rebaseSourceRootAssetPaths(folderId: String, oldRoot: String, newRoot: String) {
-        var updated = assets
-        var changedIds = Set<String>()
-        for index in updated.indices where updated[index].folderId == folderId {
-            guard let path = updated[index].localPath,
+        var edits: [(offset: Int, asset: Asset)] = []
+        for offset in assets.indices where assets[offset].folderId == folderId {
+            guard let path = assets[offset].localPath,
                   let replacement = VolumeMonitor.pathByReplacingVolumeRoot(in: path,
                                                                              oldRoot: oldRoot,
                                                                              newRoot: newRoot),
                   FileManager.default.fileExists(atPath: replacement) else { continue }
-            updated[index].localPath = replacement
-            updated[index].status = .ready
-            changedIds.insert(updated[index].id)
+            var asset = assets[offset]
+            asset.localPath = replacement
+            asset.status = .ready
+            edits.append((offset, asset))
         }
-        guard !changedIds.isEmpty else { return }
-        guard persist(changedIds, in: updated) else { return }
-        carryGeneratedFills(from: assets, to: updated, ids: changedIds)
-        replaceAssetsForMutation(updated)
+        guard !edits.isEmpty, persistChanged(edits.map(\.asset)) else { return }
+        carryGeneratedFills(edits.map { (assets[$0.offset], $0.asset) })
+        replaceInPlace(edits)
     }
 
     // ----- quick collection (B) -----
@@ -10941,13 +11032,13 @@ final class AppState {
             $0.status = .ready
         }) else { return }
         if let relinked = assetIndex[id].map({ assets[$0] }) {
-            carryGeneratedFills(from: [asset], to: [relinked], ids: [id])
-        }
-        var updated = assets
-        let copies = carryFileChanges(from: [id], in: &updated)
-        if !copies.isEmpty, persist(copies, in: updated) {
-            carryGeneratedFills(from: assets, to: updated, ids: copies)
-            replaceAssetsForMutation(updated)
+            carryGeneratedFills([(asset, relinked)])
+            var copies: [(offset: Int, asset: Asset)] = []
+            carryFileChanges(from: [relinked], into: &copies)
+            if !copies.isEmpty, persistChanged(copies.map(\.asset)) {
+                carryGeneratedFills(copies.map { (assets[$0.offset], $0.asset) })
+                replaceInPlace(copies)
+            }
         }
         recomputeDuplicates()
         push("已重新定位原件", "link")
