@@ -211,7 +211,12 @@ enum SoftProofing {
         return done ? output : nil
     }
 
-    /// The same, from `pixels` into `output`.
+    /// Pixels ColorSync converts in one call. It works through a call in float buffers of 12–16
+    /// bytes a pixel, which malloc keeps dirty once freed: converted whole, a print photo left
+    /// some 180 MB behind. A band of rows this size leaves a megabyte or two.
+    private static let bandPixels = 1 << 16
+
+    /// The same, from `pixels` into `output`, a band of rows at a time (see `bandPixels`).
     private static func convert(_ pixels: UnsafeRawPointer, _ size: (width: Int, height: Int),
                                 from source: (profile: ColorSyncProfile, layout: Layout),
                                 to destination: (profile: ColorSyncProfile, layout: Layout),
@@ -223,11 +228,18 @@ enum SoftProofing {
             [key(kColorSyncProfile): destination.profile, key(kColorSyncRenderingIntent): intent,
              key(kColorSyncTransformTag): kColorSyncTransformPCSToDevice.takeUnretainedValue()],
         ]
-        guard let transform = ColorSyncTransformCreate(steps as CFArray, nil)?.takeRetainedValue() else { return false }
-        return ColorSyncTransformConvert(transform, size.width, size.height, output, kColorSync8BitInteger,
-                                         destination.layout.colorSync, size.width * destination.layout.bytes,
-                                         pixels, kColorSync8BitInteger, source.layout.colorSync,
-                                         size.width * source.layout.bytes, nil)
+        guard size.width > 0, size.height > 0,
+              let transform = ColorSyncTransformCreate(steps as CFArray, nil)?.takeRetainedValue() else { return false }
+        let sourceRow = size.width * source.layout.bytes, destinationRow = size.width * destination.layout.bytes
+        let band = max(1, bandPixels / size.width)
+        for top in stride(from: 0, to: size.height, by: band) {
+            let rows = min(band, size.height - top)
+            guard ColorSyncTransformConvert(transform, size.width, rows, output + top * destinationRow, kColorSync8BitInteger,
+                                            destination.layout.colorSync, destinationRow,
+                                            pixels + top * sourceRow, kColorSync8BitInteger, source.layout.colorSync,
+                                            sourceRow, nil) else { return false }
+        }
+        return true
     }
 
     /// Display P3 RGBA bytes of `image`.

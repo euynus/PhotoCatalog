@@ -82,6 +82,29 @@ final class PrintMemoryTests: XCTestCase {
                      "no image when filling fails")
     }
 
+    /// Converting a print photo to a printer profile left ColorSync's float working buffers
+    /// (16 and 12 bytes a pixel, some 180 MB for a page) dirty in malloc. Converted a band of
+    /// rows at a time, it now leaves less than one 8-bit copy of the photo.
+    func testPrinterProfileConversionLeavesLittleBehind() throws {
+        let width = 3208, height = 2139
+        // pixels of the test's own (an image from a bitmap context is copied when first drawn)
+        let pixels = Data((0..<width * height * 4).map { UInt8(truncatingIfNeeded: $0 * 7) })
+        let photo = try XCTUnwrap(CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                                          bytesPerRow: width * 4, space: DevelopRenderer.outputColorSpace,
+                                          bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                                          provider: try XCTUnwrap(CGDataProvider(data: pixels as CFData)),
+                                          decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        // the profile and its transform set up first
+        let small = try XCTUnwrap(photo.cropping(to: CGRect(x: 0, y: 0, width: 64, height: 64)))
+        XCTAssertNotNil(SoftProofing.converted(small, toProfile: "adobeRGB", intent: .perceptual))
+        let before = footprint
+        autoreleasepool {
+            XCTAssertNotNil(SoftProofing.converted(photo, toProfile: "adobeRGB", intent: .perceptual))
+        }
+        let growth = footprint - before
+        XCTAssertLessThan(growth, Int64(width * height * 4), "the conversion left \(growth >> 20) MB")
+    }
+
     /// Enlarged renders (a print bigger than the photo) left one decoded original resident per
     /// render — 40 pages kept about a gigabyte. They now grow the footprint no more than
     /// renders at the photo's own size do.
