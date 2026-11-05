@@ -17,16 +17,15 @@ struct BookItem: Sendable {
 }
 
 /// Draws a book's pages (see `BookLayout`): each photo rendered at 300 ppi for the size it's
-/// drawn at, kept for redraws; captions under photos, the title on the cover, page numbers in
-/// the bottom margin. The PDF and the preview draw through `drawPage` alike.
+/// drawn at, the recent ones kept for redraws; captions under photos, the title on the cover,
+/// page numbers in the bottom margin. The PDF and the preview draw through `drawPage` alike.
 final class BookRenderer: @unchecked Sendable {
     let items: [BookItem]
     let settings: BookSettings
     let pages: [BookPage]
     /// Pixels per inch the photos are rendered at.
     var resolution = 300.0
-    private let lock = NSLock()
-    private var rendered: [String: CGImage] = [:]
+    private let rendered = RenderedPhotos()
     private let space = CGColorSpace(name: CGColorSpace.sRGB)!
 
     init(items: [BookItem], settings: BookSettings) {
@@ -91,9 +90,12 @@ final class BookRenderer: @unchecked Sendable {
                 try? FileManager.default.removeItem(at: url)
                 return false
             }
-            context.beginPDFPage(nil)
-            drawPage(index, in: context)
-            context.endPDFPage()
+            // each page's renders let go of as it's written, not at the end of the book
+            autoreleasepool {
+                context.beginPDFPage(nil)
+                drawPage(index, in: context)
+                context.endPDFPage()
+            }
             progress(Double(index + 1) / Double(pages.count))
         }
         context.closePDF()
@@ -116,9 +118,9 @@ final class BookRenderer: @unchecked Sendable {
     private func photo(_ index: Int, longEdge: Int) -> CGImage? {
         let bucket = max(64, Int((Double(longEdge) / 64).rounded(.up)) * 64)
         let key = "\(index)|\(bucket)"
-        if let image = lock.withLock({ rendered[key] }) { return image }
+        if let image = rendered.image(key) { return image }
         guard let image = items[index].item.rendered(longEdge: bucket, colorSpace: space) else { return nil }
-        lock.withLock { rendered[key] = image }
+        rendered.keep(image, for: key)
         return image
     }
 

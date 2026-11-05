@@ -54,16 +54,39 @@ enum DepthMap {
     static func map(for url: URL, isRaw: Bool) -> Map? {
         let key = key(for: url)
         if let hit = lock.withLock({ memory[key] }) { return hit }
-        let stored = load(key)
-        guard let map = stored ?? compute(url: url, isRaw: isRaw) else { return nil }
-        if stored == nil { save(map, key: key) }
-        keep(map, key: key)
-        return map
+        // the preview, an export and Pick Focus asking at once share one run of the model
+        return making.withLock(key) {
+            if let hit = lock.withLock({ memory[key] }) { return hit }
+            let stored = load(key)
+            guard let map = stored ?? compute(url: url, isRaw: isRaw) else { return nil }
+            if stored == nil { save(map, key: key) }
+            keep(map, key: key)
+            return map
+        }
     }
+
+    /// One lock per photo whose map is being made.
+    private static let making = KeyedLocks()
+    /// The model is shared: one prediction at a time, as the other models are run.
+    private static let inference = NSLock()
 
     /// Takes `map` as the photo at `url`'s (in memory only), for checks that need a depth they
     /// know.
     static func remember(_ map: Map, for url: URL) { keep(map, key: key(for: url)) }
+
+    /// Drops what's known of the photo at `url`, in memory and on disk, for checks that made one.
+    static func forget(_ url: URL) {
+        let key = key(for: url)
+        lock.withLock {
+            memory[key] = nil
+            order.removeAll { $0 == key }
+        }
+        try? FileManager.default.removeItem(at: folder.appendingPathComponent(key + ".depth"))
+    }
+
+    nonisolated(unsafe) private static var computationCount = 0
+    /// How many times the model has run, for checks.
+    static var computations: Int { lock.withLock { computationCount } }
 
     private static func keep(_ map: Map, key: String) {
         lock.withLock {
@@ -84,8 +107,11 @@ enum DepthMap {
               let value = try? MLFeatureValue(cgImage: photo, constraint: constraint, options: [
                   .cropAndScale: VNImageCropAndScaleOption.scaleFill.rawValue,
               ]),
-              let output = try? model.prediction(from: MLDictionaryFeatureProvider(dictionary: [input.key: value])),
+              let output = try? inference.withLock({
+                  try model.prediction(from: MLDictionaryFeatureProvider(dictionary: [input.key: value]))
+              }),
               let buffer = output.featureValue(for: outputName)?.imageBufferValue else { return nil }
+        lock.withLock { computationCount += 1 }
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
         let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)

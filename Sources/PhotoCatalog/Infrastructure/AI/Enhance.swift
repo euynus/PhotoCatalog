@@ -103,30 +103,32 @@ enum Enhance {
         for row in 0..<rows {
             for column in 0..<columns {
                 if cancelled() { return nil }
-                // the part this tile is responsible for, and where the tile starts so that part
-                // sits in its middle (or against the photo's edge)
-                let keepX = column * step, keepY = row * step
-                let keepWidth = min(step, input.width - keepX), keepHeight = min(step, input.height - keepY)
-                let x0 = max(0, min(keepX - margin, input.width - tile)), y0 = max(0, min(keepY - margin, input.height - tile))
-                let pointer = array.dataPointer.assumingMemoryBound(to: Float16.self)
-                for channel in 0..<3 {
-                    for y in 0..<tile {
-                        let sy = min(input.height - 1, max(0, y0 + y))
-                        let base = (channel * input.height + sy) * input.width
-                        let target = channel * inputStrides[1] + y * inputStrides[2]
-                        for x in 0..<tile {
-                            pointer[target + x * inputStrides[3]] = input.values[base + min(input.width - 1, max(0, x0 + x))]
+                // each tile's prediction (megabytes for super resolution) let go of as the next
+                // starts, not when the whole photo is done
+                let done: Bool = autoreleasepool {
+                    // the part this tile is responsible for, and where the tile starts so that
+                    // part sits in its middle (or against the photo's edge)
+                    let keepX = column * step, keepY = row * step
+                    let keepWidth = min(step, input.width - keepX), keepHeight = min(step, input.height - keepY)
+                    let x0 = max(0, min(keepX - margin, input.width - tile)), y0 = max(0, min(keepY - margin, input.height - tile))
+                    let pointer = array.dataPointer.assumingMemoryBound(to: Float16.self)
+                    for channel in 0..<3 {
+                        for y in 0..<tile {
+                            let sy = min(input.height - 1, max(0, y0 + y))
+                            let base = (channel * input.height + sy) * input.width
+                            let target = channel * inputStrides[1] + y * inputStrides[2]
+                            for x in 0..<tile {
+                                pointer[target + x * inputStrides[3]] = input.values[base + min(input.width - 1, max(0, x0 + x))]
+                            }
                         }
                     }
-                }
-                guard let features = try? MLDictionaryFeatureProvider(dictionary: ["input": MLFeatureValue(multiArray: array)]),
-                      let prediction = try? model.prediction(from: features),
-                      let result = prediction.featureValue(for: "output")?.multiArrayValue,
-                      result.dataType == .float16 else { return nil }
-                let strides = result.strides.map(\.intValue)
-                let area = Float(reduce * reduce)
-                // the models' outputs are 16-bit floats (read directly: the typed accessors need macOS 15)
-                do {
+                    guard let features = try? MLDictionaryFeatureProvider(dictionary: ["input": MLFeatureValue(multiArray: array)]),
+                          let prediction = try? model.prediction(from: features),
+                          let result = prediction.featureValue(for: "output")?.multiArrayValue,
+                          result.dataType == .float16 else { return false }
+                    let strides = result.strides.map(\.intValue)
+                    let area = Float(reduce * reduce)
+                    // the models' outputs are 16-bit floats (read directly: the typed accessors need macOS 15)
                     let values = result.dataPointer.assumingMemoryBound(to: Float16.self)
                     for channel in 0..<3 {
                         for oy in (keepY * outputScale)..<((keepY + keepHeight) * outputScale) {
@@ -142,7 +144,9 @@ enum Enhance {
                             }
                         }
                     }
+                    return true
                 }
+                guard done else { return nil }
                 progress(Double(row * columns + column + 1) / Double(rows * columns))
             }
         }

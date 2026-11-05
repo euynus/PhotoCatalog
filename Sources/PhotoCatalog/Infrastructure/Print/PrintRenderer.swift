@@ -59,16 +59,39 @@ extension PrintItem {
     }
 }
 
+/// Photos rendered for pages, kept so a page drawn again (the print panel redraws, the preview
+/// goes back) doesn't decode them again, up to `byteLimit` of pixels: a long book or print job
+/// at 300 ppi renders some 30 MB per photo, and keeping them all held gigabytes until the end.
+final class RenderedPhotos: @unchecked Sendable {
+    private final class Box {
+        let image: CGImage
+        init(_ image: CGImage) { self.image = image }
+    }
+
+    /// About eight full A4 pages at 300 ppi.
+    static let byteLimit = 256 << 20
+    private let cache: NSCache<NSString, Box> = {
+        let cache = NSCache<NSString, Box>()
+        cache.totalCostLimit = RenderedPhotos.byteLimit
+        return cache
+    }()
+
+    func image(_ key: String) -> CGImage? { cache.object(forKey: key as NSString)?.image }
+
+    func keep(_ image: CGImage, for key: String) {
+        cache.setObject(Box(image), forKey: key as NSString, cost: image.bytesPerRow * image.height)
+    }
+}
+
 /// Draws print pages: each photo rendered at the pixels its place on the paper needs (never
 /// the full original for a small cell), sharpened for the paper and, with a printer profile,
 /// converted to it; captions under the photos. The printer, a PDF and the preview all draw
-/// through `drawPage`, so what's previewed is what prints. Rendered photos are kept, so the
-/// print panel redrawing a page doesn't decode again.
+/// through `drawPage`, so what's previewed is what prints. Recently rendered photos are kept,
+/// so the print panel redrawing a page doesn't decode again.
 final class PrintRenderer: @unchecked Sendable {
     let items: [PrintItem]
     let settings: PrintSettings
-    private let lock = NSLock()
-    private var rendered: [String: CGImage] = [:]
+    private let rendered = RenderedPhotos()
 
     init(items: [PrintItem], settings: PrintSettings) {
         self.items = items
@@ -120,9 +143,12 @@ final class PrintRenderer: @unchecked Sendable {
         var box = CGRect(origin: .zero, size: pageSize)
         guard pageCount > 0, let context = CGContext(url as CFURL, mediaBox: &box, nil) else { return false }
         for index in 0..<pageCount {
-            context.beginPDFPage(nil)
-            drawPage(index, in: context)
-            context.endPDFPage()
+            // each page's renders let go of as it's written, not at the end of the job
+            autoreleasepool {
+                context.beginPDFPage(nil)
+                drawPage(index, in: context)
+                context.endPDFPage()
+            }
         }
         context.closePDF()
         return true
@@ -142,7 +168,7 @@ final class PrintRenderer: @unchecked Sendable {
     /// Photo `index` developed at `pixels`, sharpened and color-converted for printing.
     func photo(_ index: Int, pixels: CGSize) -> CGImage? {
         let key = "\(index)|\(Int(pixels.width))x\(Int(pixels.height))"
-        if let image = lock.withLock({ rendered[key] }) { return image }
+        if let image = rendered.image(key) { return image }
         let item = items[index]
         guard var image = item.developed(forLongEdge: Double(max(pixels.width, pixels.height))) else { return nil }
         let extent = image.extent.integral
@@ -161,7 +187,7 @@ final class PrintRenderer: @unchecked Sendable {
                                                                                   intent: settings.intent) {
             bitmap = converted
         }
-        lock.withLock { rendered[key] = bitmap }
+        rendered.keep(bitmap, for: key)
         return bitmap
     }
 
