@@ -120,6 +120,35 @@ extension SidebarCountTests {
         XCTAssertEqual(app.sidebarCounts, app.recountedSidebarCounts())
     }
 
+    /// A Today smart album, and the filter bar's Today, show the photos its sidebar count counts:
+    /// both read the same clock.
+    @MainActor
+    func testRelativeDateListsShowWhatTheSidebarCounts() throws {
+        let app = AppState.selfCheckFixture()
+        var now = shot
+        app.sidebarClock = { now }
+        let wallClock = now.captureWallClock(in: .current).timeIntervalSince(shot)
+        let taken = photo("today", "IMG_0001.JPG", raw: false, offset: wallClock)
+        let older = photo("older", "IMG_0002.JPG", raw: false, offset: wallClock - 86_400 * 30)
+        app.assets = [taken, older]
+        app.duplicateGroupsCache = []
+        let today = SmartAlbum(id: "today", name: "Today",
+                               rule: SmartRule(conditions: [SmartCondition(field: "datePreset", op: "=", value: "today")]),
+                               count: 0)
+        app.smartAlbums = [today]
+
+        app.select(Selection(type: .smart, id: today.id, name: today.name))
+        XCTAssertEqual(app.countForSmartAlbum(today), 1)
+        XCTAssertEqual(app.list.map(\.id), [taken.id], "the album shows what it counts")
+        now = now.addingTimeInterval(86_400)
+        XCTAssertEqual(app.list.map(\.id), [], "and, read the next day, what it counts then")
+
+        now = shot
+        app.select(Selection(type: .lib, id: "all", name: "All"))
+        app.setFilters(Filters(date: "today"))
+        XCTAssertEqual(app.list.map(\.id), [taken.id], "the filter bar's Today is the same day")
+    }
+
     /// The project and client lists keep through edits that leave projects and clients alone, and
     /// edits that change them patch the lists instead of recounting every photo, coming out as a
     /// recount would: most photos first, ties in the order a pass meets them, a value no photo

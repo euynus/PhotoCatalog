@@ -207,7 +207,8 @@ final class AppState {
     @ObservationIgnored private var sidebarCountIndexCache: SidebarCountIndex?
     /// How often the sidebar's counts were worked out from every photo (for tests).
     @ObservationIgnored private(set) var sidebarCountIndexRebuilds = 0
-    /// The time relative-date smart albums are counted at (tests move it).
+    /// The time relative dates (smart albums, the filter bar's Today…) are counted and listed at
+    /// (tests move it).
     @ObservationIgnored var sidebarClock: () -> Date = { .now }
     private var sidebarDay: Date { CaptureDates.startOfToday(now: sidebarClock()) }
     /// Each sidebar row's photo count, by folder, album, keyword, project, client and smart album id.
@@ -9968,7 +9969,7 @@ final class AppState {
     /// The selected collection's membership test, made afresh for each pass over the photos (a
     /// smart album's keeps its text answers in a memo of its own), so passes can run side by
     /// side. Nil when the collection is gone (an album deleted, a date that names no day).
-    private func collectionTest() -> (() -> (Asset) -> Bool)? {
+    private func collectionTest(now: Date) -> (() -> (Asset) -> Bool)? {
         // Observed inputs are read once, outside the per-asset tests.
         let selection = self.selection
         /// The same test for every pass: it keeps nothing.
@@ -9985,7 +9986,7 @@ final class AppState {
             return each { memberIds.contains($0.id) }
         case .smart:
             guard let sa = smartAlbums.first(where: { $0.id == selection.id }) else { return nil }
-            let rule = SmartMatcher.Prepared(sa.rule)
+            let rule = SmartMatcher.Prepared(sa.rule, now: now)
             return {
                 var memo = SmartMatcher.Memo(for: rule)
                 return { rule.matches($0, memo: &memo) }
@@ -10130,7 +10131,7 @@ final class AppState {
         ListSignature(inputsVersion: listInputsVersion, selection: selection,
                       filters: filters, search: search, sort: sort,
                       collapsed: collapsedStackIds, recentDays: recentImportDays,
-                      captureDay: CaptureDates.startOfToday())
+                      captureDay: sidebarDay)
     }
 
     private func primeDefaultListCache(with loadedAssets: [Asset]) {
@@ -10167,8 +10168,10 @@ final class AppState {
         }
         let cameraQuery = filters.camera.trimmingCharacters(in: .whitespacesAndNewlines)
         let lensQuery = filters.lens.trimmingCharacters(in: .whitespacesAndNewlines)
-        let dateInterval = filters.captureDateInterval()
-        guard let collection = collectionTest() else { return [] }
+        // relative dates as the sidebar counts them
+        let now = sidebarClock()
+        let dateInterval = filters.captureDateInterval(now: now)
+        guard let collection = collectionTest(now: now) else { return [] }
         let live = listShows
         let filtered = !(filters.isEmpty && q.isEmpty)
         // Live, in the collection and through the filter bar: one pass split across the cores. On
