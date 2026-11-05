@@ -122,6 +122,25 @@ final class LLMClientTests: XCTestCase {
         let result = await complete(local, key: nil)
         XCTAssertEqual(result.failure as? LLMError, .replyTooLarge)
     }
+
+    /// Two services on one host (Ollama and vLLM on this Mac, say) keep a key each.
+    func testServicesOnOneHostKeepTheirOwnKeys() {
+        let ollama = LLMConfiguration(kind: .openAICompatible, baseURL: "http://localhost:11434/v1", model: "m")
+        let vllm = LLMConfiguration(kind: .openAICompatible, baseURL: "http://localhost:8000/v1", model: "m")
+        XCTAssertNotEqual(LLMKeychain.account(for: ollama), LLMKeychain.account(for: vllm))
+        XCTAssertEqual(LLMKeychain.account(for: ollama), "openAICompatible|localhost:11434")
+        // a key saved before ports counted is still found, under the host alone
+        XCTAssertEqual(LLMKeychain.legacyAccount(for: ollama), "openAICompatible|localhost")
+    }
+
+    /// An address without a port keeps the account its key was saved under.
+    func testKeysSavedWithoutAPortKeepTheirAccount() {
+        XCTAssertEqual(LLMKeychain.account(for: .anthropic), "anthropic|api.anthropic.com")
+        XCTAssertNil(LLMKeychain.legacyAccount(for: .anthropic))
+        let openAI = LLMConfiguration(kind: .openAICompatible, baseURL: "https://api.openai.com/v1", model: "m")
+        XCTAssertEqual(LLMKeychain.account(for: openAI), "openAICompatible|api.openai.com")
+        XCTAssertNil(LLMKeychain.legacyAccount(for: openAI))
+    }
 }
 
 private extension Result {

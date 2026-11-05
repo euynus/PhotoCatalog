@@ -280,30 +280,65 @@ enum LLMClient {
 enum LLMKeychain {
     static let service = "com.photocatalog.app.llm"
 
+    /// The keychain account of the service's key: its kind and address, the port included when
+    /// the address gives one, so two services on one host (Ollama and vLLM on this Mac, say)
+    /// keep a key each. An address without a port keeps the account it always had.
     static func account(for configuration: LLMConfiguration) -> String {
-        "\(configuration.kind.rawValue)|\(configuration.endpoint?.host ?? configuration.baseURL)"
+        "\(configuration.kind.rawValue)|\(place(of: configuration))"
     }
 
+    /// The account a key for a service with a port was saved under before ports counted (the
+    /// host alone); nil when that's its account anyway.
+    static func legacyAccount(for configuration: LLMConfiguration) -> String? {
+        let legacy = "\(configuration.kind.rawValue)|\(configuration.endpoint?.host ?? configuration.baseURL)"
+        return legacy == account(for: configuration) ? nil : legacy
+    }
+
+    /// The host, with the port when the address gives one.
+    private static func place(of configuration: LLMConfiguration) -> String {
+        guard let endpoint = configuration.endpoint, let host = endpoint.host else { return configuration.baseURL }
+        return endpoint.port.map { "\(host):\($0)" } ?? host
+    }
+
+    /// The service's key; one saved before ports counted is found under the host alone and
+    /// copied to the service's own account.
     static func key(for configuration: LLMConfiguration) -> String? {
+        if let key = stored(account(for: configuration)) { return key }
+        guard let legacy = legacyAccount(for: configuration), let key = stored(legacy) else { return nil }
+        add(key, account: account(for: configuration), configuration: configuration)
+        return key
+    }
+
+    /// Saves `key` for the service (an empty key removes it, along with one saved for its host
+    /// before ports counted, which would otherwise be found again).
+    @discardableResult
+    static func save(_ key: String, for configuration: LLMConfiguration) -> Bool {
+        remove(account(for: configuration))
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            if let legacy = legacyAccount(for: configuration) { remove(legacy) }
+            return true
+        }
+        return add(trimmed, account: account(for: configuration), configuration: configuration)
+    }
+
+    private static func stored(_ account: String) -> String? {
         let query: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service,
-                                      kSecAttrAccount: account(for: configuration), kSecReturnData: true,
-                                      kSecMatchLimit: kSecMatchLimitOne]
+                                      kSecAttrAccount: account, kSecReturnData: true, kSecMatchLimit: kSecMatchLimitOne]
         var result: AnyObject?
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
-    /// Saves `key` for the service (an empty key removes it).
+    private static func remove(_ account: String) {
+        SecItemDelete([kSecClass: kSecClassGenericPassword, kSecAttrService: service, kSecAttrAccount: account] as CFDictionary)
+    }
+
     @discardableResult
-    static func save(_ key: String, for configuration: LLMConfiguration) -> Bool {
-        let item: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service,
-                                     kSecAttrAccount: account(for: configuration)]
-        SecItemDelete(item as CFDictionary)
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return true }
-        var attributes = item
-        attributes[kSecValueData] = Data(trimmed.utf8)
-        attributes[kSecAttrLabel] = "PhotoCatalog AI (\(configuration.endpoint?.host ?? configuration.baseURL))"
+    private static func add(_ key: String, account: String, configuration: LLMConfiguration) -> Bool {
+        let attributes: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service,
+                                           kSecAttrAccount: account, kSecValueData: Data(key.utf8),
+                                           kSecAttrLabel: "PhotoCatalog AI (\(place(of: configuration)))"]
         return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
     }
 }
