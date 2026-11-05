@@ -85,6 +85,13 @@ extension Asset {
     /// changed elsewhere (an external editor's save) makes its thumbnail and preview again at the
     /// same paths, so a decode of the old ones is told apart by this, not by the path.
     var imageVersion: String { "\(fileModifiedAt?.timeIntervalSince1970 ?? 0)-\(quickHash ?? "")" }
+
+    /// Whether `other` has the same `imageVersion`, without building the strings: equatable cells
+    /// compare it for every visible photo on each update, and their `Thumb` reloads only when
+    /// it is handed a photo whose version differs.
+    func sameImageVersion(as other: Asset) -> Bool {
+        fileModifiedAt == other.fileModifiedAt && quickHash == other.quickHash
+    }
 }
 
 /// Shared in-memory image cache so grid scrolling doesn't refetch.

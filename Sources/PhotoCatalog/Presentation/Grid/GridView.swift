@@ -394,6 +394,7 @@ extension GridCell: Equatable {
         l.asset.status == r.asset.status &&
         l.asset.filename == r.asset.filename &&
         l.asset.thumb == r.asset.thumb &&
+        l.asset.sameImageVersion(as: r.asset) &&
         l.asset.localPath == r.asset.localPath &&
         l.asset.copyName == r.asset.copyName &&
         l.size == r.size &&

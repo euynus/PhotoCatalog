@@ -241,7 +241,7 @@ struct Filmstrip: View {
 
 /// One filmstrip thumbnail; equal cells skip their body, so a new selection re-renders only
 /// the two cells whose highlight changes. (The catalog identity of `Asset` is just its id.)
-private struct FilmstripCell: View, Equatable {
+struct FilmstripCell: View, Equatable {
     let asset: Asset
     let isPrimary: Bool
     let select: () -> Void
@@ -249,6 +249,7 @@ private struct FilmstripCell: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.isPrimary == rhs.isPrimary && lhs.asset.id == rhs.asset.id && lhs.asset.rating == rhs.asset.rating
             && lhs.asset.flag == rhs.asset.flag && lhs.asset.thumb == rhs.asset.thumb
+            && lhs.asset.sameImageVersion(as: rhs.asset)
             && lhs.asset.filename == rhs.asset.filename && lhs.asset.status == rhs.asset.status
     }
 
