@@ -60,6 +60,26 @@ final class PhotoMergeTests: CatalogTestCase {
         }
         XCTAssertEqual(preview, .mismatchedFrame(1))
     }
+
+    /// The catalog's focal length is the lens's actual one (a phone's 4 mm), not its 35 mm
+    /// equivalent: a frame whose file says no more is projected with the default, not as a
+    /// 4 mm full-frame fisheye.
+    func testTheCatalogsActualFocalLengthIsNotTakenForAnEquivalent() throws {
+        let url = scratch.appendingPathComponent("Pano/IMG_0001.jpg")
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try makeTestJPEG(at: url, shade: 1)
+        let asset = Asset(id: "pano-1", pid: 1, ori: "l", thumb: "", preview: "", filename: url.lastPathComponent,
+                          type: "JPG", isRaw: false, folderId: "src-pano", folderName: "Pano",
+                          date: Date(timeIntervalSince1970: 1_700_000_000), width: 80, height: 60, orientation: 1,
+                          camera: "iPhone", lens: "", focal: 4, aperture: 1.8, shutter: "1/100", iso: 50,
+                          colorSpace: "sRGB", fileMB: 0.01, rating: 0, flag: .none, keywords: [], title: "", caption: "",
+                          location: Asset.locationLabel(nil), gps: (0, 0), status: .ready, importedAt: .now,
+                          localPath: url.path, isDemo: false)
+        let frames = AppState.photoMergeFrames([asset])
+        XCTAssertEqual(frames.count, 1)
+        XCTAssertNil(frames.first?.focalLength35)
+        XCTAssertEqual(PhotoMerge.panoramaFocal35(frames), 35)
+    }
 }
 
 /// The focal length a panorama is projected with, and the projection at its extremes.

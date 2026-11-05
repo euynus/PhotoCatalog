@@ -6101,14 +6101,15 @@ final class AppState {
         return seconds * Double(asset.iso) / (asset.aperture * asset.aperture)
     }
 
-    /// The photos as the merge reads them; the focal length from each file's metadata, or the
-    /// catalog's (taken as on a 35 mm camera).
+    /// The photos as the merge reads them, with the 35 mm equivalent focal length each file's
+    /// metadata gives. The catalog's focal length is the lens's actual one (a phone's 4 mm), read
+    /// from the same file, so it says nothing about the equivalent the file doesn't say.
     nonisolated static func photoMergeFrames(_ assets: [Asset]) -> [PhotoMerge.Frame] {
         assets.compactMap { asset in
             asset.localPath.map { path in
                 let url = URL(fileURLWithPath: path)
                 return PhotoMerge.Frame(url: url, isRaw: asset.isRaw, brightness: exposureBrightness(asset),
-                                        focalLength35: PhotoMerge.focalLength35(url: url) ?? (asset.focal > 0 ? Double(asset.focal) : nil))
+                                        focalLength35: PhotoMerge.focalLength35(url: url))
             }
         }
     }
