@@ -179,6 +179,36 @@ final class SQLiteTests: XCTestCase {
         XCTAssertEqual(try store.loadAlbums(), [Album(id: "album-1", name: "Mixed", assetIds: [asset.id])])
     }
 
+    /// An album or smart album saved in a set is filed there, and saving it again (an edit of its
+    /// photos, rule or name) keeps it there; moving it is setAlbumParent's.
+    func testAlbumsSavedInASetStayInIt() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-album-set-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try CatalogStore(packageURL: dir.appendingPathComponent("Library.photolibrary"))
+        var asset = DemoData.assets[0]
+        asset.isDemo = false
+        try store.upsert([asset])
+        try store.saveAlbumSet(AlbumSet(id: "set-1", name: "Trips", parentId: nil))
+        let rule = SmartRule(match: "all", conditions: [SmartCondition(field: "rating", op: ">=", value: "4")])
+
+        try store.saveAlbum(Album(id: "album-1", name: "New", assetIds: [asset.id], setId: "set-1"))
+        try store.saveSmartAlbum(SmartAlbum(id: "smart-1", name: "New", rule: rule, count: 0, setId: "set-1"))
+        XCTAssertEqual(try store.loadAlbums().first?.setId, "set-1", "a new album isn't filed in its set")
+        XCTAssertEqual(try store.loadSmartAlbums().first?.setId, "set-1", "a new smart album isn't filed in its set")
+
+        try store.saveAlbum(Album(id: "album-1", name: "Edited", assetIds: [], setId: "set-1"))
+        try store.saveSmartAlbum(SmartAlbum(id: "smart-1", name: "Edited", rule: rule, count: 0, setId: "set-1"))
+        XCTAssertEqual(try store.loadAlbums().first?.setId, "set-1", "an edited album leaves its set")
+        XCTAssertEqual(try store.loadSmartAlbums().first?.setId, "set-1", "an edited smart album leaves its set")
+
+        // as the app files one: saved at the top level, then moved; a later save keeps it there
+        try store.saveAlbum(Album(id: "album-2", name: "Moved", assetIds: []))
+        try store.setAlbumParent(id: "album-2", parentId: "set-1")
+        try store.saveAlbum(Album(id: "album-2", name: "Moved", assetIds: [asset.id], setId: "set-1"))
+        XCTAssertEqual(try store.loadAlbums().first { $0.id == "album-2" }?.setId, "set-1")
+    }
+
     func testSmartAlbumUpdateAndDeletePreserveAssets() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-smart-album-crud-\(UUID().uuidString)")

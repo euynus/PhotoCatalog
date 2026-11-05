@@ -1397,6 +1397,8 @@ final class CatalogStore: @unchecked Sendable {
         }
     }
 
+    /// Saves an album, filed in its set when it's new; one already saved stays where it is
+    /// (setAlbumParent moves it), so a caller that doesn't know the set can't take it out.
     func saveAlbum(_ album: Album, sortOrder: Int = 0, updatedAt: Date = .now) throws {
         let now = Self.iso(updatedAt)
         try db.transaction {
@@ -1407,7 +1409,7 @@ final class CatalogStore: @unchecked Sendable {
               name=excluded.name,
               sort_order=excluded.sort_order,
               updated_at=excluded.updated_at;
-            """, [.text(album.id), .null, .text("album"), .text(album.name),
+            """, [.text(album.id), album.setId.map(SQLValue.text) ?? .null, .text("album"), .text(album.name),
                   .int(sortOrder), .text(now), .text(now)])
             try db.run("DELETE FROM album_assets WHERE album_id=?;", [.text(album.id)])
             // a photo the catalog has no row for (a demo photo, never saved) is left out, rather
@@ -1451,6 +1453,7 @@ final class CatalogStore: @unchecked Sendable {
         }
     }
 
+    /// Saves a smart album, filed in its set when it's new, as saveAlbum does.
     func saveSmartAlbum(_ album: SmartAlbum, sortOrder: Int = 0, updatedAt: Date = .now) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -1465,7 +1468,7 @@ final class CatalogStore: @unchecked Sendable {
               name=excluded.name,
               sort_order=excluded.sort_order,
               updated_at=excluded.updated_at;
-            """, [.text(album.id), .null, .text("smart"), .text(album.name),
+            """, [.text(album.id), album.setId.map(SQLValue.text) ?? .null, .text("smart"), .text(album.name),
                   .int(sortOrder), .text(now), .text(now)])
             try db.run("""
             INSERT INTO smart_album_rules(album_id, rule_json, updated_at)
