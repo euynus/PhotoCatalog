@@ -141,6 +141,25 @@ final class AutomaticXMPWriterTests: CatalogTestCase {
         XCTAssertEqual(app.externallyChangedXMPIds, [])
     }
 
+    /// A photo removed from the catalog, or whose original went to the Trash with it, gets no
+    /// sidecar written beside it and none held back for later: there's nothing left to write.
+    func testRemovedPhotoGetsNoSidecarAndNoneHeldBack() async throws {
+        let kept = scratch.appendingPathComponent("kept.jpg")
+        try makeTestJPEG(at: kept, shade: 2)
+        var removed = photo(0, at: kept)
+        removed.deleted = true
+        var trashed = photo(1, at: scratch.appendingPathComponent("trashed.jpg"))
+        trashed.deleted = true
+        let writer = AutomaticXMPWriter()
+
+        let result = await writer.write([removed, trashed], sequence: 1)
+
+        XCTAssertEqual(result.written, [:])
+        XCTAssertEqual(result.unavailable, [], "a trashed original's sidecar is held back to write later")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: XMPSidecar.sidecarURL(for: kept).path),
+                       "a removed photo's sidecar is written")
+    }
+
     /// A catalog holding one imported photo, `name`, open in an app that writes sidecars
     /// automatically and runs no background checks; the photo is selected.
     @MainActor
