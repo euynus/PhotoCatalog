@@ -99,7 +99,12 @@ final class Database: @unchecked Sendable {
     }
 
     func execChecked(_ sql: String) throws {
-        guard exec(sql) else { throw DBError.step(String(cString: sqlite3_errmsg(db))) }
+        // the message is read under the same lock: another thread's statement would replace it
+        try locked {
+            guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
+                throw DBError.step(String(cString: sqlite3_errmsg(db)))
+            }
+        }
     }
 
     /// Checkpoint the WAL into the main database file and truncate it, returning true only when
