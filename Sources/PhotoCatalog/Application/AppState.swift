@@ -2376,11 +2376,12 @@ final class AppState {
         didSet { AppState.store(developPresets, forKey: AppState.developPresetsKey) }
     }
     var allDevelopPresets: [DevelopPreset] { DevelopPreset.builtIns + developPresets }
-    /// A new preset offers what the photo has adjusted, leaving its framing out.
+    /// A new preset offers what the photo has adjusted, leaving out what Copy Settings does by
+    /// default: what belongs to that one photo (framing, masks, spots, lens blur). They can be ticked.
     var developPresetDefaultFields: Set<DevelopField> {
         let settings = primaryId.flatMap { developSettings[$0] } ?? .neutral
         let adjusted = Set(DevelopField.allCases.filter { $0.isAdjusted(in: settings) })
-            .subtracting([.orientation, .crop])
+            .intersection(DevelopField.defaultCopy)
         return adjusted.isEmpty ? developTransferFields : adjusted
     }
     /// Fields the copy / sync dialog offers checked, as last used.

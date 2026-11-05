@@ -132,4 +132,26 @@ final class DevelopPresetFileTests: XCTestCase {
         XCTAssertEqual(transfer.fields, [.whiteBalance, .exposure, .contrast, .colorGrading, .toneCurve])
         XCTAssertEqual(ToneCurve.evaluate(transfer.settings.curve.editablePoints(for: .rgb), at: 0), 20.0 / 255, accuracy: 0.001)
     }
+
+    // ---- a new preset's checklist ----
+
+    /// Save as Preset starts with what the photo adjusted ticked, but, as Copy Settings does, not
+    /// what belongs to that one photo: its framing (crop, perspective), masks, spots and lens blur.
+    @MainActor
+    func testANewPresetLeavesWhatBelongsToOnePhotoUnticked() throws {
+        let app = AppState.selfCheckFixture()
+        let id = "photo"
+        var settings = DevelopSettings()
+        settings.exposure = 0.5
+        settings.perspectiveVertical = -20
+        var mask = LocalAdjustment(kind: .linear)
+        mask.exposure = 1
+        settings.masks = [mask]
+        settings.spots = [try JSONDecoder().decode(SpotRemoval.self, from: Data(#"{"radius":0.02}"#.utf8))]
+        settings.lensBlur.enabled = true
+        app.developSettings[id] = settings
+        app.primaryId = id
+
+        XCTAssertEqual(app.developPresetDefaultFields, [.exposure])
+    }
 }
