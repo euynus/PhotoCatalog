@@ -428,7 +428,9 @@ final class AppState {
     @ObservationIgnored private var trashedOriginalIds: Set<String> = []
 
     private func isRemovedForGood(_ asset: Asset) -> Bool {
-        removedSourceIds.contains(asset.folderId) || trashedOriginalIds.contains(asset.masterId ?? asset.id)
+        // a folder added again since is a source again (its id comes from its path)
+        (removedSourceIds.contains(asset.folderId) && sourceRootPathsById[asset.folderId] == nil)
+            || trashedOriginalIds.contains(asset.masterId ?? asset.id)
     }
 
     /// The photos as a change made to a copy of them left them (duplicates resolved). Such a change
