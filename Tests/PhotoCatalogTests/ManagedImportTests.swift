@@ -104,4 +104,72 @@ final class ManagedImportTests: CatalogTestCase {
         try FileManager.default.removeItem(at: elsewhere)
         XCTAssertEqual(try? Data(contentsOf: copy), bytes, "the copy outlives the photo the link pointed to")
     }
+
+    /// A sidecar as Lightroom or darktable leaves one: a capture time, and a property of another
+    /// app's this one doesn't read.
+    private func writeSidecar(_ url: URL, taken: String) throws {
+        let xmp = """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/">
+         <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+          <rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/"
+            xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+            exif:DateTimeOriginal="\(taken)" crs:Exposure2012="+0.50"/>
+         </rdf:RDF>
+        </x:xmpmeta>
+        """
+        try Data(xmp.utf8).write(to: url)
+    }
+
+    /// A camera whose model reads "..": its photos are filed inside Originals, not above it.
+    func testCameraNamedDotDotStaysInsideOriginals() throws {
+        let store = try CatalogStore(packageURL: scratch.appendingPathComponent("Library.photolibrary"))
+        let folder = scratch.appendingPathComponent("Card")
+        let shot = folder.appendingPathComponent("IMG_0001.JPG")
+        try makeShot(at: shot, make: "", model: "..", taken: "2026:10:12 10:00:00")
+
+        let imported = try XCTUnwrap(ImportCoordinator(store: store)
+            .importFiles([shot], from: folder, mode: .managed, archiveRule: .camera, readSidecar: false).first)
+
+        let copy = URL(fileURLWithPath: try XCTUnwrap(imported.localPath)).standardizedFileURL
+        let originals = store.originalsURL.standardizedFileURL
+        XCTAssertTrue(copy.path.hasPrefix(originals.path + "/"), "copied outside Originals, to \(copy.path)")
+        XCTAssertEqual(copy.pathComponents.count - originals.pathComponents.count, 4,
+                       "not filed as <camera>/YYYY/MM")
+    }
+
+    /// The original's sidecar comes into Originals with it, so what other apps keep there (their
+    /// develop settings) stays with the photo once the card is wiped.
+    func testSidecarIsCopiedWithTheOriginal() throws {
+        let store = try CatalogStore(packageURL: scratch.appendingPathComponent("Library.photolibrary"))
+        let folder = scratch.appendingPathComponent("Card")
+        let shot = folder.appendingPathComponent("IMG_0002.JPG")
+        try makeShot(at: shot, make: "Canon", model: "Canon EOS R5", taken: "2026:10:12 10:00:00")
+        let sidecar = folder.appendingPathComponent("IMG_0002.xmp")
+        try writeSidecar(sidecar, taken: "2026-10-12T10:00:00")
+
+        let imported = try XCTUnwrap(ImportCoordinator(store: store)
+            .importFiles([shot], from: folder, mode: .managed).first)
+
+        let copy = URL(fileURLWithPath: try XCTUnwrap(imported.localPath))
+        XCTAssertEqual(try? Data(contentsOf: XMPSidecar.sidecarURL(for: copy)), try Data(contentsOf: sidecar),
+                       "the sidecar was left behind on the card")
+    }
+
+    /// A photo whose sidecar gives another capture time than its camera did (corrected in another
+    /// app) is filed under the day the catalog shows for it.
+    func testArchiveFolderFollowsTheSidecarCaptureTime() throws {
+        let store = try CatalogStore(packageURL: scratch.appendingPathComponent("Library.photolibrary"))
+        let folder = scratch.appendingPathComponent("Card")
+        let shot = folder.appendingPathComponent("IMG_0003.JPG")
+        try makeShot(at: shot, make: "Canon", model: "Canon EOS R5", taken: "2026:01:01 00:00:00")
+        try writeSidecar(folder.appendingPathComponent("IMG_0003.xmp"), taken: "2026-10-12T10:00:00")
+
+        let imported = try XCTUnwrap(ImportCoordinator(store: store)
+            .importFiles([shot], from: folder, mode: .managed).first)
+
+        XCTAssertEqual(imported.captureDateSource, "sidecar")
+        XCTAssertEqual(URL(fileURLWithPath: try XCTUnwrap(imported.localPath)).deletingLastPathComponent().path,
+                       store.originalsURL.appendingPathComponent("2026/10/12").path,
+                       "filed under the camera's date, not the one the catalog shows")
+    }
 }

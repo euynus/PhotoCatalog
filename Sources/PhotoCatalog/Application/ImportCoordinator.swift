@@ -320,10 +320,14 @@ final class ImportCoordinator: @unchecked Sendable {
                            reusingRemovedIds: Bool = true, copying: NSLock) throws -> Asset? {
         let meta = MetadataReader.read(url)
         guard meta.width > 0, meta.height > 0 else { return nil }
+        // the XMP sidecar next to the original (§6.5 META-006, §17.4): its capture time is the
+        // one the catalog shows, so a managed copy is filed under it too
+        let sidecar = readSidecar ? XMPSidecar.read(XMPSidecar.sidecarURL(for: url)) : nil
         let finalURL: URL
         if mode == .managed {
             finalURL = try copying.withLock {
-                try copyToOriginals(url, date: meta.captureDate, camera: meta.camera, rule: archiveRule)
+                try copyToOriginals(url, date: meta.captureDate, filedAt: sidecar?.captureDate ?? meta.captureDate,
+                                    camera: meta.camera, rule: archiveRule)
             }
         } else {
             finalURL = url
@@ -368,8 +372,8 @@ final class ImportCoordinator: @unchecked Sendable {
             for tag in v.sceneLabels where !asset.keywords.contains(tag) { asset.keywords.append(tag) }
         }
 
-        // apply XMP sidecar metadata next to the original, if present (§6.5 META-006, §17.4)
-        if readSidecar, let sc = XMPSidecar.read(XMPSidecar.sidecarURL(for: url)) {
+        // apply XMP sidecar metadata next to the original, if present
+        if let sc = sidecar {
             // keywords merge, so sidecar keywords don't discard the Vision scene tags appended above
             XMPSidecar.apply(sc, to: &asset)
         }
@@ -379,8 +383,26 @@ final class ImportCoordinator: @unchecked Sendable {
         return asset
     }
 
-    private func copyToOriginals(_ url: URL, date: Date, camera: String, rule: ManagedArchiveRule) throws -> URL {
-        let c = Calendar.captureWallClock.dateComponents([.year, .month, .day], from: date)
+    /// Copies `url` (taken by `camera` at `date`, as its file says) into Originals, in the folder
+    /// for `filedAt` (the capture time the catalog shows), with its sidecar.
+    private func copyToOriginals(_ url: URL, date: Date, filedAt: Date, camera: String,
+                                 rule: ManagedArchiveRule) throws -> URL {
+        let copy = try copyOriginal(url, date: date, filedAt: filedAt, camera: camera, rule: rule)
+        // the sidecar too, so what other apps keep there stays with the photo; never over one
+        // already there (the RAW's, which its JPEG shares, or this photo's from an earlier run)
+        let fm = FileManager.default
+        let sidecar = XMPSidecar.sidecarURL(for: url)
+        let copiedSidecar = XMPSidecar.sidecarURL(for: copy)
+        if fm.fileExists(atPath: sidecar.path), !fm.fileExists(atPath: copiedSidecar.path),
+           let size = try? sidecar.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+            try? CardCopier.placeCopy(of: sidecar, at: copiedSidecar, size: Int64(size))
+        }
+        return copy
+    }
+
+    private func copyOriginal(_ url: URL, date: Date, filedAt: Date, camera: String,
+                              rule: ManagedArchiveRule) throws -> URL {
+        let c = Calendar.captureWallClock.dateComponents([.year, .month, .day], from: filedAt)
         let year = String(format: "%04d", c.year ?? 1970)
         let month = String(format: "%02d", c.month ?? 1)
         let day = String(format: "%02d", c.day ?? 1)
@@ -419,8 +441,12 @@ final class ImportCoordinator: @unchecked Sendable {
             dest = dir.appendingPathComponent("\(base) (\(i)).\(url.pathExtension)")
             i += 1
         }
-        // the photo a link points to, not the link: a copied link would dangle once the photo goes
-        try FileManager.default.copyItem(at: url.resolvingSymlinksInPath(), to: dest)
+        // the photo a link points to, not the link: a copied link would dangle once the photo goes;
+        // written under a hidden name and moved into place whole, so a copy cut short (a crash, a
+        // card pulled out) never sits in Originals under the photo's name
+        let source = url.resolvingSymlinksInPath()
+        let size = (try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? -1
+        try CardCopier.placeCopy(of: source, at: dest, size: size)
         return dest
     }
 
@@ -490,10 +516,12 @@ final class ImportCoordinator: @unchecked Sendable {
     }
 
     private func sanitizeFolderName(_ name: String) -> String {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return L("未知相机") }
         let illegal = CharacterSet(charactersIn: "/\\:?%*|\"<>")
-        return trimmed.components(separatedBy: illegal).joined(separator: "-")
+        // leading dots off: "." and ".." aren't folders of their own, and ".name" would be hidden
+        let cleaned = name.components(separatedBy: illegal).joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .drop { $0 == "." }.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? L("未知相机") : cleaned
     }
 
     private func shortHash(_ s: String) -> String {

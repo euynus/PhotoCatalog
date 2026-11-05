@@ -274,7 +274,7 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
     /// pass over hidden files), moved into place once it has all `size` bytes: a copy cut short
     /// (a crash, a card pulled out) never sits under the photo's name. A partial an earlier
     /// attempt left is replaced.
-    private static func placeCopy(of source: URL, at destination: URL, size: Int64) throws {
+    static func placeCopy(of source: URL, at destination: URL, size: Int64) throws {
         let fm = FileManager.default
         let partial = destination.deletingLastPathComponent()
             .appendingPathComponent(".\(destination.lastPathComponent).partial")
