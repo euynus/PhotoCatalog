@@ -50,4 +50,30 @@ final class SlideshowVideoTests: XCTestCase {
         wait(for: [ended], timeout: 5)
         XCTAssertNotEqual(writer.status, .writing, "the writer is stopped")
     }
+
+    /// The wait may cancel the writer while an input is still finishing (the other input saw the
+    /// failure and is about to say it's done): that input appending or finishing on the cancelled
+    /// writer is refused quietly, not raised.
+    func testAnInputFinishingAfterTheWriterWasCancelled() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-slideshow-\(UUID().uuidString).mp4")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 64, AVVideoHeightKey: 64,
+        ])
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: 64, kCVPixelBufferHeightKey as String: 64,
+        ])
+        writer.add(input)
+        XCTAssertTrue(writer.startWriting())
+        writer.startSession(atSourceTime: .zero)
+        var buffer: CVPixelBuffer?
+        CVPixelBufferCreate(nil, 64, 64, kCVPixelFormatType_32BGRA, nil, &buffer)
+        writer.cancelWriting()
+        XCTAssertFalse(input.isReadyForMoreMediaData)
+        XCTAssertFalse(adaptor.append(try XCTUnwrap(buffer), withPresentationTime: .zero))
+        input.markAsFinished()
+        XCTAssertEqual(writer.status, .cancelled)
+    }
 }
