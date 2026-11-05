@@ -275,7 +275,7 @@ final class SidecarNamingTests: CatalogTestCase {
         let package = scratch.appendingPathComponent("Library.photolibrary")
         let store = try CatalogStore(packageURL: package)
         try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
-        let imported = try ImportCoordinator(store: store)
+        let imported = ImportCoordinator(store: store)
             .importFiles([jpeg, tiff], from: source, sourceRootId: "source-1", folderName: "Source")
         try store.upsert(imported)
         let jpegId = try XCTUnwrap(imported.first { $0.localPath == jpeg.path }?.id)
