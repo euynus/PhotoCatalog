@@ -40,7 +40,7 @@ enum ScaleCheck {
         let beforeApply = footprint()
         let (_, applyTime) = timed { app.applyLoadedCatalogForScaleCheck(live, from: store) }
         report("apply catalog: \(applyTime) ms, \(delta(footprint(), beforeApply)) MB")
-        // settings other runs of the app may have changed, which move the numbers
+        // settings that move the numbers: the app's defaults, or as this run's `-pc_…` arguments set them
         report("RAW+JPEG pairing \(app.pairRawAndJpeg ? "on" : "off"), auto-stack "
             + (app.autoStackSeconds.map { "\($0) s" } ?? "off"))
 

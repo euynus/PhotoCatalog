@@ -27,4 +27,26 @@ final class TestDefaultsIsolationTests: XCTestCase {
         }
         XCTAssertEqual(defaults.string(forKey: key), "this run")
     }
+
+    /// The headless checks (`--selfcheck`, `--pipeline`, …) change settings as they go; they keep a
+    /// suite of their own per checkout and mode, so they never touch what an app run reads.
+    func testHeadlessChecksKeepASuiteOfTheirOwn() {
+        let binary = "/work/a/.build/debug/PhotoCatalog"
+        XCTAssertNil(UserDefaults.headlessCheckSuiteName(arguments: [binary], executablePath: binary),
+                     "an app run keeps its own preferences")
+        XCTAssertNil(UserDefaults.headlessCheckSuiteName(arguments: [binary, "/x/Library.photolibrary"],
+                                                         executablePath: binary))
+        let modes = ["--selfcheck", "--pipeline", "--scale", "--import-memory-check", "--full-backup-check",
+                     "--task-center-check", "--description-review-check"]
+        let names = modes.map {
+            UserDefaults.headlessCheckSuiteName(arguments: [binary, $0, "-pc_pairRawJpeg", "YES"], executablePath: binary)
+        }
+        XCTAssertFalse(names.contains(nil), "every headless mode keeps its own suite")
+        XCTAssertEqual(Set(names).count, modes.count, "one per mode, so two modes at once don't meet")
+        XCTAssertEqual(UserDefaults.headlessCheckSuiteName(arguments: [binary, "--selfcheck", "--benchmark"],
+                                                           executablePath: binary), names[0])
+        XCTAssertNotEqual(UserDefaults.headlessCheckSuiteName(arguments: ["x", "--selfcheck"],
+                                                              executablePath: "/work/b/.build/debug/PhotoCatalog"),
+                          names[0], "nor do two checkouts")
+    }
 }

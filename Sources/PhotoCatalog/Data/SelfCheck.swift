@@ -9,6 +9,7 @@ import SwiftUI
 
 enum SelfCheck {
     static func run() {
+        assert(UserDefaults.app !== UserDefaults.standard, "the checks change settings in a suite of their own")
         let a = DemoData.assets
         let ready = a.filter { !$0.deleted }
         func folder(_ id: String) -> Int { ready.filter { $0.folderId == id }.count }
