@@ -61,7 +61,7 @@ struct LocationSheet: View {
                 Text(pin.map { String(format: "%.5f, %.5f", $0.latitude, $0.longitude) } ?? L("尚未选择位置"))
                     .font(.system(size: 12)).monospacedDigit().foregroundStyle(Theme.text3)
                 Spacer()
-                ghostButton(nil, L("移除位置"), danger: true, disabled: !anyLocated) {
+                ghostButton(nil, L("移除位置"), danger: true, disabled: !app.anyHasLocation(ids)) {
                     app.setLocation(nil, for: ids)
                     app.sheet = nil
                 }
@@ -85,10 +85,6 @@ struct LocationSheet: View {
         .font(.system(size: 13))
         .foregroundStyle(Theme.text)
         .background(Theme.bgPanel)
-    }
-
-    private var anyLocated: Bool {
-        app.assets.contains { ids.contains($0.id) && $0.hasGPS }
     }
 
     private var searchColumn: some View {
@@ -161,6 +157,16 @@ struct GPXMatchSheet: View {
     @State private var offsetMinutes: Int
     @State private var useSelection: Bool
     @State private var overwrite = false
+    /// The last matching worked out, and what it was worked out for.
+    @State private var shown: (input: MatchInput, matches: [String: GPXPoint])?
+
+    /// What the matching depends on: the dialog's settings, and the photos.
+    private struct MatchInput: Equatable {
+        let offsetMinutes: Int
+        let useSelection: Bool
+        let overwrite: Bool
+        let assets: Int
+    }
 
     init(name: String, track: GPXTrack, selected: Set<String>, inView: Set<String>) {
         self.name = name
@@ -172,12 +178,15 @@ struct GPXMatchSheet: View {
     }
 
     private var ids: Set<String> { useSelection ? selected : inView }
-    private var matches: [String: GPXPoint] {
-        app.gpxMatches(track, ids: ids, cameraUTCOffset: offsetMinutes * 60, overwrite: overwrite)
-    }
 
     var body: some View {
-        let matches = self.matches
+        // Matching a whole view's photos takes a while in a large library, so it runs off the main
+        // thread and never in body: a step of the time zone or a toggle matches once, after it.
+        let input = MatchInput(offsetMinutes: offsetMinutes, useSelection: useSelection, overwrite: overwrite,
+                               assets: app.assetRenderVersion)
+        // the matches for the settings shown; nil while they're being worked out
+        let matches = shown?.input == input ? shown?.matches : nil
+        let matchCount = matches?.count ?? shown?.matches.count ?? 0
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "point.topleft.down.to.point.bottomright.curvepath").foregroundStyle(Theme.accent)
@@ -214,8 +223,12 @@ struct GPXMatchSheet: View {
                     .pickerStyle(.segmented)
                     Toggle("覆盖已有位置", isOn: $overwrite)
                     LabeledContent("可匹配") {
-                        Text("\(matches.count) / \(ids.count) 张")
-                            .foregroundStyle(matches.isEmpty ? Theme.text3 : Theme.accent)
+                        if shown == nil {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text("\(matchCount) / \(ids.count) 张")
+                                .foregroundStyle(matches?.isEmpty == false ? Theme.accent : Theme.text3)
+                        }
                     }
                 }
             }
@@ -226,16 +239,17 @@ struct GPXMatchSheet: View {
                 Spacer()
                 ghostButton(nil, L("取消")) { app.sheet = nil }
                 Button {
+                    guard let matches else { return }
                     app.applyGPXMatches(matches)
                     app.sheet = nil
                 } label: {
-                    Text("添加 \(matches.count) 个位置")
+                    Text("添加 \(matchCount) 个位置")
                         .sheetPrimaryLabel()
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.defaultAction)
-                .disabled(matches.isEmpty)
-                .opacity(matches.isEmpty ? 0.5 : 1)
+                .disabled(matches?.isEmpty != false)
+                .opacity(matches?.isEmpty != false ? 0.5 : 1)
             }
             .sheetFooterBar()
         }
@@ -243,6 +257,28 @@ struct GPXMatchSheet: View {
         .font(.system(size: 13))
         .foregroundStyle(Theme.text)
         .background(Theme.bgPanel)
+        .task(id: input) { await match(input) }
+    }
+
+    private func match(_ input: MatchInput) async {
+        // a stepper held down steps on: match where it stops
+        if shown != nil {
+            do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+        }
+        let photos = app.gpxMatchPhotos
+        let ids = input.useSelection ? selected : inView
+        let track = track
+        let worker = Task.detached(priority: .userInitiated) {
+            AppState.gpxMatches(track, ids: ids, in: photos, cameraUTCOffset: input.offsetMinutes * 60,
+                                overwrite: input.overwrite)
+        }
+        let matches = await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
+        guard !Task.isCancelled else { return }
+        shown = (input, matches)
     }
 
     private var offsetTitle: String {

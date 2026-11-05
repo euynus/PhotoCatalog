@@ -9,6 +9,7 @@ struct PlacesMapView: View {
     @State private var position: MapCameraPosition = .automatic
     /// Camera height in meters — drives the clustering grid size.
     @State private var cameraDistance: Double = 10_000_000
+    @State private var pins = Pins()
 
     struct Cluster: Identifiable {
         let id: String
@@ -60,9 +61,48 @@ struct PlacesMapView: View {
         }
     }
 
+    /// The located photos and their pins, worked out again only when the list, its photos or the
+    /// grid step change: the body runs again with every move of the map's camera (and a pan
+    /// keeps the step), where filtering and grouping half a million photos each time stalled it.
+    @MainActor
+    final class Pins {
+        /// The list as it was rebuilt (`PhotoList.identity`), and its photos' last edit.
+        struct Source: Equatable {
+            let list: Int
+            let assets: Int
+        }
+        private var located: (source: Source, photos: [Asset])?
+        private var clusters: (source: Source, step: Double, clusters: [Cluster])?
+        /// How many times each was worked out (for tests).
+        private(set) var filterings = 0
+        private(set) var clusterings = 0
+
+        /// The list's photos with a place on the map.
+        func located(in list: PhotoList, assetRevision: Int) -> [Asset] {
+            let source = Source(list: list.identity, assets: assetRevision)
+            if let located, located.source == source { return located.photos }
+            filterings += 1
+            let photos = list.assets.filter { $0.hasGPS && PlacesMapView.isOnMap($0) }
+            located = (source, photos)
+            return photos
+        }
+
+        /// Those photos grouped into cells `step` degrees wide.
+        func clusters(in list: PhotoList, assetRevision: Int, step: Double) -> [Cluster] {
+            let source = Source(list: list.identity, assets: assetRevision)
+            if let clusters, clusters.source == source, clusters.step == step { return clusters.clusters }
+            clusterings += 1
+            let value = PlacesMapView.clusters(of: located(in: list, assetRevision: assetRevision), step: step)
+            clusters = (source, step, value)
+            return value
+        }
+    }
+
     var body: some View {
-        // once a body: it runs again with every move of the map's camera
-        let located = app.list.filter { $0.hasGPS && Self.isOnMap($0) }
+        // an edit patched into the list keeps its identity: the asset revision tells it apart
+        let list = app.photoList
+        let assetRevision = app.assetRenderVersion
+        let located = pins.located(in: list, assetRevision: assetRevision)
         Group {
             if located.isEmpty {
                 ContentUnavailableView {
@@ -73,7 +113,7 @@ struct PlacesMapView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Map(position: $position) {
-                    ForEach(Self.clusters(of: located, step: gridStep)) { c in
+                    ForEach(pins.clusters(in: list, assetRevision: assetRevision, step: gridStep)) { c in
                         Annotation("", coordinate: c.coordinate) {
                             Button {
                                 if c.count == 1 {
