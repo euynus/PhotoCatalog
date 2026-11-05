@@ -192,8 +192,7 @@ enum PhotoMerge {
         let small = frames.compactMap { decode($0, maxPixel: analysisPixel) }
         guard small.count == frames.count else { return .failure(.unreadable) }
         let size = small[0].extent.size
-        let focal35 = frames.compactMap(\.focalLength35).sorted().dropFirst(frames.compactMap(\.focalLength35).count / 2).first ?? 35
-        let f = focal35 * Double(hypot(size.width, size.height)) / 43.27
+        let f = panoramaFocal35(frames) * Double(hypot(size.width, size.height)) / 43.27
 
         // lined up on the projected frames: sideways first, upward if that's how they were shot
         var layout = panoramaLayout(small, f: f, vertical: false)
@@ -235,6 +234,19 @@ enum PhotoMerge {
             .intersection(canvas).insetBy(dx: 1, dy: 1)
         return .success(atOrigin(DevelopKernels.divide(colors, by: weights).cropped(to: crop)))
     }
+
+    /// The focal length (35 mm equivalent) the frames are projected with: the middle of what
+    /// their metadata says, 35 mm when it says nothing, kept to lenses that exist.
+    static func panoramaFocal35(_ frames: [Frame]) -> Double {
+        let known = frames.compactMap(\.focalLength35).sorted()
+        let focal = known.dropFirst(known.count / 2).first ?? 35
+        return min(panoramaFocal35Range.upperBound, max(panoramaFocal35Range.lowerBound, focal))
+    }
+
+    /// From a full-frame fisheye to the longest telephoto. Metadata outside it is wrong (a
+    /// phone's actual focal length taken for its equivalent, a broken sensor size), and a
+    /// cylinder that tight bends the frames' edges past a quarter turn.
+    static let panoramaFocal35Range = 8.0...2000.0
 
     /// Where each frame goes on the panorama (Core Image pixels of the small frames, the canvas
     /// starting at zero), its exposure gain, and the largest rectangle every part of which a

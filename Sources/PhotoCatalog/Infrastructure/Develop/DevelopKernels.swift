@@ -304,13 +304,15 @@ enum DevelopKernels {
         // A photo projected onto a cylinder of radius `f` (pixels) around the camera, as a
         // panorama is: `center` is where the photo's middle lands, `halfSize` its half size. The
         // cylinder's axis is vertical, or horizontal when `vertical` is 1 (a panorama shot upward).
+        // The angle stays short of a quarter turn, where the photo's plane runs out: the rounded
+        // edge of a very tight cylinder's projection would otherwise sample the other side.
         [[stitchable]] float2 cylinderWarp(float2 center, float f, float2 halfSize, float vertical, destination dest) {
             float2 d = dest.coord() - center;
             if (vertical > 0.5) {
-                float theta = d.y / f;
+                float theta = clamp(d.y / f, -1.5, 1.5);
                 return float2(d.x / cos(theta), f * tan(theta)) + halfSize;
             }
-            float theta = d.x / f;
+            float theta = clamp(d.x / f, -1.5, 1.5);
             return float2(f * tan(theta), d.y / cos(theta)) + halfSize;
         }
         """,
