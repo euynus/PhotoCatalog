@@ -8,11 +8,14 @@ struct AssetAvailabilityUpdate: Equatable, Sendable {
 
 enum AssetAvailabilityService {
     /// Resolves original-file availability without touching UI state. Returning
-    /// nil means the caller cancelled the scan before it completed.
+    /// nil means the caller cancelled the scan before it completed. An original is ready only
+    /// when `canRead` says the app may read it: a sandboxed copy still sees a file it has lost
+    /// access to, which is missing to it, not there.
     static func changes(
         in assets: [Asset],
         sourceRootsById: [String: SourceRootRecord],
-        probe: VolumeProbe = .system
+        probe: VolumeProbe = .system,
+        canRead: (String) -> Bool = FileAccessService.canRead
     ) -> [AssetAvailabilityUpdate]? {
         let identifiers = Set(sourceRootsById.values.compactMap(\.volumeIdentifier))
         let mountedRoots = Dictionary(uniqueKeysWithValues: identifiers.compactMap { identifier in
@@ -37,7 +40,8 @@ enum AssetAvailabilityService {
                 placement: placements[asset.folderId] ?? .unchecked,
                 mountedRoots: mountedRoots,
                 probe: probe,
-                fileManager: fileManager
+                fileManager: fileManager,
+                canRead: canRead
             )
             if resolved.status != asset.status || resolved.localPath != asset.localPath {
                 changes.append(AssetAvailabilityUpdate(
@@ -56,7 +60,8 @@ enum AssetAvailabilityService {
         placement: VolumePlacement,
         mountedRoots: [String: URL],
         probe: VolumeProbe,
-        fileManager: FileManager
+        fileManager: FileManager,
+        canRead: (String) -> Bool
     ) -> (status: AssetStatus, localPath: String) {
         // the source folder's drive decides for its photos on that drive: not mounted, they're
         // offline, even with another drive of its name holding a file at the same path; mounted
@@ -68,7 +73,7 @@ enum AssetAvailabilityService {
                 return (.offline, path)
             case .moved(let from, let to):
                 if let relocated = VolumeMonitor.pathByReplacingVolumeRoot(in: path, oldRoot: from, newRoot: to),
-                   fileManager.fileExists(atPath: relocated) {
+                   canRead(relocated) {
                     return (.ready, relocated)
                 }
                 return (.missing, path)
@@ -77,7 +82,7 @@ enum AssetAvailabilityService {
             }
         }
 
-        if fileManager.fileExists(atPath: path) {
+        if canRead(path) {
             return (.ready, path)
         }
 
@@ -91,7 +96,7 @@ enum AssetAvailabilityService {
                newRoot: mountedRoot.path
            ),
            relocated != path,
-           fileManager.fileExists(atPath: relocated) {
+           canRead(relocated) {
             return (.ready, relocated)
         }
 

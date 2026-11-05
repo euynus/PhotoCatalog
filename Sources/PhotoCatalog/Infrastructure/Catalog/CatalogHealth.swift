@@ -33,7 +33,10 @@ struct HealthReport: Sendable {
 }
 
 enum CatalogHealth {
-    static func check(_ store: CatalogStore, assets: [Asset]) -> HealthReport {
+    /// `canRead` decides whether an original is there: a sandboxed copy still sees one it has
+    /// lost access to, which is missing to it.
+    static func check(_ store: CatalogStore, assets: [Asset],
+                      canRead: (String) -> Bool = FileAccessService.canRead) -> HealthReport {
         var r = HealthReport()
         r.dbIntegrityOK = (store.db.scalarText("PRAGMA integrity_check;") ?? "") == "ok"
         let real = assets.filter { !$0.isDemo && !$0.deleted }
@@ -41,7 +44,7 @@ enum CatalogHealth {
         let fm = FileManager.default
         r.missingOriginals = real.filter {
             guard let p = $0.localPath, !p.isEmpty else { return true }
-            return !fm.fileExists(atPath: p)
+            return !canRead(p)
         }.count
         r.missingThumbnails = real.filter {
             $0.thumb.isEmpty || (!$0.thumb.hasPrefix("http") && !fm.fileExists(atPath: $0.thumb))

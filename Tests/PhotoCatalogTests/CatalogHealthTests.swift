@@ -30,4 +30,25 @@ final class CatalogHealthTests: XCTestCase {
                                 bookmark: nil)
         XCTAssertEqual(CatalogHealth.check(store, assets: []).unavailableSourceRoots, 1)
     }
+
+    /// An original the app can't read (a sandboxed copy that lost access to it still sees it) is
+    /// a missing one to the health check, and to the scan of the originals' availability.
+    func testAnOriginalThatCantBeReadIsMissing() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-health-read-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try CatalogStore(packageURL: dir.appendingPathComponent("Library.photolibrary"))
+        let original = dir.appendingPathComponent("IMG_0001.JPG")
+        try Data("jpeg".utf8).write(to: original)
+        var asset = DemoData.assets[0]
+        asset.isDemo = false
+        asset.localPath = original.path
+        asset.status = .ready
+
+        XCTAssertEqual(CatalogHealth.check(store, assets: [asset]).missingOriginals, 0)
+        XCTAssertEqual(CatalogHealth.check(store, assets: [asset], canRead: { _ in false }).missingOriginals, 1)
+
+        XCTAssertEqual(AssetAvailabilityService.changes(in: [asset], sourceRootsById: [:]), [])
+        XCTAssertEqual(AssetAvailabilityService.changes(in: [asset], sourceRootsById: [:], canRead: { _ in false }),
+                       [AssetAvailabilityUpdate(assetId: asset.id, status: .missing, localPath: original.path)])
+    }
 }
