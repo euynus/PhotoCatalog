@@ -1410,11 +1410,13 @@ final class CatalogStore: @unchecked Sendable {
             """, [.text(album.id), .null, .text("album"), .text(album.name),
                   .int(sortOrder), .text(now), .text(now)])
             try db.run("DELETE FROM album_assets WHERE album_id=?;", [.text(album.id)])
+            // a photo the catalog has no row for (a demo photo, never saved) is left out, rather
+            // than failing the foreign key and the save of the album's other photos with it
             for (index, assetId) in album.assetIds.enumerated() {
                 try db.run("""
                 INSERT INTO album_assets(album_id, asset_id, position, added_at)
-                VALUES(?,?,?,?);
-                """, [.text(album.id), .text(assetId), .int(index), .text(now)])
+                SELECT ?, id, ?, ? FROM assets WHERE id=?;
+                """, [.text(album.id), .int(index), .text(now), .text(assetId)])
             }
         }
     }

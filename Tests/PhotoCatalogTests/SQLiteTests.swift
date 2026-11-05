@@ -162,6 +162,23 @@ final class SQLiteTests: XCTestCase {
         XCTAssertEqual(store.assetCount(), 1)
     }
 
+    /// An album (or the Quick Collection) holding a photo the catalog has no row for — a demo
+    /// photo, which is never saved — still saves its catalog photos, rather than the whole save
+    /// failing the album_assets foreign key and rolling back.
+    func testAlbumWithAPhotoNotInTheCatalogSavesTheRest() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-album-unsaved-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try CatalogStore(packageURL: dir.appendingPathComponent("Library.photolibrary"))
+        var asset = DemoData.assets[0]
+        asset.isDemo = false
+        try store.upsert([asset])
+        let demo = DemoData.assets[1]
+
+        XCTAssertNoThrow(try store.saveAlbum(Album(id: "album-1", name: "Mixed", assetIds: [demo.id, asset.id])))
+        XCTAssertEqual(try store.loadAlbums(), [Album(id: "album-1", name: "Mixed", assetIds: [asset.id])])
+    }
+
     func testSmartAlbumUpdateAndDeletePreserveAssets() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-smart-album-crud-\(UUID().uuidString)")
