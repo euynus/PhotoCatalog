@@ -531,6 +531,9 @@ enum DevelopRenderer {
                            photo: (url: URL, isRaw: Bool)?, rangeSource: CIImage? = nil) -> CIImage? {
         let base: CIImage?
         if mask.kind.isRange {
+            // a color range with nothing sampled yet isn't a range: nothing to be inside or,
+            // inverted, outside of
+            guard let range = mask.range, range.kind == .luminance || !range.samples.isEmpty else { return nil }
             // the whole photo, narrowed to its range below
             base = CIImage(color: .white).cropped(to: extent)
         } else if mask.kind.isAutomatic {

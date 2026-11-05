@@ -1772,6 +1772,14 @@ enum DevelopCheck {
         let unsampled = develop(halves, c), before = develop(halves, .neutral)
         assert(abs(Int(pixel(unsampled, 10, 32).r) - Int(pixel(before, 10, 32).r)) < 3,
                "a color range with nothing sampled covers nothing")
+        // not yet a range, so nothing to be outside of: inverted it still covers nothing
+        nothing.inverted = true
+        c.masks = [nothing]
+        let unsampledInverted = develop(halves, c)
+        assert([(10, 32), (54, 32)].allSatisfy { x, y in
+            let after = pixel(unsampledInverted, x, y), plain = pixel(before, x, y)
+            return abs(Int(after.r) - Int(plain.r)) < 3 && abs(Int(after.b) - Int(plain.b)) < 3
+        }, "an inverted color range with nothing sampled covers nothing")
 
         // a radial mask narrowed to the light tones: only where both hold
         var radial = LocalAdjustment(kind: .radial)
