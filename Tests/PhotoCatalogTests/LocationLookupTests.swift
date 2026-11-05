@@ -26,6 +26,14 @@ final class LocationLookupTests: XCTestCase {
     @MainActor
     func testGPXMatchingOffTheMainActorMatchesAsTheAppDoes() async {
         let app = AppState()
+        // photos without a location of their own, so matching without overwriting places them too
+        // (what `AppState()` starts with depends on the run: demo photos come located)
+        app.assets = app.assets.map { asset in
+            var asset = asset
+            asset.gps = (0, 0)
+            asset.location = Asset.locationLabel(nil)
+            return asset
+        }
         let photos = Array(app.assets.prefix(40))
         let ids = Set(photos.map(\.id))
         let first = photos.min { $0.date < $1.date }!, last = photos.max { $0.date < $1.date }!
