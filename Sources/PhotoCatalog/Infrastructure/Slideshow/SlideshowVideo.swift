@@ -109,9 +109,9 @@ enum SlideshowVideo {
                 }
             }
         }
-        group.wait()
+        waitForInputs(group, writer: writer, stop: { failed.isSet || cancelled() })
         guard !cancelled(), !failed.isSet, writer.status == .writing else {
-            writer.cancelWriting()
+            if writer.status == .writing { writer.cancelWriting() }
             try? FileManager.default.removeItem(at: url)
             return false
         }
@@ -125,6 +125,17 @@ enum SlideshowVideo {
         }
         progress(1)
         return true
+    }
+
+    /// Waits until the inputs in `group` are done, or the export has to stop (`stop`: an input
+    /// failed, or it was cancelled) or the writer has (failed, or was cancelled): then the writer
+    /// is cancelled, as an input waiting its turn would never be asked for more and never be done.
+    static func waitForInputs(_ group: DispatchGroup, writer: AVAssetWriter, stop: () -> Bool) {
+        while group.wait(timeout: .now() + .milliseconds(100)) == .timedOut {
+            guard stop() || writer.status != .writing else { continue }
+            if writer.status == .writing { writer.cancelWriting() }
+            return
+        }
     }
 
     /// How long the music at `url` lasts, in seconds.
