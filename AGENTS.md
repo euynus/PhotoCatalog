@@ -50,7 +50,7 @@ Layered per PRD §11, business logic separated from UI, all under `Sources/Photo
   - Sheets are routed by the string `app.sheet` (switched in `MainView.sheetContent`). A sheet closes with its own buttons or Esc (RootView's key handling), never a close box.
   - Settings is a SwiftUI `Settings` scene (⌘,). Code opens it by bumping `app.settingsRequest`, which RootView turns into `openSettings`. `openSettings(category:)` opens it at a category.
 
-Data flow: views mutate through `AppState`; catalog-backed edits (rating/flag/color/keywords/title/caption, develop settings) write through `CatalogStore` and survive relaunch. Imported real assets coexist with the in-memory demo set (demo assets are marked and never persisted).
+Data flow: views mutate through `AppState`; catalog-backed edits (rating/flag/color/keywords/title/caption, develop settings) write through `CatalogStore` and survive relaunch. The demo set (marked `isDemo`, never persisted) is what `AppState` starts with and what the headless checks run against; opening a catalog replaces it with the catalog's photos, empty or not.
 
 SwiftUI pitfalls hit here before:
 - A scroll view flush with the top of the inspector or sidebar column runs under the toolbar, where hit-testing is offset. Start such content a point lower (`.padding(.top, 1)`).
