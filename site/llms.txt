@@ -22,6 +22,7 @@ Key facts:
 - [Product page](https://photocatalog.gooday.dev/): overview, screenshots and questions and answers
 - [产品页（中文）](https://photocatalog.gooday.dev/zh/): the same page in Simplified Chinese
 - [Privacy policy](https://photocatalog.gooday.dev/privacy/): what the app sends, and when
+- [隐私政策（中文）](https://photocatalog.gooday.dev/zh/privacy/): the privacy policy in Simplified Chinese
 
 ## Documentation
 

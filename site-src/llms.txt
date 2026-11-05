@@ -22,6 +22,7 @@ Key facts:
 - [Product page]({{site}}/): overview, screenshots and questions and answers
 - [产品页（中文）]({{site}}/zh/): the same page in Simplified Chinese
 - [Privacy policy]({{site}}/privacy/): what the app sends, and when
+- [隐私政策（中文）]({{site}}/zh/privacy/): the privacy policy in Simplified Chinese
 
 ## Documentation
 

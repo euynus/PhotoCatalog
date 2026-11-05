@@ -40,6 +40,7 @@ struct DevelopSidebar: View {
                         .menuIndicator(.hidden)
                         .fixedSize()
                         .help("导入或导出预设（.xmp，可与 Lightroom 互通）")
+                        .accessibilityLabel("导入或导出预设")
                         Button { app.showDevelopTransfer(.preset) } label: { Image(systemName: "plus") }
                             .buttonStyle(.borderless)
                             .help("以当前设置存储为预设")

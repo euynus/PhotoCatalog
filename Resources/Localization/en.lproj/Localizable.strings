@@ -766,6 +766,7 @@
 "配置文件" = "Profile";
 "镜头配置文件校正" = "lens profile corrections";
 "导入或导出预设（.xmp，可与 Lightroom 互通）" = "Import or export presets (.xmp, compatible with Lightroom)";
+"导入或导出预设" = "Import or Export Presets";
 "导入预设…" = "Import Presets…";
 "导出我的预设…" = "Export My Presets…";
 "导出的预设可再导入本应用，也可导入 Lightroom 或 Camera Raw（两者共有的设置）" = "Exported presets can be imported back into this app, or into Lightroom or Camera Raw (the settings they share)";
@@ -823,6 +824,7 @@
 "导入 .cube 文件，为照片套用电影感等风格" = "Import .cube files to give photos a film look or other styles";
 "导入 LUT…" = "Import LUT…";
 "导入或删除 LUT（.cube）" = "Import or delete LUTs (.cube)";
+"导入或删除 LUT" = "Import or Delete LUTs";
 "已删除的 LUT" = "Deleted LUT";
 "已导入 %lld 个 LUT" = "Imported %lld LUTs";
 "所选文件不是可用的 3D LUT" = "The chosen files aren’t 3D LUTs";

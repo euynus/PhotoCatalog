@@ -148,6 +148,7 @@ struct DevelopPanel: View {
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .help("导入或删除 LUT（.cube）")
+                    .accessibilityLabel("导入或删除 LUT")
                 }) { lut(asset, settings) }
                 section(L("AI 调整"), id: "ai") { DevelopByTextField() }
                 section(L("软打样"), id: "softProof", accessory: {
