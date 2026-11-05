@@ -384,6 +384,8 @@ def convert(name, weights, denoise, out):
     got = mlmodel.predict(feed)["output"]
     error, mean = float(np.abs(got - expected).max()), float(np.abs(got - expected).mean())
     print(f"{output_name}: difference from PyTorch largest {error:.4f}, mean {mean:.5f}")
+    # both, on purpose: 8-bit weights (inpaint) move a few pixels past 0.05 while the image as a
+    # whole stays within rounding; a broken conversion moves the mean too
     if error > 0.05 and mean > 0.002:
         sys.exit("the converted model doesn't match")
     os.makedirs(out, exist_ok=True)
