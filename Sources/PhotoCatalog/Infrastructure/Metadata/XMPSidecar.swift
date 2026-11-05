@@ -10,11 +10,13 @@ struct SidecarMetadata: Equatable {
     /// taken off.
     var rating: Int?
     var label: String?
-    var keywords: [String] = []
-    var title: String = ""
-    var caption: String = ""
-    var author: String = ""
-    var copyright: String = ""
+    /// The keywords, title, caption, author and copyright likewise: nil when the sidecar doesn't
+    /// have the property, empty when it has it empty (another app cleared it).
+    var keywords: [String]?
+    var title: String?
+    var caption: String?
+    var author: String?
+    var copyright: String?
     var captureDate: Date?
     /// Latitude, longitude in degrees.
     var gps: (Double, Double)?
@@ -323,22 +325,26 @@ enum XMPSidecar {
     }
 
     /// Applies a sidecar's metadata to `asset`: the sidecar's rating, label, text, credits,
-    /// capture time and location win where it has them; its keywords are merged ahead of the
-    /// photo's own, or replace them when `replacingKeywords` (reading changes another app made).
+    /// capture time and location win where it has them (text it has emptied empties the photo's);
+    /// its keywords are merged ahead of the photo's own, or replace them — emptied, clear them —
+    /// when `replacingKeywords` (reading changes another app made).
     static func apply(_ sc: SidecarMetadata, to asset: inout Asset, replacingKeywords: Bool = false) {
         if let rating = sc.rating { asset.rating = rating }
         if let label = sc.label {
             // a label outside the app's colors (a custom Lightroom set) leaves the photo's alone
             if label.isEmpty { asset.colorLabel = nil } else if let color = sc.colorLabel { asset.colorLabel = color }
         }
-        if !sc.keywords.isEmpty {
-            asset.keywords = replacingKeywords ? KeywordService.normalize(sc.keywords)
-                                               : KeywordService.normalize(sc.keywords + asset.keywords)
+        if let keywords = sc.keywords {
+            if replacingKeywords {
+                asset.keywords = KeywordService.normalize(keywords)
+            } else if !keywords.isEmpty {
+                asset.keywords = KeywordService.normalize(keywords + asset.keywords)
+            }
         }
-        if !sc.title.isEmpty { asset.title = sc.title }
-        if !sc.caption.isEmpty { asset.caption = sc.caption }
-        if !sc.author.isEmpty { asset.author = sc.author }
-        if !sc.copyright.isEmpty { asset.copyright = sc.copyright }
+        if let title = sc.title { asset.title = title }
+        if let caption = sc.caption { asset.caption = caption }
+        if let author = sc.author { asset.author = author }
+        if let copyright = sc.copyright { asset.copyright = copyright }
         // a capture-time correction made in another app (or mirrored by us) takes precedence
         if let d = sc.captureDate { asset.date = d; asset.captureDateSource = "sidecar" }
         // a location set in another app (or by us) travels in the sidecar
@@ -435,6 +441,15 @@ private final class SidecarParser: NSObject, XMLParserDelegate {
 
     func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?,
                 qualifiedName qName: String?, attributes attrs: [String: String]) {
+        // a property of the description that's there at all, even with nothing in it (another
+        // app emptied it), is read as empty until its items say otherwise
+        if path.last?.hasSuffix("Description") == true {
+            if name.hasSuffix("subject") {
+                if result.keywords == nil { result.keywords = [] }
+            } else if let property = Self.textProperties.first(where: { name.hasSuffix($0) }) {
+                presentText(property)
+            }
+        }
         path.append(name)
         text = ""
         if name.hasSuffix("li") { language = attrs["xml:lang"] }
@@ -453,13 +468,24 @@ private final class SidecarParser: NSObject, XMLParserDelegate {
         if path.count >= 2, path[path.count - 2].hasSuffix("Description") { property(name, trimmed) }
         if name.hasSuffix("li") {
             if inside("subject") {
-                if !trimmed.isEmpty { result.keywords.append(trimmed) }
-            } else if let property = ["title", "description", "creator", "rights"].first(where: inside) {
+                if !trimmed.isEmpty { result.keywords = (result.keywords ?? []) + [trimmed] }
+            } else if let property = Self.textProperties.first(where: inside) {
                 textItem(trimmed, of: property)
             }
         }
         path.removeLast()
         text = ""
+    }
+
+    private static let textProperties = ["title", "description", "creator", "rights"]
+
+    private func presentText(_ property: String) {
+        switch property {
+        case "title": if result.title == nil { result.title = "" }
+        case "description": if result.caption == nil { result.caption = "" }
+        case "creator": if result.author == nil { result.author = "" }
+        default: if result.copyright == nil { result.copyright = "" }
+        }
     }
 
     private func textItem(_ value: String, of property: String) {

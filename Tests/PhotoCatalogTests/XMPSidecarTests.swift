@@ -75,6 +75,86 @@ final class XMPSidecarTests: XCTestCase {
         """)
     }
 
+    /// A sidecar in which another app emptied the keywords, title, caption, creator and
+    /// copyright, as Lightroom leaves them: rated 4, as `sample()` is.
+    private func emptiedSidecar() throws -> URL {
+        try sidecar("\(UUID().uuidString).xmp", """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+         <rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+           xmlns:dc="http://purl.org/dc/elements/1.1/" xmp:Rating="4" xmp:Label="Red">
+          <dc:subject><rdf:Bag/></dc:subject>
+          <dc:title><rdf:Alt><rdf:li xml:lang="x-default"></rdf:li></rdf:Alt></dc:title>
+          <dc:description><rdf:Alt/></dc:description>
+          <dc:creator><rdf:Seq/></dc:creator>
+          <dc:rights><rdf:Alt><rdf:li xml:lang="x-default"> </rdf:li></rdf:Alt></dc:rights>
+         </rdf:Description>
+        </rdf:RDF></x:xmpmeta>
+        """)
+    }
+
+    /// Keywords and text another app emptied read as emptied, not as never written: what the
+    /// sidecar says differs from a sidecar that doesn't mention them.
+    func testEmptiedPropertiesAreToldFromAbsentOnes() throws {
+        let emptied = try XCTUnwrap(XMPSidecar.read(try emptiedSidecar()))
+        let absent = try XCTUnwrap(XMPSidecar.read(try description(#"xmp:Rating="4" xmp:Label="Red""#)))
+        XCTAssertNotEqual(emptied, absent, "an emptied sidecar reads as one that doesn't mention them")
+    }
+
+    /// Read Metadata from Files takes another app's emptying: the photo's keywords, title,
+    /// caption, author and copyright are cleared, and until then the sidecar doesn't agree with
+    /// the photo (it's changed elsewhere).
+    func testEmptiedPropertiesClearThePhotosOnRead() throws {
+        let emptied = try XCTUnwrap(XMPSidecar.read(try emptiedSidecar()))
+        let photo = sample()
+        XCTAssertFalse(XMPSidecar.agrees(emptied, with: photo), "an emptied sidecar agrees with the photo")
+        var read = photo
+        XMPSidecar.apply(emptied, to: &read, replacingKeywords: true)
+        XCTAssertEqual(read.keywords, [])
+        XCTAssertEqual(read.title, "")
+        XCTAssertEqual(read.caption, "")
+        XCTAssertEqual(read.author, "")
+        XCTAssertEqual(read.copyright, "")
+        XCTAssertEqual(read.rating, 4)
+        XCTAssertTrue(XMPSidecar.agrees(emptied, with: read), "once read, it agrees")
+    }
+
+    /// A sidecar that doesn't mention keywords or text (an app that writes only the rating)
+    /// leaves the photo's as they are, and agrees with it.
+    func testAbsentPropertiesLeaveThePhotosAlone() throws {
+        let absent = try XCTUnwrap(XMPSidecar.read(try description(#"xmp:Rating="4" xmp:Label="Red""#)))
+        let photo = sample()
+        XCTAssertTrue(XMPSidecar.agrees(absent, with: photo))
+        var read = photo
+        XMPSidecar.apply(absent, to: &read, replacingKeywords: true)
+        XCTAssertEqual(read.keywords, ["trip"])
+        XCTAssertEqual(read.title, "Title")
+        XCTAssertEqual(read.caption, "Caption")
+        XCTAssertEqual(read.author, "Author")
+        XCTAssertEqual(read.copyright, "© Author")
+    }
+
+    /// On import, a sidecar's emptied keywords add none (keywords merge there, beside the scene
+    /// tags), and our own sidecar of a photo without keywords or text reads back as it was.
+    func testEmptiedKeywordsMergeNothingOnImportAndOurOwnRoundTrip() throws {
+        let emptied = try XCTUnwrap(XMPSidecar.read(try emptiedSidecar()))
+        var imported = sample()
+        XMPSidecar.apply(emptied, to: &imported)
+        XCTAssertEqual(imported.keywords, ["trip"])
+
+        var bare = sample()
+        bare.keywords = []
+        bare.title = ""
+        bare.caption = ""
+        bare.author = ""
+        bare.copyright = ""
+        let url = scratch.appendingPathComponent("bare-photo.xmp")
+        XCTAssertTrue(XMPSidecar.write(bare, to: url))
+        let own = try XCTUnwrap(XMPSidecar.read(url))
+        XCTAssertTrue(XMPSidecar.agrees(own, with: bare))
+        XCTAssertEqual(own.keywords, [])
+        XCTAssertEqual(own.title, "")
+    }
+
     /// A rating that isn't a number from -1 (rejected) to 5 is ignored, not trusted.
     func testMalformedRatingIsIgnored() throws {
         for value in ["1e20", "-1e20", "nan", "inf", "7", "-2"] {
