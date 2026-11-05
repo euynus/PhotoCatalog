@@ -5,15 +5,24 @@
 # and COPYRIGHT, and with SDK_PATH set adds the toolchain the app was built with.
 
 # What Xcode records about the toolchain in the Info.plist; App Store Connect checks the Xcode
-# and SDK versions an upload was built with.
+# and SDK versions an upload was built with. Left out when they can't be read (a build with the
+# Command Line Tools only), except in an App Store build (APPSTORE, set by script/appstore.sh),
+# which stops instead of going out without them.
 toolchain_plist_keys() {
-  [[ -n "${SDK_PATH:-}" ]] || return 0
-  local xcode_version xcode_build sdk_version sdk_build major minor patch
-  xcode_version="$(xcodebuild -version 2>/dev/null | awk '/^Xcode / {print $2}')" || true
-  [[ -n "$xcode_version" ]] || return 0
-  xcode_build="$(xcodebuild -version | awk '/^Build version / {print $3}')"
-  sdk_version="$(xcrun --sdk "$SDK_PATH" --show-sdk-version)"
-  sdk_build="$(xcrun --sdk "$SDK_PATH" --show-sdk-build-version)"
+  local xcode_info="" xcode_version="" xcode_build="" sdk_version="" sdk_build="" major minor patch
+  if [[ -n "${SDK_PATH:-}" ]]; then
+    xcode_info="$(xcodebuild -version 2>/dev/null)" || xcode_info=""
+    xcode_version="$(awk '/^Xcode / {print $2}' <<<"$xcode_info")"
+    xcode_build="$(awk '/^Build version / {print $3}' <<<"$xcode_info")"
+    sdk_version="$(xcrun --sdk "$SDK_PATH" --show-sdk-version 2>/dev/null)" || sdk_version=""
+    sdk_build="$(xcrun --sdk "$SDK_PATH" --show-sdk-build-version 2>/dev/null)" || sdk_build=""
+  fi
+  if [[ -z "$xcode_version" || -z "$xcode_build" || -z "$sdk_version" || -z "$sdk_build" ]]; then
+    [[ -n "${APPSTORE:-}" ]] || return 0
+    echo "error: an App Store build needs the Xcode and SDK versions for its Info.plist (DTXcode, DTSDKBuild, ...);" \
+      "check xcodebuild -version and xcrun --sdk \"${SDK_PATH:-}\" --show-sdk-version" >&2
+    return 1
+  fi
   IFS=. read -r major minor patch <<<"$xcode_version"
   cat <<KEYS
   <key>BuildMachineOSBuild</key>
@@ -38,6 +47,9 @@ KEYS
 }
 
 write_info_plist() {
+  # worked out first: a failure inside the heredoc would go unnoticed
+  local toolchain
+  toolchain="$(toolchain_plist_keys)" || return 1
   cat <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -109,7 +121,7 @@ write_info_plist() {
       <true/>
     </dict>
   </array>
-$(toolchain_plist_keys)
+$toolchain
 </dict>
 </plist>
 PLIST

@@ -42,6 +42,15 @@ final class CatalogDocumentTypeTests: XCTestCase {
 
     /// The Info.plist script/build_and_run.sh writes into the app bundle.
     private func infoPlist() throws -> [String: Any] {
+        let (status, data) = try writeInfoPlist()
+        XCTAssertEqual(status, 0, "script/info_plist.sh failed")
+        let plist = try PropertyListSerialization.propertyList(from: data, format: nil)
+        return try XCTUnwrap(plist as? [String: Any], "script/info_plist.sh wrote no dictionary")
+    }
+
+    /// Runs script/info_plist.sh's write_info_plist with `environment` added (or replacing the
+    /// defaults): its exit status and what it printed.
+    private func writeInfoPlist(_ environment: [String: String] = [:]) throws -> (Int32, Data) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", "source \"$1\" && write_info_plist", "bash",
@@ -49,14 +58,34 @@ final class CatalogDocumentTypeTests: XCTestCase {
         process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "APP_NAME": "PhotoCatalog",
                                "BUNDLE_ID": "com.photocatalog.app", "APP_VERSION": "1.0", "BUILD_NUMBER": "1",
                                "MIN_SYSTEM_VERSION": "14.0", "COPYRIGHT": "Copyright © 2026 euynus"]
+            .merging(environment) { _, added in added }
         let output = Pipe()
         process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
         try process.run()
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        XCTAssertEqual(process.terminationStatus, 0, "script/info_plist.sh failed")
-        let plist = try PropertyListSerialization.propertyList(from: data, format: nil)
-        return try XCTUnwrap(plist as? [String: Any], "script/info_plist.sh wrote no dictionary")
+        return (process.terminationStatus, data)
+    }
+
+    /// App Store Connect wants the Xcode and SDK an upload was built with: an App Store build
+    /// whose toolchain can't be read stops, rather than going out without them.
+    func testAppStoreInfoPlistNeedsTheToolchain() throws {
+        let bin = root.appendingPathComponent("bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let xcodebuild = bin.appendingPathComponent("xcodebuild")
+        try Data("#!/bin/sh\nexit 1\n".utf8).write(to: xcodebuild)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: xcodebuild.path)
+        let path = bin.path + ":/usr/bin:/bin:/usr/sbin:/sbin"
+
+        let (failing, _) = try writeInfoPlist(["PATH": path, "APPSTORE": "1", "SDK_PATH": "/nonexistent.sdk"])
+        XCTAssertNotEqual(failing, 0, "an App Store Info.plist went out without DTXcode and DTSDKBuild")
+        let (unset, _) = try writeInfoPlist(["APPSTORE": "1"])
+        XCTAssertNotEqual(unset, 0, "an App Store Info.plist went out without knowing its SDK")
+        // a developer's build without Xcode still gets its Info.plist
+        let (developer, data) = try writeInfoPlist(["PATH": path, "SDK_PATH": "/nonexistent.sdk"])
+        XCTAssertEqual(developer, 0)
+        XCTAssertNotNil(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
     }
 
     @MainActor

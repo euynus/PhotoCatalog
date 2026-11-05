@@ -1,6 +1,6 @@
 # PhotoCatalog features
 
-The full reference to what PhotoCatalog does; [README](../README.md) has the overview. Menu and control names below are given in Chinese, the app's source language; the English interface shows their translations.
+The full reference to what PhotoCatalog does; [README](../README.md) has the overview. Menu and control names below are given as the English interface shows them.
 
 ## Library
 
