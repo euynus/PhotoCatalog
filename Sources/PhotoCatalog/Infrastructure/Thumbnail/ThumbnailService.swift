@@ -213,11 +213,13 @@ final class ThumbnailService: @unchecked Sendable {
         }
 
         let prefersQuickLook = Self.prefersQuickLook(for: original)
+        // a black Quick Look image (a RAW it can't render yet) is passed over before it's
+        // written, so it never replaces a good file already cached
         if prefersQuickLook,
-           let written = quickLookThumbnail(from: original, maxPixel: kind.maxPixel)
-            .flatMap({ writeJPEG($0, to: out) }) {
-            if !Self.imageIsUniformBlack(at: written) { return written }
-            try? FileManager.default.removeItem(at: written)
+           let image = quickLookThumbnail(from: original, maxPixel: kind.maxPixel),
+           !Self.imageIsUniformBlack(image),
+           let written = writeJPEG(image, to: out) {
+            return written
         }
 
         if let written = imageIOThumbnail(from: original, maxPixel: kind.maxPixel)
@@ -304,9 +306,14 @@ final class ThumbnailService: @unchecked Sendable {
             kCGImageSourceThumbnailMaxPixelSize: 32,
         ]
         guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, options as CFDictionary) else { return true }
+        return imageIsUniformBlack(cg)
+    }
 
-        let width = cg.width
-        let height = cg.height
+    /// Whether `image` is black all over, looked at 32 px across at most.
+    static func imageIsUniformBlack(_ image: CGImage) -> Bool {
+        let scale = min(1, 32 / Double(max(image.width, image.height, 1)))
+        let width = max(1, Int((Double(image.width) * scale).rounded()))
+        let height = max(1, Int((Double(image.height) * scale).rounded()))
         let bytesPerPixel = 4
         var data = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
         guard let context = CGContext(
@@ -319,7 +326,8 @@ final class ThumbnailService: @unchecked Sendable {
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return true }
 
-        context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+        context.interpolationQuality = .medium
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         var index = 0
         while index < data.count {
             if data[index] > 2 || data[index + 1] > 2 || data[index + 2] > 2 {

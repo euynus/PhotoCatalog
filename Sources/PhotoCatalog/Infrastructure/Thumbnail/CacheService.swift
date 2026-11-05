@@ -94,6 +94,10 @@ enum CacheService {
                                 maxBytes: maxBytes)
     }
 
+    /// How long a file being written into the cache (`.tmp-…`, moved into place once encoded)
+    /// is left to its writer; one older than that was left by a crash.
+    static let writingGrace: TimeInterval = 600
+
     private static func cacheFiles(in cacheURL: URL) -> [CacheFile] {
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
         guard let enumerator = FileManager.default.enumerator(at: cacheURL, includingPropertiesForKeys: keys) else {
@@ -101,10 +105,14 @@ enum CacheService {
         }
         // the enumerator hands back resolved paths (/tmp → /private/tmp)
         let root = cacheURL.resolvingSymlinksInPath().path
+        let writing = Date().addingTimeInterval(-writingGrace)
         return enumerator.compactMap { item -> CacheFile? in
             guard let url = item as? URL,
                   let values = try? url.resourceValues(forKeys: Set(keys)),
                   values.isRegularFile == true else { return nil }
+            if url.lastPathComponent.hasPrefix(".tmp-"), (values.contentModificationDate ?? .distantPast) > writing {
+                return nil
+            }
             let relative = url.path.hasPrefix(root) ? url.path.dropFirst(root.count) : Substring(url.path)
             return CacheFile(url: url,
                              size: Int64(values.fileSize ?? 0),
