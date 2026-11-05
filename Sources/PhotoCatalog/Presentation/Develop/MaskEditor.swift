@@ -502,7 +502,10 @@ struct MaskMapper {
             return screen(mask.center)
         case .brush:
             return screen(mask.strokes.first { $0.pointCount > 0 }?.point(0) ?? mask.center)
-        case .subject, .sky, .person, .luminanceRange, .object, .landscape:
+        case .subject, .sky, .person, .object, .landscape:
+            // the centroid of what was found, in the photo as decoded
+            return screen(decoded: mask.center)
+        case .luminanceRange:
             return screen(mask.center)
         case .colorRange:
             return screen(mask.range?.samples.first ?? mask.center)

@@ -117,4 +117,26 @@ final class DistortionPickTests: XCTestCase {
         let discShare = Double.pi * disc.r * disc.r / Double(width * height)
         XCTAssertLessThan(result.coverage, discShare * 2, "the background isn't")
     }
+
+    /// A found mask's pin marks its centroid, which is found (and kept) in the photo as decoded:
+    /// with Distortion +100 it showed where that place would be undistorted, off the mask.
+    func testAFoundMasksPinShowsWhereTheCorrectedPhotoShowsIt() {
+        var settings = DevelopSettings.neutral
+        settings.distortion = 100
+        let mapper = MaskMapper(display: CGRect(x: 0, y: 0, width: 600, height: 400), settings: settings,
+                                sourceSize: size)
+        let centroid = CGPoint(x: 0.9, y: 0.85)
+        for kind in [LocalAdjustment.Kind.subject, .sky, .person, .object, .landscape] {
+            var mask = LocalAdjustment(kind: kind)
+            mask.center = centroid
+            let pin = mapper.pin(of: mask), shown = mapper.screen(decoded: centroid)
+            XCTAssertGreaterThan(hypot(mapper.screen(centroid).x - shown.x, mapper.screen(centroid).y - shown.y), 5)
+            XCTAssertEqual(pin.x, shown.x, accuracy: 0.01, "\(kind)")
+            XCTAssertEqual(pin.y, shown.y, accuracy: 0.01, "\(kind)")
+        }
+        // a radial mask's center is placed on the corrected photo, and shown there
+        var radial = LocalAdjustment(kind: .radial)
+        radial.center = centroid
+        XCTAssertEqual(mapper.pin(of: radial), mapper.screen(centroid))
+    }
 }
