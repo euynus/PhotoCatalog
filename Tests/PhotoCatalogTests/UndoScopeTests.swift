@@ -122,7 +122,66 @@ final class UndoScopeTests: XCTestCase {
         XCTAssertEqual(db.scalarInt("SELECT rating FROM assets WHERE id=?;", [.text(id)]), 0)
     }
 
+    // MARK: - photos removed for good since
+
+    @MainActor
+    func testUndoingARemovalLeavesOutAPhotoOfASourceRemovedSince() throws {
+        let (app, package, id) = try openCatalogWithPhoto(asSource: true)
+        step { app.removeSelected() }
+        app.confirmDestructiveAction = { _, _, _ in true }
+        app.select(Selection(type: .folder, id: Self.sourceId, name: "Source"))
+        app.removeSelectedSource()
+        XCTAssertFalse(app.folders.contains { $0.id == Self.sourceId }, "the source is gone")
+        XCTAssertEqual(undo.undoActionName, "从目录库移除", "removing a source registers no step")
+
+        undo.undo()
+
+        XCTAssertEqual(asset(id, in: app)?.deleted, true, "the photo stays out with its source")
+        XCTAssertFalse(app.list.contains { $0.id == id })
+        XCTAssertEqual(try deletedFlag(id, in: package), 1, "in the catalog too")
+    }
+
+    @MainActor
+    func testUndoingARemovalLeavesOutAPhotoWhoseOriginalWasTrashedSince() throws {
+        let (app, package, id) = try openCatalogWithPhoto()
+        step { app.removeSelected() }
+        undo.undo()
+        XCTAssertEqual(asset(id, in: app)?.deleted, false)
+        XCTAssertTrue(app.applyTrashedOriginals(OriginalTrashReport(trashedIds: [id])))
+        undo.redo()
+
+        undo.undo()
+
+        XCTAssertEqual(asset(id, in: app)?.deleted, true, "a photo whose original is in the Trash stays out")
+        XCTAssertFalse(app.list.contains { $0.id == id })
+        XCTAssertEqual(try deletedFlag(id, in: package), 1)
+    }
+
+    @MainActor
+    func testRedoingAVirtualCopyLeavesItOutOnceItsMastersOriginalIsTrashed() throws {
+        let (app, package, id) = try openCatalogWithPhoto()
+        step { app.createVirtualCopies() }
+        let copyId = try XCTUnwrap(app.assets.first { $0.masterId == id }?.id)
+        undo.undo()
+        XCTAssertEqual(asset(copyId, in: app)?.deleted, true, "undo takes the copy away")
+        XCTAssertTrue(app.applyTrashedOriginals(OriginalTrashReport(trashedIds: [id])))
+
+        undo.redo()
+
+        XCTAssertEqual(asset(copyId, in: app)?.deleted, true, "a copy of a trashed original stays out")
+        XCTAssertFalse(app.list.contains { $0.id == copyId })
+        XCTAssertEqual(try deletedFlag(copyId, in: package), 1)
+    }
+
     // MARK: - fixture
+
+    private static let sourceId = "src-undo-scope"
+
+    /// The catalog row's own `deleted` (loading skips soft-deleted rows).
+    private func deletedFlag(_ id: String, in package: URL) throws -> Int? {
+        try Database(path: package.appendingPathComponent("catalog.sqlite").path)
+            .scalarInt("SELECT deleted FROM assets WHERE id=?;", [.text(id)])
+    }
 
     /// One step, closed the way AppKit closes an event's group.
     @MainActor
@@ -137,22 +196,25 @@ final class UndoScopeTests: XCTestCase {
         app.assets.first { $0.id == id }
     }
 
-    /// A scratch catalog holding one real JPEG, `a.jpg`, opened in a fresh AppState with an undo manager.
+    /// A scratch catalog holding one real JPEG, `a.jpg`, opened in a fresh AppState with an undo
+    /// manager; `asSource` adds its folder as a source.
     @MainActor
-    private func openCatalogWithPhoto() throws -> (AppState, URL, String) {
+    private func openCatalogWithPhoto(asSource: Bool = false) throws -> (AppState, URL, String) {
         let source = scratch.appendingPathComponent("Source")
         let photo = source.appendingPathComponent("a.jpg")
         try writeJPEG(to: photo)
         let package = scratch.appendingPathComponent("Library.photolibrary")
         let id = "undo-scope-a"
         let photoAsset = Asset(id: id, pid: 1, ori: "l", thumb: "", preview: "", filename: photo.lastPathComponent,
-                               type: "JPG", isRaw: false, folderId: "src-undo-scope", folderName: "Source",
+                               type: "JPG", isRaw: false, folderId: Self.sourceId, folderName: "Source",
                                date: Date(timeIntervalSince1970: 1_700_000_000), width: 80, height: 60,
                                orientation: 1, camera: "", lens: "", focal: 0, aperture: 0, shutter: "", iso: 0,
                                colorSpace: "sRGB", fileMB: 0.01, rating: 0, flag: .none, keywords: [], title: "",
                                caption: "", location: "", gps: (0, 0), status: .ready, importedAt: .now,
                                localPath: photo.path, isDemo: false)
-        try CatalogStore(packageURL: package).upsert([photoAsset])
+        let store = try CatalogStore(packageURL: package)
+        if asSource { try store.addSourceRoot(id: Self.sourceId, displayName: "Source", path: source.path, bookmark: nil) }
+        try store.upsert([photoAsset])
 
         undo = UndoManager()
         undo.groupsByEvent = false   // no run loop here to close event groups

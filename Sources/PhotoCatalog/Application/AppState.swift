@@ -398,6 +398,8 @@ final class AppState {
         var current: [Asset] = [], replayedOld: [Asset] = [], replayedNew: [Asset] = []
         for (stepOld, stepNew) in zip(old, new) {
             guard let offset = index[stepNew.id] else { continue }
+            // a photo removed for good since (its source, or its original, gone) stays out
+            if stepOld.deleted, !stepNew.deleted, assets[offset].deleted, isRemovedForGood(assets[offset]) { continue }
             var asset = assets[offset]
             asset.takeChanges(from: stepOld, to: stepNew)
             edits.append((offset, asset))
@@ -415,6 +417,17 @@ final class AppState {
         ensurePrimaryValid()
         if deletionChanged { recomputeDuplicates() }
         registerUndo(from: replayedOld, to: replayedNew, actionName: actionName)
+    }
+
+    /// Sources removed, and originals moved to the Trash, since the catalog was opened. Neither
+    /// is undoable, so undo and redo of an earlier step leave their photos out of the catalog —
+    /// and a trashed original's virtual copies — rather than bring back photos of a source the
+    /// catalog no longer has, or of a file in the Trash.
+    @ObservationIgnored private var removedSourceIds: Set<String> = []
+    @ObservationIgnored private var trashedOriginalIds: Set<String> = []
+
+    private func isRemovedForGood(_ asset: Asset) -> Bool {
+        removedSourceIds.contains(asset.folderId) || trashedOriginalIds.contains(asset.masterId ?? asset.id)
     }
 
     /// The photos as a change made to a copy of them left them (duplicates resolved). Such a change
@@ -8728,6 +8741,8 @@ final class AppState {
         // the steps put back photos and albums of the catalog being replaced: ⌘Z must not
         // replay them into the next one (text fields' own steps stay)
         undoManager?.removeAllActions(withTarget: self)
+        removedSourceIds = []
+        trashedOriginalIds = []
         duplicateRecomputeGeneration &+= 1
         let a = demo ? DemoData.assets : []
         assets = a
@@ -8862,6 +8877,7 @@ final class AppState {
             return false
         }
         replaceAssetsForMutation(updated)
+        if action == .moveToTrash { trashedOriginalIds.formUnion(report.removedIds) }
         purgeCacheFiles(forAssetIds: removedIds)
         duplicateGroupsCache.removeAll { $0.id == group.id }
         recomputeDuplicates()
@@ -10757,6 +10773,7 @@ final class AppState {
             push("源移除失败", "warning")
             return
         }
+        removedSourceIds.insert(folderId)
         if !ids.isEmpty {
             replaceInPlace(positions(of: ids).map { offset in
                 var asset = assets[offset]
@@ -12094,6 +12111,7 @@ final class AppState {
         // the trashed files' virtual copies, and any copies selected with them, leave the catalog too
         let removed = result.trashedIds.union(virtualCopyIds(of: result.trashedIds)).union(selectedCopies)
         guard mutate(removed, { $0.deleted = true }) else { return false }
+        trashedOriginalIds.formUnion(result.trashedIds)
         purgeCacheFiles(forAssetIds: removed)
         selectedIds.subtract(removed)
         ensurePrimaryValid()
