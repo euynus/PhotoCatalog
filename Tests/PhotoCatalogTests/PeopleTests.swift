@@ -138,6 +138,28 @@ final class PeopleTests: CatalogTestCase {
         XCTAssertEqual(try store.loadAssets().first { $0.id == ids[1] }?.keywords, ["人物", "人物/明明"])
     }
 
+    /// Renaming or deleting a person keyword from the sidebar runs after a modal alert, outside
+    /// any event's undo group: the keyword edit and the face names are still one step.
+    @MainActor
+    func testOneUndoTakesBackAKeywordRenameOrDeleteMadeOutsideAnEvent() throws {
+        let (app, _, ids) = try appWithFaces([face("x0", on: 0), face("x1", on: 1)])
+        step { app.nameFaces(["x0", "x1"], as: "小明") }
+        undo.groupsByEvent = true   // as AppKit has it; no event is being handled
+
+        XCTAssertTrue(app.renameKeyword("人物/小明", to: "人物/明明"))
+        XCTAssertEqual(app.people.map(\.name), ["明明"])
+        undo.undo()
+        XCTAssertEqual(app.people.map(\.name), ["小明"], "one undo takes the face names back")
+        XCTAssertEqual(app.asset(id: ids[0])?.keywords, ["人物", "人物/小明"], "and the keyword with them")
+        XCTAssertEqual(undo.undoActionName, "命名人物", "the step before is the naming")
+
+        XCTAssertTrue(app.deleteKeyword("人物/小明"))
+        XCTAssertTrue(app.people.isEmpty)
+        undo.undo()
+        XCTAssertEqual(app.people.first?.photoCount, 2, "one undo names the faces again")
+        XCTAssertEqual(app.asset(id: ids[1])?.keywords, ["人物", "人物/小明"], "and tags their photos again")
+    }
+
     // ---------- photos removed from the catalog ----------
 
     @MainActor

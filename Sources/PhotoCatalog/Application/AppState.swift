@@ -11896,7 +11896,7 @@ final class AppState {
             changes[face.id] = (newPerson, newPerson == nil ? false : face.confirmed)
         }
         guard !changes.isEmpty else { return }
-        // same undo group as the keyword edit, so undo restores both together
+        // in the keyword edit's undo step (`asOneUndoStep`), so undo restores both together
         setFaceStates(changes, undoName: undoName)
         if newPerson == nil { refreshFaceClusters() }
     }
@@ -11936,10 +11936,13 @@ final class AppState {
         guard let target = KeywordService.normalize(new).last, target != old,
               !target.hasPrefix(old + "/") else { return false }
         let ids = photoIds(withKeyword: old)
-        guard !ids.isEmpty,
-              mutate(ids, undoName: L("重命名关键词"), { $0.keywords = KeywordService.replacing(old, with: target, in: $0.keywords) })
-        else { return false }
-        syncFacesAfterKeywordChange(old: old, new: target, undoName: L("重命名关键词"))
+        guard !ids.isEmpty, asOneUndoStep({
+            guard mutate(ids, undoName: L("重命名关键词"), {
+                $0.keywords = KeywordService.replacing(old, with: target, in: $0.keywords)
+            }) else { return false }
+            syncFacesAfterKeywordChange(old: old, new: target, undoName: L("重命名关键词"))
+            return true
+        }) else { return false }
         if selection.type == .keyword, KeywordService.isWithin(selection.id, old) {
             let renamed = target + selection.id.dropFirst(old.count)
             select(Selection(type: .keyword, id: renamed, name: renamed))
@@ -11948,14 +11951,27 @@ final class AppState {
         return true
     }
 
+    /// Runs `body`, whose undo registrations are one step: a keyword edit and the face names it
+    /// carries along. Outside an event (after a modal alert, say) each registration would be a
+    /// step of its own, and one ⌘Z took back only the face names.
+    private func asOneUndoStep(_ body: () -> Bool) -> Bool {
+        guard let undoManager else { return body() }
+        var done = false
+        UndoSteps.register(on: undoManager) { done = body() }
+        return done
+    }
+
     /// Removes a keyword and its sub-keywords from every photo.
     @discardableResult
     func deleteKeyword(_ keyword: String) -> Bool {
         let ids = photoIds(withKeyword: keyword)
-        guard !ids.isEmpty,
-              mutate(ids, undoName: L("删除关键词"), { $0.keywords = KeywordService.replacing(keyword, with: nil, in: $0.keywords) })
-        else { return false }
-        syncFacesAfterKeywordChange(old: keyword, new: nil, undoName: L("删除关键词"))
+        guard !ids.isEmpty, asOneUndoStep({
+            guard mutate(ids, undoName: L("删除关键词"), {
+                $0.keywords = KeywordService.replacing(keyword, with: nil, in: $0.keywords)
+            }) else { return false }
+            syncFacesAfterKeywordChange(old: keyword, new: nil, undoName: L("删除关键词"))
+            return true
+        }) else { return false }
         if selection.type == .keyword, KeywordService.isWithin(selection.id, keyword) {
             select(Selection(type: .lib, id: "all", name: L("全部照片")))
         }
