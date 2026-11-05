@@ -34,6 +34,14 @@ enum ChromaticAberration {
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var measured: [String: Correction] = [:]
+    /// The keys of `measured`, oldest first.
+    nonisolated(unsafe) private static var order: [String] = []
+    /// How many photos' corrections are kept: each is a few numbers, but a session can browse
+    /// through tens of thousands of photos.
+    static let rememberedPhotos = 500
+    /// A photo being measured is measured once: renders of it wait for that rather than each
+    /// decoding it and allocating its planes (hundreds of megabytes at the analysis size).
+    private static let measuring = KeyedLocks()
 
     /// The correction for the photo at `url`, measured once per version of the file (a decode
     /// and a fraction of a second the first time).
@@ -41,11 +49,23 @@ enum ChromaticAberration {
         let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
         let key = "\(url.path)|\(modified?.timeIntervalSinceReferenceDate ?? 0)"
         if let known = lock.withLock({ measured[key] }) { return known }
-        let correction = DevelopRenderer.Source(url: url, isRaw: isRaw, maxPixel: analysisPixel)?
-            .image(.neutral).map(measure) ?? .none
-        lock.withLock { measured[key] = correction }
-        return correction
+        return measuring.withLock(key) {
+            if let known = lock.withLock({ measured[key] }) { return known }
+            let correction = DevelopRenderer.Source(url: url, isRaw: isRaw, maxPixel: analysisPixel)?
+                .image(.neutral).map(measure) ?? .none
+            lock.withLock {
+                if measured[key] == nil { order.append(key) }
+                measured[key] = correction
+                while order.count > rememberedPhotos { measured[order.removeFirst()] = nil }
+                measurementCount += 1
+            }
+            return correction
+        }
     }
+
+    nonisolated(unsafe) private static var measurementCount = 0
+    /// How many photos have been measured, for checks.
+    static var measurements: Int { lock.withLock { measurementCount } }
 
     /// The correction `image` needs; none when it shows too few achromatic edges to tell, or
     /// lining the channels up doesn't bring them closer.
