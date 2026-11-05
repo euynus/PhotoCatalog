@@ -341,10 +341,16 @@ enum XMPSidecar {
                 asset.keywords = KeywordService.normalize(keywords + asset.keywords)
             }
         }
-        if let title = sc.title { asset.title = title }
-        if let caption = sc.caption { asset.caption = caption }
-        if let author = sc.author { asset.author = author }
-        if let copyright = sc.copyright { asset.copyright = copyright }
+        // Read from Files takes the sidecar's text as it is, emptied too; an import only adds to
+        // what the file itself says (this app writes every element, empty ones included)
+        func take(_ text: String?, into field: inout String) {
+            guard let text, replacingKeywords || !text.isEmpty else { return }
+            field = text
+        }
+        take(sc.title, into: &asset.title)
+        take(sc.caption, into: &asset.caption)
+        take(sc.author, into: &asset.author)
+        take(sc.copyright, into: &asset.copyright)
         // a capture-time correction made in another app (or mirrored by us) takes precedence
         if let d = sc.captureDate { asset.date = d; asset.captureDateSource = "sidecar" }
         // a location set in another app (or by us) travels in the sidecar

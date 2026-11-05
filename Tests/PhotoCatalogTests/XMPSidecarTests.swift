@@ -118,6 +118,20 @@ final class XMPSidecarTests: XCTestCase {
         XCTAssertTrue(XMPSidecar.agrees(emptied, with: read), "once read, it agrees")
     }
 
+    /// On import a sidecar adds to what the file says: empty text in it (this app writes every
+    /// element, empty ones too) doesn't wipe the author, copyright or title the file itself holds.
+    func testEmptiedPropertiesDontClearWhatAnImportReadFromTheFile() throws {
+        let emptied = try XCTUnwrap(XMPSidecar.read(try emptiedSidecar()))
+        var imported = sample()
+        XMPSidecar.apply(emptied, to: &imported)
+        XCTAssertEqual(imported.keywords, ["trip"])
+        XCTAssertEqual(imported.title, "Title")
+        XCTAssertEqual(imported.caption, sample().caption)
+        XCTAssertEqual(imported.author, sample().author)
+        XCTAssertEqual(imported.copyright, sample().copyright)
+        XCTAssertEqual(imported.rating, 4)
+    }
+
     /// A sidecar that doesn't mention keywords or text (an app that writes only the rating)
     /// leaves the photo's as they are, and agrees with it.
     func testAbsentPropertiesLeaveThePhotosAlone() throws {
