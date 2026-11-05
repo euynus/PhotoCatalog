@@ -82,14 +82,84 @@ final class Database: @unchecked Sendable {
         exec("PRAGMA journal_mode=WAL;")
         exec("PRAGMA foreign_keys=ON;")
         exec("PRAGMA busy_timeout=4000;")
+        let checkpointer = WALCheckpointer(handle: db, lock: lock)
+        self.checkpointer = checkpointer
+        // replaces SQLite's own checkpoint after a commit, which ran on the committing thread
+        sqlite3_wal_hook(db, { context, handle, _, pages in
+            guard let context else { return SQLITE_OK }
+            Unmanaged<WALCheckpointer>.fromOpaque(context).takeUnretainedValue().committed(pages: Int(pages), on: handle)
+            return SQLITE_OK
+        }, Unmanaged.passUnretained(checkpointer).toOpaque())
     }
 
     deinit {
+        // a checkpoint already running finishes first; one still queued finds the handle closed
+        // (not under the lock while waiting: the checkpoint needs it)
+        if let checkpointer {
+            lock.lock()
+            checkpointer.closed = true
+            lock.unlock()
+            checkpointer.queue.sync {}
+        }
         lock.lock()
         defer { lock.unlock() }
         for stmt in statementCache.values { sqlite3_finalize(stmt) }
         sqlite3_close(db)
     }
+
+    /// Moves the WAL's pages into the database file in the background once a commit leaves it
+    /// past `threshold` pages, as SQLite would at the end of the commit itself (on the main
+    /// thread, for an edit: ~40% of putting 1000 photos in the Trash was that checkpoint and its
+    /// sync). The same passive checkpoint on the same connection, under the same lock, so it
+    /// never runs inside a transaction; only the thread changes.
+    final class WALCheckpointer: @unchecked Sendable {
+        /// SQLite's own default.
+        static let threshold = 1000
+        /// Past this, a commit checkpoints at once, as before: the background one hasn't kept up.
+        static let ceiling = 10 * threshold
+
+        let queue = DispatchQueue(label: "PhotoCatalog.wal-checkpoint", qos: .utility)
+        private let handle: OpaquePointer?
+        private let lock: NSRecursiveLock
+        /// Guarded by `lock`.
+        var closed = false
+        private var pending = false
+        private(set) var checkpoints = 0
+
+        init(handle: OpaquePointer?, lock: NSRecursiveLock) {
+            self.handle = handle
+            self.lock = lock
+        }
+
+        /// From the WAL hook, at the end of a commit (under `lock`): `pages` are in the WAL.
+        func committed(pages: Int, on connection: OpaquePointer?) {
+            if pages >= Self.ceiling {
+                sqlite3_wal_checkpoint_v2(connection, nil, SQLITE_CHECKPOINT_PASSIVE, nil, nil)
+                checkpoints &+= 1
+                return
+            }
+            guard pages >= Self.threshold, !pending else { return }
+            pending = true
+            queue.async { [self] in
+                lock.lock()
+                defer { lock.unlock() }
+                pending = false
+                guard !closed else { return }
+                sqlite3_wal_checkpoint_v2(handle, nil, SQLITE_CHECKPOINT_PASSIVE, nil, nil)
+                checkpoints &+= 1
+            }
+        }
+    }
+
+    /// Nil only when the database couldn't be opened.
+    private var checkpointer: WALCheckpointer?
+
+    /// Waits for a background checkpoint (for tests).
+    func drainCheckpoints() { checkpointer?.queue.sync {} }
+
+    /// The background checkpoints' queue and how many have run (for tests).
+    var checkpointQueue: DispatchQueue? { checkpointer?.queue }
+    var checkpointCount: Int { locked { checkpointer?.checkpoints ?? 0 } }
 
     @discardableResult
     func exec(_ sql: String) -> Bool {
