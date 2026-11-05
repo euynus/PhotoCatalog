@@ -3946,6 +3946,10 @@ final class AppState {
            case let .incompatibleSchema(current, supported) = error {
             return L("目录库版本过新（schema \(current)，当前支持 \(supported)），请升级 PhotoCatalog 后再打开")
         }
+        // a snapshot made by a newer version, refused before it replaced the catalog
+        if let error = error as? BackupError, case let .newerSchema(current, supported) = error {
+            return L("目录库版本过新（schema \(current)，当前支持 \(supported)），请升级 PhotoCatalog 后再打开")
+        }
         return fallback
     }
 
@@ -8656,7 +8660,7 @@ final class AppState {
         } catch {
             resetCatalog(toDemo: true)
             loadExistingCatalog()
-            push("恢复备份失败", "warning")
+            push(verbatim: catalogOpenFailureMessage(error, fallback: L("恢复备份失败")), "warning")
         }
     }
 

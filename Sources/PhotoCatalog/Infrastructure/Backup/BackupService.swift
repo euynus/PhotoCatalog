@@ -6,6 +6,8 @@ import Foundation
 enum BackupError: Error, Equatable {
     case backupNotFound
     case invalidBackup
+    /// Made by a newer version, whose catalog this one can't open.
+    case newerSchema(current: Int, supported: Int)
 }
 
 enum BackupService {
@@ -71,14 +73,17 @@ enum BackupService {
         guard fm.fileExists(atPath: backup.path) else { throw BackupError.backupNotFound }
         try fm.createDirectory(at: packageURL, withIntermediateDirectories: true)
         let temp = packageURL.appendingPathComponent("catalog.restore.tmp")
-        try? fm.removeItem(at: temp)
-        try fm.copyItem(at: backup, to: temp)
-        defer {
+        // a restore that never finished can have left its copy's WAL, which SQLite would replay
+        // onto this copy as it's checked
+        let removeTemp = {
             for path in [temp.path, temp.path + "-wal", temp.path + "-shm"] {
                 try? fm.removeItem(atPath: path)
             }
         }
-        guard isValidBackupDatabase(temp) else { throw BackupError.invalidBackup }
+        removeTemp()
+        try fm.copyItem(at: backup, to: temp)
+        defer { removeTemp() }
+        try validateBackupDatabase(temp)
         // The old database's WAL must never sit beside the new one, where SQLite would replay its
         // frames onto it at the next open. The sidecars are set aside before the swap (a crash in
         // between leaves the old database without them, not the new one with them), put back if
@@ -107,19 +112,31 @@ enum BackupService {
         for sidecar in sidecars { try? fm.removeItem(at: sidecar.aside) }
     }
 
-    /// A catalog's tables, and nothing damaged: a snapshot torn while it was copied can still
-    /// list its tables. Checked on the temporary copy, so no sidecars land beside the backup.
-    private static func isValidBackupDatabase(_ url: URL) -> Bool {
+    /// A catalog's tables, nothing damaged (a snapshot torn while it was copied can still list its
+    /// tables), and a schema this version opens: one made by a newer version is refused here,
+    /// before it replaces anything, rather than failing to open once it has. Checked on the
+    /// temporary copy, so no sidecars land beside the backup.
+    private static func validateBackupDatabase(_ url: URL) throws {
+        let version: Int
         do {
             let db = try Database(path: url.path)
+            // the snapshot's own schema runs no SQL functions while it's checked
+            try db.execChecked("PRAGMA trusted_schema=OFF;")
             let rows = try db.query("""
             SELECT name FROM sqlite_master
             WHERE type='table' AND name IN ('assets', 'schema_migrations');
             """)
-            guard Set(rows.compactMap { $0.text("name") }) == ["assets", "schema_migrations"] else { return false }
-            return try db.query("PRAGMA integrity_check;").map { $0.text("integrity_check") } == ["ok"]
+            guard Set(rows.compactMap { $0.text("name") }) == ["assets", "schema_migrations"],
+                  try db.query("PRAGMA integrity_check;").map({ $0.text("integrity_check") }) == ["ok"] else {
+                throw BackupError.invalidBackup
+            }
+            version = try db.query("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations;")
+                .first?.int("version") ?? 0
         } catch {
-            return false
+            throw BackupError.invalidBackup
+        }
+        guard version <= CatalogStore.latestSchemaVersion else {
+            throw BackupError.newerSchema(current: version, supported: CatalogStore.latestSchemaVersion)
         }
     }
 }

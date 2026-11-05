@@ -251,6 +251,66 @@ final class BackupServiceTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: live), Data("live".utf8))
     }
 
+    /// A snapshot made by a newer version, which this one can't open, is refused before anything
+    /// is replaced: the live catalog and its WAL stay as they are.
+    func testRestoreRefusesASnapshotFromANewerVersion() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("pc-restore-newer-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try fm.createDirectory(at: package, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+        let live = package.appendingPathComponent("catalog.sqlite")
+        let wal = package.appendingPathComponent("catalog.sqlite-wal")
+        try Data("live".utf8).write(to: live)
+        try Data("wal".utf8).write(to: wal)
+        let backup = dir.appendingPathComponent("backup.sqlite")
+        try writeValidBackup(at: backup)
+        let newer = CatalogStore.latestSchemaVersion + 1
+        try Database(path: backup.path).run("INSERT INTO schema_migrations(version, applied_at) VALUES(?, 'later');",
+                                            [.int(newer)])
+
+        XCTAssertThrowsError(try BackupService.restore(backup, intoPackageAt: package)) { error in
+            XCTAssertEqual(error as? BackupError,
+                           .newerSchema(current: newer, supported: CatalogStore.latestSchemaVersion))
+        }
+        XCTAssertEqual(try Data(contentsOf: live), Data("live".utf8), "the live catalog was replaced")
+        XCTAssertEqual(try Data(contentsOf: wal), Data("wal".utf8))
+    }
+
+    /// A WAL left beside the temporary copy by a restore that never finished (the app quit
+    /// mid-way) isn't replayed onto the next snapshot restored: what's restored is the snapshot.
+    func testRestoreIgnoresAnEarlierRestoresLeftovers() throws {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("pc-restore-leftover-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        try fm.createDirectory(at: package, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+        let backup = dir.appendingPathComponent("backup.sqlite")
+        try writeValidBackup(at: backup)
+        try Database(path: backup.path).run("INSERT INTO assets(id) VALUES('backup');")
+        XCTAssertEqual(try Database(path: backup.path).query("PRAGMA journal_mode=DELETE;").first?.text("journal_mode"),
+                       "delete")
+        // the earlier restore's copy of the same snapshot, written to (and its WAL kept) as it quit
+        let temp = package.appendingPathComponent("catalog.restore.tmp")
+        let tempWAL = package.appendingPathComponent("catalog.restore.tmp-wal")
+        try fm.copyItem(at: backup, to: temp)
+        let stale: Data
+        do {
+            let db = try Database(path: temp.path)
+            try db.execChecked("PRAGMA wal_autocheckpoint=0;")
+            try db.run("INSERT INTO assets(id) VALUES('leftover');")
+            stale = try Data(contentsOf: tempWAL)
+        }
+        XCTAssertFalse(stale.isEmpty)
+        try stale.write(to: tempWAL)
+
+        try BackupService.restore(backup, intoPackageAt: package)
+
+        let restored = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
+        XCTAssertEqual(try restored.query("SELECT id FROM assets ORDER BY id;").compactMap { $0.text("id") }, ["backup"])
+        XCTAssertFalse(fm.fileExists(atPath: tempWAL.path))
+    }
+
     private func writeValidBackup(at url: URL) throws {
         let db = try Database(path: url.path)
         try db.execChecked("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT);")

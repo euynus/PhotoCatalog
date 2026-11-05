@@ -433,6 +433,8 @@ final class CatalogLifecycleTests: XCTestCase {
         let toast = try XCTUnwrap(app.toastCenter.toasts.last)
         XCTAssertFalse(toast.message.hasPrefix("已恢复备份"), "says restored: \(toast.message)")
         XCTAssertEqual(toast.icon, "warning")
+        XCTAssertTrue(toast.message.contains("schema \(CatalogStore.latestSchemaVersion + 1)"),
+                      "doesn't say the snapshot is a newer version's: \(toast.message)")
         XCTAssertTrue(app.hasOpenCatalog, "the catalog is left closed")
         XCTAssertEqual(app.assets.map(\.id), [id], "the catalog as it was before the restore is gone")
     }
