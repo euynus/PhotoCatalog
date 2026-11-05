@@ -22,10 +22,6 @@ struct MainToolbar: ToolbarContent {
     }
 }
 
-private extension AppState {
-    var canFilterOrSort: Bool { !isDuplicates && view != .analysis }
-}
-
 /// Library and Develop, named, as Lightroom's modules: where nearly all the work happens.
 /// Back from Develop, the library opens in the view it was left in.
 private struct ModulePicker: View {

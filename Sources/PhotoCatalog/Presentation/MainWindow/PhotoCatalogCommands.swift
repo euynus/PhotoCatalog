@@ -244,12 +244,12 @@ struct PhotoCatalogCommands: Commands {
                 .disabled(app.sheet != nil || !app.onboarded)
             Button("显示/隐藏筛选栏") { perform("视图.显示隐藏筛选栏") { app.toggleFilterBar() } }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
-                .disabled(app.sheet != nil || !app.onboarded)
+                .disabled(app.sheet != nil || !app.onboarded || !app.canFilterOrSort)
             Button("显示/隐藏侧边面板 (Tab)") { perform("视图.显示隐藏侧边面板") { app.togglePanels() } }
                 .disabled(app.sheet != nil || !app.onboarded)
             Button("显示/隐藏简介") { perform("视图.显示隐藏Inspector") { app.showInspector.toggle() } }
                 .keyboardShortcut("i", modifiers: .command)
-                .disabled(app.sheet != nil || !app.onboarded || app.view == .analysis)
+                .disabled(app.sheet != nil || !app.onboarded || !app.inspectorAvailable)
             Button("显示/隐藏缩略图信息") { perform("视图.显示隐藏缩略图信息") { app.toggleGridInfo() } }
                 .disabled(app.sheet != nil || !app.onboarded)
             Toggle("缩略图填满方格", isOn: Binding(get: { app.gridFill },

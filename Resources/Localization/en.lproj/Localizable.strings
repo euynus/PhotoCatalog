@@ -1593,6 +1593,8 @@
 "预计约 %lld 分钟" = "About %lld minutes";
 "请选择有原件的照片" = "Select photos whose originals are available";
 "已取消增强" = "Enhance canceled";
+"正在增强照片，请等它完成" = "Photos are being enhanced. Wait for it to finish";
+"这个版本的应用没有增强所用的 AI 模型" = "This copy of the app doesn’t include the AI models Enhance uses";
 "已取消增强，已完成 %lld 张" = "Enhance canceled; %lld photos finished";
 "已增强照片" = "Photo enhanced";
 "已增强 %lld 张照片" = "%lld photos enhanced";

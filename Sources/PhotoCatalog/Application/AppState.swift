@@ -6046,6 +6046,11 @@ final class AppState {
 
     /// 照片 → 照片合并 → HDR… / 全景…: the merge dialog, with a preview.
     func showPhotoMerge(_ kind: PhotoMergeKind) {
+        // the right-click menu offers this during a merge too: its dialog's Merge would do nothing
+        guard !isMergingPhotos else {
+            push(photoMergeKind == .hdr ? "正在合并 HDR…" : "正在合并全景…", "info")
+            return
+        }
         let targets = photoMergeCandidates()
         guard targets.count >= 2 else {
             push("请选择至少两张有原件的照片", "info")
@@ -6404,6 +6409,15 @@ final class AppState {
 
     /// 照片 → 增强…: AI denoise and super resolution for the selected photos, with a preview.
     func showEnhance() {
+        // the right-click menu offers this when the menu bar's is disabled: its dialog would do nothing
+        guard enhanceProgress == nil else {
+            push("正在增强照片，请等它完成", "info")
+            return
+        }
+        guard AIModels.isAvailable(.denoise), AIModels.isAvailable(.superResolution) else {
+            push("这个版本的应用没有增强所用的 AI 模型", "warning")
+            return
+        }
         let targets = photoMergeCandidates().filter { developSource(for: $0) != nil }
         guard !targets.isEmpty else {
             push("请选择有原件的照片", "info")
@@ -12289,14 +12303,15 @@ final class AppState {
                 openCatalog()
             case "f":
                 if hasShift {
-                    toggleFilterBar()
+                    // as the toolbar's button: no filter bar where it's disabled
+                    if canFilterOrSort { toggleFilterBar() }
                 } else {
                     focusSearch()
                 }
             case "i":
                 if hasShift {
                     addFolder()
-                } else if view != .analysis {
+                } else if inspectorAvailable {
                     showInspector.toggle()
                 }
             case "e":
@@ -12364,7 +12379,7 @@ final class AppState {
         case "tab":
             togglePanels()
         case "f":
-            toggleFilterBar()
+            if canFilterOrSort { toggleFilterBar() }
         case "g":
             view = .grid
         case "e", " ":

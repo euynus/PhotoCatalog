@@ -142,7 +142,7 @@ Replies are checked rather than trusted: a search filter counts only when the se
 
 ## Keyboard shortcuts
 
-Single-key shortcuts don't apply while you type in a text field or a date (the filter bar's custom range); there `⌘A` and `⌘⌫` select the text and delete to the start of the line. Rating, flag, color, Quick Collection, stack, arrow and delete keys do nothing in capture analysis, Duplicates, and the People and Places overviews, where the selected photos are out of sight.
+Single-key shortcuts don't apply while you type in a text field or a date (the filter bar's custom range); there `⌘A` and `⌘⌫` select the text and delete to the start of the line. Rating, flag, color, Quick Collection, stack, arrow and delete keys do nothing in capture analysis, Duplicates, and the People and Places overviews, where the selected photos are out of sight. Nor does `⌘I`, which has no Inspector to show there; `F` and `⇧⌘F` do nothing in capture analysis and Duplicates, which have no filter bar.
 
 **Views and navigation**
 

@@ -1065,6 +1065,35 @@ final class AppStateSelectionTests: XCTestCase {
         XCTAssertEqual(app.thumbSize, 168)
     }
 
+    /// Where the toolbar's info and filter buttons are disabled (duplicate review, Places, capture
+    /// analysis), ⌘I, ⇧⌘F and F leave the hidden inspector and filter bar as they were, as the
+    /// menu items do: toggling them there flipped what the next view opened with, and said so.
+    @MainActor
+    func testInfoAndFilterKeysDoNothingWhereTheirButtonsAreDisabled() {
+        let app = AppState()
+        app.onboarded = true
+        let all = app.selection
+        let places = Selection(type: .lib, id: "places", name: "地点")
+        let duplicates = Selection(type: .lib, id: "duplicates", name: "重复照片")
+        // where, and whether the filter bar is there to show
+        let cases: [(Selection, ViewMode, filters: Bool)] = [
+            (duplicates, .grid, false), (places, .grid, true), (all, .analysis, false),
+        ]
+        for (selection, view, filters) in cases {
+            app.selection = selection
+            app.view = view
+            let showInspector = app.showInspector
+            XCTAssertTrue(app.handleKey("i", hasCommand: true))
+            XCTAssertEqual(app.showInspector, showInspector, "⌘I in \(selection.id), \(view)")
+            guard !filters else { continue }
+            let filterOpen = app.filterOpen
+            XCTAssertTrue(app.handleKey("f", hasCommand: true, hasShift: true))
+            XCTAssertEqual(app.filterOpen, filterOpen, "⇧⌘F in \(selection.id), \(view)")
+            _ = app.handleKey("f", hasCommand: false)
+            XCTAssertEqual(app.filterOpen, filterOpen, "F in \(selection.id), \(view)")
+        }
+    }
+
     @MainActor
     func testSelectionCommandKeyboardShortcuts() {
         let app = AppState()
