@@ -128,20 +128,22 @@ enum SoftProofing {
 
     /// `image` (in Display P3) converted into the profile `id` with `intent`, tagged with that
     /// profile's color space so drawing it hands the profile's own values on — what printing
-    /// with a printer profile needs. Nil when the profile can't be used.
+    /// with a printer profile needs. Nil when the profile can't be used. A print's photo is
+    /// page-sized, so its pixels and the converted ones live outside malloc (see `MappedPixels`).
     static func converted(_ image: CGImage, toProfile id: String, intent: SoftProof.Intent) -> CGImage? {
-        guard let device = colorSyncProfile(id), let display = displayProfile, let space = colorSpace(id),
-              let original = rgba(image) else { return nil }
+        guard let device = colorSyncProfile(id), let display = displayProfile, let space = colorSpace(id) else { return nil }
         let channels = space.numberOfComponents
         let size = (width: image.width, height: image.height)
         let chosen = intent == .perceptual ? Self.intent(kColorSyncRenderingIntentPerceptual)
             : Self.intent(kColorSyncRenderingIntentRelative)
-        guard let pixels = convert(original, size, from: (display, .rgbx), to: (device, .plain(channels)), intent: chosen),
-              let provider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
-        return CGImage(width: size.width, height: size.height, bitsPerComponent: 8, bitsPerPixel: 8 * channels,
-                       bytesPerRow: size.width * channels, space: space,
-                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue), provider: provider,
-                       decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        return MappedPixels.scratch(size.width * size.height * 4) { original in
+            guard draw(image, into: original) else { return nil }
+            return MappedPixels.image(width: size.width, height: size.height, bitsPerComponent: 8, bitsPerPixel: 8 * channels,
+                                      bytesPerRow: size.width * channels, space: space,
+                                      bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue)) { output in
+                convert(original, size, from: (display, .rgbx), to: (device, .plain(channels)), intent: chosen, into: output)
+            }
+        }
     }
 
     /// A color that comes back from the profile with its hue or saturation more than a few
@@ -200,6 +202,20 @@ enum SoftProofing {
                                 from source: (profile: ColorSyncProfile, layout: Layout),
                                 to destination: (profile: ColorSyncProfile, layout: Layout),
                                 intent: String) -> [UInt8]? {
+        var output = [UInt8](repeating: 0, count: size.width * size.height * destination.layout.bytes)
+        let done = pixels.withUnsafeBytes { input in
+            output.withUnsafeMutableBytes { result in
+                convert(input.baseAddress!, size, from: source, to: destination, intent: intent, into: result.baseAddress!)
+            }
+        }
+        return done ? output : nil
+    }
+
+    /// The same, from `pixels` into `output`.
+    private static func convert(_ pixels: UnsafeRawPointer, _ size: (width: Int, height: Int),
+                                from source: (profile: ColorSyncProfile, layout: Layout),
+                                to destination: (profile: ColorSyncProfile, layout: Layout),
+                                intent: String, into output: UnsafeMutableRawPointer) -> Bool {
         let key = { (k: Unmanaged<CFString>) in k.takeUnretainedValue() as String }
         let steps: [[String: Any]] = [
             [key(kColorSyncProfile): source.profile, key(kColorSyncRenderingIntent): intent,
@@ -207,29 +223,29 @@ enum SoftProofing {
             [key(kColorSyncProfile): destination.profile, key(kColorSyncRenderingIntent): intent,
              key(kColorSyncTransformTag): kColorSyncTransformPCSToDevice.takeUnretainedValue()],
         ]
-        guard let transform = ColorSyncTransformCreate(steps as CFArray, nil)?.takeRetainedValue() else { return nil }
-        var output = [UInt8](repeating: 0, count: size.width * size.height * destination.layout.bytes)
-        let done = pixels.withUnsafeBytes { input in
-            output.withUnsafeMutableBytes { result in
-                ColorSyncTransformConvert(transform, size.width, size.height, result.baseAddress!, kColorSync8BitInteger,
-                                          destination.layout.colorSync, size.width * destination.layout.bytes,
-                                          input.baseAddress!, kColorSync8BitInteger, source.layout.colorSync,
-                                          size.width * source.layout.bytes, nil)
-            }
-        }
-        return done ? output : nil
+        guard let transform = ColorSyncTransformCreate(steps as CFArray, nil)?.takeRetainedValue() else { return false }
+        return ColorSyncTransformConvert(transform, size.width, size.height, output, kColorSync8BitInteger,
+                                         destination.layout.colorSync, size.width * destination.layout.bytes,
+                                         pixels, kColorSync8BitInteger, source.layout.colorSync,
+                                         size.width * source.layout.bytes, nil)
     }
 
     /// Display P3 RGBA bytes of `image`.
     static func rgba(_ image: CGImage) -> [UInt8]? {
         var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        let drawn = pixels.withUnsafeMutableBytes { draw(image, into: $0.baseAddress!) }
+        return drawn ? pixels : nil
+    }
+
+    /// `image` drawn as Display P3 RGBA bytes into `pixels`, `image.width * 4` bytes a row.
+    private static func draw(_ image: CGImage, into pixels: UnsafeMutableRawPointer) -> Bool {
         guard let space = CGColorSpace(name: CGColorSpace.displayP3),
-              let context = CGContext(data: &pixels, width: image.width, height: image.height, bitsPerComponent: 8,
+              let context = CGContext(data: pixels, width: image.width, height: image.height, bitsPerComponent: 8,
                                       bytesPerRow: image.width * 4, space: space,
-                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return false }
         context.interpolationQuality = .none
         context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-        return pixels
+        return true
     }
 
     private static func bitmap(_ pixels: [UInt8], width: Int, height: Int, space: CGColorSpace) -> CGImage? {

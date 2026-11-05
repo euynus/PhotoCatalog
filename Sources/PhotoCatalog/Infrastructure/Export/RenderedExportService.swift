@@ -153,21 +153,21 @@ enum RenderedExportService {
 
     /// One GPU render straight into memory. (A CGImage from `createCGImage` renders lazily, and
     /// the encoder then pulls it through in pieces — several times slower for a full-size photo.)
-    /// Pixels are opaque, so the file gets no alpha channel.
+    /// Pixels are opaque, so the file gets no alpha channel. The pixels live outside malloc (see
+    /// `MappedPixels`).
     static func bitmap(_ image: CIImage, bounds: CGRect, sixteenBit: Bool, colorSpace: CGColorSpace) -> CGImage? {
         let width = Int(bounds.width), height = Int(bounds.height)
         let bytesPerPixel = sixteenBit ? 8 : 4
         let rowBytes = width * bytesPerPixel
-        guard width > 0, height > 0, let buffer = CFDataCreateMutable(nil, rowBytes * height) else { return nil }
-        CFDataSetLength(buffer, rowBytes * height)
-        DevelopRenderer.context.render(image, toBitmap: CFDataGetMutableBytePtr(buffer), rowBytes: rowBytes,
-                                       bounds: bounds, format: sixteenBit ? .RGBA16 : .RGBA8, colorSpace: colorSpace)
-        guard let provider = CGDataProvider(data: buffer) else { return nil }
         var info = CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue)
         if sixteenBit { info.insert(.byteOrder16Little) }
-        return CGImage(width: width, height: height, bitsPerComponent: sixteenBit ? 16 : 8,
-                       bitsPerPixel: bytesPerPixel * 8, bytesPerRow: rowBytes, space: colorSpace, bitmapInfo: info,
-                       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        return MappedPixels.image(width: width, height: height, bitsPerComponent: sixteenBit ? 16 : 8,
+                                  bitsPerPixel: bytesPerPixel * 8, bytesPerRow: rowBytes, space: colorSpace,
+                                  bitmapInfo: info) { memory in
+            DevelopRenderer.context.render(image, toBitmap: memory, rowBytes: rowBytes,
+                                           bounds: bounds, format: sixteenBit ? .RGBA16 : .RGBA8, colorSpace: colorSpace)
+            return true
+        }
     }
 
     /// Renders and writes one photo into `folder`, under a name `names` hasn't given out.
