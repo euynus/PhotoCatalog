@@ -1917,8 +1917,13 @@ final class CatalogStore: @unchecked Sendable {
         (try? String(data: JSONSerialization.data(withJSONObject: kws), encoding: .utf8)) ?? "[]"
     }
 
+    /// One formatter for every timestamp: making one took ~0.25 ms, as long as writing the row
+    /// (applying settings to 1000 photos spent half its time there). The class is documented
+    /// thread-safe.
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
+
     private static func iso(_ date: Date) -> String {
-        ISO8601DateFormatter().string(from: date)
+        isoFormatter.string(from: date)
     }
 
     private static func filenameStamp(_ date: Date) -> String {
@@ -1929,7 +1934,7 @@ final class CatalogStore: @unchecked Sendable {
 
     private static func date(_ string: String?) -> Date? {
         guard let string else { return nil }
-        return ISO8601DateFormatter().date(from: string)
+        return isoFormatter.date(from: string)
     }
 
     private static func importJobPayload(sessionId: String, sourcePath: String,
