@@ -8,7 +8,7 @@ struct DevelopView: View {
     @Environment(AppState.self) private var app
 
     var body: some View {
-        let list = app.list
+        let photos = app.photoList
         VStack(spacing: 0) {
             if let asset = app.primary, app.listPosition(of: asset.id) != nil {
                 DevelopCanvas(asset: asset)
@@ -16,7 +16,7 @@ struct DevelopView: View {
                 ContentUnavailableView("没有可修图的照片", systemImage: "slider.horizontal.3")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            if !list.isEmpty { Filmstrip(photos: app.photoList, assetRevision: app.assetRenderVersion) }
+            if !photos.isEmpty { Filmstrip(photos: photos, assetRevision: app.assetRenderVersion) }
         }
         .background(Theme.canvas)
         .environment(\.colorScheme, .dark)
