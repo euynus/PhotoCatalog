@@ -49,4 +49,22 @@ final class TestDefaultsIsolationTests: XCTestCase {
                                                               executablePath: "/work/b/.build/debug/PhotoCatalog"),
                           names[0], "nor do two checkouts")
     }
+
+    /// Two runs of one check in one checkout at once (two `--selfcheck`s) each take a suite: the
+    /// second takes the next one while the first holds its own, and it's free again once let go.
+    func testTwoRunsOfOneCheckAtOnceTakeASuiteEach() throws {
+        let locks = FileManager.default.temporaryDirectory.appendingPathComponent("SuiteLocks-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: locks, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: locks) }
+        let base = "PhotoCatalogChecks.test.selfcheck"
+        let first = try XCTUnwrap(UserDefaults.claimHeadlessSuite(base, lockDirectory: locks))
+        let second = try XCTUnwrap(UserDefaults.claimHeadlessSuite(base, lockDirectory: locks))
+        XCTAssertEqual(first.name, base)
+        XCTAssertEqual(second.name, base + ".2")
+        close(first.lock)
+        let third = try XCTUnwrap(UserDefaults.claimHeadlessSuite(base, lockDirectory: locks))
+        XCTAssertEqual(third.name, base, "the first suite is free again")
+        close(second.lock)
+        close(third.lock)
+    }
 }

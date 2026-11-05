@@ -2,6 +2,7 @@
 //  The app's preferences store
 // ============================================================
 import CryptoKit
+import Darwin
 import Foundation
 
 extension UserDefaults {
@@ -18,8 +19,12 @@ extension UserDefaults {
         }
         // resolved: `.build/debug` is a link to the build's own folder, and the build script runs that
         let executable = Bundle.main.executableURL?.resolvingSymlinksInPath().path ?? CommandLine.arguments.first ?? ""
-        guard let name = headlessCheckSuiteName(arguments: CommandLine.arguments, executablePath: executable),
-              let suite = UserDefaults(suiteName: name) else { return .standard }
+        guard let base = headlessCheckSuiteName(arguments: CommandLine.arguments, executablePath: executable) else {
+            return .standard
+        }
+        // held until the run ends: another run of the same check takes the next suite
+        let name = claimHeadlessSuite(base, lockDirectory: FileManager.default.temporaryDirectory)?.name ?? base
+        guard let suite = UserDefaults(suiteName: name) else { return .standard }
         // each run starts from the app's defaults (and any `-pc_…` arguments, which every suite reads)
         suite.removePersistentDomain(forName: name)
         return suite
@@ -35,6 +40,21 @@ extension UserDefaults {
             modes.contains($0) || ($0.hasPrefix("--") && $0.hasSuffix("-check"))
         }) else { return nil }
         return "PhotoCatalogChecks.\(digest(executablePath)).\(mode.dropFirst(2))"
+    }
+
+    /// The suite `base`, or `base.2`, `base.3`… while other runs of the same check hold the ones
+    /// before: each run holds its suite's lock (a file in `lockDirectory`, open for as long as
+    /// `lock` is) until it ends. Nil when no lock can be taken.
+    static func claimHeadlessSuite(_ base: String, lockDirectory: URL) -> (name: String, lock: Int32)? {
+        for index in 1...16 {
+            let name = index == 1 ? base : "\(base).\(index)"
+            let file = lockDirectory.appendingPathComponent(name + ".lock").path
+            let lock = open(file, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+            guard lock >= 0 else { return nil }
+            if flock(lock, LOCK_EX | LOCK_NB) == 0 { return (name, lock) }
+            close(lock)
+        }
+        return nil
     }
 
     private static func digest(_ text: String) -> String {
