@@ -67,7 +67,9 @@ enum FileAccessService {
     }
 
     private static let rememberedKey = "pc_rememberedLocations"
-    private static let rememberedLimit = 64
+    /// How many of each are kept, counted apart: however many export folders the user picks,
+    /// none pushes out a place originals were moved to.
+    private static let rememberedLimit: [Purpose: Int] = [.place: 64, .originals: 256]
     @MainActor private static var reached: Set<String> = []
 
     private static var remembered: [Remembered] {
@@ -78,14 +80,27 @@ enum FileAccessService {
         set { UserDefaults.app.set(try? JSONEncoder().encode(newValue), forKey: rememberedKey) }
     }
 
-    /// Remembers access to `url`, which the user just chose (or the app can reach anyway).
+    /// Remembers access to `url`, which the user just chose (or the app can reach anyway). A
+    /// place originals were moved to stays one when it's chosen again for something else.
     @MainActor static func remember(_ url: URL, for purpose: Purpose = .place) {
         let path = url.standardizedFileURL.path
         guard let bookmark = createBookmark(for: url) else { return }
-        var all = remembered.filter { $0.path != path }
-        all.insert(Remembered(path: path, purpose: purpose, bookmark: bookmark), at: 0)
-        remembered = Array(all.prefix(rememberedLimit))
+        var all = remembered
+        let wasOriginals = all.contains { $0.path == path && $0.purpose == .originals }
+        all.removeAll { $0.path == path }
+        all.insert(Remembered(path: path, purpose: wasOriginals ? .originals : purpose, bookmark: bookmark), at: 0)
+        var kept: [Purpose: Int] = [:]
+        remembered = all.filter { entry in
+            kept[entry.purpose, default: 0] += 1
+            return kept[entry.purpose, default: 0] <= rememberedLimit[entry.purpose, default: 0]
+        }
         reached.insert(path)
+    }
+
+    /// What `url` is remembered for; nil when it isn't.
+    @MainActor static func rememberedPurpose(of url: URL) -> Purpose? {
+        let path = url.standardizedFileURL.path
+        return remembered.first { $0.path == path }?.purpose
     }
 
     /// Opens access to a place remembered earlier, for the rest of this launch. Does nothing when
@@ -103,10 +118,11 @@ enum FileAccessService {
         }
     }
 
-    /// Forgets a place, e.g. a catalog dropped from the recents.
+    /// Forgets a place, e.g. a catalog dropped from the recents; a place originals were moved
+    /// to is kept.
     @MainActor static func forget(_ url: URL) {
         let path = url.standardizedFileURL.path
-        remembered.removeAll { $0.path == path }
+        remembered.removeAll { $0.path == path && $0.purpose == .place }
     }
 
     @MainActor private static func open(_ entry: Remembered) {
