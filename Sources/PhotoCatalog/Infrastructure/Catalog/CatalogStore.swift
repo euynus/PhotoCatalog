@@ -549,6 +549,7 @@ final class CatalogStore: @unchecked Sendable {
 
     private func upsertRows(_ assets: [Asset], updatingExisting: Bool = true) throws {
         let sql = updatingExisting ? Self.assetInsertSQL.upsert : Self.assetInsertSQL.insert
+        var searchRows: [(rowid: Int, id: String, content: String)] = []
         for a in assets {
             // keep the FTS index in sync; its rows share the asset's rowid (schema v20)
             guard let rowid = try db.queryMap(sql, Self.params(a), transform: { $0.int("r") }).first else { continue }
@@ -558,12 +559,19 @@ final class CatalogStore: @unchecked Sendable {
             if updatingExisting, let row = try db.query("SELECT asset_id, content FROM asset_search WHERE rowid=?;",
                                                         [.int(rowid)]).first,
                row.text("asset_id") == a.id, row.text("content") == content { continue }
+            searchRows.append((rowid, a.id, content))
+        }
+        // FTS5 keeps a transaction's index changes in memory while their rowids rise, and writes
+        // them out as a new segment (to be merged later) each time one doesn't: rows taken in the
+        // selection's order wrote one segment for about every other photo.
+        searchRows.sort { $0.rowid < $1.rowid }
+        for row in searchRows {
             searchIndexWrites &+= 1
-            try db.run("DELETE FROM asset_search WHERE rowid=?;", [.int(rowid)])
+            try db.run("DELETE FROM asset_search WHERE rowid=?;", [.int(row.rowid)])
             try db.run("INSERT INTO asset_search(rowid, asset_id, content) VALUES(?,?,?);", [
-                .int(rowid),
-                .text(a.id),
-                .text(content),
+                .int(row.rowid),
+                .text(row.id),
+                .text(row.content),
             ])
         }
     }

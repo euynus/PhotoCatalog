@@ -52,6 +52,32 @@ final class SQLiteTests: XCTestCase {
         XCTAssertEqual(store.search("dawn"), [])
     }
 
+    /// A batch's index rows are written in rowid order, whatever order the photos come in: each
+    /// photo is found by its new words and no longer by its old ones, and the index is intact.
+    func testABatchInAnyOrderIndexesEveryPhotosNewWords() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-search-batch-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: dir.appendingPathComponent("Library.photolibrary"))
+        var photos = Array(DemoData.assets.prefix(30))
+        for index in photos.indices { photos[index].keywords = ["oldword\(index)"] }
+        try store.upsert(photos)
+        // newest first, then shuffled: rowids fall and jump
+        var batch = photos.reversed().map { photo -> Asset in
+            var photo = photo
+            photo.keywords = ["freshword", "only" + photo.id.filter(\.isLetter).lowercased() + "x"]
+            return photo
+        }
+        batch.swapAt(3, 17)
+        batch.swapAt(0, 25)
+        try store.upsert(batch)
+        XCTAssertEqual(Set(store.search("freshword") ?? []), Set(photos.map(\.id)))
+        XCTAssertEqual(store.search("oldword"), [])
+        XCTAssertNoThrow(try store.db.run("INSERT INTO asset_search(asset_search) VALUES('integrity-check');"))
+    }
+
     func testTransactionThrowsWhenCommitFails() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-sqlite-\(UUID().uuidString)")
