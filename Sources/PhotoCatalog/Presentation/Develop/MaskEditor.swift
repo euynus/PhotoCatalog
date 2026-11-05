@@ -453,6 +453,11 @@ struct MaskMapper {
         return CGPoint(x: display.minX + finished.x * display.width, y: display.minY + finished.y * display.height)
     }
 
+    /// Where a place of the photo as decoded (before its manual distortion correction) shows.
+    func screen(decoded point: CGPoint) -> CGPoint {
+        screen(DevelopGeometry.distortionTarget(point, distortion: settings.distortion, sourceSize: sourceSize))
+    }
+
     /// The source-pixel vector between two screen points, in fractions of the long edge.
     func sourceVector(from a: CGPoint, to b: CGPoint) -> CGVector {
         let p = source(a), q = source(b)
@@ -597,18 +602,19 @@ private struct MaskOverlay: View {
             context.fill(dot, with: .color(Theme.accentFill))
             context.stroke(dot, with: .color(.white), lineWidth: 1.5)
         }
-        // an object's box and the places clicked in (green) or out (red) of it
+        // an object's box and the places clicked in (green) or out (red) of it, kept in the photo
+        // as decoded and shown where the distortion correction puts them
         if mask.kind == .object {
             if let box = mask.prompt.box {
                 let corners = [CGPoint(x: box.minX, y: box.minY), CGPoint(x: box.maxX, y: box.minY),
-                               CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.maxY)].map(mapper.screen)
+                               CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.maxY)].map(mapper.screen(decoded:))
                 var outline = Path()
                 outline.addLines(corners)
                 outline.closeSubpath()
                 context.stroke(outline, with: .color(.white.opacity(0.7)), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
             }
             for place in mask.prompt.points {
-                let p = mapper.screen(place.point)
+                let p = mapper.screen(decoded: place.point)
                 let dot = Path(ellipseIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8))
                 context.fill(dot, with: .color(place.include ? Color.green : Color.red))
                 context.stroke(dot, with: .color(.white), lineWidth: 1.2)

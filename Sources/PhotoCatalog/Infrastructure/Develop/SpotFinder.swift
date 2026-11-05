@@ -8,9 +8,10 @@ import Foundation
 /// nearby circle whose surroundings best match the spot's own, with a clean inside (not
 /// another speck or an edge). Works on the photo as shot at 1024 px.
 enum SpotFinder {
-    /// A source for a spot at `target` with `radius` (fractions of the source photo and of its
-    /// long edge), or nil when the photo can't be read.
-    static func source(for target: CGPoint, radius: Double, url: URL, isRaw: Bool) -> CGPoint? {
+    /// A source for a spot at `target` with `radius` (fractions of the source photo, with its
+    /// manual `distortion` correction as spots are healed on, and of its long edge), or nil when
+    /// the photo can't be read.
+    static func source(for target: CGPoint, radius: Double, url: URL, isRaw: Bool, distortion: Double = 0) -> CGPoint? {
         guard let image = SemanticMasks.canonical(url: url, isRaw: isRaw), let pixels = SemanticMasks.rgba(image)
         else { return nil }
         let width = image.width, height = image.height
@@ -19,7 +20,18 @@ enum SpotFinder {
             luma[i] = (0.2126 * Double(pixels[i * 4]) + 0.7152 * Double(pixels[i * 4 + 1])
                        + 0.0722 * Double(pixels[i * 4 + 2])) / 255
         }
-        return source(for: target, radius: radius, luma: luma, width: width, height: height)
+        return source(for: target, radius: radius, luma: luma, width: width, height: height, distortion: distortion)
+    }
+
+    /// The search on the luma of the photo as decoded, for a spot placed on it as the manual
+    /// `distortion` correction shows it: looked for around where the spot comes from, the place
+    /// found taken back to where the correction shows it.
+    static func source(for target: CGPoint, radius: Double, luma: [Double], width: Int, height: Int,
+                       distortion: Double) -> CGPoint {
+        let size = CGSize(width: width, height: height)
+        let decoded = DevelopGeometry.distortionSource(target, distortion: distortion, sourceSize: size)
+        let found = source(for: decoded, radius: radius, luma: luma, width: width, height: height)
+        return DevelopGeometry.distortionTarget(found, distortion: distortion, sourceSize: size)
     }
 
     /// The search on a luma image (0…1, row-major, top row first).

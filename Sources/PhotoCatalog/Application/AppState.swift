@@ -1612,9 +1612,10 @@ final class AppState {
     func addSpot(at target: CGPoint, radius: Double, to assetId: String) {
         guard let asset = assetIndex[assetId].map({ assets[$0] }), let source = developSource(for: asset) else { return }
         let brush = developSpotBrush
+        let distortion = developSettings[assetId]?.distortion ?? 0
         Task { [weak self] in
             let from = await ThumbnailRepairQueue.run(.visible) {
-                SpotFinder.source(for: target, radius: radius, url: source.url, isRaw: source.isRaw)
+                SpotFinder.source(for: target, radius: radius, url: source.url, isRaw: source.isRaw, distortion: distortion)
             } ?? nil
             guard let self else { return }
             var spot = SpotRemoval(target: target, source: from ?? CGPoint(x: min(1, target.x + radius * 2.5), y: target.y),
@@ -1843,11 +1844,16 @@ final class AppState {
         return nil
     }
 
-    /// Selects the object `prompt` (a box or a click) picks out as a new mask, or, with `maskId`,
-    /// gives that object mask the new prompt (more clicks, or a new box).
-    func selectObject(_ prompt: ObjectPrompt, maskId: String? = nil) {
+    /// Selects the object `prompt` (a box or a click on the photo as shown) picks out as a new
+    /// mask, or, with `maskId`, gives that object mask the new prompt (more clicks, or a new box).
+    /// `decoded`: the prompt is already in the photo as decoded (see `ObjectPrompt`).
+    func selectObject(_ prompt: ObjectPrompt, maskId: String? = nil, decoded: Bool = false) {
         guard !prompt.isEmpty, developDetectingMask == nil, view == .develop, let asset = primary,
               let source = developSource(for: asset) else { return }
+        // picked on the photo with its manual distortion correction; looked for, and kept, in the
+        // photo as decoded
+        let prompt = decoded ? prompt : prompt.inPhotoAsDecoded(distortion: developSettings[asset.id]?.distortion ?? 0,
+                                                                 sourceSize: developSourceSize(for: asset))
         developDetectingMask = .object
         let id = asset.id
         Task { [weak self] in
@@ -1877,12 +1883,13 @@ final class AppState {
         }
     }
 
-    /// A click on the selected object mask: adds the place to the object, or with `include`
-    /// false leaves it out.
+    /// A click on the selected object mask (on the photo as shown): adds the place to the object,
+    /// or with `include` false leaves it out.
     func addObjectPoint(_ point: CGPoint, include: Bool, maskId: String) {
-        guard let asset = primary,
-              let mask = developSettings[asset.id]?.masks.first(where: { $0.id == maskId && $0.kind == .object }) else { return }
-        selectObject(mask.prompt.adding(point, include: include), maskId: maskId)
+        guard let asset = primary, let settings = developSettings[asset.id],
+              let mask = settings.masks.first(where: { $0.id == maskId && $0.kind == .object }) else { return }
+        let decoded = DevelopGeometry.distortionSource(point, distortion: settings.distortion, sourceSize: developSourceSize(for: asset))
+        selectObject(mask.prompt.adding(decoded, include: include), maskId: maskId, decoded: true)
     }
 
     /// Why a people mask came back empty: no one in the photo, or not this part of them.

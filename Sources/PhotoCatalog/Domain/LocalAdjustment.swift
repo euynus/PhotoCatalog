@@ -162,7 +162,9 @@ struct LocalAdjustment: Codable, Hashable, Sendable, Identifiable {
 }
 
 /// What picks out an object, as for Lightroom's Select Object: a box drawn around it and
-/// places clicked to add to it or leave out of it (source fractions, like every mask position).
+/// places clicked to add to it or leave out of it (source fractions of the photo as decoded,
+/// before the manual distortion correction, where the object is looked for: see
+/// `inPhotoAsDecoded`).
 struct ObjectPrompt: Codable, Hashable, Sendable {
     struct Point: Codable, Hashable, Sendable {
         var point: CGPoint
@@ -194,6 +196,26 @@ struct ObjectPrompt: Codable, Hashable, Sendable {
     var fingerprintText: String {
         (box.map { String(format: "b%.4f,%.4f,%.4f,%.4f;", $0.minX, $0.minY, $0.width, $0.height) } ?? "")
             + points.map { ($0.include ? "+" : "-") + String(format: "%.4f,%.4f", $0.point.x, $0.point.y) }.joined(separator: ";")
+    }
+
+    /// The prompt picked on the photo with its manual `distortion` correction (as shown), taken
+    /// to the photo as decoded, where the object is looked for and its places are kept. A box
+    /// becomes the box around its bent outline.
+    func inPhotoAsDecoded(distortion: Double, sourceSize: CGSize) -> ObjectPrompt {
+        guard DevelopGeometry.distortionStrength(distortion) != 0 else { return self }
+        func decoded(_ p: CGPoint) -> CGPoint {
+            DevelopGeometry.distortionSource(p, distortion: distortion, sourceSize: sourceSize)
+        }
+        var next = self
+        next.points = points.map { Point(point: decoded($0.point), include: $0.include) }
+        if let box = box?.standardized {
+            // its corners and the middles of its sides, where the bent sides reach furthest
+            let outline = [box.minX, box.midX, box.maxX].flatMap { x in [box.minY, box.midY, box.maxY].map { CGPoint(x: x, y: $0) } }
+                .map(decoded)
+            let xs = outline.map { min(1, max(0, $0.x)) }, ys = outline.map { min(1, max(0, $0.y)) }
+            next.box = CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+        }
+        return next
     }
 }
 
@@ -439,6 +461,33 @@ extension DevelopGeometry {
         let dx = (Double(p.x) - 0.5) * w / zoom, dy = (Double(p.y) - 0.5) * h / zoom
         let scale = 1 - k * (dx * dx + dy * dy) / max((w * w + h * h) / 4, 1e-9)
         return CGPoint(x: 0.5 + dx * scale / max(w, 1e-9), y: 0.5 + dy * scale / max(h, 1e-9))
+    }
+
+    /// Where the point `p` of the photo as decoded shows once the manual distortion correction
+    /// bends it: `distortionSource` undone. A place the correction can't show comes back at the
+    /// edge of what it can, outside 0…1.
+    static func distortionTarget(_ p: CGPoint, distortion: Double, sourceSize: CGSize) -> CGPoint {
+        let k = distortionStrength(distortion)
+        guard k != 0 else { return p }
+        let w = Double(sourceSize.width), h = Double(sourceSize.height)
+        let radius2 = max((w * w + h * h) / 4, 1e-9)
+        let zoom = k < 0 ? 1 - k : 1
+        let ex = (Double(p.x) - 0.5) * w, ey = (Double(p.y) - 0.5) * h
+        let e = (ex * ex + ey * ey).squareRoot()
+        guard e > 1e-9 else { return p }
+        // the kernel samples distance d (in pixels, before the zoom) from the middle at
+        // d (1 − k d² / R²): solved for d by Newton's method, which closes in from one side
+        // since that grows steadily (to its peak, for k > 0)
+        let peak = k > 0 ? (radius2 / (3 * k)).squareRoot() : .infinity
+        var d = min(e, peak)
+        for _ in 0..<30 {
+            let error = d * (1 - k * d * d / radius2) - e
+            let slope = 1 - 3 * k * d * d / radius2
+            guard abs(error) > 1e-12, slope > 1e-12 else { break }
+            d = min(peak, max(0, d - error / slope))
+        }
+        let scale = d / e * zoom
+        return CGPoint(x: 0.5 + ex * scale / max(w, 1e-9), y: 0.5 + ey * scale / max(h, 1e-9))
     }
 
     static func sourcePoint(fromFinished p: CGPoint, settings s: DevelopSettings, sourceSize: CGSize) -> CGPoint {
