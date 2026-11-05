@@ -16,7 +16,8 @@ extension UserDefaults {
                 ?? FileManager.default.currentDirectoryPath
             return UserDefaults(suiteName: "PhotoCatalogTests.\(digest(tests))") ?? .standard
         }
-        let executable = Bundle.main.executableURL?.path ?? CommandLine.arguments.first ?? ""
+        // resolved: `.build/debug` is a link to the build's own folder, and the build script runs that
+        let executable = Bundle.main.executableURL?.resolvingSymlinksInPath().path ?? CommandLine.arguments.first ?? ""
         guard let name = headlessCheckSuiteName(arguments: CommandLine.arguments, executablePath: executable),
               let suite = UserDefaults(suiteName: name) else { return .standard }
         // each run starts from the app's defaults (and any `-pc_…` arguments, which every suite reads)
