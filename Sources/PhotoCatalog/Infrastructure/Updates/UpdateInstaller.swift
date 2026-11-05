@@ -82,23 +82,34 @@ enum UpdateInstaller {
         let unpacked = staging.appendingPathComponent("unpacked", isDirectory: true)
         guard run("/usr/bin/ditto", ["-x", "-k", zip.path, unpacked.path]) else { throw Failure.unpack }
         guard let app = (try? files.contentsOfDirectory(at: unpacked, includingPropertiesForKeys: nil))?
-                  .first(where: { $0.pathExtension == "app" }),
-              let info = NSDictionary(contentsOf: app.appendingPathComponent("Contents/Info.plist")),
-              info["CFBundleIdentifier"] as? String == identifier,
+                  .first(where: { $0.pathExtension == "app" }) else { throw Failure.notTheApp }
+        // nothing the app says of itself is read before its signature holds: then its
+        // Info.plist is the one sealed in it
+        guard let info = signedInfo(app, satisfying: requirement) else { throw Failure.untrusted }
+        guard info["CFBundleIdentifier"] as? String == identifier,
               info["CFBundleShortVersionString"] as? String == version else { throw Failure.notTheApp }
-        guard isSigned(app, satisfying: requirement) else { throw Failure.untrusted }
         return app
     }
 
     /// The app's signature is intact — every file as signed — and meets `requirement`.
     static func isSigned(_ app: URL, satisfying requirement: String) -> Bool {
+        signedInfo(app, satisfying: requirement) != nil
+    }
+
+    /// The Info.plist the app's signature seals, once the signature is found intact and meeting
+    /// `requirement`; nil otherwise.
+    private static func signedInfo(_ app: URL, satisfying requirement: String) -> [String: Any]? {
         var code: SecStaticCode?, parsed: SecRequirement?
         guard SecStaticCodeCreateWithPath(app as CFURL, [], &code) == errSecSuccess, let code,
               SecRequirementCreateWithString(requirement as CFString, [], &parsed) == errSecSuccess, let parsed else {
-            return false
+            return nil
         }
         let flags = SecCSFlags(rawValue: UInt32(kSecCSCheckAllArchitectures | kSecCSStrictValidate | kSecCSCheckNestedCode))
-        return SecStaticCodeCheckValidity(code, flags, parsed) == errSecSuccess
+        var information: CFDictionary?
+        guard SecStaticCodeCheckValidity(code, flags, parsed) == errSecSuccess,
+              SecCodeCopySigningInformation(code, [], &information) == errSecSuccess,
+              let info = information as? [String: Any] else { return nil }
+        return info[kSecCodeInfoPList as String] as? [String: Any] ?? [:]
     }
 
     /// Puts `new` where `current` is. The running copy's files stay open until this process
@@ -107,15 +118,22 @@ enum UpdateInstaller {
         do { _ = try FileManager.default.replaceItemAt(current, withItemAt: new) } catch { throw Failure.replace }
     }
 
-    /// Opens `app` as soon as this process has exited, as a fresh launch: none of this
-    /// process's environment carries over.
-    static func relaunch(_ app: URL) {
+    /// Opens `app` as soon as process `pid` (this one) has exited, as a fresh launch: none of this
+    /// process's environment carries over. Waits `seconds` at most.
+    @discardableResult
+    static func relaunch(_ app: URL, after pid: Int32 = ProcessInfo.processInfo.processIdentifier,
+                         waitingAtMost seconds: Int = 120) -> Process? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.environment = ["PATH": "/usr/bin:/bin"]
-        process.arguments = ["-c", "while /bin/kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do /bin/sleep 0.2; done; /usr/bin/open \"$0\"",
-                             app.path]
-        try? process.run()
+        // gives up after `seconds`: a copy that hangs on its way out leaves no shell waiting on it
+        // for ever, and opening the app then would only bring the hung copy forward
+        process.arguments = ["-c", """
+            n=0; while /bin/kill -0 "$1" 2>/dev/null; do
+              n=$((n + 1)); [ "$n" -gt "$2" ] && exit 1; /bin/sleep 0.2
+            done; /usr/bin/open "$0"
+            """, app.path, String(pid), String(seconds * 5)]
+        return (try? process.run()) != nil ? process : nil
     }
 
     @discardableResult

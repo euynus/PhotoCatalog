@@ -94,6 +94,8 @@ extension DiagnosticsCheck {
                "an archive of another version is refused")
         assert(prepare(archive, requirement: "identifier \"com.example.other\"") == .failure(.untrusted),
                "an app signed as something else is refused")
+        assert(prepare(archive, version: "2.1", requirement: "identifier \"com.example.other\"") == .failure(.untrusted),
+               "an app signed as something else is refused before anything it says of itself is read")
         try? Data("altered".utf8).write(to: built.appendingPathComponent("Contents/Resources/note.txt"))
         assert(prepare(zip(built, "altered.zip"), requirement: requirement) == .failure(.untrusted),
                "an app altered after signing is refused")

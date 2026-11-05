@@ -82,8 +82,22 @@ enum UpdateChecker {
             guard status == 200 else { return .unavailable }
             data = body
         }
-        guard let release = try? JSONDecoder().decode(Release.self, from: data) else { return .unavailable }
+        guard let decoded = try? JSONDecoder().decode(Release.self, from: data),
+              let release = accepted(decoded, from: url) else { return .unavailable }
         return isNewer(release.version, than: currentVersion) ? .newer(release) : .upToDate
+    }
+
+    /// `release` as far as it can be followed: its page is opened in the browser, so it's an
+    /// https page or the release is unavailable; an archive is downloaded over https only (or
+    /// from disk, named by a feed read from disk), and one that isn't is left out, so the
+    /// release is offered through its page.
+    static func accepted(_ release: Release, from feed: URL) -> Release? {
+        guard release.htmlURL.scheme?.lowercased() == "https" else { return nil }
+        var accepted = release
+        accepted.assets = release.assets.filter {
+            $0.downloadURL.scheme?.lowercased() == "https" || (feed.isFileURL && $0.downloadURL.isFileURL)
+        }
+        return accepted
     }
 
     /// Dotted versions compared number by number: 1.10 is newer than 1.9, 1.0 equals 1.
