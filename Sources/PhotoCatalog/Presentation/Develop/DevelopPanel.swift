@@ -9,6 +9,7 @@ struct DevelopPanel: View {
     let asset: Asset?
     @State private var mixerProperty: ColorMixer.Property = .hue
     @State private var gradingRegion: ColorGrading.Region = .shadows
+    @State private var curveChannel: ToneCurve.Channel = .rgb
 
     var body: some View {
         Group {
@@ -67,7 +68,10 @@ struct DevelopPanel: View {
                                         next.curve = curve
                                         app.updateDevelopDraft(next, for: asset.id)
                                     },
-                                    onCommit: { undoName in app.commitDevelopDraft(for: asset.id, undoName: undoName) })
+                                    onCommit: { undoName in app.commitDevelopDraft(for: asset.id, undoName: undoName) },
+                                    onCancel: { app.discardDevelopDraft(for: asset.id) },
+                                    channel: $curveChannel)
+                        .id(asset.id)   // a new photo starts with no drag in progress
                 }
                 if DevelopProfile(stored: settings.profile) == .monochrome {
                     section(L("黑白混合"), id: "mixer", accessory: {

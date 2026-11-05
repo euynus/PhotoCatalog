@@ -10,8 +10,11 @@ struct ToneCurveEditor: View {
     let histogram: DevelopHistogram?
     let onChange: (ToneCurve) -> Void
     let onCommit: (_ undoName: String) -> Void
+    /// Drops what a drag cut short (the photo changed, Develop closed) published, unsaved.
+    let onCancel: () -> Void
 
-    @State private var channel: ToneCurve.Channel = .rgb
+    /// The panel's: the editor starts afresh with each photo, but stays on the channel.
+    @Binding var channel: ToneCurve.Channel
     /// The channel's points while a drag is in progress, so indices stay put as it moves.
     @State private var working: [CurvePoint]?
     @State private var dragged: Int?
@@ -62,6 +65,8 @@ struct ToneCurveEditor: View {
             Text("点按曲线添加控制点，拖移调整，双击删除")
                 .font(.system(size: 11)).foregroundStyle(Theme.text3)
         }
+        // only a drag of its own: off screen in the lazy panel, it goes while a slider drags
+        .onDisappear { if dragStart != nil { onCancel() } }
     }
 
     private var points: [CurvePoint] { working ?? curve.editablePoints(for: channel) }

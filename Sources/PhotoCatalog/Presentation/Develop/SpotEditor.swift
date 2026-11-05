@@ -78,7 +78,10 @@ struct SpotEditor: View {
                 .clipped()
                 .contentShape(Rectangle())
                 .gesture(gesture(mapper))
-                .onDisappear { app.discardDevelopDraft(for: asset.id) }   // the tool closed mid-drag
+                .onDisappear {
+                    app.discardDevelopDraft(for: asset.id)   // the tool closed mid-drag
+                    NSCursor.arrow.set()   // the pointer may still be over where the tool was
+                }
                 .onContinuousHover { phase in
                     switch phase {
                     case .active(let location):

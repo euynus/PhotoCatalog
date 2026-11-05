@@ -67,6 +67,7 @@ private struct DevelopCanvas: View {
                         BeforeAfterPanes(before: beforeEngine.image(for: asset.id), after: engine.image(for: asset.id))
                     } else if cropping {
                         CropEditor(asset: asset, image: engine.wholeFrameImage(for: asset.id), settings: settings)
+                            .id(asset.id)   // a new photo starts with no drag in progress
                     } else if spotting {
                         SpotEditor(asset: asset, image: engine.finishedImage(for: asset.id), settings: settings,
                                    frameSettings: engine.shown(for: asset.id)?.settings,

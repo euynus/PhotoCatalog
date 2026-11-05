@@ -54,6 +54,10 @@ struct CropEditor: View {
         }
         .padding(.horizontal, 28).padding(.top, 28).padding(.bottom, 44)
         .overlay(alignment: .bottom) { hint }
+        .onDisappear {
+            app.discardDevelopDraft(for: asset.id)   // the tool closed, or the photo changed, mid-drag
+            NSCursor.arrow.set()   // the pointer may still be over where the tool was
+        }
     }
 
     private var hint: some View {

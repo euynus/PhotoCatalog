@@ -49,7 +49,10 @@ struct MaskEditor: View {
                 .clipped()
                 .contentShape(Rectangle())
                 .gesture(gesture(mapper))
-                .onDisappear { discardDraft() }   // the tool closed mid-drag
+                .onDisappear {
+                    discardDraft()   // the tool closed mid-drag
+                    NSCursor.arrow.set()   // the pointer may still be over where the tool was
+                }
                 .onContinuousHover { phase in
                     switch phase {
                     case .active(let location):
