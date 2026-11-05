@@ -300,26 +300,44 @@ enum LLMKeychain {
         return endpoint.port.map { "\(host):\($0)" } ?? host
     }
 
+    /// Where keys are kept: the login keychain, or a stand-in in tests.
+    struct Store: Sendable {
+        var read: @Sendable (_ account: String) -> String?
+        var remove: @Sendable (_ account: String) -> Void
+        var add: @Sendable (_ key: String, _ account: String, _ label: String) -> Bool
+    }
+
+    static let keychain = Store(read: { stored($0) }, remove: { remove($0) }, add: { add($0, account: $1, label: $2) })
+
     /// The service's key; one saved before ports counted is found under the host alone and
     /// copied to the service's own account.
-    static func key(for configuration: LLMConfiguration) -> String? {
-        if let key = stored(account(for: configuration)) { return key }
-        guard let legacy = legacyAccount(for: configuration), let key = stored(legacy) else { return nil }
-        add(key, account: account(for: configuration), configuration: configuration)
+    static func key(for configuration: LLMConfiguration, in store: Store = keychain) -> String? {
+        if let key = store.read(account(for: configuration)) { return key == cleared ? nil : key }
+        guard let legacy = legacyAccount(for: configuration), let key = store.read(legacy) else { return nil }
+        _ = store.add(key, account(for: configuration), label(for: configuration))
         return key
     }
 
-    /// Saves `key` for the service (an empty key removes it, along with one saved for its host
-    /// before ports counted, which would otherwise be found again).
+    /// Saves `key` for the service; an empty key removes it. A service with a port then keeps
+    /// `cleared` in its place, so a key saved for its host before ports counted isn't found
+    /// again: that key stays, as it's also the key of the service at the host without a port.
     @discardableResult
-    static func save(_ key: String, for configuration: LLMConfiguration) -> Bool {
-        remove(account(for: configuration))
+    static func save(_ key: String, for configuration: LLMConfiguration, in store: Store = keychain) -> Bool {
+        store.remove(account(for: configuration))
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            if let legacy = legacyAccount(for: configuration) { remove(legacy) }
-            return true
+            guard legacyAccount(for: configuration) != nil else { return true }
+            return store.add(cleared, account(for: configuration), label(for: configuration))
         }
-        return add(trimmed, account: account(for: configuration), configuration: configuration)
+        return store.add(trimmed, account(for: configuration), label(for: configuration))
+    }
+
+    /// What a service's account holds once its key is cleared: a newline, which no saved key
+    /// is (they're trimmed).
+    static let cleared = "\n"
+
+    private static func label(for configuration: LLMConfiguration) -> String {
+        "PhotoCatalog AI (\(place(of: configuration)))"
     }
 
     private static func stored(_ account: String) -> String? {
@@ -334,11 +352,10 @@ enum LLMKeychain {
         SecItemDelete([kSecClass: kSecClassGenericPassword, kSecAttrService: service, kSecAttrAccount: account] as CFDictionary)
     }
 
-    @discardableResult
-    private static func add(_ key: String, account: String, configuration: LLMConfiguration) -> Bool {
+    private static func add(_ key: String, account: String, label: String) -> Bool {
         let attributes: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service,
                                            kSecAttrAccount: account, kSecValueData: Data(key.utf8),
-                                           kSecAttrLabel: "PhotoCatalog AI (\(place(of: configuration)))"]
+                                           kSecAttrLabel: label]
         return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
     }
 }

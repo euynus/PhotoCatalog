@@ -141,6 +141,50 @@ final class LLMClientTests: XCTestCase {
         XCTAssertEqual(LLMKeychain.account(for: openAI), "openAICompatible|api.openai.com")
         XCTAssertNil(LLMKeychain.legacyAccount(for: openAI))
     }
+
+    /// Clearing the key of a service with a port (Ollama on this Mac) also deleted the key saved
+    /// under the host alone, which is also the account of the service there without a port.
+    func testClearingAKeyLeavesAnotherServiceOnTheHostItsKey() {
+        let keys = MemoryKeys()
+        let plain = LLMConfiguration(kind: .openAICompatible, baseURL: "http://localhost/v1", model: "m")
+        let ported = LLMConfiguration(kind: .openAICompatible, baseURL: "http://localhost:11434/v1", model: "m")
+        XCTAssertTrue(LLMKeychain.save("plain-key", for: plain, in: keys.store))
+        XCTAssertTrue(LLMKeychain.save("ported-key", for: ported, in: keys.store))
+        XCTAssertTrue(LLMKeychain.save("", for: ported, in: keys.store))
+        XCTAssertNil(LLMKeychain.key(for: ported, in: keys.store), "a cleared key isn't found again under the host")
+        XCTAssertEqual(LLMKeychain.key(for: plain, in: keys.store), "plain-key")
+        XCTAssertTrue(LLMKeychain.save("new-key", for: ported, in: keys.store))
+        XCTAssertEqual(LLMKeychain.key(for: ported, in: keys.store), "new-key")
+        XCTAssertEqual(LLMKeychain.key(for: plain, in: keys.store), "plain-key")
+    }
+
+    /// A key saved under the host alone, before ports counted, is still found, and copied to the
+    /// service's own account.
+    func testAKeySavedBeforePortsCountedIsStillFound() {
+        let keys = MemoryKeys()
+        let ported = LLMConfiguration(kind: .openAICompatible, baseURL: "http://localhost:11434/v1", model: "m")
+        keys.items["openAICompatible|localhost"] = "old-key"
+        XCTAssertEqual(LLMKeychain.key(for: ported, in: keys.store), "old-key")
+        XCTAssertEqual(keys.items["openAICompatible|localhost:11434"], "old-key")
+        XCTAssertEqual(keys.items["openAICompatible|localhost"], "old-key")
+        // cleared for one service without a port: nothing else to look under
+        XCTAssertTrue(LLMKeychain.save("", for: .anthropic, in: keys.store))
+        XCTAssertNil(keys.items["anthropic|api.anthropic.com"])
+    }
+}
+
+/// Keys kept in memory, standing in for the keychain.
+private final class MemoryKeys: @unchecked Sendable {
+    var items: [String: String] = [:]
+    var store: LLMKeychain.Store {
+        LLMKeychain.Store(read: { self.items[$0] },
+                          remove: { self.items[$0] = nil },
+                          add: { key, account, _ in
+                              guard self.items[account] == nil else { return false }
+                              self.items[account] = key
+                              return true
+                          })
+    }
 }
 
 private extension Result {
