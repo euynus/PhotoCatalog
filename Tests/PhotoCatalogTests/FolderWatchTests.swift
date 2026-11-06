@@ -245,7 +245,7 @@ final class FolderWatchTests: CatalogTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var calls = 0
         var watcher: FileWatcher? = FileWatcher(paths: [folder.path], latency: 0.05) { _ in calls += 1 }
-        weak var released = watcher
+        weak let released = watcher
         watcher?.start()
         try Data("a".utf8).write(to: folder.appendingPathComponent("a.txt"))
         try await waitUntil("the change is reported") { calls > 0 }

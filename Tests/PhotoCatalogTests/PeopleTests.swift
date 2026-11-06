@@ -9,8 +9,12 @@ final class PeopleTests: CatalogTestCase {
     override func setUp() {
         super.setUp()
         savedAutoWriteXMP = UserDefaults.app.object(forKey: "pc_autoWriteXMP")
-        undo = UndoManager()
-        undo.groupsByEvent = false   // no run loop here to close event groups
+        // XCTest calls setUp on the main thread
+        undo = MainActor.assumeIsolated {
+            let undo = UndoManager()
+            undo.groupsByEvent = false   // no run loop here to close event groups
+            return undo
+        }
     }
 
     override func tearDown() {
@@ -212,6 +216,7 @@ final class PeopleTests: CatalogTestCase {
     // ---------- fixture ----------
 
     /// One undo step, as one user action makes.
+    @MainActor
     private func step(_ action: () -> Void) {
         undo.beginUndoGrouping()
         action()

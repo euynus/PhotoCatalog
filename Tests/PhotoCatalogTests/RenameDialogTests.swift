@@ -32,6 +32,7 @@ final class RenameDialogTests: XCTestCase {
     }
 
     /// The start number's field took any number, though its stepper stops at 0.
+    @MainActor
     func testRenameStartNumberIsNeverNegative() {
         XCTAssertEqual(RenameSheet.clampedStart(-5), 0)
         XCTAssertEqual(RenameSheet.clampedStart(0), 0)

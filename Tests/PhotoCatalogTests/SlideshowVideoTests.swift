@@ -21,8 +21,9 @@ final class SlideshowVideoTests: XCTestCase {
         let group = DispatchGroup()
         group.enter()
         let ended = expectation(description: "the wait ends")
+        nonisolated(unsafe) let waiting = writer   // only the closure uses it until the wait ends
         DispatchQueue.global().async {
-            SlideshowVideo.waitForInputs(group, writer: writer, stop: { false })
+            SlideshowVideo.waitForInputs(group, writer: waiting, stop: { false })
             ended.fulfill()
         }
         wait(for: [ended], timeout: 5)
@@ -43,8 +44,9 @@ final class SlideshowVideoTests: XCTestCase {
         let group = DispatchGroup()
         group.enter()
         let ended = expectation(description: "the wait ends")
+        nonisolated(unsafe) let waiting = writer   // only the closure uses it until the wait ends
         DispatchQueue.global().async {
-            SlideshowVideo.waitForInputs(group, writer: writer, stop: { true })
+            SlideshowVideo.waitForInputs(group, writer: waiting, stop: { true })
             ended.fulfill()
         }
         wait(for: [ended], timeout: 5)

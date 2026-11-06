@@ -5,9 +5,10 @@ import XCTest
 /// or moved to are reached all together when a catalog opens, so no other place pushes them out.
 @MainActor
 final class FileAccessServiceTests: XCTestCase {
-    private static let key = "pc_rememberedLocations"
-    private var saved: Any?
-    private var root: URL!
+    nonisolated private static let key = "pc_rememberedLocations"
+    // set up and torn down around each test, which XCTest runs one at a time on one thread
+    nonisolated(unsafe) private var saved: Any?
+    nonisolated(unsafe) private var root: URL!
 
     override func setUp() {
         super.setUp()
