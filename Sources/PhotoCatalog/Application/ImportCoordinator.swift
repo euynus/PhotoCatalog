@@ -13,7 +13,6 @@ enum ImportMode: String, Sendable { case referenced, managed }
 enum ManagedArchiveRule: String, Sendable, CaseIterable {
     case date    // Originals/YYYY/MM/DD
     case camera  // Originals/<camera>/YYYY/MM
-    var label: String { self == .date ? L("按日期") : L("按相机") }
 }
 
 /// Turns a file an import found into the file to catalog — a card import copies it off first.

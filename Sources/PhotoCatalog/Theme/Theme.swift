@@ -25,13 +25,6 @@ extension Color {
         }
         self.init(.sRGB, red: r, green: g, blue: b, opacity: a)
     }
-
-    /// White at a given opacity — mirrors the many `rgba(255,255,255,a)` tokens.
-    static func white(_ opacity: Double) -> Color { .white.opacity(opacity) }
-    /// macOS label-on-dark tint `rgba(235,235,245,a)`.
-    static func label(_ opacity: Double) -> Color {
-        Color(.sRGB, red: 235.0 / 255, green: 235.0 / 255, blue: 245.0 / 255, opacity: opacity)
-    }
 }
 
 extension NSColor {
@@ -102,7 +95,6 @@ enum Theme {
     static let redSoft = dynamic("#B93939", "#F05A52")
     static let yellow = dynamic("#A87112", "#E3A53A")
     static let green = dynamic("#23804F", "#3CC47C")
-    static let blue = accent
     static let rating = dynamic("#B98116", "#E0A83A")
     static let starInactive = dynamic("#899099", "#7A8089")
 
@@ -120,7 +112,6 @@ enum Theme {
     static let inspectorMaxW: CGFloat = 400
     static let statusbarH: CGFloat = 26
 
-    static let font = Font.system(size: 13)
     static let mono = Font.system(size: 11, design: .monospaced)
 }
 

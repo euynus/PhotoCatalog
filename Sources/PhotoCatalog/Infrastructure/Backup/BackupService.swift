@@ -61,11 +61,6 @@ enum BackupService {
         return try? backup.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
     }
 
-    /// Replace the live catalog DB with a backup (caller must reopen the store after).
-    static func restore(_ backup: URL, into store: CatalogStore) throws {
-        try restore(backup, intoPackageAt: store.packageURL)
-    }
-
     /// Replace the live catalog DB with a backup after the current store has been closed.
     static func restore(_ backup: URL, intoPackageAt packageURL: URL) throws {
         let live = packageURL.appendingPathComponent("catalog.sqlite")

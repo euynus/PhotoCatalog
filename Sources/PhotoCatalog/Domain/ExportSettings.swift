@@ -249,8 +249,6 @@ struct RenderedExportPreset: Codable, Equatable, Identifiable, Sendable {
     var name: String
     var settings: ExportSettings
 
-    var isBuiltIn: Bool { id.hasPrefix("builtin.") }
-
     static let builtIns: [RenderedExportPreset] = [
         builtIn("full-jpeg", L("全尺寸 JPEG")) { $0.quality = 0.92 },
         builtIn("web", L("网络分享 · 2048 px")) {

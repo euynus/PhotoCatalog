@@ -117,10 +117,6 @@ enum PhotoStackService {
         return groups
     }
 
-    static func stack(containing assetId: String, in stacks: [PhotoStack]) -> PhotoStack? {
-        stacks.first { $0.assetIds.contains(assetId) }
-    }
-
     /// `assets` with each folded stack showing only the first of its photos among them. The
     /// photos are looked up in chunks side by side: one by one, the list of 500k photos took
     /// ~40 ms to fold.

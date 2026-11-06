@@ -3,7 +3,7 @@ import Foundation
 /// A task-center snapshot, not an execution or retry queue. The owning engine supplies outcomes.
 struct BackgroundTask: Identifiable, Codable, Equatable, Sendable {
     enum Kind: String, Codable, Sendable {
-        case importPhotos, exportPhotos, enhance, ai, preview, backup, restore, analysis, other
+        case importPhotos, exportPhotos, enhance, ai, preview, backup, restore, analysis
     }
 
     enum State: String, Codable, Sendable {
