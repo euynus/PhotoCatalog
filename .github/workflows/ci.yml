@@ -21,6 +21,8 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       CONFIGURATION: debug
+      # every build fails on a warning, the tests' and Debug-only code's included
+      WARNINGS_AS_ERRORS: "1"
       SWIFTPM_MODULECACHE_OVERRIDE: ${{ github.workspace }}/.build/ModuleCache
       SWIFT_MODULECACHE_PATH: ${{ github.workspace }}/.build/ModuleCache
       CLANG_MODULE_CACHE_PATH: ${{ github.workspace }}/.build/ModuleCache
@@ -52,7 +54,7 @@ jobs:
         timeout-minutes: 2
         run: python3 script/build_site.py --check
 
-      - name: Build Debug app bundle
+      - name: Build Debug app bundle with warnings as errors
         timeout-minutes: 15
         run: script/build_and_run.sh build 2>&1 | tee "$RUNNER_TEMP/photocatalog-ci-logs/build.log"
 
@@ -60,9 +62,9 @@ jobs:
         timeout-minutes: 20
         run: swift build -c release --sdk "$SDKROOT" -Xswiftc -warnings-as-errors 2>&1 | tee "$RUNNER_TEMP/photocatalog-ci-logs/release-build.log"
 
-      - name: Run XCTest
+      - name: Run XCTest with warnings as errors
         timeout-minutes: 10
-        run: swift test -c debug --sdk "$SDKROOT" 2>&1 | tee "$RUNNER_TEMP/photocatalog-ci-logs/xctest.log"
+        run: swift test -c debug --sdk "$SDKROOT" -Xswiftc -warnings-as-errors 2>&1 | tee "$RUNNER_TEMP/photocatalog-ci-logs/xctest.log"
 
       - name: Run full selfcheck
         timeout-minutes: 20

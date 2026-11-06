@@ -86,6 +86,8 @@ CONFIGURATION="${CONFIGURATION:-$DEFAULT_CONFIGURATION}"
 echo "Building $CONFIGURATION configuration"
 
 BUILD_ARGS=(-c "$CONFIGURATION" --sdk "$SDK_PATH")
+# CI fails on any warning, the tests' too: its `swift test` passes the same flag, so they share the build
+if [[ -n "${WARNINGS_AS_ERRORS:-}" ]]; then BUILD_ARGS+=(-Xswiftc -warnings-as-errors); fi
 # the Mac App Store build (script/appstore.sh) leaves the GitHub updater out
 if [[ -n "${APPSTORE:-}" ]]; then BUILD_ARGS+=(-Xswiftc -DAPPSTORE); fi
 # Intel as well; needs the AI code's Float16 replaced first, which Swift lacks on x86_64
