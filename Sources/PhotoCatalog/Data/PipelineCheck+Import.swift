@@ -277,27 +277,14 @@ extension PipelineCheck.Run {
         }
     }
 
-    /// Part of step 3: hashes, the import duplicate strategies and the import post actions.
+    /// Part of step 3: hashes and the import post actions. (The duplicate strategies are applied as
+    /// a batch is saved; ImportPersistenceCheck checks them there.)
     func deduplicationAndPostActions() {
         check(assets.allSatisfy { $0.contentHash != nil && $0.quickHash != nil }, "content + quick hashes computed")
-        let groupedDedup = ImportDeduplicationService.apply(imported: assets, existingAssets: [],
-                                                            existingIds: [], strategy: .groupExact)
-        check(groupedDedup.fresh.count == 7 && groupedDedup.skipped == 0,
-              "import duplicate strategy keeps exact duplicates for grouping")
-        let skippedDedup = ImportDeduplicationService.apply(imported: assets, existingAssets: [],
-                                                            existingIds: [], strategy: .skipExact)
-        check(skippedDedup.fresh.count == 6 && skippedDedup.skipped == 1,
-              "import duplicate strategy skips exact duplicates")
+        // a photo with the first one's content hash but another size, for the duplicate groups later
         sameHashDifferentSize = assets[1]
         sameHashDifferentSize.contentHash = assets[0].contentHash
         sameHashDifferentSize.fileMB = assets[0].fileMB + 1
-        let sizeAwareDedup = ImportDeduplicationService.apply(
-            imported: [sameHashDifferentSize],
-            existingAssets: [assets[0]],
-            existingIds: [],
-            strategy: .skipExact)
-        check(sizeAwareDedup.fresh.count == 1 && sizeAwareDedup.skipped == 0,
-              "import duplicate strategy requires matching size and content hash")
         let postKeywords = ImportPostActionService.normalizeKeywords("客户精选，旅行,客户精选")
         let postAssets = ImportPostActionService.apply(
             to: [assets[0]],
