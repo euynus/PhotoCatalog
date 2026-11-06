@@ -143,7 +143,7 @@ extension PipelineCheck.Run {
                   && !fm.fileExists(atPath: sourceCopy.path),
                   "original file operation moves originals")
             let sameDirSource = tmp.appendingPathComponent("file-op-same-dir.jpg")
-            try? fm.copyItem(at: movedURL!, to: sameDirSource)
+            if let movedURL { try? fm.copyItem(at: movedURL, to: sameDirSource) }
             fileOpAsset.filename = sameDirSource.lastPathComponent
             fileOpAsset.localPath = sameDirSource.path
             let sameDirReport = OriginalFileOperationService.perform(

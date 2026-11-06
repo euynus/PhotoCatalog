@@ -220,6 +220,10 @@ extension PipelineCheck.Run {
         } else {
             check(false, "CR3 black preview cache regenerates from original")
             check(false, "CR3 black thumbnail cache regenerates from preview fallback")
+            check(false, "full-size black renders stay under the decode-skip size bound")
+            check(false, "developed thumbnails render adjustments into their own cache files")
+            check(false, "a quarter turn renders from the cached thumbnail with its sides swapped")
+            check(false, "a CR3 exports at the requested size with its develop rotation")
         }
     }
 
