@@ -1,5 +1,4 @@
 import Foundation
-import Darwin
 
 /// Large-catalog benchmark: `PhotoCatalog --scale 500000 [catalog path]`.
 /// Generates a realistic synthetic catalog once (reused by later runs of the same size), then
@@ -186,10 +185,9 @@ enum ScaleCheck {
             let start = ContinuousClock.now
             _ = app.handleKey(String(round + 1), hasCommand: false)
             readSidebar()
-            let elapsed = ContinuousClock.now - start
-            rounds.append(Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15)
+            rounds.append(milliseconds(since: start))
         }
-        line.append("rate 1 + sidebar " + String(format: "%.1f", rounds.sorted()[rounds.count / 2]))
+        line.append("rate 1 + sidebar " + String(format: "%.1f", medianOf(rounds)))
         // a title, then the sidebar's project and client lists as it redraws
         _ = app.projectList
         _ = app.clientList
@@ -285,11 +283,10 @@ enum ScaleCheck {
             _ = app.listPosition(of: id)
             let start = ContinuousClock.now
             _ = app.handleKey(String(round % 5 + 1), hasCommand: false)
-            let elapsed = ContinuousClock.now - start
-            pairRatings.append(Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15)
+            pairRatings.append(milliseconds(since: start))
         }
         if !pairRatings.isEmpty {
-            line.append("rate pair " + String(format: "%.1f", pairRatings.sorted()[pairRatings.count / 2]))
+            line.append("rate pair " + String(format: "%.1f", medianOf(pairRatings)))
         }
         report("photo list ms: " + line.joined(separator: " · "))
         stackParts(app)
@@ -446,6 +443,9 @@ enum ScaleCheck {
         return Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
     }
 
+    /// The middle value (the upper of the two middle ones for an even count).
+    private static func medianOf(_ values: [Double]) -> Double { values.sorted()[values.count / 2] }
+
     /// Stacks worked out again after a structural change, alone: the change, and the pairing they
     /// read, come before the clock starts. Then what a redraw reads of them: the menu's state and
     /// a screenful of tiles' badges. As the catalog is (auto-stacking as the run's settings have
@@ -461,10 +461,9 @@ enum ScaleCheck {
                 prepare()
                 let start = ContinuousClock.now
                 body()
-                let elapsed = ContinuousClock.now - start
-                times.append(Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15)
+                times.append(milliseconds(since: start))
             }
-            parts.append(label + " " + String(format: "%.1f", times.sorted()[times.count / 2]))
+            parts.append(label + " " + String(format: "%.1f", medianOf(times)))
         }
         func change() {
             app.assets = app.assets
@@ -713,14 +712,5 @@ enum ScaleCheck {
         return ((try? FileManager.default.attributesOfItem(atPath: db))?[.size] as? NSNumber)?.uint64Value ?? 0
     }
 
-    private static func footprint() -> UInt64 {
-        var info = task_vm_info_data_t()
-        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
-        let result = withUnsafeMutablePointer(to: &info) { pointer in
-            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
-            }
-        }
-        return result == KERN_SUCCESS ? info.phys_footprint : 0
-    }
+    private static func footprint() -> UInt64 { ImportMemoryCheck.physicalFootprint() ?? 0 }
 }
