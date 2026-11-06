@@ -291,7 +291,84 @@ enum ScaleCheck {
         report("photo list ms: " + line.joined(separator: " · "))
         stackParts(app)
         report("footprint \(delta(footprint(), baseline)) MB since start, \(megabytes(footprint())) MB total")
+        // measured after the footprint, so the lines above stay comparable with earlier runs
+        laterSteps(app, ids: ids)
         return 0
+    }
+
+    /// Steps added after the first lines were settled, each on a line of its own: a rating key in
+    /// Unrated, a search every photo matches, a photo added to a large Quick Collection, the
+    /// People banner's counts, the Analysis view's statistics and the thumbnail backfill's lists.
+    @MainActor
+    private static func laterSteps(_ app: AppState, ids: [String]) {
+        func ms(_ value: Double) -> String { String(format: "%.1f", value) }
+        func time(_ body: () -> Void) -> Double {
+            let start = ContinuousClock.now
+            body()
+            return milliseconds(since: start)
+        }
+        let all = Selection(type: .lib, id: "all", name: "全部照片")
+
+        // the photo rated leaves the list: one from its end, so finding it isn't a short scan
+        app.select(Selection(type: .lib, id: "unrated", name: "未评分"))
+        var review: [Double] = []
+        for round in 0..<5 {
+            guard let last = app.list.last else { break }
+            app.setPrimary(last.id)
+            review.append(time { _ = app.handleKey(String(round % 5 + 1), hasCommand: false) })
+        }
+        if !review.isEmpty { report("review ms: rate in unrated " + ms(medianOf(review))) }
+        app.select(all)
+        _ = app.list.count
+
+        let search = time {
+            app.search = "IMG"
+            _ = app.list.count
+        }
+        app.search = ""
+        _ = app.list.count
+        report("search ms: IMG " + ms(search))
+
+        // 5,000 photos in the Quick Collection (from an earlier run of this catalog, or now), then
+        // one more at a time
+        let members = Array(app.list.prefix(5_000).map(\.id))
+        if !Set(members).isSubset(of: app.quickCollection) {
+            app.selectedIds = Set(members)
+            app.primaryId = members.first
+            app.toggleQuickCollection()
+        }
+        let outside = Array(app.list.dropFirst(5_000).lazy.map(\.id)
+            .filter { !app.quickCollection.contains($0) }.prefix(5))
+        var added: [Double] = []
+        for id in outside {
+            app.selectedIds = [id]
+            app.primaryId = id
+            added.append(time { _ = app.toggleQuickCollection() })
+        }
+        if !added.isEmpty { report("collections ms: quick collection +1 " + ms(medianOf(added))) }
+        app.selectedIds = []
+        app.primaryId = nil
+
+        // the banner reads both counts as it redraws after any edit, and again as it redraws
+        app.setPrimary(ids[9])
+        _ = app.handleKey("2", hasCommand: false)
+        let firstCounts = time { _ = app.faceUnscannedCount + app.faceOutdatedCount }
+        let warmCounts = time { _ = app.faceUnscannedCount + app.faceOutdatedCount }
+        report("people ms: counts " + ms(firstCounts) + " · warm " + ms(warmCounts))
+
+        let shown = app.list
+        report("analysis ms: " + ms(time { _ = try? CaptureStatistics(assets: shown) }))
+
+        var previews2048 = 0
+        let prep = time {
+            for photo in app.thumbnailMaintenanceAssets {
+                if case .preview2048 = ThumbnailService.previewKind(forCachePath: photo.preview,
+                                                                     fallbackMaxPixel: app.previewMaxPixel) {
+                    previews2048 += 1
+                }
+            }
+        }
+        report("backfill prep ms: " + ms(prep) + " · \(previews2048) at 2048 px")
     }
 
     /// What the window works out again from every photo after a structural change, part by part
