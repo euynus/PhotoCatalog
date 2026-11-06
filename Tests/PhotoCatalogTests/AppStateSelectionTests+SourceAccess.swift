@@ -24,8 +24,6 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testClearingSecurityBookmarksRequiresSourceReauthorization() throws {
-        preservingPreferences(["pc_catalogURL", "pc_recentCatalogs"])
-
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-bookmarks-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
         let package = dir.appendingPathComponent("Library.photolibrary")
@@ -56,8 +54,6 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testRenamedSourceFolderReopensWithItsPhotos() throws {
-        preservingPreferences(["pc_catalogURL", "pc_recentCatalogs", "pc_rememberedLocations"])
-
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-renamed-source-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
         let renamed = dir.appendingPathComponent("Renamed")
@@ -131,8 +127,6 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testManagedSourceModeRestoresIntoCatalogAndInspectorText() throws {
-        preservingPreferences(["pc_catalogURL", "pc_recentCatalogs"])
-
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-managed-mode-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
         let package = dir.appendingPathComponent("Library.photolibrary")

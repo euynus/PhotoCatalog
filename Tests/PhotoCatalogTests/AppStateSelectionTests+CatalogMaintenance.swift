@@ -35,8 +35,6 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testMaintenanceActionsCleanLocalCatalogState() async throws {
-        preservingPreferences(["pc_catalogURL", "pc_recentCatalogs"])
-
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-maintenance-\(UUID().uuidString)")
         let package = dir.appendingPathComponent("Library.photolibrary")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -249,13 +247,6 @@ extension AppStateSelectionTests {
     @MainActor
     func testAutomaticBackupIsTrackedPerCatalog() async throws {
         let defaults = UserDefaults.app
-        let keys = [
-            "pc_catalogURL", "pc_openLast", "pc_onboarded",
-            "pc_autoBackupFrequency", "pc_lastAutoBackupAt",
-        ]
-        let savedBackupKeys = defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("pc_lastAutoBackupAt.") }
-        preservingPreferences(keys + savedBackupKeys)
-        for key in keys + savedBackupKeys { defaults.removeObject(forKey: key) }
         defaults.set(true, forKey: "pc_openLast")
         defaults.set("1", forKey: "pc_onboarded")
         defaults.set("daily", forKey: "pc_autoBackupFrequency")

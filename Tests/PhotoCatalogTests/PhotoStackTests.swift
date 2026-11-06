@@ -9,11 +9,6 @@ import XCTest
 final class PhotoStackTests: CatalogTestCase {
     private let shot = Date(timeIntervalSince1970: 1_791_800_000)
 
-    override func setUp() {
-        super.setUp()
-        preservingPreferences(["pc_autoStackSeconds"])
-    }
-
     private func photo(_ id: String, _ path: String?, filename: String? = nil, camera: String = "Canon EOS R5",
                        at offset: TimeInterval, deleted: Bool = false) -> Asset {
         let name = filename ?? path.map(PathString.lastComponent) ?? "\(id).JPG"

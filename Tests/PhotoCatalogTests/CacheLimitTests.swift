@@ -38,7 +38,6 @@ final class CacheLimitTests: CatalogTestCase {
 
     @MainActor
     func testChosenLimitAboveWhatSettingsOffersIsClamped() {
-        preservingPreferences(["pc_cacheLimitMB"])
         // stepped down from an automatic limit that was above the Stepper's range
         UserDefaults.app.set(149_744, forKey: "pc_cacheLimitMB")
         let app = AppState()

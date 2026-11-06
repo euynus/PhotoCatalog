@@ -52,14 +52,12 @@ private final class HydrationGate {
 /// Opening, switching, creating and closing catalogs: nothing of the previous catalog — undo
 /// steps, a tethered session, sidecar changes, demo photos — carries over into the next.
 final class CatalogLifecycleTests: XCTestCase {
-    private static let defaultsKeys = ["pc_openLast", "pc_catalogURL", "pc_onboarded", "pc_recentCatalogs",
-                                       "pc_tether", "pc_pairRawJpeg"]
     private var root: URL!
 
     override func setUp() {
         super.setUp()
         let defaults = UserDefaults.app
-        preservingPreferences(Self.defaultsKeys)
+        preservingAllPreferences()
         root = FileManager.default.temporaryDirectory.appendingPathComponent("pc-lifecycle-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defaults.set(false, forKey: "pc_openLast")

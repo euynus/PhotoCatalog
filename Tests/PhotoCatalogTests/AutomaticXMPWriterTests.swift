@@ -4,11 +4,6 @@ import XCTest
 /// Automatic XMP writing (Settings → Write XMP sidecars automatically): every edit reaches the
 /// photo's sidecar, and only another app's change to it holds a write back.
 final class AutomaticXMPWriterTests: CatalogTestCase {
-    override func setUp() {
-        super.setUp()
-        preservingPreferences(["pc_autoWriteXMP"])
-    }
-
     /// A photo whose original is at `path`.
     private func photo(_ index: Int, at path: URL) -> Asset {
         var asset = DemoData.assets[index]

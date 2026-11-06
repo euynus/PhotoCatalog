@@ -109,8 +109,6 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testOpeningRealCatalogSelectsFirstVisibleAsset() throws {
-        preservingPreferences(["pc_catalogURL", "pc_recentCatalogs"])
-
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-open-selection-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
         let package = dir.appendingPathComponent("Library.photolibrary")

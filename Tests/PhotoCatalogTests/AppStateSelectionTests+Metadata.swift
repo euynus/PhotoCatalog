@@ -161,8 +161,6 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testAutoXMPWritesSkipMissingOriginals() throws {
-        preservingPreferences(["pc_autoWriteXMP"])
-
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-auto-missing-xmp-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -218,8 +216,6 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testIndexedMetadataMutationQueuesAutomaticXMPWrite() async throws {
-        preservingPreferences(["pc_autoWriteXMP"])
-
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-xmp-queue-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

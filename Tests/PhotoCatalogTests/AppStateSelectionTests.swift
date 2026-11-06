@@ -6,8 +6,7 @@ import UniformTypeIdentifiers
 final class AppStateSelectionTests: XCTestCase {
     override func setUp() {
         super.setUp()
-        preservingPreferences(["pc_openLast", "pc_catalogURL", "pc_onboarded", "pc_pinnedSidebarItems",
-                               "pc_recentCatalogs", "pc_renameTemplate"])
+        preservingAllPreferences()
         UserDefaults.app.set(false, forKey: "pc_openLast")
         UserDefaults.app.removeObject(forKey: "pc_pinnedSidebarItems")
     }

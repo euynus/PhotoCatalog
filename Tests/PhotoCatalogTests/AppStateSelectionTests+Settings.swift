@@ -12,7 +12,6 @@ extension AppStateSelectionTests {
             "pc_cacheLimitMB", "pc_previewMaxPixel", "pc_autoBackupFrequency",
         ]
         let defaults = UserDefaults.app
-        preservingPreferences(keys)
         keys.forEach { defaults.removeObject(forKey: $0) }
 
         let app = AppState()
@@ -61,7 +60,6 @@ extension AppStateSelectionTests {
     @MainActor
     func testAutomaticBackupFrequencyRejectsInvalidDefaults() {
         let defaults = UserDefaults.app
-        preservingPreferences(["pc_autoBackupFrequency"])
 
         defaults.set("sometimes", forKey: "pc_autoBackupFrequency")
         let app = AppState()

@@ -7,7 +7,6 @@ final class PeopleTests: CatalogTestCase {
 
     override func setUp() {
         super.setUp()
-        preservingPreferences(["pc_autoWriteXMP"])
         // XCTest calls setUp on the main thread
         undo = MainActor.assumeIsolated {
             let undo = UndoManager()

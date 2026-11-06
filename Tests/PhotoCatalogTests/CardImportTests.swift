@@ -41,12 +41,6 @@ extension CatalogTestCase {
 
 /// Copying photos off a memory card (or a camera) into the destination folders.
 final class CardImportTests: CatalogTestCase {
-    override func setUp() {
-        super.setUp()
-        // a card import saves its options as the next one's: the user's are put back afterwards
-        preservingPreferences(["pc_cardImportOptions"])
-    }
-
     private func cardFile(_ url: URL) -> CardFile {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         return CardFile(url: url, size: Int64(size), modified: .now, isRaw: false)

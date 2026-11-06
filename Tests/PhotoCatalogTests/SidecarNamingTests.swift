@@ -6,7 +6,6 @@ import XCTest
 final class SidecarNamingTests: CatalogTestCase {
     override func setUp() {
         super.setUp()
-        preservingPreferences(["pc_autoWriteXMP"])
         UserDefaults.app.set(true, forKey: "pc_pairRawJpeg")
     }
 

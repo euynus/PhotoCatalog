@@ -9,13 +9,12 @@ import UniformTypeIdentifiers
 final class CatalogDocumentTypeTests: XCTestCase {
     private static let repoRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    private static let defaultsKeys = ["pc_openLast", "pc_catalogURL", "pc_onboarded", "pc_recentCatalogs"]
     private var root: URL!
 
     override func setUp() {
         super.setUp()
         let defaults = UserDefaults.app
-        preservingPreferences(Self.defaultsKeys)
+        preservingAllPreferences()
         root = FileManager.default.temporaryDirectory.appendingPathComponent("pc-document-type-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defaults.set(false, forKey: "pc_openLast")

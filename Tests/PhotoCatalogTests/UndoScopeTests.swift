@@ -6,14 +6,12 @@ import UniformTypeIdentifiers
 /// Undo takes back what its own step changed, and nothing a later, non-undoable operation
 /// (rename, trash, offline status, rescan, sidecar read) did to the same photo since.
 final class UndoScopeTests: XCTestCase {
-    private static let defaultsKeys = ["pc_openLast", "pc_catalogURL", "pc_onboarded", "pc_recentCatalogs",
-                                       "pc_renameTemplate", "pc_pinnedSidebarItems"]
     private var scratch: URL!
     private var undo: UndoManager!
 
     override func setUp() {
         super.setUp()
-        preservingPreferences(Self.defaultsKeys)
+        preservingAllPreferences()
         UserDefaults.app.set(false, forKey: "pc_openLast")
         UserDefaults.app.removeObject(forKey: "pc_pinnedSidebarItems")
         scratch = FileManager.default.temporaryDirectory.appendingPathComponent("pc-undo-scope-\(UUID().uuidString)")

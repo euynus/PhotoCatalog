@@ -5,13 +5,6 @@ import UniformTypeIdentifiers
 
 /// The Export dialog's files: where they land and what they carry.
 final class RenderedExportTests: CatalogTestCase {
-    private static let exportKeys = ["pc_renderedExportSettings", "pc_renderedExportFolder"]
-
-    override func setUp() {
-        super.setUp()
-        preservingPreferences(Self.exportKeys)
-    }
-
     /// An 80×60 photo of `type` with `properties` (EXIF, GPS…).
     private func writeImage(at url: URL, type: UTType, shade: Int, properties: [CFString: Any] = [:]) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)

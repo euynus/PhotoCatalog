@@ -5,11 +5,6 @@ import XCTest
 /// photo is shown, however often that happens in a session; only a repair that failed isn't tried
 /// again.
 final class CacheRepairTests: CatalogTestCase {
-    override func setUp() {
-        super.setUp()
-        preservingPreferences(["pc_cacheLimitMB"])
-    }
-
     /// A catalog with one imported photo, `a.jpg`, opened without background maintenance (which
     /// would make missing cache files itself).
     @MainActor

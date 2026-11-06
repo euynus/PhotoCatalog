@@ -3,17 +3,14 @@ import ImageIO
 import UniformTypeIdentifiers
 @testable import PhotoCatalog
 
-/// A test case that opens scratch catalogs in an `AppState`: the launch preferences it reads
-/// are put back afterwards, and each test gets its own folder under the temporary directory.
+/// A test case that opens scratch catalogs in an `AppState`: the preferences are put back as
+/// they were afterwards, and each test gets its own folder under the temporary directory.
 class CatalogTestCase: XCTestCase {
-    private static let isolatedKeys = ["pc_openLast", "pc_catalogURL", "pc_onboarded", "pc_recentCatalogs",
-                                       "pc_pairRawJpeg", "pc_readXMP", "pc_vision", "pc_importMode",
-                                       "pc_autoStackSeconds"]
     private(set) var scratch: URL!
 
     override func setUp() {
         super.setUp()
-        preservingPreferences(Self.isolatedKeys)
+        preservingAllPreferences()
         UserDefaults.app.set(false, forKey: "pc_openLast")
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-\(type(of: self))-\(UUID().uuidString)")

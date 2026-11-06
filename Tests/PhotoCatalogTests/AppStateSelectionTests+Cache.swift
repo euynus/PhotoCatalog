@@ -245,8 +245,6 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testPruneCacheToLimitUpdatesStatusAsynchronously() async throws {
-        preservingPreferences(["pc_cacheLimitMB"])
-
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-cache-prune-\(UUID().uuidString)")
         let package = dir.appendingPathComponent("Library.photolibrary")
         defer { try? FileManager.default.removeItem(at: dir) }

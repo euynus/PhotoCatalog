@@ -85,8 +85,6 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testOpeningCatalogRepairsOrphanedSourceFolderIds() throws {
-        preservingPreferences(["pc_catalogURL", "pc_recentCatalogs"])
-
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-repair-source-id-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
         let package = dir.appendingPathComponent("Library.photolibrary")
@@ -125,7 +123,6 @@ extension AppStateSelectionTests {
     @MainActor
     func testSourcePriorityReordersRealCatalogFolders() throws {
         let defaults = UserDefaults.app
-        preservingPreferences(["pc_catalogURL", "pc_recentCatalogs", "pc_sourcePriorities"])
         defaults.removeObject(forKey: "pc_sourcePriorities")
 
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-source-priority-\(UUID().uuidString)")

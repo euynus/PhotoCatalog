@@ -43,7 +43,6 @@ extension AppStateSelectionTests {
     @MainActor
     func testRecoveredEmptyImportDoesNotWatchSourceRoot() async throws {
         let defaults = UserDefaults.app
-        preservingPreferences(["pc_onboarded", "pc_catalogURL", "pc_recentCatalogs"])
         defaults.removeObject(forKey: "pc_onboarded")
         defaults.removeObject(forKey: "pc_catalogURL")
         defaults.removeObject(forKey: "pc_recentCatalogs")
@@ -78,7 +77,6 @@ extension AppStateSelectionTests {
     @MainActor
     func testRecoveredImportDoesNotPublishUnsavedAssetsWhenCatalogSaveFails() async throws {
         let defaults = UserDefaults.app
-        preservingPreferences(["pc_onboarded", "pc_catalogURL", "pc_recentCatalogs"])
         defaults.removeObject(forKey: "pc_onboarded")
         defaults.removeObject(forKey: "pc_catalogURL")
         defaults.removeObject(forKey: "pc_recentCatalogs")
@@ -168,8 +166,6 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testRescanUsesExistingSourceRootIdentityForNewAssets() async throws {
-        preservingPreferences(["pc_catalogURL", "pc_recentCatalogs"])
-
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rescan-source-id-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
         let package = dir.appendingPathComponent("Library.photolibrary")
