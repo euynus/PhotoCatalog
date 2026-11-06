@@ -3348,7 +3348,9 @@ final class AppStateSelectionTests: XCTestCase {
 
         app.pruneCacheToLimit()
 
-        try await waitUntil("Timed out waiting for cache pruning") {
+        // a utility-priority pass with a health check (integrity_check included): past a second
+        // while the rest of the suite runs
+        try await waitUntil("Timed out waiting for cache pruning", timeout: 10) {
             app.statusCacheText == "缓存 0 KB"
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: cacheFile.path))
