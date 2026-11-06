@@ -33,6 +33,16 @@ enum ScaleCheck {
         let (loaded, loadTime) = timed { (try? store.loadAssets()) ?? [] }
         let live = loaded.filter { !$0.isDemo && !$0.deleted }
         report("hydrate \(live.count): \(loadTime) ms, \(delta(footprint(), beforeLoad)) MB")
+        // PC_SCALE_SOURCE_ROOTS=1: the generated photos' root folders become source folders, so the
+        // sidebar lists their subfolders (and the 'subfolder ms' line is measured). Run it on a
+        // clone: the roots stay in the catalog and move the folder numbers of every later run.
+        let withSourceRoots = ProcessInfo.processInfo.environment["PC_SCALE_SOURCE_ROOTS"] == "1"
+        if withSourceRoots {
+            for root in 0..<40 {
+                try? store.addSourceRoot(id: "src-scale-\(root)", displayName: "Root \(root)",
+                                         path: "/Volumes/ScaleBench/Root\(root)", bookmark: nil)
+            }
+        }
 
         let app = AppState.selfCheckFixture(store: store)
         app.runsBackgroundMaintenance = false
@@ -293,6 +303,7 @@ enum ScaleCheck {
         report("footprint \(delta(footprint(), baseline)) MB since start, \(megabytes(footprint())) MB total")
         // measured after the footprint, so the lines above stay comparable with earlier runs
         laterSteps(app, ids: ids)
+        if withSourceRoots, !subfolderList(app) { return 1 }
         return 0
     }
 
@@ -369,6 +380,30 @@ enum ScaleCheck {
             }
         }
         report("backfill prep ms: " + ms(prep) + " · \(previews2048) at 2048 px")
+    }
+
+    /// A dated folder of one source folder, chosen in the sidebar (median of three, back to All
+    /// Photographs between them). False when the tree has no such folder or it lists no photos.
+    @MainActor
+    private static func subfolderList(_ app: AppState) -> Bool {
+        let all = Selection(type: .lib, id: "all", name: "全部照片")
+        guard let item = app.folderTree.first(where: { $0.sourceId == "src-scale-3" && $0.depth == 2 }) else {
+            report("subfolder ms: no dated subfolder under src-scale-3")
+            return false
+        }
+        var times: [Double] = []
+        var count = 0
+        for _ in 0..<3 {
+            app.select(all)
+            _ = app.list.count
+            let start = ContinuousClock.now
+            app.select(Selection(type: .folder, id: item.id, name: item.name))
+            count = app.list.count
+            times.append(milliseconds(since: start))
+        }
+        app.select(all)
+        report("subfolder ms: list " + String(format: "%.1f", medianOf(times)) + " · \(count) photos in \(item.name)")
+        return count > 0 && item.id.hasPrefix("subfolder:")
     }
 
     /// What the window works out again from every photo after a structural change, part by part
