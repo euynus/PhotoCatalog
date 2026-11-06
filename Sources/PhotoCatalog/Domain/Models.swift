@@ -723,6 +723,21 @@ struct Toast: Identifiable, Equatable {
 /// What a slideshow, a web gallery or a book shows with a photo: their choices share these names.
 protocol PhotoCaption: RawRepresentable where RawValue == String {}
 
+/// A web gallery's or a book's caption, in the order their pickers list them. (The slideshow
+/// lists the same choices in another order, so it keeps its own.)
+enum GalleryCaption: String, Codable, CaseIterable, Sendable, PhotoCaption {
+    case none, title, caption, filename
+
+    var title: String {
+        switch self {
+        case .none: L("无")
+        case .title: L("标题")
+        case .caption: L("说明")
+        case .filename: L("文件名")
+        }
+    }
+}
+
 extension PhotoCaption {
     func text(for asset: Asset) -> String {
         text(title: asset.title, caption: asset.caption, filename: asset.filename)

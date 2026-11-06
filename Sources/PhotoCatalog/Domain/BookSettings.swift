@@ -65,18 +65,7 @@ struct BookSettings: Codable, Equatable, Sendable {
         }
     }
 
-    enum Caption: String, Codable, CaseIterable, Sendable, PhotoCaption {
-        case none, title, caption, filename
-
-        var title: String {
-            switch self {
-            case .none: L("无")
-            case .title: L("标题")
-            case .caption: L("说明")
-            case .filename: L("文件名")
-            }
-        }
-    }
+    typealias Caption = GalleryCaption
 
     enum Background: String, Codable, CaseIterable, Sendable {
         case white, black
