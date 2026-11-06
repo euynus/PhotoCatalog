@@ -1,0 +1,179 @@
+import XCTest
+@testable import PhotoCatalog
+
+extension AppStateSelectionTests {
+    @MainActor
+    func testMetadataKeyboardShortcutsApplyToCurrentSelection() throws {
+        let app = AppState()
+        app.onboarded = true
+        let id = try XCTUnwrap(app.primaryId)
+
+        for rating in 1...5 {
+            XCTAssertTrue(app.handleKey("\(rating)", hasCommand: false))
+            XCTAssertEqual(app.assets.first { $0.id == id }?.rating, rating)
+        }
+
+        XCTAssertTrue(app.handleKey("0", hasCommand: false))
+        XCTAssertEqual(app.assets.first { $0.id == id }?.rating, 0)
+
+        XCTAssertTrue(app.handleKey("p", hasCommand: false))
+        XCTAssertEqual(app.assets.first { $0.id == id }?.flag, .pick)
+        XCTAssertTrue(app.handleKey("x", hasCommand: false))
+        XCTAssertEqual(app.assets.first { $0.id == id }?.flag, .reject)
+        XCTAssertTrue(app.handleKey("u", hasCommand: false))
+        XCTAssertEqual(app.assets.first { $0.id == id }?.flag, Flag.none)
+
+        XCTAssertTrue(app.handleKey("6", hasCommand: false))
+        XCTAssertEqual(app.assets.first { $0.id == id }?.colorLabel, .red)
+        XCTAssertTrue(app.handleKey("7", hasCommand: false))
+        XCTAssertEqual(app.assets.first { $0.id == id }?.colorLabel, .yellow)
+        XCTAssertTrue(app.handleKey("8", hasCommand: false))
+        XCTAssertEqual(app.assets.first { $0.id == id }?.colorLabel, .green)
+        XCTAssertTrue(app.handleKey("9", hasCommand: false))
+        XCTAssertEqual(app.assets.first { $0.id == id }?.colorLabel, .blue)
+    }
+
+    @MainActor
+    func testMetadataKeyboardShortcutsRequireASelection() {
+        let app = AppState()
+        app.onboarded = true
+        let ratings = Dictionary(uniqueKeysWithValues: app.assets.map { ($0.id, $0.rating) })
+        let flags = Dictionary(uniqueKeysWithValues: app.assets.map { ($0.id, $0.flag) })
+        let colors = Dictionary(uniqueKeysWithValues: app.assets.map { ($0.id, $0.colorLabel) })
+
+        app.setSearch("NO_SUCH_PHOTO_123")
+        XCTAssertNil(app.primaryId)
+        XCTAssertTrue(app.selectedIds.isEmpty)
+        XCTAssertFalse(app.hasSelection)
+
+        XCTAssertFalse(app.handleKey("5", hasCommand: false))
+        XCTAssertFalse(app.handleKey("p", hasCommand: false))
+        XCTAssertFalse(app.handleKey("6", hasCommand: false))
+        XCTAssertEqual(Dictionary(uniqueKeysWithValues: app.assets.map { ($0.id, $0.rating) }), ratings)
+        XCTAssertEqual(Dictionary(uniqueKeysWithValues: app.assets.map { ($0.id, $0.flag) }), flags)
+        XCTAssertEqual(Dictionary(uniqueKeysWithValues: app.assets.map { ($0.id, $0.colorLabel) }), colors)
+    }
+
+    @MainActor
+    func testNavigationAndSheetKeyboardGuards() throws {
+        let app = AppState()
+        app.onboarded = true
+        app.gridWidth = 900
+        let firstId = try XCTUnwrap(app.primaryId)
+
+        XCTAssertTrue(app.handleKey("right", hasCommand: false))
+        XCTAssertNotEqual(app.primaryId, firstId)
+
+        app.sheet = "settings"
+        let selectedId = try XCTUnwrap(app.primaryId)
+        let currentRating = app.assets.first { $0.id == selectedId }?.rating
+        XCTAssertFalse(app.handleKey("5", hasCommand: false))
+        XCTAssertEqual(app.assets.first { $0.id == selectedId }?.rating, currentRating)
+        XCTAssertTrue(app.handleKey("escape", hasCommand: false))
+        XCTAssertNil(app.sheet)
+    }
+
+    @MainActor
+    func testWelcomeCommandShortcutsDoNotMutateMainViewState() {
+        let app = AppState()
+        app.onboarded = false
+        app.thumbSize = 220
+
+        XCTAssertFalse(app.handleKey("f", hasCommand: true))
+        XCTAssertFalse(app.filterOpen)
+        XCTAssertFalse(app.handleKey("i", hasCommand: true))
+        XCTAssertTrue(app.showInspector)
+        XCTAssertFalse(app.handleKey("0", hasCommand: true))
+        XCTAssertEqual(app.thumbSize, 220)
+        XCTAssertFalse(app.handleKey(",", hasCommand: true))
+        XCTAssertNil(app.sheet)
+    }
+
+    @MainActor
+    func testSafeCommandKeyboardShortcuts() {
+        let app = AppState()
+        app.onboarded = true
+
+        XCTAssertTrue(app.handleKey("f", hasCommand: true))
+        XCTAssertEqual(app.searchFocusToken, 1)
+
+        XCTAssertFalse(app.filterOpen)
+        XCTAssertTrue(app.handleKey("f", hasCommand: true, hasShift: true))
+        XCTAssertTrue(app.filterOpen)
+
+        XCTAssertTrue(app.showInspector)
+        XCTAssertTrue(app.handleKey("i", hasCommand: true))
+        XCTAssertFalse(app.showInspector)
+
+        XCTAssertEqual(app.thumbSize, 168)
+        XCTAssertTrue(app.handleKey("=", hasCommand: true))
+        XCTAssertEqual(app.thumbSize, 184)
+        XCTAssertTrue(app.handleKey("-", hasCommand: true))
+        XCTAssertEqual(app.thumbSize, 168)
+        app.thumbSize = 220
+        XCTAssertTrue(app.handleKey("0", hasCommand: true))
+        XCTAssertEqual(app.thumbSize, 168)
+    }
+
+    /// Where the toolbar's info and filter buttons are disabled (duplicate review, Places, capture
+    /// analysis), ⌘I, ⇧⌘F and F leave the hidden inspector and filter bar as they were, as the
+    /// menu items do: toggling them there flipped what the next view opened with, and said so.
+    @MainActor
+    func testInfoAndFilterKeysDoNothingWhereTheirButtonsAreDisabled() {
+        let app = AppState()
+        app.onboarded = true
+        let all = app.selection
+        let places = Selection(type: .lib, id: "places", name: "地点")
+        let duplicates = Selection(type: .lib, id: "duplicates", name: "重复照片")
+        // where, and whether the filter bar is there to show
+        let cases: [(Selection, ViewMode, filters: Bool)] = [
+            (duplicates, .grid, false), (places, .grid, true), (all, .analysis, false),
+        ]
+        for (selection, view, filters) in cases {
+            app.selection = selection
+            app.view = view
+            let showInspector = app.showInspector
+            XCTAssertTrue(app.handleKey("i", hasCommand: true))
+            XCTAssertEqual(app.showInspector, showInspector, "⌘I in \(selection.id), \(view)")
+            guard !filters else { continue }
+            let filterOpen = app.filterOpen
+            XCTAssertTrue(app.handleKey("f", hasCommand: true, hasShift: true))
+            XCTAssertEqual(app.filterOpen, filterOpen, "⇧⌘F in \(selection.id), \(view)")
+            _ = app.handleKey("f", hasCommand: false)
+            XCTAssertEqual(app.filterOpen, filterOpen, "F in \(selection.id), \(view)")
+        }
+    }
+
+    @MainActor
+    func testSelectionCommandKeyboardShortcuts() {
+        let app = AppState()
+        app.onboarded = true
+        let visible = Set(app.list.map(\.id))
+        XCTAssertFalse(visible.isEmpty)
+
+        XCTAssertTrue(app.handleKey("a", hasCommand: true))
+        XCTAssertEqual(app.selectedIds, visible)
+
+        XCTAssertTrue(app.handleKey("a", hasCommand: true, hasShift: true))
+        XCTAssertTrue(app.selectedIds.isEmpty)
+        XCTAssertNil(app.primaryId)
+    }
+
+    @MainActor
+    func testCommandKeyboardShortcutsRespectSheets() {
+        let app = AppState()
+        app.onboarded = true
+        app.sheet = "settings"
+        let initialFilterOpen = app.filterOpen
+        let initialShowInspector = app.showInspector
+        let initialThumbSize = app.thumbSize
+
+        XCTAssertTrue(app.handleKey("f", hasCommand: true, hasShift: true))
+        XCTAssertTrue(app.handleKey("i", hasCommand: true))
+        XCTAssertTrue(app.handleKey("=", hasCommand: true))
+        XCTAssertEqual(app.filterOpen, initialFilterOpen)
+        XCTAssertEqual(app.showInspector, initialShowInspector)
+        XCTAssertEqual(app.thumbSize, initialThumbSize)
+        XCTAssertEqual(app.sheet, "settings")
+    }
+}
