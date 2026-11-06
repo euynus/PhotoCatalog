@@ -117,7 +117,9 @@ final class PrintMemoryTests: XCTestCase {
         _ = growth(url, pixels: CGSize(width: 3208, height: 2139), count: 2)
         let sameSize = growth(url, pixels: CGSize(width: 3000, height: 2000), count: count)
         let enlarged = growth(url, pixels: CGSize(width: 3208, height: 2139), count: count)
-        XCTAssertLessThan(enlarged, sameSize + 6 * bitmap,
+        // Core Image's surfaces drain a second or so after rendering, sometimes during the
+        // same-size renders, which then grow by less than nothing: that's no lower bar
+        XCTAssertLessThan(enlarged, max(sameSize, 0) + 6 * bitmap,
                           "enlarged: \(enlarged >> 20) MB, same size: \(sameSize >> 20) MB over \(count) renders")
     }
 }
