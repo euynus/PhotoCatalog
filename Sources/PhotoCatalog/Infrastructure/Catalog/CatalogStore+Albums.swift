@@ -33,15 +33,8 @@ extension CatalogStore {
     func saveAlbum(_ album: Album, sortOrder: Int = 0, updatedAt: Date = .now) throws {
         let now = Self.iso(updatedAt)
         try db.transaction {
-            try db.run("""
-            INSERT INTO albums(id, parent_id, type, name, sort_order, created_at, updated_at)
-            VALUES(?,?,?,?,?,?,?)
-            ON CONFLICT(id) DO UPDATE SET
-              name=excluded.name,
-              sort_order=excluded.sort_order,
-              updated_at=excluded.updated_at;
-            """, [.text(album.id), album.setId.map(SQLValue.text) ?? .null, .text("album"), .text(album.name),
-                  .int(sortOrder), .text(now), .text(now)])
+            try upsertAlbumRow(id: album.id, setId: album.setId, type: "album", name: album.name,
+                               sortOrder: sortOrder, now: now)
             try db.run("DELETE FROM album_assets WHERE album_id=?;", [.text(album.id)])
             // a photo the catalog has no row for (a demo photo, never saved) is left out, rather
             // than failing the foreign key and the save of the album's other photos with it
@@ -84,6 +77,21 @@ extension CatalogStore {
         }
     }
 
+    /// An album's row (`type` "album" or "smart"), filed under `setId` when it's new; one
+    /// already saved keeps its set and creation date.
+    private func upsertAlbumRow(id: String, setId: String?, type: String, name: String, sortOrder: Int,
+                                now: String) throws {
+        try db.run("""
+        INSERT INTO albums(id, parent_id, type, name, sort_order, created_at, updated_at)
+        VALUES(?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET
+          name=excluded.name,
+          sort_order=excluded.sort_order,
+          updated_at=excluded.updated_at;
+        """, [.text(id), setId.map(SQLValue.text) ?? .null, .text(type), .text(name),
+              .int(sortOrder), .text(now), .text(now)])
+    }
+
     /// Saves a smart album, filed in its set when it's new, as saveAlbum does.
     func saveSmartAlbum(_ album: SmartAlbum, sortOrder: Int = 0, updatedAt: Date = .now) throws {
         let encoder = JSONEncoder()
@@ -92,15 +100,8 @@ extension CatalogStore {
         let json = String(data: data, encoding: .utf8) ?? "{}"
         let now = Self.iso(updatedAt)
         try db.transaction {
-            try db.run("""
-            INSERT INTO albums(id, parent_id, type, name, sort_order, created_at, updated_at)
-            VALUES(?,?,?,?,?,?,?)
-            ON CONFLICT(id) DO UPDATE SET
-              name=excluded.name,
-              sort_order=excluded.sort_order,
-              updated_at=excluded.updated_at;
-            """, [.text(album.id), album.setId.map(SQLValue.text) ?? .null, .text("smart"), .text(album.name),
-                  .int(sortOrder), .text(now), .text(now)])
+            try upsertAlbumRow(id: album.id, setId: album.setId, type: "smart", name: album.name,
+                               sortOrder: sortOrder, now: now)
             try db.run("""
             INSERT INTO smart_album_rules(album_id, rule_json, updated_at)
             VALUES(?,?,?)
