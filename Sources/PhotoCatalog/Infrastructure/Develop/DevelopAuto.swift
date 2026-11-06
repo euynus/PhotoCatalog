@@ -61,6 +61,20 @@ enum DevelopAuto {
         }
     }
 
+    /// The photo rendered at most 200 pixels on the long edge, as display-encoded RGBA bytes.
+    private static func smallDisplayRender(_ photo: CIImage) -> [UInt8]? {
+        var image = photo
+        let longEdge = max(image.extent.width, image.extent.height)
+        if longEdge > 200 { image = image.transformed(by: CGAffineTransform(scaleX: 200 / longEdge, y: 200 / longEdge)) }
+        let rect = image.extent.integral
+        let width = Int(rect.width), height = Int(rect.height)
+        guard width > 0, height > 0 else { return nil }
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        DevelopRenderer.context.render(image, toBitmap: &pixels, rowBytes: width * 4, bounds: rect,
+                                       format: .RGBA8, colorSpace: DevelopRenderer.outputColorSpace)
+        return pixels
+    }
+
     /// The photo rendered at most 160 pixels on the long edge, as linear display-P3 colors.
     private static func smallLinearRender(_ image: CIImage) -> (colors: [SIMD3<Double>], width: Int, height: Int)? {
         let extent = image.extent
@@ -174,15 +188,7 @@ enum DevelopAuto {
         guard let source = DevelopRenderer.Source(url: url, isRaw: isRaw, maxPixel: workingPixel) else { return nil }
         var color = settings
         color.profile = nil   // measured in color, as the mix will see it
-        guard var image = source.image(color, draft: true) else { return nil }
-        let longEdge = max(image.extent.width, image.extent.height)
-        if longEdge > 200 { image = image.transformed(by: CGAffineTransform(scaleX: 200 / longEdge, y: 200 / longEdge)) }
-        let rect = image.extent.integral
-        let width = Int(rect.width), height = Int(rect.height)
-        guard width > 0, height > 0 else { return nil }
-        var pixels = [UInt8](repeating: 0, count: width * height * 4)
-        DevelopRenderer.context.render(image, toBitmap: &pixels, rowBytes: width * 4, bounds: rect,
-                                       format: .RGBA8, colorSpace: DevelopRenderer.outputColorSpace)
+        guard let image = source.image(color, draft: true), let pixels = smallDisplayRender(image) else { return nil }
         return grayMix(rgba: pixels)
     }
 
@@ -245,15 +251,7 @@ enum DevelopAuto {
         /// the cached RAW stage, after the RAW engine's tone curve, so they only match the photo
         /// near the stage's own exposure; an accurate render moves the stage to `s.exposure`.
         func lumas(_ s: DevelopSettings, accurate: Bool = false) -> [Double]? {
-            guard var image = source.image(s, draft: !accurate) else { return nil }
-            let longEdge = max(image.extent.width, image.extent.height)
-            if longEdge > 200 { image = image.transformed(by: CGAffineTransform(scaleX: 200 / longEdge, y: 200 / longEdge)) }
-            let rect = image.extent.integral
-            let width = Int(rect.width), height = Int(rect.height)
-            guard width > 0, height > 0 else { return nil }
-            var pixels = [UInt8](repeating: 0, count: width * height * 4)
-            DevelopRenderer.context.render(image, toBitmap: &pixels, rowBytes: width * 4, bounds: rect,
-                                           format: .RGBA8, colorSpace: DevelopRenderer.outputColorSpace)
+            guard let image = source.image(s, draft: !accurate), let pixels = smallDisplayRender(image) else { return nil }
             return stride(from: 0, to: pixels.count, by: 4).map { (i: Int) -> Double in
                 let r = Double(pixels[i]), g = Double(pixels[i + 1]), b = Double(pixels[i + 2])
                 return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
