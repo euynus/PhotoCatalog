@@ -1,7 +1,6 @@
 import Foundation
 import ImageIO
 import CoreGraphics
-import UniformTypeIdentifiers
 
 extension PipelineCheck.Run {
     /// 1. generate 6 distinct test JPEGs + 1 exact duplicate

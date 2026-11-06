@@ -1,7 +1,5 @@
 import CoreImage
-import ImageIO
 import Foundation
-import Vision
 
 extension DevelopRenderer {
     /// Lens corrections on linear light: chromatic aberration first (`lateral`, as measured for

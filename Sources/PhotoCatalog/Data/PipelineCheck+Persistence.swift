@@ -1,5 +1,4 @@
 import Foundation
-import ImageIO
 import CoreGraphics
 import UniformTypeIdentifiers
 

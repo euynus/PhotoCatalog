@@ -1,7 +1,6 @@
 import Foundation
 import ImageIO
 import CoreGraphics
-import UniformTypeIdentifiers
 
 extension PipelineCheck.Run {
     /// 21. memory-card import: detect already-imported photos, copy with pairs renamed together,

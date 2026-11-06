@@ -3,7 +3,6 @@
 // ============================================================
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct SlideshowSheet: View {
     @Environment(AppState.self) private var app

@@ -1,7 +1,6 @@
 import CoreImage
 import ImageIO
 import Foundation
-import Vision
 
 extension DevelopRenderer {
     /// A photo decoded once and re-rendered as its settings change. Not thread-safe:

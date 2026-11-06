@@ -1,7 +1,5 @@
 import CoreImage
-import ImageIO
 import Foundation
-import Vision
 
 /// Renders develop previews on its own serial queue (never the Swift cooperative pool: RAW
 /// decoding can deadlock it). Requests coalesce — while a slider drags, only the newest

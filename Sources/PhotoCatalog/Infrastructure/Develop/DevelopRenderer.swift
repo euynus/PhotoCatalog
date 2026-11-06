@@ -2,9 +2,7 @@
 //  DevelopRenderer — non-destructive rendering with Core Image
 // ============================================================
 import CoreImage
-import ImageIO
 import Foundation
-import Vision
 
 enum DevelopRenderer {
     /// One GPU context for the app: contexts are expensive to create and safe to share.

@@ -1,7 +1,5 @@
 import Foundation
-import ImageIO
 import CoreGraphics
-import UniformTypeIdentifiers
 
 extension PipelineCheck.Run {
     /// 14. managed import copies originals into Originals/

@@ -1,7 +1,5 @@
 import Foundation
-import ImageIO
 import CoreGraphics
-import UniformTypeIdentifiers
 
 extension PipelineCheck.Run {
     /// 6. exact-duplicate detection (the identical pair)

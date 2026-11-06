@@ -4,7 +4,6 @@
 // ============================================================
 import Foundation
 import ImageIO
-import UniformTypeIdentifiers
 
 struct ScannedMetadata {
     var width = 0

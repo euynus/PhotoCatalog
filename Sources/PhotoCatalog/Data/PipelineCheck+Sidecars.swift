@@ -1,7 +1,5 @@
 import Foundation
-import ImageIO
 import CoreGraphics
-import UniformTypeIdentifiers
 
 extension PipelineCheck.Run {
     /// 12. XMP sidecar write/read roundtrip

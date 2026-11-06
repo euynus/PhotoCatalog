@@ -1,7 +1,6 @@
 import Foundation
 import ImageIO
 import CoreGraphics
-import UniformTypeIdentifiers
 
 // Part of step 4 (persist + reload roundtrip): round trips through the app, each on a scratch
 // catalog of its own with photos the reload returned.

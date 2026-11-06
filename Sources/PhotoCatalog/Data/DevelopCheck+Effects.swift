@@ -1,7 +1,5 @@
 import Foundation
 import CoreImage
-import ImageIO
-import UniformTypeIdentifiers
 
 extension DevelopCheck {
     static func checkPresence() {

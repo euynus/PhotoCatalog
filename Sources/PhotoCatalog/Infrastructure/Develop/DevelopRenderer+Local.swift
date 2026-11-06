@@ -1,7 +1,5 @@
 import CoreImage
-import ImageIO
 import Foundation
-import Vision
 
 extension DevelopRenderer {
     /// Lens blur (see `LensBlur`): each part blurred by how far its depth lies outside the band
