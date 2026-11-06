@@ -43,26 +43,7 @@ extension AppStateSelectionTests {
     @MainActor
     func testRecoveredEmptyImportDoesNotWatchSourceRoot() async throws {
         let defaults = UserDefaults.app
-        let previousOnboarded = defaults.object(forKey: "pc_onboarded")
-        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
-        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
-        defer {
-            if let previousOnboarded {
-                defaults.set(previousOnboarded, forKey: "pc_onboarded")
-            } else {
-                defaults.removeObject(forKey: "pc_onboarded")
-            }
-            if let previousCatalogURL {
-                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
-            } else {
-                defaults.removeObject(forKey: "pc_catalogURL")
-            }
-            if let previousRecent {
-                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
-            } else {
-                defaults.removeObject(forKey: "pc_recentCatalogs")
-            }
-        }
+        preservingPreferences(["pc_onboarded", "pc_catalogURL", "pc_recentCatalogs"])
         defaults.removeObject(forKey: "pc_onboarded")
         defaults.removeObject(forKey: "pc_catalogURL")
         defaults.removeObject(forKey: "pc_recentCatalogs")
@@ -97,26 +78,7 @@ extension AppStateSelectionTests {
     @MainActor
     func testRecoveredImportDoesNotPublishUnsavedAssetsWhenCatalogSaveFails() async throws {
         let defaults = UserDefaults.app
-        let previousOnboarded = defaults.object(forKey: "pc_onboarded")
-        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
-        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
-        defer {
-            if let previousOnboarded {
-                defaults.set(previousOnboarded, forKey: "pc_onboarded")
-            } else {
-                defaults.removeObject(forKey: "pc_onboarded")
-            }
-            if let previousCatalogURL {
-                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
-            } else {
-                defaults.removeObject(forKey: "pc_catalogURL")
-            }
-            if let previousRecent {
-                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
-            } else {
-                defaults.removeObject(forKey: "pc_recentCatalogs")
-            }
-        }
+        preservingPreferences(["pc_onboarded", "pc_catalogURL", "pc_recentCatalogs"])
         defaults.removeObject(forKey: "pc_onboarded")
         defaults.removeObject(forKey: "pc_catalogURL")
         defaults.removeObject(forKey: "pc_recentCatalogs")
@@ -206,21 +168,7 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testRescanUsesExistingSourceRootIdentityForNewAssets() async throws {
-        let defaults = UserDefaults.app
-        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
-        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
-        defer {
-            if let previousCatalogURL {
-                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
-            } else {
-                defaults.removeObject(forKey: "pc_catalogURL")
-            }
-            if let previousRecent {
-                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
-            } else {
-                defaults.removeObject(forKey: "pc_recentCatalogs")
-            }
-        }
+        preservingPreferences(["pc_catalogURL", "pc_recentCatalogs"])
 
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-rescan-source-id-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
@@ -265,7 +213,7 @@ extension AppStateSelectionTests {
         let app = AppState()
         app.onboarded = true
         XCTAssertTrue(app.openCatalog(at: package))
-        try await waitUntil("Timed out waiting for initial cache status") {
+        try await waitUntil("Timed out waiting for initial cache status", timeout: 1) {
             app.statusCacheText == "缓存 0 KB"
         }
 
@@ -273,7 +221,7 @@ extension AppStateSelectionTests {
         try writeTestJPEG(to: photo, black: false)
         app.rescanCurrentSource()
 
-        try await waitUntil("Timed out waiting for generated thumbnail status") {
+        try await waitUntil("Timed out waiting for generated thumbnail status", timeout: 1) {
             app.assets.contains { $0.filename == photo.lastPathComponent }
                 && app.statusCacheText != "缓存 0 KB"
         }
@@ -306,7 +254,7 @@ extension AppStateSelectionTests {
         try writeTestJPEG(to: photo, black: false)
         app.rescanCurrentSource()
 
-        try await waitUntil("Timed out waiting for rescan save failure") {
+        try await waitUntil("Timed out waiting for rescan save failure", timeout: 1) {
             app.toastCenter.toasts.last?.message == "重新扫描保存失败"
         }
         XCTAssertFalse(app.assets.contains { $0.filename == photo.lastPathComponent })
@@ -332,7 +280,7 @@ extension AppStateSelectionTests {
         XCTAssertTrue(app.openCatalog(at: package))
         app.rescanCurrentSource()
 
-        try await waitUntil("initial import finished") {
+        try await waitUntil("initial import finished", timeout: 1) {
             app.assets.contains { $0.filename == photo.lastPathComponent }
         }
 
@@ -356,7 +304,7 @@ extension AppStateSelectionTests {
                                               ofItemAtPath: photo.path)
         app.rescanCurrentSource()
 
-        try await waitUntil("changed original was refreshed") {
+        try await waitUntil("changed original was refreshed", timeout: 1) {
             app.assets.first { $0.id == imported.id }?.quickHash != originalQuickHash
         }
 

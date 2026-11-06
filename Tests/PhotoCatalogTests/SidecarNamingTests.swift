@@ -4,21 +4,10 @@ import XCTest
 /// Which `.xmp` belongs to which photo when files share a name: `IMG.xmp` is the sole file's, or
 /// a RAW+JPEG pair's (shared); any other file of that name keeps its own `IMG.JPG.xmp`.
 final class SidecarNamingTests: CatalogTestCase {
-    private var savedAutoWrite: Any?
-
     override func setUp() {
         super.setUp()
-        savedAutoWrite = UserDefaults.app.object(forKey: "pc_autoWriteXMP")
+        preservingPreferences(["pc_autoWriteXMP"])
         UserDefaults.app.set(true, forKey: "pc_pairRawJpeg")
-    }
-
-    override func tearDown() {
-        if let savedAutoWrite {
-            UserDefaults.app.set(savedAutoWrite, forKey: "pc_autoWriteXMP")
-        } else {
-            UserDefaults.app.removeObject(forKey: "pc_autoWriteXMP")
-        }
-        super.tearDown()
     }
 
     /// Empty files with these names in a folder of their own; returns the folder.

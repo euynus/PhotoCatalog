@@ -8,16 +8,10 @@ import XCTest
 /// menu, and the photo list with stacks folded.
 final class PhotoStackTests: CatalogTestCase {
     private let shot = Date(timeIntervalSince1970: 1_791_800_000)
-    private var savedAutoStack: Any?
 
     override func setUp() {
         super.setUp()
-        savedAutoStack = UserDefaults.app.object(forKey: "pc_autoStackSeconds")
-    }
-
-    override func tearDown() {
-        UserDefaults.app.set(savedAutoStack, forKey: "pc_autoStackSeconds")
-        super.tearDown()
+        preservingPreferences(["pc_autoStackSeconds"])
     }
 
     private func photo(_ id: String, _ path: String?, filename: String? = nil, camera: String = "Canon EOS R5",

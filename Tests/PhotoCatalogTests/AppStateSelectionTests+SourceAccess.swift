@@ -24,21 +24,7 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testClearingSecurityBookmarksRequiresSourceReauthorization() throws {
-        let defaults = UserDefaults.app
-        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
-        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
-        defer {
-            if let previousCatalogURL {
-                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
-            } else {
-                defaults.removeObject(forKey: "pc_catalogURL")
-            }
-            if let previousRecent {
-                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
-            } else {
-                defaults.removeObject(forKey: "pc_recentCatalogs")
-            }
-        }
+        preservingPreferences(["pc_catalogURL", "pc_recentCatalogs"])
 
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-bookmarks-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
@@ -70,13 +56,7 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testRenamedSourceFolderReopensWithItsPhotos() throws {
-        let defaults = UserDefaults.app
-        let saved = ["pc_catalogURL", "pc_recentCatalogs", "pc_rememberedLocations"].map { ($0, defaults.object(forKey: $0)) }
-        defer {
-            for (key, value) in saved {
-                if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
-            }
-        }
+        preservingPreferences(["pc_catalogURL", "pc_recentCatalogs", "pc_rememberedLocations"])
 
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-renamed-source-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
@@ -128,22 +108,8 @@ extension AppStateSelectionTests {
         try Data("photo".utf8).write(to: newPhoto)
 
         func asset(_ base: Asset, folderId: String, path: URL, status: AssetStatus) -> Asset {
-            Asset(id: base.id, pid: base.pid, ori: base.ori, thumb: base.thumb, preview: base.preview,
-                  filename: path.lastPathComponent, type: base.type, isRaw: base.isRaw, folderId: folderId,
-                  folderName: folderId, date: base.date, width: base.width, height: base.height,
-                  orientation: base.orientation, camera: base.camera, lens: base.lens, focal: base.focal,
-                  aperture: base.aperture, shutter: base.shutter, iso: base.iso,
-                  colorSpace: base.colorSpace, hasICCProfile: base.hasICCProfile, fileMB: base.fileMB,
-                  fileModifiedAt: base.fileModifiedAt, fileCreatedAt: base.fileCreatedAt,
-                  rating: base.rating, flag: base.flag, colorLabel: base.colorLabel,
-                  keywords: base.keywords, title: base.title, caption: base.caption,
-                  author: base.author, copyright: base.copyright, makerNotes: base.makerNotes,
-                  project: base.project, client: base.client, location: base.location, gps: base.gps,
-                  gpsAltitude: base.gpsAltitude, status: status, importedAt: base.importedAt,
-                  deleted: base.deleted, localPath: path.path,
-                  captureDateSource: base.captureDateSource, contentHash: base.contentHash,
-                  quickHash: base.quickHash, isDemo: false, faces: base.faces,
-                  perceptualHash: base.perceptualHash)
+            rebuiltAsset(base, filename: path.lastPathComponent, folderId: folderId, folderName: folderId,
+                         status: status, localPath: path.path)
         }
 
         let moved = asset(DemoData.assets[0], folderId: "source-1",
@@ -165,21 +131,7 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testManagedSourceModeRestoresIntoCatalogAndInspectorText() throws {
-        let defaults = UserDefaults.app
-        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
-        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
-        defer {
-            if let previousCatalogURL {
-                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
-            } else {
-                defaults.removeObject(forKey: "pc_catalogURL")
-            }
-            if let previousRecent {
-                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
-            } else {
-                defaults.removeObject(forKey: "pc_recentCatalogs")
-            }
-        }
+        preservingPreferences(["pc_catalogURL", "pc_recentCatalogs"])
 
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-managed-mode-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")
@@ -193,23 +145,8 @@ extension AppStateSelectionTests {
         try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path,
                                 bookmark: nil, mode: .managed)
         let base = DemoData.assets[0]
-        let asset = Asset(id: base.id, pid: base.pid, ori: base.ori, thumb: base.thumb, preview: base.preview,
-                          filename: original.lastPathComponent, type: base.type, isRaw: base.isRaw,
-                          folderId: "source-1", folderName: "Source",
-                          date: base.date, width: base.width, height: base.height,
-                          orientation: base.orientation, camera: base.camera, lens: base.lens,
-                          focal: base.focal, aperture: base.aperture, shutter: base.shutter, iso: base.iso,
-                          colorSpace: base.colorSpace, hasICCProfile: base.hasICCProfile,
-                          fileMB: base.fileMB, fileModifiedAt: base.fileModifiedAt,
-                          fileCreatedAt: base.fileCreatedAt, rating: base.rating, flag: base.flag,
-                          colorLabel: base.colorLabel, keywords: base.keywords, title: base.title,
-                          caption: base.caption, author: base.author, copyright: base.copyright,
-                          makerNotes: base.makerNotes, project: base.project, client: base.client,
-                          location: base.location, gps: base.gps, gpsAltitude: base.gpsAltitude,
-                          status: .ready, importedAt: base.importedAt, deleted: base.deleted,
-                          localPath: original.path, captureDateSource: base.captureDateSource,
-                          contentHash: base.contentHash, quickHash: base.quickHash, isDemo: false,
-                          faces: base.faces, perceptualHash: base.perceptualHash)
+        let asset = rebuiltAsset(base, filename: original.lastPathComponent, folderId: "source-1",
+                                 folderName: "Source", status: .ready, localPath: original.path)
         try store.upsert([asset])
 
         let app = AppState()
@@ -265,7 +202,7 @@ extension AppStateSelectionTests {
         let reopened = AppState()
         reopened.onboarded = true
         XCTAssertTrue(reopened.openCatalog(at: package))
-        try await waitUntil("Timed out waiting for managed original availability") {
+        try await waitUntil("Timed out waiting for managed original availability", timeout: 1) {
             !reopened.isCheckingOriginals
         }
 
@@ -309,7 +246,7 @@ extension AppStateSelectionTests {
         try FileManager.default.removeItem(at: original)
 
         app.detectMissingRealAssets()
-        try await waitUntil("Timed out waiting for missing-original scan") {
+        try await waitUntil("Timed out waiting for missing-original scan", timeout: 1) {
             !app.isCheckingOriginals
         }
 

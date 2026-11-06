@@ -41,21 +41,10 @@ extension CatalogTestCase {
 
 /// Copying photos off a memory card (or a camera) into the destination folders.
 final class CardImportTests: CatalogTestCase {
-    /// A card import saves its options as the next one's: the user's are put back afterwards.
-    private var savedOptions: Any?
-
     override func setUp() {
         super.setUp()
-        savedOptions = UserDefaults.app.object(forKey: "pc_cardImportOptions")
-    }
-
-    override func tearDown() {
-        if let savedOptions {
-            UserDefaults.app.set(savedOptions, forKey: "pc_cardImportOptions")
-        } else {
-            UserDefaults.app.removeObject(forKey: "pc_cardImportOptions")
-        }
-        super.tearDown()
+        // a card import saves its options as the next one's: the user's are put back afterwards
+        preservingPreferences(["pc_cardImportOptions"])
     }
 
     private func cardFile(_ url: URL) -> CardFile {

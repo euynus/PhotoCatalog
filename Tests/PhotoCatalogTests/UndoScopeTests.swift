@@ -8,28 +8,18 @@ import UniformTypeIdentifiers
 final class UndoScopeTests: XCTestCase {
     private static let defaultsKeys = ["pc_openLast", "pc_catalogURL", "pc_onboarded", "pc_recentCatalogs",
                                        "pc_renameTemplate", "pc_pinnedSidebarItems"]
-    private var previousDefaults: [String: Any] = [:]
     private var scratch: URL!
     private var undo: UndoManager!
 
     override func setUp() {
         super.setUp()
-        for key in Self.defaultsKeys {
-            previousDefaults[key] = UserDefaults.app.object(forKey: key)
-        }
+        preservingPreferences(Self.defaultsKeys)
         UserDefaults.app.set(false, forKey: "pc_openLast")
         UserDefaults.app.removeObject(forKey: "pc_pinnedSidebarItems")
         scratch = FileManager.default.temporaryDirectory.appendingPathComponent("pc-undo-scope-\(UUID().uuidString)")
     }
 
     override func tearDown() {
-        for key in Self.defaultsKeys {
-            if let value = previousDefaults[key] {
-                UserDefaults.app.set(value, forKey: key)
-            } else {
-                UserDefaults.app.removeObject(forKey: key)
-            }
-        }
         if let scratch { try? FileManager.default.removeItem(at: scratch) }
         undo = nil
         super.tearDown()

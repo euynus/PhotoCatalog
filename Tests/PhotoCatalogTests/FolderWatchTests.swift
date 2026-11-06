@@ -105,12 +105,7 @@ final class FolderWatchTests: CatalogTestCase {
     /// photo it imports; the watched folder's rescan leaves it out too.
     @MainActor
     func testRescanLeavesOutDuplicateTheImportSkipped() async throws {
-        let key = "pc_importDuplicateStrategy"
-        let previous = UserDefaults.app.object(forKey: key)
-        defer {
-            if let previous { UserDefaults.app.set(previous, forKey: key) }
-            else { UserDefaults.app.removeObject(forKey: key) }
-        }
+        preservingPreferences(["pc_importDuplicateStrategy"])
         let source = scratch.appendingPathComponent("Source")
         let photo = source.appendingPathComponent("a.jpg")
         try makeTestJPEG(at: photo, shade: 3)

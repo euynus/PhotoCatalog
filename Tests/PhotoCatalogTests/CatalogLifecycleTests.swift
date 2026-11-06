@@ -54,15 +54,12 @@ private final class HydrationGate {
 final class CatalogLifecycleTests: XCTestCase {
     private static let defaultsKeys = ["pc_openLast", "pc_catalogURL", "pc_onboarded", "pc_recentCatalogs",
                                        "pc_tether", "pc_pairRawJpeg"]
-    private var previousDefaults: [String: Any] = [:]
     private var root: URL!
 
     override func setUp() {
         super.setUp()
         let defaults = UserDefaults.app
-        for key in Self.defaultsKeys {
-            if let value = defaults.object(forKey: key) { previousDefaults[key] = value }
-        }
+        preservingPreferences(Self.defaultsKeys)
         root = FileManager.default.temporaryDirectory.appendingPathComponent("pc-lifecycle-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defaults.set(false, forKey: "pc_openLast")
@@ -71,15 +68,6 @@ final class CatalogLifecycleTests: XCTestCase {
     }
 
     override func tearDown() {
-        let defaults = UserDefaults.app
-        for key in Self.defaultsKeys {
-            if let value = previousDefaults[key] {
-                defaults.set(value, forKey: key)
-            } else {
-                defaults.removeObject(forKey: key)
-            }
-        }
-        previousDefaults = [:]
         if let root { try? FileManager.default.removeItem(at: root) }
         super.tearDown()
     }
@@ -119,19 +107,6 @@ final class CatalogLifecycleTests: XCTestCase {
     private func select(_ id: String, in app: AppState) {
         app.primaryId = id
         app.selectedIds = [id]
-    }
-
-    @MainActor
-    private func waitUntil(_ message: String, timeout: TimeInterval = 3,
-                           condition: @MainActor () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if condition() { return }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        XCTFail(message)
-        throw NSError(domain: "CatalogLifecycleTests.Wait", code: 1,
-                      userInfo: [NSLocalizedDescriptionKey: message])
     }
 
     @MainActor
@@ -194,7 +169,7 @@ final class CatalogLifecycleTests: XCTestCase {
         registerStep()
         app.openCatalogFromSystem(second.url)
         XCTAssertFalse(undo.canUndo, "undo steps survive a catalog opened in the background")
-        try await waitUntil("Timed out waiting for the catalog to load") { !app.isLoadingCatalog }
+        try await waitUntil("Timed out waiting for the catalog to load", timeout: 3) { !app.isLoadingCatalog }
     }
 
     // MARK: - #36 tethering
@@ -366,7 +341,7 @@ final class CatalogLifecycleTests: XCTestCase {
         XCTAssertTrue(app.openCatalog(at: first.url))
 
         app.openCatalogFromSystem(broken.url)
-        try await waitUntil("Timed out waiting for the catalog to load") { !app.isLoadingCatalog }
+        try await waitUntil("Timed out waiting for the catalog to load", timeout: 3) { !app.isLoadingCatalog }
 
         XCTAssertEqual(app.catalogPath, first.url.path, "a catalog that can't be read opens")
         XCTAssertFalse(app.assets.contains { $0.id == DemoData.assets[0].id })
@@ -460,7 +435,7 @@ final class CatalogLifecycleTests: XCTestCase {
         let folder = root.appendingPathComponent("Empty Folder")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         app.importFolder(folder)
-        try await waitUntil("Timed out waiting for the import") { !app.importing }
+        try await waitUntil("Timed out waiting for the import", timeout: 3) { !app.importing }
 
         XCTAssertTrue(app.hasOpenCatalog)
         XCTAssertFalse(app.assets.contains { $0.isDemo }, "the demo photos stay beside the catalog's")
@@ -486,7 +461,7 @@ final class CatalogLifecycleTests: XCTestCase {
         let folder = root.appendingPathComponent("Empty Folder")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         app.importFolder(folder)
-        try await waitUntil("Timed out waiting for the import") { !app.importing }
+        try await waitUntil("Timed out waiting for the import", timeout: 3) { !app.importing }
 
         XCTAssertTrue(app.hasOpenCatalog)
         XCTAssertEqual(app.catalogPath, url.path)
@@ -513,7 +488,7 @@ final class CatalogLifecycleTests: XCTestCase {
         XCTAssertTrue(refused, "an import starts while the catalog is still loading")
         XCTAssertEqual(app.toastCenter.toasts.last?.message, "目录库仍在载入，载入完成后再导入")
 
-        try await waitUntil("Timed out waiting for the catalog to load") { !app.isLoadingCatalog && !app.importing }
+        try await waitUntil("Timed out waiting for the catalog to load", timeout: 3) { !app.isLoadingCatalog && !app.importing }
         XCTAssertEqual(app.catalogPath, second.url.path)
     }
 
@@ -529,14 +504,14 @@ final class CatalogLifecycleTests: XCTestCase {
         app.catalogHydrationGate = { await gate.wait() }
 
         app.openCatalogFromSystem(second.url)
-        try await waitUntil("The load never read the full catalog") { gate.reached }
+        try await waitUntil("The load never read the full catalog", timeout: 3) { gate.reached }
         XCTAssertTrue(app.isLoadingCatalog)
         XCTAssertTrue(app.hasCatalogPreview)
         // the first photos are on screen, and the menus still edit them
         select(id, in: app)
         XCTAssertTrue(app.setRating(4))
         gate.open()
-        try await waitUntil("Timed out waiting for the catalog to load") { !app.isLoadingCatalog }
+        try await waitUntil("Timed out waiting for the catalog to load", timeout: 3) { !app.isLoadingCatalog }
 
         XCTAssertEqual(try second.store.loadAssets().first { $0.id == id }?.rating, 4)
         XCTAssertEqual(app.assets.first { $0.id == id }?.rating, 4, "the rating made while the catalog loaded is gone")
@@ -584,10 +559,10 @@ final class CatalogLifecycleTests: XCTestCase {
         app.catalogHydrationGate = { await gate.wait() }
 
         app.openCatalogFromSystem(url)
-        try await waitUntil("The load never read the full catalog") { gate.reached }
+        try await waitUntil("The load never read the full catalog", timeout: 3) { gate.reached }
         app.pairRawAndJpeg = false
         gate.open()
-        try await waitUntil("Timed out waiting for the catalog to load") { !app.isLoadingCatalog }
+        try await waitUntil("Timed out waiting for the catalog to load", timeout: 3) { !app.isLoadingCatalog }
 
         XCTAssertEqual(app.libraryCounts.all, 2, "counts still pair the RAW and its JPEG")
     }

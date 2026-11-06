@@ -6,25 +6,10 @@ import UniformTypeIdentifiers
 /// The Export dialog's files: where they land and what they carry.
 final class RenderedExportTests: CatalogTestCase {
     private static let exportKeys = ["pc_renderedExportSettings", "pc_renderedExportFolder"]
-    private var savedExportDefaults: [String: Any] = [:]
 
     override func setUp() {
         super.setUp()
-        for key in Self.exportKeys {
-            if let value = UserDefaults.app.object(forKey: key) { savedExportDefaults[key] = value }
-        }
-    }
-
-    override func tearDown() {
-        for key in Self.exportKeys {
-            if let value = savedExportDefaults[key] {
-                UserDefaults.app.set(value, forKey: key)
-            } else {
-                UserDefaults.app.removeObject(forKey: key)
-            }
-        }
-        savedExportDefaults = [:]
-        super.tearDown()
+        preservingPreferences(Self.exportKeys)
     }
 
     /// An 80×60 photo of `type` with `properties` (EXIF, GPS…).

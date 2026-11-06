@@ -109,21 +109,7 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testOpeningRealCatalogSelectsFirstVisibleAsset() throws {
-        let defaults = UserDefaults.app
-        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
-        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
-        defer {
-            if let previousCatalogURL {
-                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
-            } else {
-                defaults.removeObject(forKey: "pc_catalogURL")
-            }
-            if let previousRecent {
-                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
-            } else {
-                defaults.removeObject(forKey: "pc_recentCatalogs")
-            }
-        }
+        preservingPreferences(["pc_catalogURL", "pc_recentCatalogs"])
 
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-open-selection-\(UUID().uuidString)")
         let source = dir.appendingPathComponent("Source")

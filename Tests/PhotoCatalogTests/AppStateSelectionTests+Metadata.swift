@@ -161,15 +161,7 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testAutoXMPWritesSkipMissingOriginals() throws {
-        let defaults = UserDefaults.app
-        let previousAutoWrite = defaults.object(forKey: "pc_autoWriteXMP")
-        defer {
-            if let previousAutoWrite {
-                defaults.set(previousAutoWrite, forKey: "pc_autoWriteXMP")
-            } else {
-                defaults.removeObject(forKey: "pc_autoWriteXMP")
-            }
-        }
+        preservingPreferences(["pc_autoWriteXMP"])
 
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-auto-missing-xmp-\(UUID().uuidString)")
@@ -226,15 +218,7 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testIndexedMetadataMutationQueuesAutomaticXMPWrite() async throws {
-        let defaults = UserDefaults.app
-        let previousAutoWrite = defaults.object(forKey: "pc_autoWriteXMP")
-        defer {
-            if let previousAutoWrite {
-                defaults.set(previousAutoWrite, forKey: "pc_autoWriteXMP")
-            } else {
-                defaults.removeObject(forKey: "pc_autoWriteXMP")
-            }
-        }
+        preservingPreferences(["pc_autoWriteXMP"])
 
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-xmp-queue-\(UUID().uuidString)")

@@ -35,21 +35,7 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testMaintenanceActionsCleanLocalCatalogState() async throws {
-        let defaults = UserDefaults.app
-        let previousCatalogURL = defaults.object(forKey: "pc_catalogURL")
-        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
-        defer {
-            if let previousCatalogURL {
-                defaults.set(previousCatalogURL, forKey: "pc_catalogURL")
-            } else {
-                defaults.removeObject(forKey: "pc_catalogURL")
-            }
-            if let previousRecent {
-                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
-            } else {
-                defaults.removeObject(forKey: "pc_recentCatalogs")
-            }
-        }
+        preservingPreferences(["pc_catalogURL", "pc_recentCatalogs"])
 
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-maintenance-\(UUID().uuidString)")
         let package = dir.appendingPathComponent("Library.photolibrary")
@@ -82,7 +68,7 @@ extension AppStateSelectionTests {
         XCTAssertGreaterThan(app.thumbnailCacheGeneration, cacheGeneration)
 
         app.runBackup()
-        try await waitUntil("Timed out waiting for backup") {
+        try await waitUntil("Timed out waiting for backup", timeout: 1) {
             BackupService.listBackups(store).count == 1
         }
         XCTAssertEqual(BackupService.listBackups(store).count, 1)
@@ -207,7 +193,7 @@ extension AppStateSelectionTests {
 
         app.runBackup()
 
-        try await waitUntil("Timed out waiting for backup") {
+        try await waitUntil("Timed out waiting for backup", timeout: 1) {
             BackupService.listBackups(store).count == 1
         }
         XCTAssertEqual(BackupService.listBackups(store).count, 1)
@@ -229,7 +215,7 @@ extension AppStateSelectionTests {
         app.onboarded = true
         XCTAssertTrue(app.openCatalog(at: package))
 
-        try await waitUntil("Timed out waiting for backup status") {
+        try await waitUntil("Timed out waiting for backup status", timeout: 1) {
             app.statusBackupText != "尚未备份"
         }
         XCTAssertTrue(app.statusBackupText.contains("09:05"), app.statusBackupText)
@@ -248,13 +234,13 @@ extension AppStateSelectionTests {
         XCTAssertTrue(app.openCatalog(at: package))
         app.runHealthCheck()
 
-        try await waitUntil("Timed out waiting for initial health report") {
+        try await waitUntil("Timed out waiting for initial health report", timeout: 1) {
             app.healthReport?.backupCount == 0
         }
 
         app.runBackup()
 
-        try await waitUntil("Timed out waiting for health backup count") {
+        try await waitUntil("Timed out waiting for health backup count", timeout: 1) {
             app.healthReport?.backupCount == 1
         }
         XCTAssertEqual(app.healthReport?.backupCount, 1)
@@ -267,14 +253,8 @@ extension AppStateSelectionTests {
             "pc_catalogURL", "pc_openLast", "pc_onboarded",
             "pc_autoBackupFrequency", "pc_lastAutoBackupAt",
         ]
-        let saved = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
         let savedBackupKeys = defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("pc_lastAutoBackupAt.") }
-        let savedBackupValues = Dictionary(uniqueKeysWithValues: savedBackupKeys.map { ($0, defaults.object(forKey: $0)) })
-        defer {
-            for key in keys + savedBackupKeys { defaults.removeObject(forKey: key) }
-            for (key, value) in saved { if let value { defaults.set(value, forKey: key) } }
-            for (key, value) in savedBackupValues { if let value { defaults.set(value, forKey: key) } }
-        }
+        preservingPreferences(keys + savedBackupKeys)
         for key in keys + savedBackupKeys { defaults.removeObject(forKey: key) }
         defaults.set(true, forKey: "pc_openLast")
         defaults.set("1", forKey: "pc_onboarded")
@@ -290,7 +270,7 @@ extension AppStateSelectionTests {
         defaults.set(firstPackage, forKey: "pc_catalogURL")
         let firstApp = AppState()
         XCTAssertTrue(firstApp.hasOpenCatalog)
-        try await waitUntil("Timed out waiting for first automatic backup") {
+        try await waitUntil("Timed out waiting for first automatic backup", timeout: 1) {
             BackupService.listBackups(firstStore).count == 1
         }
         XCTAssertEqual(BackupService.listBackups(firstStore).count, 1)
@@ -299,7 +279,7 @@ extension AppStateSelectionTests {
         let secondApp = AppState()
         XCTAssertTrue(secondApp.hasOpenCatalog)
 
-        try await waitUntil("Timed out waiting for second automatic backup") {
+        try await waitUntil("Timed out waiting for second automatic backup", timeout: 1) {
             BackupService.listBackups(secondStore).count == 1
         }
         XCTAssertEqual(BackupService.listBackups(secondStore).count, 1)

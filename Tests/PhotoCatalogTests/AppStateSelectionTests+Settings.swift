@@ -12,17 +12,8 @@ extension AppStateSelectionTests {
             "pc_cacheLimitMB", "pc_previewMaxPixel", "pc_autoBackupFrequency",
         ]
         let defaults = UserDefaults.app
-        let saved = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
+        preservingPreferences(keys)
         keys.forEach { defaults.removeObject(forKey: $0) }
-        defer {
-            for key in keys {
-                if let value = saved[key] ?? nil {
-                    defaults.set(value, forKey: key)
-                } else {
-                    defaults.removeObject(forKey: key)
-                }
-            }
-        }
 
         let app = AppState()
         app.onboarded = true
@@ -70,14 +61,7 @@ extension AppStateSelectionTests {
     @MainActor
     func testAutomaticBackupFrequencyRejectsInvalidDefaults() {
         let defaults = UserDefaults.app
-        let previous = defaults.object(forKey: "pc_autoBackupFrequency")
-        defer {
-            if let previous {
-                defaults.set(previous, forKey: "pc_autoBackupFrequency")
-            } else {
-                defaults.removeObject(forKey: "pc_autoBackupFrequency")
-            }
-        }
+        preservingPreferences(["pc_autoBackupFrequency"])
 
         defaults.set("sometimes", forKey: "pc_autoBackupFrequency")
         let app = AppState()

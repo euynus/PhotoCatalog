@@ -63,7 +63,7 @@ extension AppStateSelectionTests {
         let app = AppState()
         app.onboarded = true
         XCTAssertTrue(app.openCatalog(at: package))
-        try await waitUntil("Timed out waiting for initial cache status") {
+        try await waitUntil("Timed out waiting for initial cache status", timeout: 1) {
             app.statusCacheText == "缓存 0 KB"
         }
 
@@ -71,7 +71,7 @@ extension AppStateSelectionTests {
         try Data(repeating: 1, count: 1_024).write(to: cacheFile)
         XCTAssertTrue(app.finishThumbnailRebuild(expectedCatalogURL: URL(fileURLWithPath: app.catalogPath)))
 
-        try await waitUntil("Timed out waiting for refreshed cache status") {
+        try await waitUntil("Timed out waiting for refreshed cache status", timeout: 1) {
             app.statusCacheText != "缓存 0 KB"
         }
     }
@@ -94,22 +94,9 @@ extension AppStateSelectionTests {
         try writeTestJPEG(to: previewURL, black: true)
 
         let base = DemoData.assets[0]
-        let asset = Asset(id: assetId, pid: base.pid, ori: base.ori, thumb: base.thumb, preview: previewURL.path,
-                          filename: original.lastPathComponent, type: "CR3", isRaw: true, folderId: "source-1",
-                          folderName: "Source", date: base.date, width: base.width, height: base.height,
-                          orientation: base.orientation, camera: base.camera, lens: base.lens, focal: base.focal,
-                          aperture: base.aperture, shutter: base.shutter, iso: base.iso,
-                          colorSpace: base.colorSpace, hasICCProfile: base.hasICCProfile, fileMB: base.fileMB,
-                          fileModifiedAt: base.fileModifiedAt, fileCreatedAt: base.fileCreatedAt,
-                          rating: base.rating, flag: base.flag, colorLabel: base.colorLabel,
-                          keywords: base.keywords, title: base.title, caption: base.caption,
-                          author: base.author, copyright: base.copyright, makerNotes: base.makerNotes,
-                          project: base.project, client: base.client, location: base.location, gps: base.gps,
-                          gpsAltitude: base.gpsAltitude, status: .ready, importedAt: base.importedAt,
-                          deleted: base.deleted, localPath: original.path,
-                          captureDateSource: base.captureDateSource, contentHash: base.contentHash,
-                          quickHash: base.quickHash, isDemo: false, faces: base.faces,
-                          perceptualHash: base.perceptualHash)
+        let asset = rebuiltAsset(base, id: assetId, preview: previewURL.path, filename: original.lastPathComponent,
+                                 type: "CR3", isRaw: true, folderId: "source-1", folderName: "Source",
+                                 status: .ready, localPath: original.path)
 
         let app = AppState()
         app.onboarded = true
@@ -196,22 +183,9 @@ extension AppStateSelectionTests {
         try writeTestJPEG(to: previewURL, black: true)
 
         let base = DemoData.assets[0]
-        let asset = Asset(id: assetId, pid: base.pid, ori: base.ori, thumb: base.thumb, preview: previewURL.path,
-                          filename: original.lastPathComponent, type: "CR3", isRaw: true, folderId: "source-1",
-                          folderName: "Source", date: base.date, width: base.width, height: base.height,
-                          orientation: base.orientation, camera: base.camera, lens: base.lens, focal: base.focal,
-                          aperture: base.aperture, shutter: base.shutter, iso: base.iso,
-                          colorSpace: base.colorSpace, hasICCProfile: base.hasICCProfile, fileMB: base.fileMB,
-                          fileModifiedAt: base.fileModifiedAt, fileCreatedAt: base.fileCreatedAt,
-                          rating: base.rating, flag: base.flag, colorLabel: base.colorLabel,
-                          keywords: base.keywords, title: base.title, caption: base.caption,
-                          author: base.author, copyright: base.copyright, makerNotes: base.makerNotes,
-                          project: base.project, client: base.client, location: base.location, gps: base.gps,
-                          gpsAltitude: base.gpsAltitude, status: .ready, importedAt: base.importedAt,
-                          deleted: base.deleted, localPath: original.path,
-                          captureDateSource: base.captureDateSource, contentHash: base.contentHash,
-                          quickHash: base.quickHash, isDemo: false, faces: base.faces,
-                          perceptualHash: base.perceptualHash)
+        let asset = rebuiltAsset(base, id: assetId, preview: previewURL.path, filename: original.lastPathComponent,
+                                 type: "CR3", isRaw: true, folderId: "source-1", folderName: "Source",
+                                 status: .ready, localPath: original.path)
 
         XCTAssertTrue(imageIsUniformBlack(at: previewURL))
         let report = ExportService.exportPreviews([asset], to: export, thumbnails: thumbnails)
@@ -263,7 +237,7 @@ extension AppStateSelectionTests {
 
         app.runHealthCheck()
 
-        try await waitUntil("Timed out waiting for health check status") {
+        try await waitUntil("Timed out waiting for health check status", timeout: 1) {
             app.statusCacheText == "缓存 0 KB"
         }
         XCTAssertEqual(app.statusCacheText, "缓存 0 KB")
@@ -271,15 +245,7 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testPruneCacheToLimitUpdatesStatusAsynchronously() async throws {
-        let defaults = UserDefaults.app
-        let previousLimit = defaults.object(forKey: "pc_cacheLimitMB")
-        defer {
-            if let previousLimit {
-                defaults.set(previousLimit, forKey: "pc_cacheLimitMB")
-            } else {
-                defaults.removeObject(forKey: "pc_cacheLimitMB")
-            }
-        }
+        preservingPreferences(["pc_cacheLimitMB"])
 
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("pc-cache-prune-\(UUID().uuidString)")
         let package = dir.appendingPathComponent("Library.photolibrary")

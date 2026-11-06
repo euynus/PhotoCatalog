@@ -9,14 +9,11 @@ class CatalogTestCase: XCTestCase {
     private static let isolatedKeys = ["pc_openLast", "pc_catalogURL", "pc_onboarded", "pc_recentCatalogs",
                                        "pc_pairRawJpeg", "pc_readXMP", "pc_vision", "pc_importMode",
                                        "pc_autoStackSeconds"]
-    private var savedDefaults: [String: Any] = [:]
     private(set) var scratch: URL!
 
     override func setUp() {
         super.setUp()
-        for key in Self.isolatedKeys {
-            if let value = UserDefaults.app.object(forKey: key) { savedDefaults[key] = value }
-        }
+        preservingPreferences(Self.isolatedKeys)
         UserDefaults.app.set(false, forKey: "pc_openLast")
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-\(type(of: self))-\(UUID().uuidString)")
@@ -27,14 +24,6 @@ class CatalogTestCase: XCTestCase {
     }
 
     override func tearDown() {
-        for key in Self.isolatedKeys {
-            if let value = savedDefaults[key] {
-                UserDefaults.app.set(value, forKey: key)
-            } else {
-                UserDefaults.app.removeObject(forKey: key)
-            }
-        }
-        savedDefaults = [:]
         if let scratch { try? FileManager.default.removeItem(at: scratch) }
         super.tearDown()
     }
@@ -61,6 +50,26 @@ class CatalogTestCase: XCTestCase {
         guard CGImageDestinationFinalize(destination) else { throw NSError(domain: "CatalogTestSupport", code: 3) }
     }
 
+    /// Runs a rescan of the watched folders to its end (including any it queued behind it).
+    @MainActor
+    func rescanToCompletion(_ app: AppState) async throws {
+        app.rescanCurrentSource()
+        XCTAssertTrue(app.isIncrementalRescanning, "a rescan started")
+        try await waitUntil("rescan finished") { !app.isIncrementalRescanning }
+    }
+}
+
+extension XCTestCase {
+    /// Puts these preferences back as they are now when the test ends: a key that has a value gets
+    /// it back, and a key that has none is removed. It's a teardown block, so it runs after the
+    /// test method has returned (its defers included) and before `tearDown()`. Teardown blocks run
+    /// last registered first: a test's run before those its class registered in `setUp()`, and a
+    /// subclass's before its superclass's.
+    func preservingPreferences(_ keys: [String]) {
+        let saved = SavedPreferences(keys: keys)
+        addTeardownBlock { saved.restore() }
+    }
+
     /// Waits for `condition`, failing the test after `timeout`.
     @MainActor
     func waitUntil(_ message: String, timeout: TimeInterval = 10,
@@ -73,12 +82,24 @@ class CatalogTestCase: XCTestCase {
         XCTFail(message)
         throw NSError(domain: "CatalogTestSupport.Wait", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
+}
 
-    /// Runs a rescan of the watched folders to its end (including any it queued behind it).
-    @MainActor
-    func rescanToCompletion(_ app: AppState) async throws {
-        app.rescanCurrentSource()
-        XCTAssertTrue(app.isIncrementalRescanning, "a rescan started")
-        try await waitUntil("rescan finished") { !app.isIncrementalRescanning }
+/// Preference values as a test found them, for its teardown block to put back. `Any` isn't
+/// `Sendable`, but these are property-list values that nothing changes once they're read.
+private struct SavedPreferences: @unchecked Sendable {
+    private let values: [(key: String, value: Any?)]
+
+    init(keys: [String]) {
+        values = keys.map { (key: $0, value: UserDefaults.app.object(forKey: $0)) }
+    }
+
+    func restore() {
+        for (key, value) in values {
+            if let value {
+                UserDefaults.app.set(value, forKey: key)
+            } else {
+                UserDefaults.app.removeObject(forKey: key)
+            }
+        }
     }
 }

@@ -4,71 +4,12 @@ import UniformTypeIdentifiers
 @testable import PhotoCatalog
 
 final class AppStateSelectionTests: XCTestCase {
-    private var previousOpenLast: Any?
-    private var previousCatalogURL: Any?
-    private var previousOnboarded: Any?
-    private var previousPinnedSidebarItems: Any?
-    private var previousRecentCatalogs: Any?
-    private var previousRenameTemplate: Any?
-
     override func setUp() {
         super.setUp()
-        previousOpenLast = UserDefaults.app.object(forKey: "pc_openLast")
-        previousCatalogURL = UserDefaults.app.object(forKey: "pc_catalogURL")
-        previousOnboarded = UserDefaults.app.object(forKey: "pc_onboarded")
-        previousPinnedSidebarItems = UserDefaults.app.object(forKey: "pc_pinnedSidebarItems")
-        previousRecentCatalogs = UserDefaults.app.object(forKey: "pc_recentCatalogs")
-        previousRenameTemplate = UserDefaults.app.object(forKey: "pc_renameTemplate")
+        preservingPreferences(["pc_openLast", "pc_catalogURL", "pc_onboarded", "pc_pinnedSidebarItems",
+                               "pc_recentCatalogs", "pc_renameTemplate"])
         UserDefaults.app.set(false, forKey: "pc_openLast")
         UserDefaults.app.removeObject(forKey: "pc_pinnedSidebarItems")
-    }
-
-    override func tearDown() {
-        if let previousOpenLast {
-            UserDefaults.app.set(previousOpenLast, forKey: "pc_openLast")
-        } else {
-            UserDefaults.app.removeObject(forKey: "pc_openLast")
-        }
-        if let previousCatalogURL {
-            UserDefaults.app.set(previousCatalogURL, forKey: "pc_catalogURL")
-        } else {
-            UserDefaults.app.removeObject(forKey: "pc_catalogURL")
-        }
-        if let previousOnboarded {
-            UserDefaults.app.set(previousOnboarded, forKey: "pc_onboarded")
-        } else {
-            UserDefaults.app.removeObject(forKey: "pc_onboarded")
-        }
-        if let previousPinnedSidebarItems {
-            UserDefaults.app.set(previousPinnedSidebarItems, forKey: "pc_pinnedSidebarItems")
-        } else {
-            UserDefaults.app.removeObject(forKey: "pc_pinnedSidebarItems")
-        }
-        if let previousRecentCatalogs {
-            UserDefaults.app.set(previousRecentCatalogs, forKey: "pc_recentCatalogs")
-        } else {
-            UserDefaults.app.removeObject(forKey: "pc_recentCatalogs")
-        }
-        if let previousRenameTemplate {
-            UserDefaults.app.set(previousRenameTemplate, forKey: "pc_renameTemplate")
-        } else {
-            UserDefaults.app.removeObject(forKey: "pc_renameTemplate")
-        }
-        super.tearDown()
-    }
-
-    @MainActor
-    @nonobjc
-    func waitUntil(_ message: String, timeout: TimeInterval = 1,
-                   condition: @MainActor () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if condition() { return }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        XCTFail(message)
-        throw NSError(domain: "PhotoCatalogTests.Wait", code: 1,
-                      userInfo: [NSLocalizedDescriptionKey: message])
     }
 
     func makeCatalogWithOneAsset(at package: URL, assetIndex: Int) throws -> CatalogStore {
@@ -84,6 +25,30 @@ final class AppStateSelectionTests: XCTestCase {
         asset.deleted = false
         try store.upsert([asset])
         return store
+    }
+
+    /// `base` made again through Asset's initializer with these fields changed, and not a demo
+    /// photo. Every other field is `base`'s, except masterId, copyName and duration, which it
+    /// leaves to the initializer (nil).
+    func rebuiltAsset(_ base: Asset, id: String? = nil, preview: String? = nil, filename: String? = nil,
+                      type: String? = nil, isRaw: Bool? = nil, folderId: String? = nil,
+                      folderName: String? = nil, status: AssetStatus? = nil, localPath: String?) -> Asset {
+        Asset(id: id ?? base.id, pid: base.pid, ori: base.ori, thumb: base.thumb, preview: preview ?? base.preview,
+              filename: filename ?? base.filename, type: type ?? base.type, isRaw: isRaw ?? base.isRaw,
+              folderId: folderId ?? base.folderId, folderName: folderName ?? base.folderName,
+              date: base.date, width: base.width, height: base.height,
+              orientation: base.orientation, camera: base.camera, lens: base.lens, focal: base.focal,
+              aperture: base.aperture, shutter: base.shutter, iso: base.iso,
+              colorSpace: base.colorSpace, hasICCProfile: base.hasICCProfile, fileMB: base.fileMB,
+              fileModifiedAt: base.fileModifiedAt, fileCreatedAt: base.fileCreatedAt,
+              rating: base.rating, flag: base.flag, colorLabel: base.colorLabel,
+              keywords: base.keywords, title: base.title, caption: base.caption,
+              author: base.author, copyright: base.copyright, makerNotes: base.makerNotes,
+              project: base.project, client: base.client, location: base.location, gps: base.gps,
+              gpsAltitude: base.gpsAltitude, status: status ?? base.status, importedAt: base.importedAt,
+              deleted: base.deleted, localPath: localPath, captureDateSource: base.captureDateSource,
+              contentHash: base.contentHash, quickHash: base.quickHash, isDemo: false, faces: base.faces,
+              perceptualHash: base.perceptualHash)
     }
 
     func writeTestJPEG(to url: URL, black: Bool, gps: [CFString: Any]? = nil) throws {

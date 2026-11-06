@@ -10,15 +10,12 @@ final class CatalogDocumentTypeTests: XCTestCase {
     private static let repoRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     private static let defaultsKeys = ["pc_openLast", "pc_catalogURL", "pc_onboarded", "pc_recentCatalogs"]
-    private var previousDefaults: [String: Any] = [:]
     private var root: URL!
 
     override func setUp() {
         super.setUp()
         let defaults = UserDefaults.app
-        for key in Self.defaultsKeys {
-            if let value = defaults.object(forKey: key) { previousDefaults[key] = value }
-        }
+        preservingPreferences(Self.defaultsKeys)
         root = FileManager.default.temporaryDirectory.appendingPathComponent("pc-document-type-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defaults.set(false, forKey: "pc_openLast")
@@ -27,15 +24,6 @@ final class CatalogDocumentTypeTests: XCTestCase {
     }
 
     override func tearDown() {
-        let defaults = UserDefaults.app
-        for key in Self.defaultsKeys {
-            if let value = previousDefaults[key] {
-                defaults.set(value, forKey: key)
-            } else {
-                defaults.removeObject(forKey: key)
-            }
-        }
-        previousDefaults = [:]
         if let root { try? FileManager.default.removeItem(at: root) }
         super.tearDown()
     }
@@ -86,19 +74,6 @@ final class CatalogDocumentTypeTests: XCTestCase {
         let (developer, data) = try writeInfoPlist(["PATH": path, "SDK_PATH": "/nonexistent.sdk"])
         XCTAssertEqual(developer, 0)
         XCTAssertNotNil(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
-    }
-
-    @MainActor
-    private func waitUntil(_ message: String, timeout: TimeInterval = 3,
-                           condition: @MainActor () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if condition() { return }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        XCTFail(message)
-        throw NSError(domain: "CatalogDocumentTypeTests.Wait", code: 1,
-                      userInfo: [NSLocalizedDescriptionKey: message])
     }
 
     func testInfoPlistOffersTheAppForCatalogPackages() throws {
@@ -159,7 +134,7 @@ final class CatalogDocumentTypeTests: XCTestCase {
         let delegate = AppDelegate()
         delegate.application(NSApplication.shared, open: [url])
         delegate.openCatalogURL = { app.openCatalogFromSystem($0) }
-        try await waitUntil("Timed out waiting for the catalog to load") { !app.isLoadingCatalog }
+        try await waitUntil("Timed out waiting for the catalog to load", timeout: 3) { !app.isLoadingCatalog }
 
         XCTAssertTrue(app.hasOpenCatalog)
         XCTAssertEqual(app.catalogPath, url.path)

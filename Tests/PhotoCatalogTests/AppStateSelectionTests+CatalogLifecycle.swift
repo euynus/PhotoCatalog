@@ -49,14 +49,7 @@ extension AppStateSelectionTests {
     @MainActor
     func testRecentCatalogsHideInvalidPackages() throws {
         let defaults = UserDefaults.app
-        let previousRecent = defaults.object(forKey: "pc_recentCatalogs")
-        defer {
-            if let previousRecent {
-                defaults.set(previousRecent, forKey: "pc_recentCatalogs")
-            } else {
-                defaults.removeObject(forKey: "pc_recentCatalogs")
-            }
-        }
+        preservingPreferences(["pc_recentCatalogs"])
 
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("pc-recent-catalog-\(UUID().uuidString)")
@@ -327,15 +320,7 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testEmptyCatalogManagementTextUsesConfiguredImportMode() {
-        let defaults = UserDefaults.app
-        let previous = defaults.object(forKey: "pc_importMode")
-        defer {
-            if let previous {
-                defaults.set(previous, forKey: "pc_importMode")
-            } else {
-                defaults.removeObject(forKey: "pc_importMode")
-            }
-        }
+        preservingPreferences(["pc_importMode"])
 
         let app = AppState()
         app.onboarded = true

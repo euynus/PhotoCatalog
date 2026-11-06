@@ -5,17 +5,9 @@ import XCTest
 /// photo is shown, however often that happens in a session; only a repair that failed isn't tried
 /// again.
 final class CacheRepairTests: CatalogTestCase {
-    private var savedLimit: Any?
-
     override func setUp() {
         super.setUp()
-        savedLimit = UserDefaults.app.object(forKey: "pc_cacheLimitMB")
-    }
-
-    override func tearDown() {
-        if let savedLimit { UserDefaults.app.set(savedLimit, forKey: "pc_cacheLimitMB") }
-        else { UserDefaults.app.removeObject(forKey: "pc_cacheLimitMB") }
-        super.tearDown()
+        preservingPreferences(["pc_cacheLimitMB"])
     }
 
     /// A catalog with one imported photo, `a.jpg`, opened without background maintenance (which

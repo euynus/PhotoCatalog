@@ -68,25 +68,10 @@ final class DuplicateGroupTests: XCTestCase {
 /// The Duplicates view shows each photo as it is now, not as it was when the groups were found.
 final class DuplicateGroupMemberTests: CatalogTestCase {
     private static let defaultsKeys = ["pc_renameTemplate", "pc_autoWriteXMP"]
-    private var savedDefaults: [String: Any] = [:]
 
     override func setUp() {
         super.setUp()
-        for key in Self.defaultsKeys {
-            if let value = UserDefaults.app.object(forKey: key) { savedDefaults[key] = value }
-        }
-    }
-
-    override func tearDown() {
-        for key in Self.defaultsKeys {
-            if let value = savedDefaults[key] {
-                UserDefaults.app.set(value, forKey: key)
-            } else {
-                UserDefaults.app.removeObject(forKey: key)
-            }
-        }
-        savedDefaults = [:]
-        super.tearDown()
+        preservingPreferences(Self.defaultsKeys)
     }
 
     @MainActor

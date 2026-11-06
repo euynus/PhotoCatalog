@@ -3,12 +3,11 @@ import XCTest
 
 /// People: naming, renaming and deleting people, with their `人物/…` keywords and undo.
 final class PeopleTests: CatalogTestCase {
-    private var savedAutoWriteXMP: Any?
     private var undo: UndoManager!
 
     override func setUp() {
         super.setUp()
-        savedAutoWriteXMP = UserDefaults.app.object(forKey: "pc_autoWriteXMP")
+        preservingPreferences(["pc_autoWriteXMP"])
         // XCTest calls setUp on the main thread
         undo = MainActor.assumeIsolated {
             let undo = UndoManager()
@@ -18,11 +17,6 @@ final class PeopleTests: CatalogTestCase {
     }
 
     override func tearDown() {
-        if let savedAutoWriteXMP {
-            UserDefaults.app.set(savedAutoWriteXMP, forKey: "pc_autoWriteXMP")
-        } else {
-            UserDefaults.app.removeObject(forKey: "pc_autoWriteXMP")
-        }
         undo = nil
         super.tearDown()
     }
