@@ -8,6 +8,11 @@ import AppKit
 /// showed the unsaved crop when it came back, and hovering a preset showed nothing meanwhile.
 @MainActor
 final class CropEditorDraftTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        openingNoCatalogAtLaunch()
+    }
+
     private func image() throws -> CGImage {
         let context = try XCTUnwrap(CGContext(data: nil, width: 64, height: 48, bitsPerComponent: 8, bytesPerRow: 0,
                                               space: CGColorSpaceCreateDeviceRGB(),

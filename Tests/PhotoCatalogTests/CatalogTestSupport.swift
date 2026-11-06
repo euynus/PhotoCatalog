@@ -70,6 +70,22 @@ extension XCTestCase {
         addTeardownBlock { saved.restore() }
     }
 
+    /// Puts every preference back as it is now when the test ends, as `preservingPreferences`
+    /// does: for a test that opens catalogs, which writes more than the settings it changes (each
+    /// catalog and folder is remembered, a catalog backed up automatically gets its date).
+    func preservingAllPreferences() {
+        let saved = SavedPreferences(keys: nil)
+        addTeardownBlock { saved.restore() }
+    }
+
+    /// Has an `AppState()` made in the test open no catalog at launch, so it starts on the demo
+    /// photos however the launch settings are left (onboarded, set by another test or for every
+    /// app in the global domain, opened the default catalog).
+    func openingNoCatalogAtLaunch() {
+        preservingAllPreferences()
+        UserDefaults.app.set(false, forKey: "pc_openLast")
+    }
+
     /// Waits for `condition`, failing the test after `timeout`.
     @MainActor
     func waitUntil(_ message: String, timeout: TimeInterval = 10,
@@ -84,21 +100,32 @@ extension XCTestCase {
     }
 }
 
-/// Preference values as a test found them, for its teardown block to put back. `Any` isn't
+/// Preferences as a test found them in the run's suite (all of them when `keys` is nil), for its
+/// teardown block to put back. The suite's own values: one read through from another domain (a
+/// key set for every app on the Mac) put back would be the suite's from then on. `Any` isn't
 /// `Sendable`, but these are property-list values that nothing changes once they're read.
 private struct SavedPreferences: @unchecked Sendable {
-    private let values: [(key: String, value: Any?)]
+    private let suiteName = IsolatedRun.current?.suiteName ?? ""
+    private let keys: [String]?
+    private let values: [String: Any]
 
-    init(keys: [String]) {
-        values = keys.map { (key: $0, value: UserDefaults.app.object(forKey: $0)) }
+    init(keys: [String]?) {
+        let suite = UserDefaults.app.persistentDomain(forName: suiteName) ?? [:]
+        self.keys = keys
+        values = keys.map { keys in suite.filter { keys.contains($0.key) } } ?? suite
     }
 
     func restore() {
-        for (key, value) in values {
-            if let value {
-                UserDefaults.app.set(value, forKey: key)
+        let defaults = UserDefaults.app
+        guard let keys else {
+            defaults.setPersistentDomain(values, forName: suiteName)
+            return
+        }
+        for key in keys {
+            if let value = values[key] {
+                defaults.set(value, forKey: key)
             } else {
-                UserDefaults.app.removeObject(forKey: key)
+                defaults.removeObject(forKey: key)
             }
         }
     }

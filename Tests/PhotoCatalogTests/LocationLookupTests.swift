@@ -3,6 +3,11 @@ import XCTest
 
 /// The location dialogs ask about the photos they place by id, not by going through the catalog.
 final class LocationLookupTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        openingNoCatalogAtLaunch()
+    }
+
     @MainActor
     func testAnyHasLocationAsksOnlyAboutThePhotos() {
         let app = AppState()
@@ -26,8 +31,9 @@ final class LocationLookupTests: XCTestCase {
     @MainActor
     func testGPXMatchingOffTheMainActorMatchesAsTheAppDoes() async {
         let app = AppState()
+        XCTAssertTrue(app.assets.allSatisfy(\.isDemo), "the demo photos, not a catalog's")
         // photos without a location of their own, so matching without overwriting places them too
-        // (what `AppState()` starts with depends on the run: demo photos come located)
+        // (demo photos come located)
         app.assets = app.assets.map { asset in
             var asset = asset
             asset.gps = (0, 0)

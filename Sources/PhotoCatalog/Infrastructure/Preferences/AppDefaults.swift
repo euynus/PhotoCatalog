@@ -1,51 +1,64 @@
 // ============================================================
-//  The app's preferences store
+//  The app's preferences store, and what a test or check run keeps apart
 // ============================================================
-import CryptoKit
 import Darwin
 import Foundation
 
-extension UserDefaults {
-    /// The app's preferences: the standard ones, except under XCTest and in the headless checks.
-    /// Under XCTest every `swift test` on this Mac shares the test runner's domain, so two runs at
-    /// once (in two checkouts) changed each other's open catalog and settings; each checkout's test
-    /// runs keep a suite of their own. The headless checks change settings as they go (and don't
-    /// all put them back), in the domain a `swift run` of the app reads; see `headlessCheckSuiteName`.
-    static let app: UserDefaults = {
-        if NSClassFromString("XCTestCase") != nil {
-            let tests = Bundle.allBundles.first { $0.bundleURL.pathExtension == "xctest" }?.bundlePath
-                ?? FileManager.default.currentDirectoryPath
-            return UserDefaults(suiteName: "PhotoCatalogTests.\(digest(tests))") ?? .standard
-        }
-        // resolved: `.build/debug` is a link to the build's own folder, and the build script runs that
-        let executable = Bundle.main.executableURL?.resolvingSymlinksInPath().path ?? CommandLine.arguments.first ?? ""
-        guard let base = headlessCheckSuiteName(arguments: CommandLine.arguments, executablePath: executable) else {
-            return .standard
-        }
-        // held until the run ends: another run of the same check takes the next suite
-        let name = claimHeadlessSuite(base, lockDirectory: FileManager.default.temporaryDirectory)?.name ?? base
-        guard let suite = UserDefaults(suiteName: name) else { return .standard }
-        // each run starts from the app's defaults (and any `-pc_…` arguments, which every suite reads)
-        suite.removePersistentDomain(forName: name)
-        return suite
+/// A run that must leave the user's own settings and files alone: XCTest, and the headless checks
+/// (`--selfcheck`, `--pipeline`, `--scale`, the `--…-check` modes). Each run holds a preferences
+/// suite of its own, emptied as it starts, so nothing a test or check leaves behind reaches the
+/// next run, and a stand-in for the Pictures folder in the temporary folder, emptied too. The
+/// default catalog, export, card-copy and tether locations are in Pictures, so a test or check
+/// that falls back on one never reaches the user's library: tests that made an `AppState` with
+/// the launch settings left as they were opened the user's own catalog and backed it up.
+struct IsolatedRun: Sendable {
+    /// The preferences suite this run holds.
+    let suiteName: String
+    /// What stands in for the user's Pictures folder: empty as the run starts.
+    let picturesFolder: URL
+
+    /// This process's; nil for an app run.
+    static let current: IsolatedRun? = {
+        let testing = NSClassFromString("XCTestCase") != nil
+        guard let base = suiteBase(arguments: CommandLine.arguments, testing: testing) else { return nil }
+        return claim(base, in: FileManager.default.temporaryDirectory)
     }()
 
-    /// The suite a headless check mode (`--selfcheck`, `--pipeline`, `--scale`, the `--…-check`
-    /// modes) keeps its settings in: one per checkout (its binary) and mode, so a check never
-    /// changes what an app run reads, and checks in two checkouts, or two modes at once, don't
-    /// change each other's settings mid-run. Nil for an app run.
-    static func headlessCheckSuiteName(arguments: [String], executablePath: String) -> String? {
+    /// The suite a run starts from: one for XCTest and one per check mode. Nil for an app run.
+    static func suiteBase(arguments: [String], testing: Bool) -> String? {
+        if testing { return "PhotoCatalogTests" }
         let modes: Set<String> = ["--selfcheck", "--pipeline", "--scale"]
         guard let mode = arguments.dropFirst().first(where: {
             modes.contains($0) || ($0.hasPrefix("--") && $0.hasSuffix("-check"))
         }) else { return nil }
-        return "PhotoCatalogChecks.\(digest(executablePath)).\(mode.dropFirst(2))"
+        return "PhotoCatalogChecks.\(mode.dropFirst(2))"
     }
 
-    /// The suite `base`, or `base.2`, `base.3`… while other runs of the same check hold the ones
-    /// before: each run holds its suite's lock (a file in `lockDirectory`, open for as long as
-    /// `lock` is) until it ends. Nil when no lock can be taken.
-    static func claimHeadlessSuite(_ base: String, lockDirectory: URL) -> (name: String, lock: Int32)? {
+    /// Takes the suite `base`, or the first of `base.2`, `base.3`… that no other run holds (two
+    /// test runs at once, in two checkouts, or two `--selfcheck`s), emptied for this run.
+    static func claim(_ base: String, in directory: URL) -> IsolatedRun {
+        // with every suite held, one of this process's own rather than another run's
+        fresh(claimSuite(base, lockDirectory: directory)?.name ?? "\(base).\(getpid())", in: directory)
+    }
+
+    /// The suite `name` and its Pictures folder in `directory`, emptied of what a run before left.
+    static func fresh(_ name: String, in directory: URL) -> IsolatedRun {
+        // the app's defaults, and any `-pc_…` arguments, which every suite reads
+        UserDefaults(suiteName: name)?.removePersistentDomain(forName: name)
+        let fm = FileManager.default
+        let pictures = directory.appendingPathComponent(name + ".Pictures", isDirectory: true)
+        try? fm.removeItem(at: pictures)
+        try? fm.createDirectory(at: pictures, withIntermediateDirectories: true)
+        // canonical, as the folder scanner reports paths: /var/folders is a link to /private/var/folders
+        let canonical = (try? pictures.resourceValues(forKeys: [.canonicalPathKey]).canonicalPath)
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+        return IsolatedRun(suiteName: name, picturesFolder: canonical ?? pictures)
+    }
+
+    /// The suite `base`, or `base.2`, `base.3`… while other runs hold the ones before: each run
+    /// holds its suite's lock (a file in `lockDirectory`, open for as long as `lock` is) until it
+    /// ends. Nil when no lock can be taken.
+    static func claimSuite(_ base: String, lockDirectory: URL) -> (name: String, lock: Int32)? {
         for index in 1...16 {
             let name = index == 1 ? base : "\(base).\(index)"
             let file = lockDirectory.appendingPathComponent(name + ".lock").path
@@ -56,8 +69,11 @@ extension UserDefaults {
         }
         return nil
     }
+}
 
-    private static func digest(_ text: String) -> String {
-        SHA256.hash(data: Data(text.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
-    }
+extension UserDefaults {
+    /// The app's preferences: the standard ones, except in a test or check run, which keeps a
+    /// suite of its own (see `IsolatedRun`). Every `swift test` on this Mac shares the test
+    /// runner's domain, and a `swift run` of the app reads the one the checks would otherwise use.
+    static let app: UserDefaults = IsolatedRun.current.flatMap { UserDefaults(suiteName: $0.suiteName) } ?? .standard
 }

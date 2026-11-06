@@ -42,9 +42,10 @@ enum FileAccessService {
     }
 
     /// The user's Pictures folder. A sandboxed copy is given its container's link to it, a path
-    /// that mustn't end up in the catalog or the settings.
+    /// that mustn't end up in the catalog or the settings. A test or check run gets a stand-in.
     static var picturesFolder: URL {
-        (FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
+        if let run = IsolatedRun.current { return run.picturesFolder }
+        return (FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Pictures"))
             .resolvingSymlinksInPath()
     }

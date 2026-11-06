@@ -33,9 +33,7 @@ struct TetherSettings: Codable, Equatable, Sendable {
     var watchedFolderPath = ""
 
     static var defaultDestination: String {
-        // resolved: a sandboxed copy is given its container's link to Pictures
-        FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask)[0].resolvingSymlinksInPath()
-            .appendingPathComponent("PhotoCatalog Tether", isDirectory: true).path
+        FileAccessService.picturesFolder.appendingPathComponent("PhotoCatalog Tether", isDirectory: true).path
     }
 
     init() {}
