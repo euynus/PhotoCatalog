@@ -76,7 +76,7 @@ enum ScaleCheck {
                     app.selectedIds = Set(ids)
                     app.addKeyword("循环\(rounds)")
                 case "sidebar":
-                    app.smartAlbums = app.smartAlbums   // drops the sidebar's counts, and only them
+                    app.sidebarCountIndexCache = nil   // the sidebar's counts, and only them, worked out again
                     _ = app.countForSmartAlbum(app.smartAlbums[0])
                 case "list":
                     app.assets = app.assets
@@ -208,7 +208,7 @@ enum ScaleCheck {
         // window works out again as it redraws, part by part; then the first ratings after it.
         line = []
         step("recount") {
-            app.smartAlbums = app.smartAlbums   // drops the sidebar's counts, and only them
+            app.sidebarCountIndexCache = nil   // the sidebar's counts, and only them, worked out again
             readSidebar()
         }
         step("change") { app.assets = app.assets }
