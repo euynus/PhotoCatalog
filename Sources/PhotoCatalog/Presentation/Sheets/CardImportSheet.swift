@@ -137,9 +137,11 @@ struct CardImportSheet: View {
         }
         scanning = true
         files = []
-        let index = CardImportService.CatalogIndex(app.assets)
         var found: [CardFile] = []
         if let device {
+            let index = await Self.catalogIndex(of: app.assets)
+            // closed or switched meanwhile: the device's session, closed with it, isn't opened again
+            guard !Task.isCancelled, key == sourceKey else { return }
             switch await CameraDeviceBrowser.shared.listing(for: device, catalog: index) {
             case .files(let listed): found = listed
             case .locked: deviceProblem = L("请解锁「\(device.name)」，并在设备上选择“信任”这台 Mac。")
@@ -154,12 +156,20 @@ struct CardImportSheet: View {
                     return
                 }
             }
+            let index = await Self.catalogIndex(of: app.assets)
+            guard !Task.isCancelled, key == sourceKey else { return }
             found = await Task.detached(priority: .userInitiated) { CardImportService.scan(root, catalog: index) }.value
         }
         guard key == sourceKey else { return }
         files = found
         selection = Set(found.filter { !$0.alreadyImported }.map(\.id))
         scanning = false
+    }
+
+    /// What the catalog has, for telling the photos already imported, worked out off the main
+    /// thread: in a hop of its own, so the photos are let go before the source is listed.
+    private static func catalogIndex(of assets: [Asset]) async -> CardImportService.CatalogIndex {
+        await Task.detached(priority: .userInitiated) { CardImportService.CatalogIndex(assets) }.value
     }
 
     // ---- photos ----
