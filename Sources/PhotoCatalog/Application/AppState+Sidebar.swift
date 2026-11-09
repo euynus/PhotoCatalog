@@ -771,6 +771,22 @@ extension AppState {
                                                    name: selection.name))
     }
 
+    /// Whether a live photo (not removed) has `keyword`. Keyword counts already held answer for
+    /// the photos as shown, all live; the only other live photos are JPEGs behind their RAWs.
+    /// Without counts held, a pass that stops at the first such photo: making the keyword tally
+    /// to answer this took ~18 ms at 50k photos.
+    private func livePhotoHasKeyword(_ keyword: String) -> Bool {
+        let held = keywordCountsCache?.counts
+            ?? sidebarCountIndexCache.flatMap { $0.day == sidebarDay ? $0.counts.keywords : nil }
+        guard let held else { return assets.contains { !$0.deleted && $0.keywords.contains(keyword) } }
+        if held[keyword, default: 0] > 0 { return true }
+        let positions = assetIndex
+        return assetPairing.primaryByCompanion.keys.contains { id in
+            guard let position = positions[id] else { return false }
+            return !assets[position].deleted && assets[position].keywords.contains(keyword)
+        }
+    }
+
     private func resolvePinnedSidebarItem(_ item: PinnedSidebarItem) -> PinnedSidebarItem? {
         switch item.type {
         case .folder:
@@ -783,8 +799,7 @@ extension AppState {
             guard let smart = smartAlbums.first(where: { $0.id == item.selectionId }) else { return nil }
             return PinnedSidebarItem(type: .smart, selectionId: smart.id, name: smart.name)
         case .keyword:
-            let exists = assets.contains { !$0.deleted && $0.keywords.contains(item.selectionId) }
-            guard exists else { return nil }
+            guard livePhotoHasKeyword(item.selectionId) else { return nil }
             return PinnedSidebarItem(type: .keyword, selectionId: item.selectionId, name: item.name)
         case .project:
             guard projectList.contains(where: { $0.name == item.selectionId }) else { return nil }
