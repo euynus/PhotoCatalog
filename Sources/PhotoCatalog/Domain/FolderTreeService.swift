@@ -18,6 +18,7 @@ enum FolderTreeService {
             guard let rootPath = normalizedDirectory(sourceRootPaths[source.id]) else { continue }
 
             var discovered: [String: Int] = [:]
+            var subfolders: [String: [(name: String, path: String)]] = [:]   // by parent, as found
             // photos share folders: each folder's path is worked out once, not once per photo
             var directories = Set<String>()
             for asset in live where asset.folderId == source.id {
@@ -26,16 +27,20 @@ enum FolderTreeService {
             }
             for directory in directories {
                 let assetDir = normalizedPath(PathString.standardized(directory))
-                guard assetDir != rootPath, isDescendant(assetDir, of: rootPath) else { continue }
+                // a folder found already came with every folder above it
+                guard assetDir != rootPath, discovered[assetDir] == nil, isDescendant(assetDir, of: rootPath) else { continue }
 
                 var current = rootPath
                 for (index, component) in relativeComponents(from: rootPath, to: assetDir).enumerated() {
+                    let parent = current
                     current = (current as NSString).appendingPathComponent(component)
-                    discovered[current] = index + 1
+                    if discovered.updateValue(index + 1, forKey: current) == nil {
+                        subfolders[parent, default: []].append((component, current))
+                    }
                 }
             }
 
-            for path in discovered.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending }) {
+            for path in listingOrder(discovered.keys, presorted: depthFirst(from: rootPath, subfolders)) {
                 result.append(FolderTreeItem(id: subfolderId(for: path),
                                              sourceId: source.id,
                                              name: PathString.lastComponent(path),
@@ -94,10 +99,15 @@ enum FolderTreeService {
             result.append(source)
             if source.directoryPath == nil, let added = discovered[source.sourceId] {
                 var depths = added
+                var listedPaths: [String] = []
                 for item in tree[start + 1 ..< end] {
-                    if let path = item.directoryPath { depths[path] = item.depth }
+                    if let path = item.directoryPath, depths.updateValue(item.depth, forKey: path) == nil {
+                        listedPaths.append(path)
+                    }
                 }
-                for path in depths.keys.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending }) {
+                // the source's listed folders are in order already: the new ones are sorted in
+                let presorted = listedPaths + added.keys.sorted(by: inListingOrder)
+                for path in listingOrder(depths.keys, presorted: presorted) {
                     result.append(FolderTreeItem(id: subfolderId(for: path), sourceId: source.sourceId,
                                                  name: PathString.lastComponent(path), status: source.status,
                                                  depth: depths[path] ?? 1, directoryPath: path))
@@ -197,6 +207,37 @@ enum FolderTreeService {
         }
 
         return counts
+    }
+
+    /// The order the tree lists a source's folders in: the Finder's order of their whole paths.
+    static func inListingOrder(_ a: String, _ b: String) -> Bool {
+        a.localizedStandardCompare(b) == .orderedAscending
+    }
+
+    /// `paths` in listing order, given them nearly in it. When each folder in `presorted` comes
+    /// before the next, that is the order (one comparison per folder, where sorting 48,000 whole
+    /// paths took ~16 and a second); otherwise they are sorted, which the runs in order speed up.
+    /// Either way the answer is the sort of `paths` by `inListingOrder`, as it always was.
+    static func listingOrder(_ paths: Dictionary<String, Int>.Keys, presorted: [String]) -> [String] {
+        guard presorted.count == paths.count else { return paths.sorted(by: inListingOrder) }
+        if zip(presorted, presorted.dropFirst()).allSatisfy({ inListingOrder($0, $1) }) { return presorted }
+        return presorted.sorted(by: inListingOrder)
+    }
+
+    /// The folders under `root`, each followed by its own, siblings in the Finder's order of their
+    /// names: the listing order, except where a name runs on past a sibling's (a folder "a" with
+    /// subfolders before "a b"), which `listingOrder` puts right.
+    static func depthFirst(from root: String, _ subfolders: [String: [(name: String, path: String)]]) -> [String] {
+        func sorted(_ folders: [(name: String, path: String)]?) -> [String] {
+            (folders ?? []).sorted { inListingOrder($0.name, $1.name) }.map(\.path)
+        }
+        var order: [String] = []
+        var pending = Array(sorted(subfolders[root]).reversed())
+        while let path = pending.popLast() {
+            order.append(path)
+            pending += sorted(subfolders[path]).reversed()
+        }
+        return order
     }
 
     private static func subfolderId(for path: String) -> String {
