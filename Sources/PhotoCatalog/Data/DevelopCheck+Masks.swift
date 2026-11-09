@@ -4,7 +4,7 @@ import CoreImage
 extension DevelopCheck {
     /// A drawn face with its landmarks where they are, and a second one when `pair`: people
     /// masks are checked on it without Vision, which only knows real faces.
-    private static func drawnPeople(pair: Bool) -> (analysis: PeopleMasks.Analysis, image: CGImage) {
+    static func drawnPeople(pair: Bool) -> (analysis: PeopleMasks.Analysis, image: CGImage) {
         let width = pair ? 800 : 400, height = 400
         func ellipse(_ c: CGPoint, _ rx: Double, _ ry: Double, _ n: Int, from: Double = 0, to: Double = 2 * .pi) -> [CGPoint] {
             (0..<n).map { k in

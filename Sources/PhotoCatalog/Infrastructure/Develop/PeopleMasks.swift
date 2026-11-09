@@ -182,74 +182,131 @@ enum PeopleMasks {
             guard !faces.isEmpty else { return nil }
             var union = [Float](repeating: 0, count: a.width * a.height)
             for face in faces {
-                guard let weights = faceWeights(part, face, in: a) else { continue }
-                for i in union.indices { union[i] = max(union[i], weights[i]) }
+                guard let patch = faceWeights(part, face, in: a) else { continue }
+                let r = patch.region
+                for y in 0..<r.height {
+                    for x in 0..<r.width {
+                        let i = (r.y + y) * a.width + r.x + x
+                        union[i] = max(union[i], patch.values[y * r.width + x])
+                    }
+                }
             }
             return union
         }
     }
 
-    private static func faceWeights(_ part: PersonPart, _ face: Face, in a: Analysis) -> [Float]? {
+    /// A rectangle of the analyzed image, in whole pixels (top-left origin).
+    private struct Region {
+        var x: Int, y: Int, width: Int, height: Int
+
+        static func whole(_ a: Analysis) -> Region { Region(x: 0, y: 0, width: a.width, height: a.height) }
+
+        /// Covers what's drawn inside `bounds`, antialiased edges included, and `pad` pixels round
+        /// that: room for a feather to fade out in. Never outside the image.
+        init(covering bounds: CGRect, pad: Int, in a: Analysis) {
+            guard !bounds.isNull, bounds.minX.isFinite, bounds.maxX.isFinite, bounds.minY.isFinite, bounds.maxY.isFinite else {
+                self.init(x: 0, y: 0, width: 0, height: 0)
+                return
+            }
+            let x0 = max(0, Int(bounds.minX.rounded(.down)) - 1 - pad)
+            let y0 = max(0, Int(bounds.minY.rounded(.down)) - 1 - pad)
+            let x1 = min(a.width, Int(bounds.maxX.rounded(.up)) + 1 + pad)
+            let y1 = min(a.height, Int(bounds.maxY.rounded(.up)) + 1 + pad)
+            self.init(x: min(x0, a.width), y: min(y0, a.height), width: max(0, x1 - x0), height: max(0, y1 - y0))
+        }
+
+        init(x: Int, y: Int, width: Int, height: Int) {
+            self.x = x; self.y = y; self.width = width; self.height = height
+        }
+
+        /// The image's pixel index of the region's `i`th, row by row.
+        func index(_ i: Int, in a: Analysis) -> Int { (y + i / width) * a.width + x + i % width }
+    }
+
+    /// Weights over a region of the analyzed image, row by row; 0 outside it.
+    private struct Patch {
+        let region: Region
+        let values: [Float]
+    }
+
+    /// One face's `part`, worked out over the part of the image it can reach: what's drawn for
+    /// it, and room for its feather.
+    private static func faceWeights(_ part: PersonPart, _ face: Face, in a: Analysis) -> Patch? {
         let width = face.width
         let browThickness = width * 0.065
+        /// Feathered by `radius`: the region round `bounds` the feather can reach.
+        func region(_ bounds: CGRect, feather radius: Int) -> Region {
+            Region(covering: bounds, pad: 3 * radius + 2, in: a)
+        }
         switch part {
         case .faceSkin:
-            let skin = skinArea(face, in: a)
+            let radius = max(1, Int((width * 0.012).rounded()))
+            let skin = skinArea(face, in: a, pad: 3 * radius + 2)
             guard let model = skinModel([face], in: a) else { return nil }
-            let weights = (0..<skin.count).map { i in skin[i] * model.likeness(a.pixels, i) }
-            return feather(weights, a, radius: max(1, Int((width * 0.012).rounded())))
+            let weights = skin.values.indices.map { i in skin.values[i] * model.likeness(a.pixels, skin.region.index(i, in: a)) }
+            return Patch(region: skin.region, values: feather(weights, skin.region, radius: radius))
         case .eyebrows:
             guard !face.brows.isEmpty else { return nil }
-            let brows = raster(a) { context in
+            let radius = max(1, Int((width * 0.01).rounded()))
+            let area = region(bounds(face.brows, outset: browThickness / 2), feather: radius)
+            let brows = raster(a, in: area) { context in
                 for brow in face.brows { stroke(context, brow, width: browThickness, closed: false) }
             }
-            return feather(brows, a, radius: max(1, Int((width * 0.01).rounded())))
+            return Patch(region: area, values: feather(brows, area, radius: radius))
         case .sclera, .iris:
             guard !face.eyes.isEmpty else { return nil }
-            let eyes = raster(a) { context in face.eyes.forEach { fill(context, $0) } }
-            let irises = raster(a) { context in
-                for eye in face.eyes {
-                    // the pupil Vision found in this eye, or its middle; an iris is about two
-                    // fifths of the eye's width across
-                    let middle = CGPoint(x: eye.map(\.x).reduce(0, +) / CGFloat(eye.count),
-                                         y: eye.map(\.y).reduce(0, +) / CGFloat(eye.count))
-                    let span = spread(eye)
-                    let pupil = face.pupils.min { distance($0, middle) < distance($1, middle) }
-                        .flatMap { distance($0, middle) < span / 2 ? $0 : nil } ?? middle
-                    let r = CGFloat(span * 0.21)
-                    context.fillEllipse(in: CGRect(x: pupil.x - r, y: pupil.y - r, width: 2 * r, height: 2 * r))
-                }
+            // the pupil Vision found in each eye, or its middle; an iris is about two fifths of the
+            // eye's width across
+            let irisCircles = face.eyes.map { eye -> CGRect in
+                let middle = CGPoint(x: eye.map(\.x).reduce(0, +) / CGFloat(eye.count),
+                                     y: eye.map(\.y).reduce(0, +) / CGFloat(eye.count))
+                let span = spread(eye)
+                let pupil = face.pupils.min { distance($0, middle) < distance($1, middle) }
+                    .flatMap { distance($0, middle) < span / 2 ? $0 : nil } ?? middle
+                let r = CGFloat(span * 0.21)
+                return CGRect(x: pupil.x - r, y: pupil.y - r, width: 2 * r, height: 2 * r)
             }
+            let radius = max(1, Int((width * 0.005).rounded()))
+            let area = region(irisCircles.reduce(bounds(face.eyes, outset: 0)) { $0.union($1) }, feather: radius)
+            let eyes = raster(a, in: area) { context in face.eyes.forEach { fill(context, $0) } }
+            let irises = raster(a, in: area) { context in irisCircles.forEach { context.fillEllipse(in: $0) } }
             let weights = zip(eyes, irises).map { part == .iris ? $0 * $1 : $0 * (1 - $1) }
-            return feather(weights, a, radius: max(1, Int((width * 0.005).rounded())))
+            return Patch(region: area, values: feather(weights, area, radius: radius))
         case .lips:
             guard face.outerLips.count >= 3 else { return nil }
-            let outer = raster(a) { fill($0, face.outerLips) }
-            let inner = face.innerLips.count >= 3 ? raster(a) { fill($0, face.innerLips) } : outer.map { _ in 0 }
-            return feather(zip(outer, inner).map { max(0, $0 - $1) }, a, radius: max(1, Int((width * 0.006).rounded())))
+            let radius = max(1, Int((width * 0.006).rounded()))
+            let area = region(bounds([face.outerLips], outset: 0), feather: radius)
+            let outer = raster(a, in: area) { fill($0, face.outerLips) }
+            let inner = face.innerLips.count >= 3 ? raster(a, in: area) { fill($0, face.innerLips) } : outer.map { _ in 0 }
+            return Patch(region: area, values: feather(zip(outer, inner).map { max(0, $0 - $1) }, area, radius: radius))
         case .teeth:
             guard face.innerLips.count >= 3 else { return nil }
-            let mouth = raster(a) { fill($0, face.innerLips) }
+            let area = region(bounds([face.innerLips], outset: 0), feather: 1)
+            let mouth = raster(a, in: area) { fill($0, face.innerLips) }
             // inside the mouth, what's light and nearly colorless
-            let weights = (0..<mouth.count).map { i -> Float in
-                guard mouth[i] > 0 else { return 0 }
+            let weights = mouth.indices.map { j -> Float in
+                guard mouth[j] > 0 else { return 0 }
+                let i = area.index(j, in: a)
                 let r = Float(a.pixels[i * 4]) / 255, g = Float(a.pixels[i * 4 + 1]) / 255, b = Float(a.pixels[i * 4 + 2]) / 255
                 let luma = 0.299 * r + 0.587 * g + 0.114 * b, top = max(r, g, b)
                 let saturation = top > 0 ? (top - min(r, g, b)) / top : 0
-                return mouth[i] * smoothstep(0.3, 0.5, luma) * (1 - smoothstep(0.3, 0.5, saturation))
+                return mouth[j] * smoothstep(0.3, 0.5, luma) * (1 - smoothstep(0.3, 0.5, saturation))
             }
-            return feather(weights, a, radius: 1)
+            return Patch(region: area, values: feather(weights, area, radius: 1))
         case .person, .bodySkin:
             return nil
         }
     }
 
-    /// The face less its eyes, brows and mouth: where its skin is, before its color is checked.
-    /// `lower` keeps to below the temples — cheeks, mouth and chin — where hair rarely falls.
-    private static func skinArea(_ face: Face, in a: Analysis, lower: Bool = false) -> [Float] {
+    /// The face less its eyes, brows and mouth: where its skin is, before its color is checked,
+    /// over the face's outline and `pad` pixels round it. `lower` keeps to below the temples —
+    /// cheeks, mouth and chin — where hair rarely falls.
+    private static func skinArea(_ face: Face, in a: Analysis, lower: Bool = false, pad: Int = 0) -> Patch {
         let width = face.width
-        let area = raster(a) { fill($0, lower ? face.contour : facePolygon(face)) }
-        let features = raster(a) { context in
+        let outline = lower ? face.contour : facePolygon(face)
+        let area = Region(covering: bounds([outline], outset: 0), pad: pad, in: a)
+        let inside = raster(a, in: area) { fill($0, outline) }
+        let features = raster(a, in: area) { context in
             for eye in face.eyes {
                 fill(context, eye)
                 stroke(context, eye, width: spread(eye) * 0.35, closed: true)
@@ -260,7 +317,19 @@ enum PeopleMasks {
                 stroke(context, face.outerLips, width: width * 0.05, closed: true)
             }
         }
-        return zip(area, features).map { max(0, $0 - $1) }
+        return Patch(region: area, values: zip(inside, features).map { max(0, $0 - $1) })
+    }
+
+    /// What `shapes` cover, `outset` wider all round (half a stroke's width).
+    private static func bounds(_ shapes: [[CGPoint]], outset: Double) -> CGRect {
+        let points = shapes.flatMap { $0 }
+        guard let first = points.first else { return .null }
+        var minX = first.x, maxX = first.x, minY = first.y, maxY = first.y
+        for p in points {
+            minX = min(minX, p.x); maxX = max(maxX, p.x)
+            minY = min(minY, p.y); maxY = max(maxY, p.y)
+        }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY).insetBy(dx: -outset, dy: -outset)
     }
 
     /// The face's outline: its jaw line, closed over the forehead by half an ellipse reaching as
@@ -305,13 +374,14 @@ enum PeopleMasks {
     private static func skinModel(_ faces: [Face], in a: Analysis) -> SkinModel? {
         var rs: [Float] = [], gs: [Float] = [], ys: [Float] = []
         for face in faces {
+            // row by row over the outline's region: the image's own order
             let area = skinArea(face, in: a, lower: true)
-            let step = max(1, area.lazy.filter { $0 > 0.99 }.count / 4000)
+            let step = max(1, area.values.lazy.filter { $0 > 0.99 }.count / 4000)
             var seen = 0
-            for i in area.indices where area[i] > 0.99 {
+            for j in area.values.indices where area.values[j] > 0.99 {
                 seen += 1
                 guard seen % step == 0 else { continue }
-                let (r, g, y) = chromaticity(a.pixels, i)
+                let (r, g, y) = chromaticity(a.pixels, area.region.index(j, in: a))
                 guard y > 0.03, y < 0.97 else { continue }
                 rs.append(r); gs.append(g); ys.append(y)
             }
@@ -346,14 +416,22 @@ enum PeopleMasks {
     // ---- drawing ----
     /// Shapes drawn white on black over the analyzed image, 0…1, antialiased.
     private static func raster(_ a: Analysis, _ draw: (CGContext) -> Void) -> [Float] {
-        var bytes = [UInt8](repeating: 0, count: a.width * a.height)
+        raster(a, in: .whole(a), draw)
+    }
+
+    /// Shapes drawn white on black over `region` of the analyzed image, 0…1, antialiased.
+    private static func raster(_ a: Analysis, in region: Region, _ draw: (CGContext) -> Void) -> [Float] {
+        guard region.width > 0, region.height > 0 else { return [] }
+        var bytes = [UInt8](repeating: 0, count: region.width * region.height)
         bytes.withUnsafeMutableBytes { buffer in
-            guard let context = CGContext(data: buffer.baseAddress, width: a.width, height: a.height, bitsPerComponent: 8,
-                                          bytesPerRow: a.width, space: CGColorSpaceCreateDeviceGray(),
+            guard let context = CGContext(data: buffer.baseAddress, width: region.width, height: region.height,
+                                          bitsPerComponent: 8, bytesPerRow: region.width,
+                                          space: CGColorSpaceCreateDeviceGray(),
                                           bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return }
-            // top-left origin, as the landmarks are
-            context.translateBy(x: 0, y: CGFloat(a.height))
+            // top-left origin, as the landmarks are, at the region's corner
+            context.translateBy(x: 0, y: CGFloat(region.height))
             context.scaleBy(x: 1, y: -1)
+            context.translateBy(x: CGFloat(-region.x), y: CGFloat(-region.y))
             context.setFillColor(gray: 1, alpha: 1)
             context.setStrokeColor(gray: 1, alpha: 1)
             context.setLineCap(.round)
@@ -380,8 +458,15 @@ enum PeopleMasks {
 
     /// Softened by about `radius` pixels.
     private static func feather(_ weights: [Float], _ a: Analysis, radius: Int) -> [Float] {
-        let once = SemanticMasks.boxBlur(weights, width: a.width, height: a.height, radius: radius)
-        return SemanticMasks.boxBlur(once, width: a.width, height: a.height, radius: radius)
+        feather(weights, .whole(a), radius: radius)
+    }
+
+    /// Weights over `region` softened by about `radius` pixels: as over the whole image when
+    /// they fade to 0 at least 2 × `radius` from its edges inside the image.
+    private static func feather(_ weights: [Float], _ region: Region, radius: Int) -> [Float] {
+        guard region.width > 0, region.height > 0 else { return weights }
+        let once = SemanticMasks.boxBlur(weights, width: region.width, height: region.height, radius: radius)
+        return SemanticMasks.boxBlur(once, width: region.width, height: region.height, radius: radius)
     }
 
     /// The widest distance between two of the points.
