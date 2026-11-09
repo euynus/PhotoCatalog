@@ -49,6 +49,7 @@ final class CatalogHealthTests: XCTestCase {
 
         XCTAssertEqual(AssetAvailabilityService.changes(in: [asset], sourceRootsById: [:]), [])
         XCTAssertEqual(AssetAvailabilityService.changes(in: [asset], sourceRootsById: [:], canRead: { _ in false }),
-                       [AssetAvailabilityUpdate(assetId: asset.id, status: .missing, localPath: original.path)])
+                       [AssetAvailabilityUpdate(assetId: asset.id, status: .missing, localPath: original.path,
+                                                checkedPath: original.path)])
     }
 }

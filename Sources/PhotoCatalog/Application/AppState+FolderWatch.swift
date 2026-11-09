@@ -349,6 +349,8 @@ extension AppState {
             var edits: [(offset: Int, asset: Asset)] = [], moved: [(before: Asset, after: Asset)] = []
             for (offset, change) in found {
                 let before = photos[offset]
+                // renamed or moved since the check looked: the catalog kept the new path, and so does the photo
+                guard before.localPath == change.checkedPath else { continue }
                 guard before.status != change.status || before.localPath != change.localPath else { continue }
                 var asset = before
                 asset.status = change.status

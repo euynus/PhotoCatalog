@@ -4,6 +4,9 @@ struct AssetAvailabilityUpdate: Equatable, Sendable {
     let assetId: String
     let status: AssetStatus
     let localPath: String?
+    /// The path the check looked at. The change is for the photo while it's still there: one
+    /// renamed or moved since the check began keeps its new path and status.
+    let checkedPath: String?
 }
 
 enum AssetAvailabilityService {
@@ -47,7 +50,8 @@ enum AssetAvailabilityService {
                 changes.append(AssetAvailabilityUpdate(
                     assetId: asset.id,
                     status: resolved.status,
-                    localPath: resolved.localPath
+                    localPath: resolved.localPath,
+                    checkedPath: path
                 ))
             }
         }

@@ -70,7 +70,8 @@ final class VolumeTests: CatalogTestCase {
 
         let changes = AssetAvailabilityService.changes(in: [asset], sourceRootsById: [root.id: root], probe: probe)
 
-        XCTAssertEqual(changes, [AssetAvailabilityUpdate(assetId: asset.id, status: .offline, localPath: asset.localPath)])
+        XCTAssertEqual(changes, [AssetAvailabilityUpdate(assetId: asset.id, status: .offline, localPath: asset.localPath,
+                                                         checkedPath: asset.localPath)])
     }
 
     /// The photo's drive is back as "Photos 1" because another drive took "Photos": the photo is
@@ -84,7 +85,8 @@ final class VolumeTests: CatalogTestCase {
         let changes = AssetAvailabilityService.changes(in: [asset], sourceRootsById: [root.id: root], probe: probe)
 
         let moved = volumes.appendingPathComponent("Photos 1/Shoot/IMG_0001.JPG").path
-        XCTAssertEqual(changes, [AssetAvailabilityUpdate(assetId: asset.id, status: .ready, localPath: moved)])
+        XCTAssertEqual(changes, [AssetAvailabilityUpdate(assetId: asset.id, status: .ready, localPath: moved,
+                                                         checkedPath: asset.localPath)])
     }
 
     /// The photo's own drive, where it was: nothing changes; a root with no drive recorded goes

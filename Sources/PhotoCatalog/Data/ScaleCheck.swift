@@ -98,7 +98,7 @@ enum ScaleCheck {
                     let drive = Array(app.assets.prefix(50_000))
                     app.applyAvailabilityChanges(drive.map {
                         AssetAvailabilityUpdate(assetId: $0.id, status: rounds % 2 == 0 ? .offline : .ready,
-                                                localPath: $0.localPath)
+                                                localPath: $0.localPath, checkedPath: $0.localPath)
                     })
                     _ = app.libraryCounts
                 case "stacks", "stacked":
@@ -530,12 +530,14 @@ enum ScaleCheck {
         let unplugged = app.assets.filter { !$0.deleted && !$0.isDemo && drive.contains($0.folderId) }
         step("offline \(unplugged.count)") {
             app.applyAvailabilityChanges(unplugged.map {
-                AssetAvailabilityUpdate(assetId: $0.id, status: .offline, localPath: $0.localPath)
+                AssetAvailabilityUpdate(assetId: $0.id, status: .offline, localPath: $0.localPath,
+                                        checkedPath: $0.localPath)
             })
         }
         step("online") {
             app.applyAvailabilityChanges(unplugged.map {
-                AssetAvailabilityUpdate(assetId: $0.id, status: .ready, localPath: $0.localPath)
+                AssetAvailabilityUpdate(assetId: $0.id, status: .ready, localPath: $0.localPath,
+                                        checkedPath: $0.localPath)
             })
         }
 

@@ -130,16 +130,19 @@ extension CatalogStore {
                               assetIDs: assetIDs)
     }
 
+    /// Saves what a check of the originals found, on each photo still at the path it was checked
+    /// at: a rename or move saved since the check began is newer than what the check saw.
     func updateAssetAvailability(_ updates: [AssetAvailabilityUpdate]) throws {
         guard !updates.isEmpty else { return }
         try db.transaction {
             for update in updates {
                 try db.run(
-                    "UPDATE assets SET status=?, local_path=? WHERE id=? AND deleted=0;",
+                    "UPDATE assets SET status=?, local_path=? WHERE id=? AND deleted=0 AND local_path IS ?;",
                     [
                         .text(update.status.rawValue),
                         update.localPath.map(SQLValue.text) ?? .null,
                         .text(update.assetId),
+                        update.checkedPath.map(SQLValue.text) ?? .null,
                     ]
                 )
             }

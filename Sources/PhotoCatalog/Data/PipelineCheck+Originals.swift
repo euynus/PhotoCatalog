@@ -42,6 +42,8 @@ extension PipelineCheck.Run {
         var unavailable = (try? store.loadAssets())?.first { $0.id == assets[0].id } ?? assets[0]
         unavailable.status = .ready
         unavailable.localPath = tmp.appendingPathComponent("gone.jpg").path
+        // as the catalog has it: a check saves what it found only onto a photo still at the path it looked at
+        try? store.upsert([unavailable])
         let availabilityChanges = AssetAvailabilityService.changes(
             in: [unavailable],
             sourceRootsById: [:]
@@ -50,7 +52,8 @@ extension PipelineCheck.Run {
             AssetAvailabilityUpdate(
                 assetId: unavailable.id,
                 status: .missing,
-                localPath: unavailable.localPath
+                localPath: unavailable.localPath,
+                checkedPath: unavailable.localPath
             )
         ], "availability scan reports a missing internal original")
 

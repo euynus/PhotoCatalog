@@ -307,4 +307,32 @@ extension AppStateSelectionTests {
         XCTAssertFalse(app.assets.first { $0.id == asset.id }?.deleted ?? true)
         XCTAssertFalse(try firstStore.loadAssets().first { $0.id == asset.id }?.deleted ?? true)
     }
+
+    /// A check of the originals that looked before a rename and saves after it (the check a
+    /// catalog starts as it opens, seconds long on a large one) leaves the renamed photo as the
+    /// rename left it, in the catalog and on screen: not missing at its old name.
+    @MainActor
+    func testACheckOfTheOriginalsFromBeforeARenameKeepsTheNewName() throws {
+        let (_, package, imported, original) = try importPhoto("a.jpg", shade: 3)
+        let app = openCatalog(package)
+        app.autoWriteXMPSidecar = false
+        let checked = app.assets   // what the check looks at as it starts
+        let photo = try XCTUnwrap(app.assets.first { $0.id == imported.id })
+        app.renameOriginals(template: "Renamed", targets: [photo])
+        let renamed = original.deletingLastPathComponent().appendingPathComponent("Renamed_0001.jpg").path
+        XCTAssertEqual(app.assets.first { $0.id == imported.id }?.localPath, renamed)
+
+        // the check ends now: it found the old name gone
+        let changes = try XCTUnwrap(AssetAvailabilityService.changes(in: checked, sourceRootsById: [:]))
+        XCTAssertEqual(changes.map(\.status), [.missing])
+        try XCTUnwrap(app.store).updateAssetAvailability(changes)
+        app.applyAvailabilityChanges(changes)
+
+        let shown = try XCTUnwrap(app.assets.first { $0.id == imported.id })
+        XCTAssertEqual(shown.localPath, renamed)
+        XCTAssertEqual(shown.status, .ready)
+        let saved = try XCTUnwrap(try CatalogStore(packageURL: package).loadAssets().first { $0.id == imported.id })
+        XCTAssertEqual(saved.localPath, renamed, "the catalog keeps the renamed file")
+        XCTAssertEqual(saved.status, .ready)
+    }
 }

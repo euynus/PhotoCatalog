@@ -149,7 +149,8 @@ final class AssetEditInPlaceTests: DerivedCacheTestCase {
         check(app, "a thousand photos on another drive imported") { app.appendAssets(more) }
         func available(_ status: AssetStatus) -> [AssetAvailabilityUpdate] {
             app.assets.filter { $0.id.hasPrefix("d") && $0.id != "d1099" }.map {
-                AssetAvailabilityUpdate(assetId: $0.id, status: status, localPath: $0.localPath)
+                AssetAvailabilityUpdate(assetId: $0.id, status: status, localPath: $0.localPath,
+                                        checkedPath: $0.localPath)
             }
         }
         check(app, "1,099 photos offline") { app.applyAvailabilityChanges(available(.offline)) }

@@ -264,7 +264,8 @@ extension AppStateSelectionTests {
                           message: "availability update touched unrelated metadata")
 
         try store.updateAssetAvailability([
-            AssetAvailabilityUpdate(assetId: asset.id, status: .missing, localPath: asset.localPath)
+            AssetAvailabilityUpdate(assetId: asset.id, status: .missing, localPath: asset.localPath,
+                                    checkedPath: asset.localPath)
         ])
 
         let saved = try XCTUnwrap(store.loadAssets().first)

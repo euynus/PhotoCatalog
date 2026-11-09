@@ -203,6 +203,8 @@ final class UndoScopeTests: CatalogTestCase {
         undo.groupsByEvent = false   // no run loop here to close event groups
         let app = AppState()
         app.onboarded = true
+        // no check of the originals racing the steps: the test reads the catalog without a run loop
+        app.runsBackgroundMaintenance = false
         XCTAssertTrue(app.openCatalog(at: package))
         app.autoWriteXMPSidecar = false   // nothing beside the scratch photo but the photo
         app.undoManager = undo
