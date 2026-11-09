@@ -98,10 +98,13 @@ extension AppState {
     /// (a RAW's JPEG, among `pairingDependent`), and not one remembered anew since.
     private func stillCurrent(_ times: [String: Double], pairingDependent: Set<String>,
                               since snapshot: XMPSyncSnapshot) -> [String: Double] {
-        times.filter { id, _ in
-            (snapshot.pairing == pairRawAndJpeg || !pairingDependent.contains(id))
-                && (xmpSyncRecordedAt[id] ?? 0) <= snapshot.count
-        }
+        times.filter { id, _ in isStillCurrent(id, pairingDependent: pairingDependent.contains(id), since: snapshot) }
+    }
+
+    /// Whether what was worked out in the background from `snapshot` for photo `id` is still
+    /// about its sidecar as it is (see `stillCurrent`).
+    private func isStillCurrent(_ id: String, pairingDependent: Bool, since snapshot: XMPSyncSnapshot) -> Bool {
+        (snapshot.pairing == pairRawAndJpeg || !pairingDependent) && (xmpSyncRecordedAt[id] ?? 0) <= snapshot.count
     }
 
     /// Where each new photo's sidecar stands as it joins the catalog (0: it has none), so one
@@ -226,7 +229,8 @@ extension AppState {
             self.isCheckingXMP = false
             guard self.store?.packageURL == catalogURL else { return }
             self.applyExternalXMPCheck(seeded: found.seeded, changed: found.changed,
-                                       pairingDependent: found.pairingDependent, since: snapshot)
+                                       pairingDependent: found.pairingDependent, since: snapshot,
+                                       readingInBackground: true)
         }
     }
 
@@ -270,9 +274,11 @@ extension AppState {
     }
 
     /// Takes in a check; one worked out in the background from `snapshot` leaves alone the
-    /// photos whose sidecar it no longer describes (see `stillCurrent`).
+    /// photos whose sidecar it no longer describes (see `stillCurrent`). Changed sidecars read
+    /// automatically are read before it returns, unless `readingInBackground`.
     func applyExternalXMPCheck(seeded: [String: Double], changed: [String: Double],
-                               pairingDependent: Set<String> = [], since snapshot: XMPSyncSnapshot? = nil) {
+                               pairingDependent: Set<String> = [], since snapshot: XMPSyncSnapshot? = nil,
+                               readingInBackground: Bool = false) {
         let snapshot = snapshot ?? xmpSyncSnapshot()
         let seeded = stillCurrent(seeded, pairingDependent: pairingDependent, since: snapshot)
         let changed = stillCurrent(changed, pairingDependent: pairingDependent, since: snapshot)
@@ -287,7 +293,12 @@ extension AppState {
         live.formUnion(externallyChangedXMPIds.filter { (xmpChangeFoundAt[$0] ?? 0) > snapshot.count })
         if externallyChangedXMPIds != live { externallyChangedXMPIds = live }
         // taken in the background, so not something ⌘Z should take back
-        if autoReadChangedXMP, !live.isEmpty { readMetadataFromFiles(live, undoable: false) }
+        guard autoReadChangedXMP, !live.isEmpty else { return }
+        if readingInBackground {
+            readChangedSidecarsInBackground(live)
+        } else {
+            readMetadataFromFiles(live, undoable: false)
+        }
     }
 
     /// For checks: a photo's sidecar time as of our last read or write.
@@ -305,24 +316,82 @@ extension AppState {
     /// the sidecars aren't rewritten.
     @discardableResult
     func readMetadataFromFiles(_ ids: Set<String>? = nil, undoable: Bool = true) -> Int {
-        let located = (ids ?? targetIds).compactMap { id -> (id: String, path: String)? in
-            guard let index = assetIndex[id], !assets[index].isVirtualCopy, let path = assets[index].localPath else { return nil }
-            return (id, path)
-        }
-        let sidecarURLs = XMPSidecar.sidecarURLs(for: located.map { URL(fileURLWithPath: $0.path) })
-        let targets = zip(located, sidecarURLs).compactMap { photo, url -> (id: String, url: URL, sidecar: SidecarMetadata)? in
-            XMPSidecar.read(url).map { (photo.id, url, $0) }
-        }
+        let targets = Self.readSidecars(readableOriginals(ids ?? targetIds))
         guard !targets.isEmpty else {
             if ids == nil { push("所选照片旁没有 XMP 附属文件", "info") }
             return 0
         }
+        return takeInSidecars(targets, undoable: undoable)
+    }
+
+    /// The background check's automatic read: the sidecars are read and parsed off the main
+    /// actor, then taken in (see `takeInBackgroundRead`). The task is for checks.
+    @discardableResult
+    func readChangedSidecarsInBackground(_ ids: Set<String>) -> Task<Void, Never>? {
+        let located = readableOriginals(ids)
+        guard !located.isEmpty else { return nil }
+        let snapshot = xmpSyncSnapshot()
+        let catalogURL = store?.packageURL
+        return Task { [weak self, located, snapshot] in
+            let read = await Task.detached(priority: .utility) {
+                Self.readSidecars(located, pairing: snapshot.pairing)
+            }.value
+            guard let self, self.store?.packageURL == catalogURL else { return }
+            self.takeInBackgroundRead(read, since: snapshot)
+        }
+    }
+
+    /// Takes in sidecars read in the background from `snapshot`, but not for a photo removed
+    /// meanwhile, nor a sidecar read or written again since (see `stillCurrent`). Not undoable,
+    /// as no background read is.
+    func takeInBackgroundRead(_ read: [SidecarRead], since snapshot: XMPSyncSnapshot) {
+        let current = read.filter { target in
+            guard let index = assetIndex[target.id], !assets[index].deleted else { return false }
+            return isStillCurrent(target.id, pairingDependent: target.pairingDependent, since: snapshot)
+        }
+        if !current.isEmpty { takeInSidecars(current, undoable: false) }
+    }
+
+    /// A photo's sidecar as read, with its time and whether RAW+JPEG pairing decides which
+    /// sidecar is the photo's.
+    struct SidecarRead: Sendable {
+        let id: String
+        let sidecar: SidecarMetadata
+        /// Taken before the read, so a sidecar changed while it's read is still found changed.
+        let time: Double?
+        let pairingDependent: Bool
+    }
+
+    /// The originals among `ids` with a sidecar of their own: a virtual copy's is its master's.
+    private func readableOriginals(_ ids: Set<String>) -> [(id: String, path: String)] {
+        ids.compactMap { id -> (id: String, path: String)? in
+            guard let index = assetIndex[id], !assets[index].isVirtualCopy, let path = assets[index].localPath else { return nil }
+            return (id, path)
+        }
+    }
+
+    /// Reads the sidecars of `located` originals, the ones there are; off the main actor.
+    nonisolated static func readSidecars(_ located: [(id: String, path: String)],
+                                         pairing: Bool = XMPSidecar.pairsRawAndJpeg) -> [SidecarRead] {
+        let choices = XMPSidecar.sidecarChoices(for: located.map { URL(fileURLWithPath: $0.path) })
+        return zip(located, choices).compactMap { photo, choice -> SidecarRead? in
+            let url = pairing ? choice.paired : choice.unpaired
+            let time = XMPSidecar.modificationTime(of: url)
+            return XMPSidecar.read(url).map {
+                SidecarRead(id: photo.id, sidecar: $0, time: time, pairingDependent: choice.paired != choice.unpaired)
+            }
+        }
+    }
+
+    /// Takes the sidecars read over the catalog's metadata and remembers their times.
+    @discardableResult
+    private func takeInSidecars(_ targets: [SidecarRead], undoable: Bool) -> Int {
         let byId = Dictionary(uniqueKeysWithValues: targets.map { ($0.id, $0.sidecar) })
         guard mutate(Set(byId.keys), undoName: undoable ? L("从文件读取元数据") : nil, writingSidecars: false, { asset in
             if let sidecar = byId[asset.id] { XMPSidecar.apply(sidecar, to: &asset, replacingKeywords: true) }
         }) else { return 0 }
         var times: [String: Double] = [:]
-        for target in targets { times[target.id] = XMPSidecar.modificationTime(of: target.url) }
+        for target in targets { times[target.id] = target.time }
         recordXMPSync(times)
         push("已从 \(targets.count) 个 XMP 附属文件读取元数据", "refresh")
         return targets.count
