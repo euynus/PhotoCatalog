@@ -7,13 +7,8 @@ final class AssetPairingTests: XCTestCase {
     private let shot = Date(timeIntervalSince1970: 1_791_800_000)
 
     private func photo(_ id: String, _ name: String, raw: Bool, camera: String, offset: TimeInterval = 0) -> Asset {
-        Asset(id: id, pid: 0, ori: "l", thumb: "", preview: "", filename: name,
-              type: raw ? "CR3" : "JPEG", isRaw: raw, folderId: "day", folderName: "2026-10-12",
-              date: shot.addingTimeInterval(offset), width: 6000, height: 4000, orientation: 1,
-              camera: camera, lens: "", focal: 50, aperture: 4, shutter: "1/100", iso: 100,
-              colorSpace: "sRGB", fileMB: 1, rating: 0, flag: .none, keywords: [], title: "", caption: "",
-              location: "", gps: (0, 0), status: .ready, importedAt: shot,
-              localPath: "/Photos/2026/2026-10-12/" + name)
+        .dayShot(id, name, type: raw ? "CR3" : "JPEG", isRaw: raw, camera: camera, date: shot.addingTimeInterval(offset),
+                 importedAt: shot, localPath: "/Photos/2026/2026-10-12/" + name, isDemo: true)
     }
 
     func testAnotherCamerasPhotoByTheSameNameIsNotAPair() {

@@ -234,13 +234,10 @@ final class PeopleTests: CatalogTestCase {
     private func appWithFaces(_ faces: [FaceRecord], count: Int = 4,
                               keywords: [Int: [String]] = [:]) throws -> (AppState, CatalogStore, [String]) {
         let photos = (0..<count).map { index in
-            Asset(id: photoId(index), pid: 1, ori: "l", thumb: "", preview: "", filename: "p\(index).jpg", type: "JPG",
-                  isRaw: false, folderId: "src-people", folderName: "Source",
-                  date: Date(timeIntervalSince1970: 1_700_000_000 + Double(index) * 3600), width: 80, height: 60,
-                  orientation: 1, camera: "", lens: "", focal: 0, aperture: 0, shutter: "", iso: 0, colorSpace: "sRGB",
-                  fileMB: 0.01, rating: 0, flag: .none, keywords: KeywordService.normalize(keywords[index] ?? []),
-                  title: "", caption: "", location: "", gps: (0, 0), status: .ready, importedAt: .now,
-                  localPath: scratch.appendingPathComponent("Source/p\(index).jpg").path, isDemo: false)
+            Asset.smallPhoto(photoId(index), filename: "p\(index).jpg", type: "JPG", folderId: "src-people",
+                             folderName: "Source", date: Date(timeIntervalSince1970: 1_700_000_000 + Double(index) * 3600),
+                             localPath: scratch.appendingPathComponent("Source/p\(index).jpg").path,
+                             keywords: KeywordService.normalize(keywords[index] ?? []), isDemo: false)
         }
         let store = try CatalogStore(packageURL: scratch.appendingPathComponent("People.photolibrary"))
         try store.upsert(photos)

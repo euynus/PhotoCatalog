@@ -109,13 +109,9 @@ final class DuplicateGroupMemberTests: CatalogTestCase {
         let photos = try (0..<2).map { index -> Asset in
             let url = scratch.appendingPathComponent("Source/copy-\(index).jpg")
             try makeTestJPEG(at: url, shade: 3)
-            return Asset(id: "dup-member-\(index)", pid: 1, ori: "l", thumb: "", preview: "",
-                         filename: url.lastPathComponent, type: "JPG", isRaw: false, folderId: "src-dup",
-                         folderName: "Source", date: Date(timeIntervalSince1970: 1_700_000_000), width: 80, height: 60,
-                         orientation: 1, camera: "", lens: "", focal: 0, aperture: 0, shutter: "", iso: 0,
-                         colorSpace: "sRGB", fileMB: 0.01, rating: 0, flag: .none, keywords: [], title: "",
-                         caption: "", location: "", gps: (0, 0), status: .ready, importedAt: .now,
-                         localPath: url.path, contentHash: "same", isDemo: false)
+            return .smallPhoto("dup-member-\(index)", filename: url.lastPathComponent, type: "JPG", folderId: "src-dup",
+                               folderName: "Source", date: Date(timeIntervalSince1970: 1_700_000_000), localPath: url.path,
+                               contentHash: "same", isDemo: false)
         }
         let store = try CatalogStore(packageURL: scratch.appendingPathComponent("Library.photolibrary"))
         try store.upsert(photos)
