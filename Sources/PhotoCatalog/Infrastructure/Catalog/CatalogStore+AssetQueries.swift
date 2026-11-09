@@ -43,13 +43,15 @@ extension CatalogStore {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard q.count >= 3 else { return nil }
         let match = Self.ftsMatch(q)
-        guard let rows = try? db.query("""
-        SELECT asset_search.asset_id
+        // An index row shares its photo's rowid (schema v20: upsertRows writes it with the rowid
+        // the upsert returns, and nothing hard-deletes or VACUUMs assets), so each match is one
+        // rowid lookup rather than a search of the id index. MATCH names the table, not an alias.
+        return try? db.queryRows("""
+        SELECT a.id
         FROM asset_search
-        JOIN assets ON assets.id = asset_search.asset_id
-        WHERE assets.deleted=0 AND asset_search MATCH ?;
-        """, [.text(match)]) else { return nil }
-        return rows.compactMap { $0.text("asset_id") }
+        JOIN assets AS a ON a.rowid = asset_search.rowid
+        WHERE a.deleted=0 AND asset_search MATCH ?;
+        """, [.text(match)]) { $0.text(0) }
     }
 
     /// Videos, by their file type (`Asset.videoTypes`).
@@ -310,7 +312,7 @@ extension CatalogStore {
             return AssetSQL(predicate: textContainsPredicate(column: "(\(content))"), params: [.text(query)])
         }
         return AssetSQL(
-            predicate: "a.id IN (SELECT asset_id FROM asset_search WHERE asset_search MATCH ?)",
+            predicate: "a.rowid IN (SELECT rowid FROM asset_search WHERE asset_search MATCH ?)",
             params: [.text(ftsMatch(query))]
         )
     }
