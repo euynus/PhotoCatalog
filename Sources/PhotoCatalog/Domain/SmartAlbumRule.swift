@@ -224,7 +224,7 @@ enum SmartMatcher {
             case .gps(let has): return a.hasGPS == has
             case .status(let status): return a.status == status
             // the joined text, as the search box searches it: a match can run across two fields
-            case .search(let needle): return memo.search(a.searchHaystack, for: needle)
+            case .search(let needle): return memo.search(a, for: needle)
             }
         }
     }
@@ -253,10 +253,11 @@ enum SmartMatcher {
             return result
         }
 
-        /// Full-text search: no answer to keep, as each photo's text is its own.
-        fileprivate mutating func search(_ text: String, for needle: String) -> Bool {
+        /// Full-text search of the photo's `searchHaystack`: no answer to keep, as each photo's
+        /// text is its own. Searched in place, so the search's storage is reused photo to photo.
+        fileprivate mutating func search(_ asset: Asset, for needle: String) -> Bool {
             if searching == nil { searching = LocalizedSearch() }
-            return searching!.text(text, contains: needle)
+            return searching!.haystack(of: asset, contains: needle)
         }
     }
 
