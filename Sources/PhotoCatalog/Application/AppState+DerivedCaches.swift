@@ -69,9 +69,7 @@ extension AppState {
     /// Photos changed where they are (by position) written back, with all their changes' effects.
     func replaceInPlace(_ edits: [(offset: Int, asset: Asset)]) {
         guard !edits.isEmpty else { return }
-        applyAssetEdits(edits, scope: edits.reduce(into: AssetEditScope()) {
-            $0.formUnion(Self.editScope(from: assets[$1.offset], to: $1.asset))
-        })
+        applyAssetEdits(edits, scope: editScope(of: edits))
     }
 
     /// Where the photos with these ids are, in order: looked up in the id index while every photo's
