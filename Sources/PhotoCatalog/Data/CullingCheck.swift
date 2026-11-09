@@ -30,8 +30,8 @@ enum CullingCheck {
         assert(PhotoStackService.captureTimeGroups(photos, within: 0.5).isEmpty
                && PhotoStackService.captureTimeGroups(photos, within: 3600).first?.count == 6, "the interval decides")
 
-        let saved = UserDefaults.app.object(forKey: "pc_autoStackSeconds")
-        defer { UserDefaults.app.set(saved, forKey: "pc_autoStackSeconds") }
+        let saved = PreferenceSnapshot(keys: ["pc_autoStackSeconds"])
+        defer { saved.restore() }
         let app = AppState.selfCheckFixture()
         let undo = UndoManager()
         undo.groupsByEvent = false

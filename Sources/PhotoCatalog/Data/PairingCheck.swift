@@ -4,12 +4,8 @@ import Observation
 /// RAW+JPEG pairs present as one photo and edit as one.
 enum PairingCheck {
     static func run() {
-        let pairing = UserDefaults.app.object(forKey: "pc_pairRawJpeg")
-        let autoStack = UserDefaults.app.object(forKey: "pc_autoStackSeconds")
-        defer {
-            UserDefaults.app.set(pairing, forKey: "pc_pairRawJpeg")
-            UserDefaults.app.set(autoStack, forKey: "pc_autoStackSeconds")
-        }
+        let saved = PreferenceSnapshot(keys: ["pc_pairRawJpeg", "pc_autoStackSeconds"])
+        defer { saved.restore() }
         checkPathStrings()
         MainActor.assumeIsolated {
             checkPresentationAndEdits()

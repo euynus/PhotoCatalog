@@ -147,10 +147,10 @@ extension PipelineCheck.Run {
     func externallyChangedSidecars(_ reloaded: [Asset]) {
         let externalXMP: [String: Bool] = MainActor.assumeIsolated {
             let scratch = fm.temporaryDirectory.appendingPathComponent("pc-xmp-\(UUID().uuidString)")
-            let previousAutoRead = UserDefaults.app.object(forKey: "pc_autoReadChangedXMP")
+            let savedPreferences = PreferenceSnapshot(keys: ["pc_autoReadChangedXMP"])
             defer {
                 try? fm.removeItem(at: scratch)
-                UserDefaults.app.set(previousAutoRead, forKey: "pc_autoReadChangedXMP")
+                savedPreferences.restore()
             }
             try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
             guard let sourcePath = reloaded[4].localPath,
@@ -297,10 +297,10 @@ extension PipelineCheck.Run {
     func photoRenaming(_ reloaded: [Asset]) {
         let renaming: [String: Bool] = MainActor.assumeIsolated {
             let scratch = fm.temporaryDirectory.appendingPathComponent("pc-rename-\(UUID().uuidString)")
-            let previousTemplate = UserDefaults.app.string(forKey: "pc_renameTemplate")
+            let savedPreferences = PreferenceSnapshot(keys: ["pc_renameTemplate"])
             defer {
                 try? fm.removeItem(at: scratch)
-                UserDefaults.app.set(previousTemplate, forKey: "pc_renameTemplate")
+                savedPreferences.restore()
             }
             try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
             guard let renameStore = try? CatalogStore(packageURL: scratch.appendingPathComponent("Rename.photolibrary"))

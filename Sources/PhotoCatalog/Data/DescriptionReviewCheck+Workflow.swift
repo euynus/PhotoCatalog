@@ -6,11 +6,9 @@ extension DescriptionReviewCheck {
         MainActor.assumeIsolated {
             let root = FileManager.default.temporaryDirectory
                 .appendingPathComponent("pc-description-review-\(UUID().uuidString)")
-            let defaults = UserDefaults.app
-            let oldXMP = defaults.object(forKey: "pc_autoWriteXMP")
+            let savedPreferences = PreferenceSnapshot(keys: ["pc_autoWriteXMP"])
             defer {
-                if let oldXMP { defaults.set(oldXMP, forKey: "pc_autoWriteXMP") }
-                else { defaults.removeObject(forKey: "pc_autoWriteXMP") }
+                savedPreferences.restore()
                 try? FileManager.default.removeItem(at: root)
             }
             do {

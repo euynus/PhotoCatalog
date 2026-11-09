@@ -6,12 +6,9 @@ enum DescriptionReviewRequestCheck {
     static func run() {
         MainActor.assumeIsolated {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("pc-description-request-\(UUID().uuidString)")
-            let defaults = UserDefaults.app
-            let previous = ["pc_llm", "pc_autoWriteXMP"].map { ($0, defaults.object(forKey: $0)) }
+            let savedPreferences = PreferenceSnapshot(keys: ["pc_llm", "pc_autoWriteXMP"])
             defer {
-                for (key, value) in previous {
-                    if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
-                }
+                savedPreferences.restore()
                 try? FileManager.default.removeItem(at: root)
             }
             guard let server = StandInServer() else { return assertionFailure("Local description test server started") }
