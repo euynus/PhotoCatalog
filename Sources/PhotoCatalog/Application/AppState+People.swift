@@ -332,14 +332,9 @@ extension AppState {
 
     private func registerFaceUndo(restoring states: FaceStates, keywords: PersonKeywordChanges, takingBack: Bool,
                                   undoName: String?) {
-        guard let undoName, let undoManager else { return }
-        UndoSteps.register(on: undoManager) {
-            undoManager.registerUndo(withTarget: self) { app in
-                MainActor.assumeIsolated {
-                    app.replayFaceStep(states, keywords: keywords, takingBack: takingBack, undoName: undoName)
-                }
-            }
-            undoManager.setActionName(undoName)
+        guard let undoName else { return }
+        registerUndoStep(undoName) {
+            $0.replayFaceStep(states, keywords: keywords, takingBack: takingBack, undoName: undoName)
         }
     }
 

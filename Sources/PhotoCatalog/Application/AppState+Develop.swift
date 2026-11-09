@@ -442,15 +442,7 @@ extension AppState {
         case .appendSkipping(let kept): opposite = .revert(recorded.union(kept))
         case .revert(let ids): opposite = .appendSkipping(Set(changed.keys).intersection(ids).subtracting(recorded))
         }
-        guard let undoManager else { return }
-        UndoSteps.register(on: undoManager) {
-            undoManager.registerUndo(withTarget: self) { app in
-                MainActor.assumeIsolated {
-                    app.commitDevelop(before, undoName: undoName, history: opposite)
-                }
-            }
-            undoManager.setActionName(undoName)
-        }
+        registerUndoStep(undoName) { $0.commitDevelop(before, undoName: undoName, history: opposite) }
     }
 
     /// Saves a change to one photo's saved settings (not its draft) as one undo step.

@@ -264,14 +264,7 @@ extension AppState {
         }
         collapsedStackIds.formIntersection(Set(photoStacks.map(\.id)))
         normalizeSelectionToVisibleList()
-        if let undoManager {
-            UndoSteps.register(on: undoManager) {
-                undoManager.registerUndo(withTarget: self) { app in
-                    MainActor.assumeIsolated { app.setAutoStack(seconds: previous) }
-                }
-                undoManager.setActionName(L("自动叠放"))
-            }
-        }
+        registerUndoStep(L("自动叠放")) { $0.setAutoStack(seconds: previous) }
     }
 
     /// Folds every stack shut, or opens every one.
