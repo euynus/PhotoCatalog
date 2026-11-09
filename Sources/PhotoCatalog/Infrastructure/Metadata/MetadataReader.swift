@@ -217,16 +217,20 @@ enum MetadataReader {
         return String(String(describing: value).prefix(48))
     }
 
-    // A fresh formatter per call: read() runs on concurrent background queues and
-    // DateFormatter is not thread-safe to share.
-    private static func exifDate(_ s: String?) -> Date? {
-        guard let s else { return nil }
+    /// One formatter for every import worker: DateFormatter is thread-safe on macOS 10.9 and
+    /// later in a 64-bit app using the modern behavior, and this one is never changed after setup.
+    private static let exifDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy:MM:dd HH:mm:ss"
         f.locale = Locale(identifier: "en_US_POSIX")
         // EXIF DateTimeOriginal is a timezone-naive wall-clock; anchor it to UTC so the stored
         // instant is stable regardless of the importing machine's timezone (§ capture wall-clock).
         f.timeZone = TimeZone.captureWallClock
-        return f.date(from: s)
+        return f
+    }()
+
+    private static func exifDate(_ s: String?) -> Date? {
+        guard let s else { return nil }
+        return exifDateFormatter.date(from: s)
     }
 }
