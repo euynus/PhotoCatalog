@@ -17,6 +17,7 @@ final class DevelopSettingsHydrationTests: CatalogTestCase {
         }
 
         try await open(url, in: app)
+        XCTAssertEqual(try CatalogStore(packageURL: url).loadDevelopSettings()[id]?.exposure, 2, "the probe didn't land")
         XCTAssertEqual(app.developSettings[id]?.exposure, 1, "the settings were read again on main")
     }
 
