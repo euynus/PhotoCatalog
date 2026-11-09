@@ -106,6 +106,28 @@ final class DevelopHistoryFailureTests: CatalogTestCase {
     }
 
     @MainActor
+    func testRedoAfterAFailedUndoDoesNotAddTheStepTwice() throws {
+        let (app, store) = try makeApp()
+        step { app.commitDevelop(["photo": settings(exposure: 1)], undoName: "调整曝光度") }
+        XCTAssertEqual(app.developHistory(for: "photo").count, 1)
+        try failing("DELETE", on: "develop_history", in: store)
+        undo.undo()
+        try store.db.run("DROP TRIGGER test_fail_develop_history_delete;")
+
+        undo.redo()
+
+        XCTAssertEqual(app.developSettings["photo"], settings(exposure: 1))
+        XCTAssertEqual(try store.loadDevelopHistory("photo").count, 1, "the step the undo couldn't remove isn't added again")
+        XCTAssertEqual(app.developHistory(for: "photo").count, 1)
+
+        undo.undo()
+
+        XCTAssertNil(app.developSettings["photo"])
+        XCTAssertEqual(try store.loadDevelopHistory("photo").count, 0, "undoing the redo takes the edit's step away")
+        XCTAssertEqual(app.developHistory(for: "photo").count, 0)
+    }
+
+    @MainActor
     func testAFailedClearLeavesTheHistory() throws {
         let (app, store) = try makeApp()
         step { app.commitDevelop(["photo": settings(exposure: 1)], undoName: "调整曝光度") }

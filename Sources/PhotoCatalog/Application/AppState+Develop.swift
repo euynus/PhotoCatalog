@@ -434,9 +434,14 @@ extension AppState {
         }
         for (id, value) in settings { developSettings[id] = value.isNeutral ? nil : value }
         let recorded = recordDevelopHistory(changed, name: undoName, change: change, json: json)
-        // undo takes away only the steps this edit stored; redo appends anew and keeps its own
+        // undo takes away only the steps this edit stored; redo appends anew and keeps its own,
+        // except where the undo couldn't take the step away (it is still there)
         let opposite: DevelopHistoryChange
-        if case .append = change { opposite = .revert(recorded) } else { opposite = .append }
+        switch change {
+        case .append: opposite = .revert(recorded)
+        case .appendSkipping(let kept): opposite = .revert(recorded.union(kept))
+        case .revert(let ids): opposite = .appendSkipping(Set(changed.keys).intersection(ids).subtracting(recorded))
+        }
         guard let undoManager else { return }
         UndoSteps.register(on: undoManager) {
             undoManager.registerUndo(withTarget: self) { app in

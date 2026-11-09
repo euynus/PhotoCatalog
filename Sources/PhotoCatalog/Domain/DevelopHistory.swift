@@ -66,4 +66,7 @@ enum DevelopHistoryChange: Sendable {
     case append
     /// Only the photos whose step was stored: one that failed to store has none to take away.
     case revert(Set<String>)
+    /// Redoing an undone edit: a step again for each photo but these, whose step the undo
+    /// couldn't take away and which still have it.
+    case appendSkipping(Set<String>)
 }

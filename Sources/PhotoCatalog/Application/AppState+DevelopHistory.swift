@@ -54,12 +54,15 @@ extension AppState {
         guard !changed.isEmpty else { return [] }
         let recorded: Set<String>
         switch change {
-        case .append:
+        case .append, .appendSkipping:
+            var appending = changed
+            if case .appendSkipping(let kept) = change { appending = changed.filter { !kept.contains($0.key) } }
+            guard !appending.isEmpty else { return [] }
             var stored: [String: DevelopHistoryStep] = [:]
             if let store {
                 var steps: [String: (name: String, json: String)] = [:]
-                steps.reserveCapacity(changed.count)
-                for (id, value) in changed { steps[id] = (name, encoded[id] ?? DevelopHistoryStep.json(value)) }
+                steps.reserveCapacity(appending.count)
+                for (id, value) in appending { steps[id] = (name, encoded[id] ?? DevelopHistoryStep.json(value)) }
                 do {
                     stored = try store.appendDevelopHistory(steps)
                 } catch {
@@ -67,8 +70,8 @@ extension AppState {
                     return []
                 }
             }
-            recorded = store == nil ? Set(changed.keys) : Set(stored.keys)
-            for (id, value) in changed where developHistoryCache[id] != nil {
+            recorded = store == nil ? Set(appending.keys) : Set(stored.keys)
+            for (id, value) in appending where developHistoryCache[id] != nil {
                 // with a catalog, only what was stored is listed, so undo removes the same step from both
                 if store != nil, stored[id] == nil { continue }
                 let seq = stored[id]?.seq ?? (developHistoryCache[id]?.last?.seq ?? 0) + 1
