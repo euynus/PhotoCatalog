@@ -53,10 +53,14 @@ enum ScaleCheck {
         report("RAW+JPEG pairing \(app.pairRawAndJpeg ? "on" : "off"), auto-stack "
             + (app.autoStackSeconds.map { "\($0) s" } ?? "off"))
 
-        // PC_SCALE_LOOP=rate|name|keywords|dates|hydrate|apply|keyword-edit|sidebar|list|stacks|stacked|search-album|offline
+        // PC_SCALE_LOOP=rate|name|keywords|dates|hydrate|apply|keyword-edit|sidebar|list|stacks|stacked|search-album|offline|rename
         // repeats one operation for 20 s, to sample it
         if let loop = ProcessInfo.processInfo.environment["PC_SCALE_LOOP"] {
             let ids = app.list.prefix(1000).map(\.id)
+            // a photo in the middle of the catalog, renamed and back again (the file isn't touched)
+            let renamed = app.assets[app.assets.count / 2]
+            let renamedPaths = [renamed.localPath ?? "/", PathString.directory(of: renamed.localPath ?? "/")
+                + "/RENAMED_\(renamed.filename)"].map { URL(fileURLWithPath: $0) }
             if loop == "sidebar" { app.smartAlbums = sidebarSmartAlbums }
             if loop == "search-album" { app.smartAlbums = [searchSmartAlbum] }
             if loop == "stacked" { addStackSources(app) }
@@ -105,6 +109,8 @@ enum ScaleCheck {
                     app.assets = app.assets
                     _ = app.assetPairing
                     _ = app.hasStacks
+                case "rename":
+                    _ = app.applyRenamedOriginals([renamed.id: renamedPaths[(rounds + 1) % 2]])
                 case "search-album":
                     app.select(rounds % 2 == 0
                         ? Selection(type: .smart, id: searchSmartAlbum.id, name: searchSmartAlbum.name)
