@@ -6,12 +6,16 @@ import Foundation
 import CoreServices
 
 final class FileWatcher {
+    /// A changed path and what FSEvents says about it (file or folder, created, modified, or
+    /// changes it may have missed there).
+    typealias Event = (path: String, flags: FSEventStreamEventFlags)
+
     private var stream: FSEventStreamRef?
     private let paths: [String]
     private let latency: CFTimeInterval
-    private let onChange: ([String]) -> Void
+    private let onChange: ([Event]) -> Void
 
-    init(paths: [String], latency: CFTimeInterval = 2.0, onChange: @escaping ([String]) -> Void) {
+    init(paths: [String], latency: CFTimeInterval = 2.0, onChange: @escaping ([Event]) -> Void) {
         self.paths = paths
         self.latency = latency
         self.onChange = onChange
@@ -40,10 +44,11 @@ final class FileWatcher {
                 Unmanaged<Reference>.fromOpaque(info).release()
             },
             copyDescription: nil)
-        let callback: FSEventStreamCallback = { _, info, count, eventPaths, _, _ in
+        let callback: FSEventStreamCallback = { _, info, count, eventPaths, eventFlags, _ in
             guard let info, let watcher = Unmanaged<Reference>.fromOpaque(info).takeUnretainedValue().watcher else { return }
             let paths = (unsafeBitCast(eventPaths, to: NSArray.self) as? [String]) ?? []
-            watcher.onChange(Array(paths.prefix(count)))
+            let flags = UnsafeBufferPointer(start: eventFlags, count: count)
+            watcher.onChange(zip(paths.prefix(count), flags).map { (path: $0, flags: $1) })
         }
         let flags = FSEventStreamCreateFlags(
             kFSEventStreamCreateFlagFileEvents

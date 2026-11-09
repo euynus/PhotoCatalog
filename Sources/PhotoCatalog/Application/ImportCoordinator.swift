@@ -158,13 +158,18 @@ final class ImportCoordinator: @unchecked Sendable {
                        folderName: folderName, progress: nil)
     }
 
-    /// Incremental: reprocess known originals whose quick hash changed so what the files hold and
-    /// the caches stay fresh. Their sidecars aren't read: a changed sidecar is the external-XMP
-    /// check's to report, and an old one mustn't undo the catalog's edits.
+    /// Incremental: reprocess known originals whose size, modification time or quick hash changed
+    /// so what the files hold and the caches stay fresh. Their sidecars aren't read: a changed
+    /// sidecar is the external-XMP check's to report, and an old one mustn't undo the catalog's
+    /// edits. `hashing` nil quick-hashes every known file; a set (the paths folder watching
+    /// reported, matched by any alias) only those, the rest compared by size and time alone.
     func scanChanged(in folder: URL, knownAssetsByPath: [String: Asset], mode: ImportMode = .referenced,
                      autoTag: Bool = false, previewMaxPixel: Int = 2048,
                      sourceRootId: String? = nil, folderName: String? = nil,
-                     scanned: [(url: URL, aliases: Set<String>)]? = nil) -> [Asset] {
+                     scanned: [(url: URL, aliases: Set<String>)]? = nil,
+                     hashing: Set<String>? = nil,
+                     quickHash: @Sendable (URL, Int64) -> String? = { HashService.quickHash($0, fileSize: $1) })
+        -> [Asset] {
         // each changed file is made again as the photo whose file it is, under that photo's id —
         // never the one its path would give, which a renamed photo doesn't have
         var knownIdByPath: [String: String] = [:]
@@ -181,7 +186,10 @@ final class ImportCoordinator: @unchecked Sendable {
             let modifiedChanged = known.fileModifiedAt.map { knownDate in
                 modifiedAt.map { abs($0.timeIntervalSince(knownDate)) >= 1 } ?? true
             } ?? (modifiedAt != nil)
-            let quickHashChanged = HashService.quickHash(url, fileSize: size) != known.quickHash
+            // an event's file is read for a change that kept its size and time (FSEvents reports
+            // real paths: /private/tmp, the name's case on disk)
+            let hashes = hashing.map { !file.aliases.isDisjoint(with: $0) } ?? true
+            let quickHashChanged = hashes && quickHash(url, size) != known.quickHash
             return sizeChanged || modifiedChanged || quickHashChanged ? url : nil
         }
         let refreshed = process(files, folder: folder, mode: mode, autoTag: autoTag, readSidecar: false,

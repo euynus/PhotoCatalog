@@ -1,4 +1,5 @@
 import AppKit
+import CoreServices
 import Foundation
 
 @MainActor
@@ -8,7 +9,7 @@ extension AppState {
         watcher?.stop()
         let paths = prioritizedWatchedRoots(watchedRoots).map { $0.path }
         guard !paths.isEmpty else { watcher = nil; return }
-        let w = FileWatcher(paths: paths) { [weak self] paths in self?.watchedFilesChanged(paths) }
+        let w = FileWatcher(paths: paths) { [weak self] events in self?.watchedFilesChanged(events) }
         w.start()
         watcher = w
     }
@@ -25,28 +26,69 @@ extension AppState {
         refreshWatcher()
     }
 
-    /// FSEvents named `paths` in a watched folder. A batch of only sidecars and hidden files (an
-    /// app's XMP save, Finder's .DS_Store, a copy's partial file) can't hold a photo the scan would
-    /// take, so only the rescan's tail runs: the originals' availability and the sidecars.
-    func watchedFilesChanged(_ paths: [String]) {
-        if !paths.isEmpty && paths.allSatisfy(Self.cannotHoldPhotos) {
+    /// FSEvents reported `events` in a watched folder. A batch of only sidecars and hidden files
+    /// (an app's XMP save, Finder's .DS_Store, a copy's partial file) can't hold a photo the scan
+    /// would take, so only the rescan's tail runs: the originals' availability and the sidecars.
+    /// Otherwise the rescan reads again only the files the batch names, unless it may have missed
+    /// some (see `hashedPaths`).
+    func watchedFilesChanged(_ events: [FileWatcher.Event]) {
+        if !events.isEmpty && events.allSatisfy({ Self.cannotHoldPhotos($0.path, flags: $0.flags) }) {
             detectMissingRealAssets()
             checkExternalXMPChanges()
         } else {
-            incrementalRescan()
+            incrementalRescan(hashing: Self.hashedPaths(for: events))
         }
     }
 
-    /// Whether a changed path is one the folder scan never takes: hidden (it skips hidden files)
-    /// or a sidecar. Only the last component counts, so a folder under a hidden one still does.
-    nonisolated static func cannotHoldPhotos(_ path: String) -> Bool {
+    /// Whether a changed path is one the folder scan never takes: a hidden file (it skips them)
+    /// or a sidecar. Only the last component counts, so a folder under a hidden one still does;
+    /// a folder's event, or one that may stand for changes missed, never passes.
+    nonisolated static func cannotHoldPhotos(_ path: String, flags: FSEventStreamEventFlags = 0) -> Bool {
+        guard flags & (missedChangeFlags | FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir)) == 0 else {
+            return false
+        }
         let name = (path as NSString).lastPathComponent
         return name.hasPrefix(".") || (name as NSString).pathExtension.lowercased() == "xmp"
     }
 
-    private func incrementalRescan() {
+    /// The paths whose files a rescan for `events` quick-hashes, the others compared by size and
+    /// modification time only; nil, every file, when the batch may not name each change: events
+    /// were dropped or merged into a folder's, a watched folder moved or a drive came or went, or
+    /// an event is a folder's (files moved in with it have no events of their own).
+    nonisolated static func hashedPaths(for events: [FileWatcher.Event]) -> Set<String>? {
+        guard !events.isEmpty else { return nil }
+        let itemTypes = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsFile | kFSEventStreamEventFlagItemIsDir
+            | kFSEventStreamEventFlagItemIsSymlink | kFSEventStreamEventFlagItemIsHardlink
+            | kFSEventStreamEventFlagItemIsLastHardlink)
+        var paths = Set<String>()
+        for event in events {
+            guard event.flags & missedChangeFlags == 0,
+                  event.flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir) == 0 else { return nil }
+            // an event that doesn't say what it names is asked of the disk
+            if event.flags & itemTypes == 0 {
+                var isDirectory: ObjCBool = false
+                if FileManager.default.fileExists(atPath: event.path, isDirectory: &isDirectory),
+                   isDirectory.boolValue { return nil }
+            }
+            paths.insert(event.path)
+        }
+        return paths
+    }
+
+    /// Event flags that say changes may have gone unreported: the folder is to be looked at whole.
+    nonisolated private static var missedChangeFlags: FSEventStreamEventFlags {
+        FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagUserDropped
+            | kFSEventStreamEventFlagKernelDropped | kFSEventStreamEventFlagRootChanged
+            | kFSEventStreamEventFlagMount | kFSEventStreamEventFlagUnmount)
+    }
+
+    /// Reads the watched folders for new and changed originals. `hashing` nil quick-hashes every
+    /// cataloged file to find a change; a set, only the files with a path in it, the others
+    /// changed when their size or modification time is.
+    private func incrementalRescan(hashing: Set<String>? = nil) {
         guard let coordinator, let store else { return }
         if isIncrementalRescanning {
+            // the rescan queued behind hashes every file: the events it stands for aren't kept
             needsIncrementalRescan = true
             return
         }
@@ -71,7 +113,7 @@ extension AppState {
         // the photos read off the main thread are let go of once read: still held while the
         // results go in, they'd be copied whole by the first change in place
         let scan = Task.detached(priority: .utility) { [coordinator, store, roots, snapshot, vision, previewSize,
-                                                         readXMP, sourceInfoByPath, volumesById, probe] in
+                                                         readXMP, sourceInfoByPath, volumesById, probe, hashing] in
             // build the path index off the main thread (resolvingSymlinksInPath stats each asset)
             var knownAssetsByPath: [String: Asset] = [:]
             // a path belongs to the photo that owns the file, never to its virtual copies
@@ -131,7 +173,7 @@ extension AppState {
                                                                    previewMaxPixel: previewSize,
                                                                    sourceRootId: sourceInfo?.id,
                                                                    folderName: sourceInfo?.name,
-                                                                   scanned: scanned))
+                                                                   scanned: scanned, hashing: hashing))
             }
             // the photo a rescan reads is never a removed one, whatever the file turned out to be
             return (fresh: fresh.filter { !removedIds.contains($0.id) }, changed: changed)

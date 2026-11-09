@@ -1,3 +1,4 @@
+import CoreServices
 import XCTest
 @testable import PhotoCatalog
 
@@ -34,9 +35,9 @@ final class WatchedFilesChangedTests: CatalogTestCase {
         let (app, source) = try await openWatchedCatalog()
         app.lastXMPCheck = nil
 
-        app.watchedFilesChanged([source.appendingPathComponent("a.xmp").path,
-                                 source.appendingPathComponent(".DS_Store").path,
-                                 source.appendingPathComponent(".a.jpg.tmp").path])
+        app.watchedFilesChanged([(source.appendingPathComponent("a.xmp").path, Self.fileModified),
+                                 (source.appendingPathComponent(".DS_Store").path, Self.fileModified),
+                                 (source.appendingPathComponent(".a.jpg.tmp").path, Self.fileCreated)])
 
         XCTAssertFalse(app.isIncrementalRescanning, "no rescan for files the scan never takes")
         XCTAssertTrue(app.isCheckingOriginals, "the originals' availability is checked")
@@ -48,12 +49,33 @@ final class WatchedFilesChangedTests: CatalogTestCase {
     func testPhotoInTheBatchStartsARescan() async throws {
         let (app, source) = try await openWatchedCatalog()
 
-        app.watchedFilesChanged([source.appendingPathComponent("a.xmp").path,
-                                 source.appendingPathComponent("a.jpg").path])
+        app.watchedFilesChanged([(source.appendingPathComponent("a.xmp").path, Self.fileModified),
+                                 (source.appendingPathComponent("a.jpg").path, Self.fileModified)])
 
         XCTAssertTrue(app.isIncrementalRescanning, "a photo's event starts a rescan")
         try await waitUntil("rescan finished") { !app.isIncrementalRescanning }
     }
+
+    /// A hidden folder's event, or a sidecar's that may stand for changes missed under it, is
+    /// a rescan's: files may have come in with it.
+    @MainActor
+    func testFolderOrMissedChangesEventStartsARescan() async throws {
+        let (app, source) = try await openWatchedCatalog()
+        let folderEvent = FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemIsDir)
+        app.watchedFilesChanged([(source.appendingPathComponent(".hidden").path, folderEvent)])
+        XCTAssertTrue(app.isIncrementalRescanning)
+        try await waitUntil("rescan finished") { !app.isIncrementalRescanning }
+
+        let dropped = FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagKernelDropped)
+        app.watchedFilesChanged([(source.appendingPathComponent("a.xmp").path, dropped)])
+        XCTAssertTrue(app.isIncrementalRescanning)
+        try await waitUntil("rescan finished") { !app.isIncrementalRescanning }
+    }
+
+    private static let fileModified = FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified
+        | kFSEventStreamEventFlagItemIsFile)
+    private static let fileCreated = FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated
+        | kFSEventStreamEventFlagItemIsFile)
 
     func testCannotHoldPhotosLooksAtTheNameOnly() {
         XCTAssertTrue(AppState.cannotHoldPhotos("/Photos/IMG_0001.xmp"))
