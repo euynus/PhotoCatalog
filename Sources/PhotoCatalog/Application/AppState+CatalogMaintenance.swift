@@ -110,7 +110,8 @@ extension AppState {
     ///
     /// Processed in small chunks so the pass stays cooperative: it yields between
     /// chunks, honors cancellation, and re-checks Low Power Mode mid-run rather than
-    /// only once at the start.
+    /// only once at the start. A chunk is a few files made; photos already cached go
+    /// through many at a time, so a cached catalog's pass ends in seconds.
     func backfillThumbnails() {
         guard runsBackgroundMaintenance, let coordinator, let store, !isBackfilling else { return }
         // battery saver: skip background work under Low Power Mode (§17.5)
@@ -124,10 +125,9 @@ extension AppState {
         let lowPowerSensitive = reduceBackgroundOnLowPower
         let limit = cacheLimit
         let cacheURL = store.cacheURL
-        let thumbnails: [(Asset, ThumbnailService.Kind)] = real.map { ($0, .thumb512) }
-        let previews: [(Asset, ThumbnailService.Kind)] = real.sorted { $0.date > $1.date }.map {
-            ($0, ThumbnailService.previewKind(forCachePath: $0.preview, fallbackMaxPixel: previewSize))
-        }
+        // each photo's preview kind is worked out off the main thread, as the pass reaches it
+        let thumbnails = real
+        let previews = real.sorted { $0.date > $1.date }
         let cancellation = CancellationFlag()
         backfillCancellation = cancellation
         let originHistory = taskHistory
@@ -187,7 +187,13 @@ extension AppState {
             // stopping a twentieth short of the limit leaves the end-of-pass prune nothing to take
             // back, so the next launch finds the cache full and makes nothing
             let budget = limitBytes - limitBytes / 20
-            let chunkSize = 8
+            // A hop on the lane ends after a few files made (seconds each for a RAW), or after a
+            // run of photos found cached (or with their originals gone) grows long, so
+            // cancellation and progress still come through.
+            let madePerHop = 8, foundPerHop = 256
+            let foundTimePerHop = Duration.milliseconds(20)
+            let clock = ContinuousClock()
+            var lastPublished = clock.now
             passes: for (work, isThumbnail) in [(thumbnails, true), (previews, false)] {
                 task.detail = isThumbnail ? L("正在生成缩略图") : L("正在生成预览")
                 var index = 0
@@ -199,40 +205,55 @@ extension AppState {
                         task.detail = L("低电量模式已停止预览生成")
                         break passes
                     }
-                    let chunk = Array(work[index..<min(index + chunkSize, work.count)])
+                    let start = index
                     let room = budget - (isThumbnail ? thumbnailsUsed : used)
                     // off the cooperative pool, one at a time at background QoS, so a large
                     // backfill never competes with visible repairs or the UI
                     let outcome = await ThumbnailRepairQueue.run(.background) {
-                        () -> (bytes: Int64, processed: Int, ready: Int, failures: [BackgroundTask.Failure]) in
+                        () -> (bytes: Int64, processed: Int, ready: Int, made: Int, failures: [BackgroundTask.Failure]) in
                         var added: Int64 = 0
-                        var processed = 0, ready = 0
+                        var position = start, ready = 0, made = 0, found = 0
+                        var foundTime = Duration.zero
                         var failures: [BackgroundTask.Failure] = []
-                        for (a, kind) in chunk where added < room {
+                        while position < work.count, added < room {
                             guard !cancellation.isSet else { break }
-                            processed += 1
-                            guard let path = a.localPath,
-                                  FileManager.default.fileExists(atPath: path) else {
+                            let began = clock.now
+                            let a = work[position]
+                            position += 1
+                            var tried = false
+                            if let path = a.localPath, FileManager.default.fileExists(atPath: path) {
+                                let kind: ThumbnailService.Kind = isThumbnail ? .thumb512
+                                    : ThumbnailService.previewKind(forCachePath: a.preview, fallbackMaxPixel: previewSize)
+                                let cached = coordinator.thumbnails.cachePath(assetId: a.id, kind: kind)
+                                let existed = FileManager.default.fileExists(atPath: cached.path)
+                                let file = coordinator.thumbnails.ensureCached(
+                                    from: URL(fileURLWithPath: path), fallbackPreview: nil,
+                                    catalogModificationDate: a.fileModifiedAt, assetId: a.id, kind: kind)
+                                if file != nil {
+                                    ready += 1
+                                } else {
+                                    failures.append(.init(item: a.filename, message: L("无法生成缓存图像"),
+                                                          assetID: a.id, path: path))
+                                }
+                                if !existed, let file {
+                                    added += Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+                                }
+                                // a file that was there and still is counts as found, though it may
+                                // have been remade (stale): the time bound below ends that hop
+                                tried = !existed || file == nil
+                            } else {
                                 failures.append(.init(item: a.filename, message: L("原件不可访问"),
                                                       assetID: a.id, path: a.localPath))
-                                continue
                             }
-                            let cached = coordinator.thumbnails.cachePath(assetId: a.id, kind: kind)
-                            let existed = FileManager.default.fileExists(atPath: cached.path)
-                            let made = coordinator.thumbnails.ensureCached(
-                                from: URL(fileURLWithPath: path), fallbackPreview: nil,
-                                catalogModificationDate: a.fileModifiedAt, assetId: a.id, kind: kind)
-                            if made != nil {
-                                ready += 1
+                            if tried {
+                                made += 1
                             } else {
-                                failures.append(.init(item: a.filename, message: L("无法生成缓存图像"),
-                                                      assetID: a.id, path: path))
+                                found += 1
+                                foundTime += clock.now - began
                             }
-                            if !existed, let made {
-                                added += Int64((try? made.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-                            }
+                            if made >= madePerHop || found >= foundPerHop || foundTime >= foundTimePerHop { break }
                         }
-                        return (added, processed, ready, failures)
+                        return (added, position - start, ready, made, failures)
                     }
                     guard let outcome else { break passes }
                     used += outcome.bytes
@@ -242,7 +263,11 @@ extension AppState {
                     task.succeededCount += outcome.ready
                     task.failedCount += outcome.failures.count
                     task.failures = Array((task.failures + outcome.failures).suffix(BackgroundTaskHistory.failureDetailLimit))
+                    // a pause and a Task Center update after files made; a run of photos found
+                    // goes straight on, updating it a few times a second
+                    guard outcome.made > 0 || clock.now - lastPublished >= .milliseconds(250) else { continue }
                     if let originHistory { self?.recordBackgroundTask(task, originHistory: originHistory) }
+                    lastPublished = clock.now
                     do { try await Task.sleep(for: .milliseconds(10)) } catch { break passes }
                 }
             }
