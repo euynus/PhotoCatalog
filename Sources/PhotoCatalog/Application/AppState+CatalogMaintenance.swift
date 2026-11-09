@@ -648,6 +648,7 @@ extension AppState {
         incrementalRescanGeneration &+= 1
         isIncrementalRescanning = false
         needsIncrementalRescan = false
+        pendingRescanHashing = nil
         watcher?.stop()
         watcher = nil
         for url in securityScopedRoots {

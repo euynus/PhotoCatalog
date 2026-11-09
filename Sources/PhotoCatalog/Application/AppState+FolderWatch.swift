@@ -89,7 +89,11 @@ extension AppState {
     private func incrementalRescan(hashing: Set<String>? = nil) {
         guard let coordinator, let store else { return }
         if isIncrementalRescanning {
-            // the rescan queued behind hashes every file: the events it stands for aren't kept
+            // the rescan queued behind hashes the files each batch it stands for named, or every
+            // file once one of them may not name its changes (and for ⌘R)
+            pendingRescanHashing = needsIncrementalRescan
+                ? pendingRescanHashing.flatMap { pending in hashing.map { pending.union($0) } }
+                : hashing
             needsIncrementalRescan = true
             return
         }
@@ -187,7 +191,9 @@ extension AppState {
                 self.isIncrementalRescanning = false
                 if self.needsIncrementalRescan {
                     self.needsIncrementalRescan = false
-                    self.incrementalRescan()
+                    let hashing = self.pendingRescanHashing
+                    self.pendingRescanHashing = nil
+                    self.incrementalRescan(hashing: hashing)
                 }
             }
             let indexById = self.assetIndex

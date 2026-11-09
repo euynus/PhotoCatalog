@@ -726,6 +726,9 @@ final class AppState {
     // ---------- FSEvents incremental watch (§12.8) ----------
     @ObservationIgnored var isIncrementalRescanning = false
     @ObservationIgnored var needsIncrementalRescan = false
+    /// The paths the rescan queued behind the running one quick-hashes: those the batches it
+    /// stands for named; nil, every file, once one of them may not have named its changes.
+    @ObservationIgnored var pendingRescanHashing: Set<String>?
     @ObservationIgnored var incrementalRescanGeneration = 0
     // ---------- sidecars changed by other apps ----------
     /// Each photo's sidecar modification time as of our last read or write (seconds since 1970).
