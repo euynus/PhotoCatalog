@@ -138,6 +138,20 @@ enum SlideshowVideo {
         }
     }
 
+    /// How a frame's pixels are laid out: BGRA, as the encoder takes them.
+    static let frameBitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+
+    /// `image` converted to `space` by Core Graphics, as drawing it into a frame in that space
+    /// converts it, and laid out like a frame. A slide converted once draws into every frame as it
+    /// did when each draw converted it. (Core Image would clip colors past Rec. 709 instead of
+    /// mapping them a little inside.)
+    static func converted(_ image: CGImage, to space: CGColorSpace) -> CGImage? {
+        guard let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: space, bitmapInfo: frameBitmapInfo) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return context.makeImage()
+    }
+
     /// How long the music at `url` lasts, in seconds.
     static func musicDuration(_ url: URL) -> Double? {
         guard let file = try? AVAudioFile(forReading: url) else { return nil }
@@ -167,8 +181,8 @@ private final class SlideRenderer: @unchecked Sendable {
         self.settings = settings
     }
 
-    /// Photo `index` rendered big enough for its largest zoom, in the video's color space so
-    /// drawing it into each frame needs no conversion.
+    /// Photo `index` rendered big enough for its largest zoom, already converted to the video's
+    /// color space so drawing it into each frame needs no conversion.
     private func image(_ index: Int) -> CGImage? {
         if let image = rendered[index] { return image }
         let item = slides[index].item
@@ -176,7 +190,8 @@ private final class SlideRenderer: @unchecked Sendable {
         let fit = min(size.width / aspect, size.height) * 1.15
         let pixels = CGSize(width: (fit * aspect).rounded(), height: fit.rounded())
         guard let developed = item.developed(forLongEdge: Double(max(pixels.width, pixels.height))),
-              let image = DevelopRenderer.render(developed, colorSpace: space) else { return nil }
+              let displayP3 = DevelopRenderer.render(developed),
+              let image = SlideshowVideo.converted(displayP3, to: space) else { return nil }
         // the photos showing now and next; earlier ones are let go
         rendered = rendered.filter { $0.key >= index - 1 }
         rendered[index] = image
@@ -190,7 +205,7 @@ private final class SlideRenderer: @unchecked Sendable {
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
         guard let context = CGContext(data: CVPixelBufferGetBaseAddress(buffer), width: Int(size.width), height: Int(size.height),
                                       bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: space,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+                                      bitmapInfo: SlideshowVideo.frameBitmapInfo)
         else { return nil }
         context.interpolationQuality = .high
         context.setFillColor(gray: settings.backdrop.gray, alpha: 1)
