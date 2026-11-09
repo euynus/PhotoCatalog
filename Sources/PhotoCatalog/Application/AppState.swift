@@ -864,6 +864,9 @@ final class AppState {
     @ObservationIgnored var backfillTask: Task<Void, Never>?
     @ObservationIgnored var backfillGeneration = 0
     @ObservationIgnored var backfillCancellation: CancellationFlag?
+    /// Rebuild Thumbnails under way: it shares the background lane with the backfill, so it's
+    /// stopped when the catalog closes, and when a rebuild starts again.
+    @ObservationIgnored var thumbnailRebuildTask: Task<Void, Never>?
     @ObservationIgnored let cachePurges = CachePurges()
     // ---------- rendered export (Lightroom's Export dialog) ----------
     /// The dialog reopens with the settings and folder last used.

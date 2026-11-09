@@ -50,15 +50,20 @@ extension AppState {
         }
     }
 
-    func rebuildThumbnails() {
-        guard let coordinator, let packageURL = store?.packageURL else { push("无已导入照片", "warning"); return }
+    /// Makes every photo's thumbnails and preview again, a few at a time on the background lane.
+    /// The task is for checks.
+    @discardableResult
+    func rebuildThumbnails() -> Task<Void, Never>? {
+        guard let coordinator, let packageURL = store?.packageURL else { push("无已导入照片", "warning"); return nil }
         let real = thumbnailMaintenanceAssets
-        guard !real.isEmpty else { push("无已导入照片", "warning"); return }
+        guard !real.isEmpty else { push("无已导入照片", "warning"); return nil }
         // the backfill shares the lane below: left running, it would take turns with the rebuild
         cancelBackfill()
+        // as would a rebuild started before, making every photo's again
+        thumbnailRebuildTask?.cancel()
         push("正在重建缩略图…", "refresh")
         let previewSize = previewMaxPixel
-        Task { [weak self, coordinator, real, previewSize, packageURL] in
+        let task = Task { [weak self, coordinator, real, previewSize, packageURL] in
             // off the cooperative pool, where RAW decodes have deadlocked RawCamera: a few photos
             // at a time on the background lane, as the backfill makes them
             let chunkSize = 8
@@ -81,6 +86,8 @@ extension AppState {
             }
             self?.finishThumbnailRebuild(expectedCatalogURL: packageURL)
         }
+        thumbnailRebuildTask = task
+        return task
     }
 
     @discardableResult
@@ -641,6 +648,9 @@ extension AppState {
         loadingCatalogTotalCount = nil
         loadingCatalogURL = nil
         cancelBackfill()
+        // the rebuild's photos are this catalog's: left running, it would hold up the next one's backfill
+        thumbnailRebuildTask?.cancel()
+        thumbnailRebuildTask = nil
         availabilityScanTask?.cancel()
         availabilityScanTask = nil
         availabilityScanGeneration &+= 1
