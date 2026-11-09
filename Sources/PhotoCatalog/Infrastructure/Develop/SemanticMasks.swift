@@ -280,13 +280,9 @@ enum SemanticMasks {
         return context.makeImage()
     }
 
+    /// Display P3 RGBA bytes of `image` (one readback, SoftProofing's, for both).
     static func rgba(_ image: CGImage) -> [UInt8]? {
-        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
-        guard let context = CGContext(data: &pixels, width: image.width, height: image.height, bitsPerComponent: 8,
-                                      bytesPerRow: image.width * 4, space: DevelopRenderer.outputColorSpace,
-                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
-        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-        return pixels
+        SoftProofing.rgba(image)
     }
 
     /// Mean luma gradient over a 5 × 5 window: how busy each pixel's neighborhood is.
