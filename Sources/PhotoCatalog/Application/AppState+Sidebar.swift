@@ -154,11 +154,13 @@ extension AppState {
                 let a = assets[position]
                 guard pairing.isShown(a, at: position) else { continue }
                 for k in a.keywords {
-                    if counts[k] == nil {
+                    // one lookup per keyword: the table grows exactly when the keyword is new
+                    let known = counts.count
+                    counts[k, default: 0] += 1
+                    if counts.count != known {
                         order.append(k)
                         first[k] = position
                     }
-                    counts[k, default: 0] += 1
                 }
             }
             return (order, counts, first)
@@ -485,8 +487,9 @@ extension AppState {
             for position in range {
                 let value = MetadataValueCounts.value(at: position, of: assets, keyPath, pairing: pairing)
                 guard !value.isEmpty else { continue }
-                if counts[value] == nil { first[value] = position }
+                let known = counts.count
                 counts[value, default: 0] += 1
+                if counts.count != known { first[value] = position }
             }
             return (counts, first)
         }
