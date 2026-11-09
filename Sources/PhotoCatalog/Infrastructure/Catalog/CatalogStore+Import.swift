@@ -223,6 +223,7 @@ extension CatalogStore {
             """, [.text(asset.id), .text(asset.id)]).isEmpty { continue }
             let steps = options.developSteps(for: asset)
             if let settings = steps.last?.settings, !settings.isNeutral {
+                developSettingsWrites.withLock { $0 &+= 1 }
                 try db.run("INSERT INTO develop_settings(asset_id, settings, updated_at) VALUES(?,?,?);",
                            [.text(asset.id), .text(DevelopHistoryStep.json(settings)), .text(now)])
                 initialSettings[asset.id] = settings
