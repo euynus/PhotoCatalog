@@ -3,7 +3,7 @@ import XCTest
 @testable import PhotoCatalog
 
 /// What a batch of folder-watching events starts: a rescan, or for sidecars and hidden files
-/// only the rescan's tail (the originals' availability and the sidecar check).
+/// only the sidecar check.
 final class WatchedFilesChangedTests: CatalogTestCase {
     /// A catalog with one photo in a watched folder, its launch checks done and its own watcher
     /// stopped, so only the events a test hands in reach it.
@@ -30,8 +30,11 @@ final class WatchedFilesChangedTests: CatalogTestCase {
         return (app, source)
     }
 
+    /// Such a batch can't make an original go missing (one deleted or moved has its own event), so
+    /// the availability scan, which looks at every original, isn't started over for each sidecar
+    /// a rating writes.
     @MainActor
-    func testSidecarAndHiddenFileBatchRunsOnlyTheRescansTail() async throws {
+    func testSidecarAndHiddenFileBatchChecksOnlyTheSidecars() async throws {
         let (app, source) = try await openWatchedCatalog()
         app.lastXMPCheck = nil
 
@@ -40,9 +43,9 @@ final class WatchedFilesChangedTests: CatalogTestCase {
                                  (source.appendingPathComponent(".a.jpg.tmp").path, Self.fileCreated)])
 
         XCTAssertFalse(app.isIncrementalRescanning, "no rescan for files the scan never takes")
-        XCTAssertTrue(app.isCheckingOriginals, "the originals' availability is checked")
+        XCTAssertFalse(app.isCheckingOriginals, "no availability scan: a sidecar can't make an original go missing")
         XCTAssertTrue(app.isCheckingXMP, "the sidecars are checked")
-        try await waitUntil("checks finished") { !app.isCheckingOriginals && !app.isCheckingXMP }
+        try await waitUntil("sidecar check finished") { !app.isCheckingXMP }
     }
 
     @MainActor

@@ -28,12 +28,13 @@ extension AppState {
 
     /// FSEvents reported `events` in a watched folder. A batch of only sidecars and hidden files
     /// (an app's XMP save, Finder's .DS_Store, a copy's partial file) can't hold a photo the scan
-    /// would take, so only the rescan's tail runs: the originals' availability and the sidecars.
-    /// Otherwise the rescan reads again only the files the batch names, unless it may have missed
-    /// some (see `hashedPaths`).
+    /// would take, so only the sidecars are checked. Nor can it make an original go missing: an
+    /// original deleted or moved has an event of its own. (With Write XMP automatically on, each
+    /// rating writes a sidecar, and the availability scan, which looks at every original, would
+    /// start over for each.) Otherwise the rescan reads again only the files the batch names,
+    /// unless it may have missed some (see `hashedPaths`).
     func watchedFilesChanged(_ events: [FileWatcher.Event]) {
         if !events.isEmpty && events.allSatisfy({ Self.cannotHoldPhotos($0.path, flags: $0.flags) }) {
-            detectMissingRealAssets()
             checkExternalXMPChanges()
         } else {
             incrementalRescan(hashing: Self.hashedPaths(for: events))
