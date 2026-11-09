@@ -29,8 +29,10 @@ final class CacheRepairTests: CatalogTestCase {
         XCTAssertEqual(repaired, preview)
         XCTAssertTrue(exists(preview), "showing the photo makes its missing preview")
 
-        // a prune takes it again: previews go first, the older first, and a newer filler goes too
-        let filler = store.preview2048URL.appendingPathComponent("filler.jpg")
+        // a prune takes it again: previews go before thumbnails, and a filler thumbnail of no
+        // photo goes too
+        let filler = store.thumb512URL.appendingPathComponent("filler.jpg")
+        try FileManager.default.createDirectory(at: store.thumb512URL, withIntermediateDirectories: true)
         try Data(repeating: 1, count: 2 * 1_048_576).write(to: filler)
         try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)],
                                               ofItemAtPath: filler.path)

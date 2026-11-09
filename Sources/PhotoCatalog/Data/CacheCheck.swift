@@ -108,6 +108,25 @@ enum CacheCheck {
         let report = CacheService.prune(store.cacheURL, maxBytes: thumbnailBytes + (refilled - thumbnailBytes) / 3)
         check(report.removedFiles > 0 && files(in: thumbnails).reduce(Int64(0)) { $0 + $1.size } == thumbnailBytes
               && files(in: previews).count < previewCount, "cache: a prune takes previews before thumbnails")
+
+        // a lower limit chosen while a pass makes previews, newest photos first: the prunes then
+        // and at the end of the pass keep the newest photos' previews, which the pass wrote first
+        for file in files(in: previews) { try? fm.removeItem(at: file.url) }
+        app.cacheLimitMB = Int(limit >> 20)
+        app.runsBackgroundMaintenance = true
+        app.backfillThumbnails()
+        CheckWait.until(backgroundPass) { !app.isBackfilling || files(in: previews).count >= 3 }
+        let lower = Int64(Int((thumbnailBytes + previewBytes / 4) >> 20) + 1) << 20
+        app.cacheLimitMB = Int(lower >> 20)
+        app.enforceCacheLimitIfNeeded()
+        CheckWait.until(backgroundPass) { !app.isBackfilling }
+        CheckWait.until(2) { false }   // the prune after the pass
+        app.runsBackgroundMaintenance = false
+        let kept = Set(files(in: previews).map { $0.url.deletingPathExtension().lastPathComponent })
+        let byDate = real.sorted { $0.date > $1.date }
+        check(!kept.isEmpty && kept.contains(byDate[0].id) && !kept.contains(byDate[count - 1].id)
+              && files(in: store.cacheURL).reduce(Int64(0)) { $0 + $1.size } <= lower,
+              "cache: a prune while the pass runs keeps the newest photos' previews (\(kept.count) kept)")
     }
 
     private struct CachedFile {
