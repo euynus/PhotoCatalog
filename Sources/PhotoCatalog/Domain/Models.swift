@@ -32,7 +32,10 @@ struct Asset: Identifiable, Equatable, Sendable {
         var isRaw: Bool
         var folderId: String
         var folderName: String
-        var date: Date
+        // Date's layout is resilient, so a class's Date properties (these four) keep the runtime
+        // exclusivity check on every access in Release; storage is written only while no other
+        // value shares it, so the check guards nothing.
+        @exclusivity(unchecked) var date: Date
         var width: Int
         var height: Int
         var orientation: Int
@@ -45,8 +48,8 @@ struct Asset: Identifiable, Equatable, Sendable {
         var colorSpace: String
         var hasICCProfile: Bool
         var fileMB: Double
-        var fileModifiedAt: Date?
-        var fileCreatedAt: Date?
+        @exclusivity(unchecked) var fileModifiedAt: Date?
+        @exclusivity(unchecked) var fileCreatedAt: Date?
         var rating: Int
         var flag: Flag
         var colorLabel: ColorLabel?
@@ -62,7 +65,7 @@ struct Asset: Identifiable, Equatable, Sendable {
         var gps: (Double, Double)
         var gpsAltitude: Double?
         var status: AssetStatus
-        var importedAt: Date
+        @exclusivity(unchecked) var importedAt: Date
         var deleted: Bool
         var localPath: String?
         var captureDateSource: String
