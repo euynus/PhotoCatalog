@@ -45,11 +45,25 @@ extension AppState {
         }
     }
 
-    func recordDevelopHistory(_ changed: [String: DevelopSettings], name: String, change: DevelopHistoryChange) {
-        guard !changed.isEmpty else { return }
+    /// Adds or takes away each photo's step; returns the photos whose history changed. Memory
+    /// changes only once the catalog has (without one, every photo's).
+    @discardableResult
+    func recordDevelopHistory(_ changed: [String: DevelopSettings], name: String,
+                              change: DevelopHistoryChange) -> Set<String> {
+        guard !changed.isEmpty else { return [] }
+        let recorded: Set<String>
         switch change {
         case .append:
-            let stored = (try? store?.appendDevelopHistory(changed.mapValues { (name: name, settings: $0) })) ?? [:]
+            var stored: [String: DevelopHistoryStep] = [:]
+            if let store {
+                do {
+                    stored = try store.appendDevelopHistory(changed.mapValues { (name: name, settings: $0) })
+                } catch {
+                    push("保存历史记录失败", "warning")
+                    return []
+                }
+            }
+            recorded = store == nil ? Set(changed.keys) : Set(stored.keys)
             for (id, value) in changed where developHistoryCache[id] != nil {
                 // with a catalog, only what was stored is listed, so undo removes the same step from both
                 if store != nil, stored[id] == nil { continue }
@@ -60,13 +74,23 @@ extension AppState {
                     developHistoryCache[id]?.removeFirst(count - DevelopHistoryStep.limit)
                 }
             }
-        case .revert:
-            try? store?.removeLastDevelopHistory(Array(changed.keys))
-            for id in changed.keys where developHistoryCache[id]?.isEmpty == false {
+        case .revert(let ids):
+            // a photo whose step never stored has none to take away: its newest is an earlier edit
+            let reverted = changed.keys.filter { ids.contains($0) }
+            guard !reverted.isEmpty else { return [] }
+            do {
+                try store?.removeLastDevelopHistory(reverted)
+            } catch {
+                push("更新历史记录失败", "warning")
+                return []
+            }
+            for id in reverted where developHistoryCache[id]?.isEmpty == false {
                 developHistoryCache[id]?.removeLast()
             }
+            recorded = Set(reverted)
         }
         developRecordsVersion &+= 1
+        return recorded
     }
 
     /// Returns the photo to a history step's settings, as a new step (undoable).
@@ -85,7 +109,12 @@ extension AppState {
     }
 
     func clearDevelopHistory(for id: String) {
-        try? store?.clearDevelopHistory(id)
+        do {
+            try store?.clearDevelopHistory(id)
+        } catch {
+            push("清除历史记录失败", "warning")
+            return
+        }
         developHistoryCache[id] = []
         touchDevelopRecords(id)
         developRecordsVersion &+= 1
@@ -114,7 +143,12 @@ extension AppState {
     }
 
     func deleteDevelopSnapshot(_ snapshotId: String, for id: String) {
-        try? store?.deleteDevelopSnapshot(snapshotId)
+        do {
+            try store?.deleteDevelopSnapshot(snapshotId)
+        } catch {
+            push("删除快照失败", "warning")
+            return
+        }
         developSnapshotCache[id] = developSnapshots(for: id).filter { $0.id != snapshotId }
         developRecordsVersion &+= 1
     }

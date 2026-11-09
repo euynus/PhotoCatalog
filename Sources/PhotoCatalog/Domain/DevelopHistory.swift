@@ -53,5 +53,6 @@ struct DevelopSnapshot: Equatable, Sendable, Identifiable {
 /// that step away again, and redoing puts it back.
 enum DevelopHistoryChange: Sendable {
     case append
-    case revert
+    /// Only the photos whose step was stored: one that failed to store has none to take away.
+    case revert(Set<String>)
 }

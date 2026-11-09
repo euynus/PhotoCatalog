@@ -377,12 +377,16 @@ extension AppState {
             return
         }
         for (id, value) in settings { developSettings[id] = value.isNeutral ? nil : value }
-        recordDevelopHistory(settings.filter { before[$0.key] != $0.value }, name: undoName, change: change)
+        let recorded = recordDevelopHistory(settings.filter { before[$0.key] != $0.value }, name: undoName,
+                                            change: change)
+        // undo takes away only the steps this edit stored; redo appends anew and keeps its own
+        let opposite: DevelopHistoryChange
+        if case .append = change { opposite = .revert(recorded) } else { opposite = .append }
         guard let undoManager else { return }
         UndoSteps.register(on: undoManager) {
             undoManager.registerUndo(withTarget: self) { app in
                 MainActor.assumeIsolated {
-                    app.commitDevelop(before, undoName: undoName, history: change == .append ? .revert : .append)
+                    app.commitDevelop(before, undoName: undoName, history: opposite)
                 }
             }
             undoManager.setActionName(undoName)
