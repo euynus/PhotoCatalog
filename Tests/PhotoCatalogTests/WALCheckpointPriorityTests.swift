@@ -35,22 +35,29 @@ final class WALCheckpointPriorityTests: XCTestCase {
         }
     }
 
+    /// Each priority's checkpoint runs as the app runs one: started by the commit's WAL hook, after
+    /// the catalog has been quiet for a while, on the queue's own thread. The commit doesn't
+    /// checkpoint itself. (Which pool thread ran it can't be told from here, so the I/O policy it
+    /// gives back is tested on a thread of its own below.)
     func testEveryPriorityCheckpointsInTheBackground() throws {
         for priority in [Database.WALCheckpointer.Priority.utility, .background, .throttled] {
             Database.WALCheckpointer.priority = priority
             let db = try open(priority.rawValue)
             let queue = try XCTUnwrap(db.checkpointQueue)
             XCTAssertEqual(queue.qos.qosClass, priority == .background ? .background : .utility, priority.rawValue)
-            let policyBefore = queue.sync { getiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD) }
             try write(db, megabytes: 6)
-            XCTAssertFalse(db.isCheckpointing)
-            db.drainCheckpoints()
-            XCTAssertEqual(db.checkpointCount, 1, priority.rawValue)
+            XCTAssertEqual(db.checkpointCount, 0, "\(priority.rawValue): the commit checkpointed itself")
             XCTAssertEqual(db.ceilingCheckpointCount, 0, priority.rawValue)
-            XCTAssertFalse(db.isCheckpointing)
-            XCTAssertEqual(db.lastCheckpointFrames?.moved, db.lastCheckpointFrames?.wal, "all of the WAL moved")
-            XCTAssertEqual(queue.sync { getiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD) }, policyBefore,
-                           "\(priority.rawValue): the queue's thread kept the checkpoint's I/O policy")
+
+            // no drain: the checkpoint the commit scheduled runs on its own
+            let deadline = Date().addingTimeInterval(30)
+            while db.checkpointCount == 0, Date() < deadline { usleep(10_000) }
+            queue.sync {}   // the checkpoint's block has ended
+            XCTAssertEqual(db.checkpointCount, 1, "\(priority.rawValue): no background checkpoint ran")
+            XCTAssertEqual(db.ceilingCheckpointCount, 0, priority.rawValue)
+            XCTAssertFalse(db.isCheckpointing, "\(priority.rawValue): a checkpoint that ended still shows as running")
+            XCTAssertEqual(db.lastCheckpointFrames?.moved, db.lastCheckpointFrames?.wal,
+                           "\(priority.rawValue): not all of the WAL moved")
         }
     }
 
