@@ -403,9 +403,7 @@ extension AppState {
         let before = Dictionary(uniqueKeysWithValues: changed.compactMap { id in
             assetIndex[id].map { (id, assets[$0].keywords) }
         })
-        // keywords follow the faces; the face edit carries the undo
-        let registered = undoManager
-        undoManager = nil
+        // keywords follow the faces; the face edit carries the undo (`mutate` without a name registers none)
         mutate(changed) { asset in
             var keywords = asset.keywords.filter { !managed.contains($0) }
             keywords += (wanted[asset.id] ?? []).sorted().map(FaceClustering.keyword)
@@ -413,7 +411,6 @@ extension AppState {
             if !keywords.contains(where: { $0.hasPrefix(root + "/") }) { keywords.removeAll { $0 == root } }
             asset.keywords = KeywordService.normalize(keywords)
         }
-        undoManager = registered
         var made: PersonKeywordChanges = [:]
         for (id, old) in before {
             guard let new = asset(id: id)?.keywords, new != old else { continue }
