@@ -690,8 +690,14 @@ extension AppState {
         NSWorkspace.shared.activateFileViewerSelecting(urls)
     }
 
+    /// Whether Show in Finder is offered for a photo, from what the catalog knows of its original:
+    /// views ask while they draw, so no file is looked at here (the action checks it).
+    func canRevealOriginal(_ asset: Asset) -> Bool {
+        !asset.isDemo && asset.status == .ready && asset.localPath != nil
+    }
+
     func revealInFinder(_ id: String) {
-        guard let asset = assets.first(where: { $0.id == id }), let path = asset.localPath else {
+        guard let asset = self.asset(id: id), let path = asset.localPath else {
             push("演示照片没有本地原件", "warning")
             return
         }
@@ -704,7 +710,7 @@ extension AppState {
     }
 
     func locate(_ id: String) {
-        guard let selected = assets.first(where: { $0.id == id }) else { return }
+        guard let selected = asset(id: id) else { return }
         // a virtual copy's file is its master's: relocate that, and the copies follow
         let asset = fileOwners([selected])[0]
         let id = asset.id
