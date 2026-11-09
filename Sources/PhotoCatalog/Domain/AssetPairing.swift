@@ -61,12 +61,12 @@ struct AssetPairing: Sendable, Equatable {
     /// Pairs live assets sharing a folder and base name, when exactly one is a RAW and the
     /// others are JPEG/HEIC of the same shot. Ambiguous groups (two RAWs, other formats) stay
     /// separate, and virtual copies always stand alone.
-    static func rawJpeg(_ assets: [Asset]) -> AssetPairing {
+    static func rawJpeg(_ assets: [Asset], chunk: Int = 16_384) -> AssetPairing {
         // Candidates sorted by a hash of their case-folded folder + base name (position breaks
         // ties, so the photos sharing one are in catalog order): hashed on every core, then put
         // in buckets by the hash's top bits, each bucket sorted and paired on every core. One
         // thread took ~0.55 s for this at 500k photos.
-        let keys = Self.keys(of: assets, in: assets.indices)
+        let keys = Self.keys(of: assets, in: assets.indices, chunk: chunk)
         let bucketBits = 8
         var counted = [Int](repeating: 0, count: (1 << bucketBits) + 1)
         for key in keys { counted[Int(key.hash >> (64 - bucketBits)) + 1] += 1 }
@@ -112,9 +112,9 @@ struct AssetPairing: Sendable, Equatable {
     /// companions, and a second RAW of a name makes it ambiguous, its JPEG shown again.
     /// Returns the earlier photos whose being hidden changed; nil, and nothing changed, when this
     /// isn't the pairing of exactly the photos before `start`.
-    mutating func append(_ assets: [Asset], from start: Int) -> [Int]? {
+    mutating func append(_ assets: [Asset], from start: Int, chunk: Int = 16_384) -> [Int]? {
         guard hiddenAt.count == start, start <= assets.count else { return nil }
-        var added = Self.keys(of: assets, in: start ..< assets.count)
+        var added = Self.keys(of: assets, in: start ..< assets.count, chunk: chunk)
         added.sort { $0.hash != $1.hash ? $0.hash < $1.hash : $0.position < $1.position }
         hiddenAt.append(contentsOf: repeatElement(false, count: assets.count - start))
         var earlier: [(position: Int, wasHidden: Bool)] = []
@@ -340,25 +340,15 @@ struct AssetPairing: Sendable, Equatable {
 
     /// The keys of the photos in `range` that can pair, in order, worked out in chunks on every
     /// core: one thread took ~0.3 s at 500k photos.
-    private static func keys(of assets: [Asset], in range: Range<Int>, chunk: Int = 16_384) -> [Key] {
-        func keys(_ range: Range<Int>) -> [Key] {
+    private static func keys(of assets: [Asset], in range: Range<Int>, chunk: Int) -> [Key] {
+        Chunks.joined(Chunks.map(range.count, chunk: chunk) { part in
             var keys: [Key] = []
-            keys.reserveCapacity(range.count)
-            for position in range {
+            keys.reserveCapacity(part.count)
+            for position in part.lowerBound + range.lowerBound ..< part.upperBound + range.lowerBound {
                 if let hash = nameHash(of: assets[position]) { keys.append(Key(hash: hash, position: position)) }
             }
             return keys
-        }
-        let chunks = (range.count + chunk - 1) / chunk
-        guard chunks > 1 else { return keys(range) }
-        let lock = NSLock()
-        var parts = [[Key]](repeating: [], count: chunks)
-        DispatchQueue.concurrentPerform(iterations: chunks) { index in
-            let lower = range.lowerBound + index * chunk
-            let part = keys(lower ..< min(range.upperBound, lower + chunk))
-            lock.withLock { parts[index] = part }
-        }
-        return Array(parts.joined())
+        })
     }
 
     /// The hash of a photo's case-folded folder + base name (FNV-1a of its `lowercased()`

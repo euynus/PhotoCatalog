@@ -163,15 +163,8 @@ extension AppState {
             }
             return (order, counts, first)
         }
-        let chunk = max(chunk, 1)
-        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
-        guard chunks > 1 else { return count(assets.indices) }
-        let lock = NSLock()
-        var parts = [KeywordTally](repeating: ([], [:], [:]), count: chunks)
-        DispatchQueue.concurrentPerform(iterations: chunks) { index in
-            let part = count(index * chunk ..< min(assets.count, (index + 1) * chunk))
-            lock.withLock { parts[index] = part }
-        }
+        let parts = Chunks.map(assets.count, chunk: chunk, count)
+        guard parts.count > 1 else { return parts.first ?? ([], [:], [:]) }
         var order: [String] = []
         var counts: [String: Int] = [:]
         var first: [String: Int] = [:]
@@ -379,16 +372,7 @@ extension AppState {
             }
             return counts
         }
-        let chunk = max(chunk, 1)
-        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
-        guard chunks > 1 else { return count(assets.indices) }
-        let lock = NSLock()
-        var total = LibraryCounts()
-        DispatchQueue.concurrentPerform(iterations: chunks) { index in
-            let part = count(index * chunk ..< min(assets.count, (index + 1) * chunk))
-            lock.withLock { total.add(part) }
-        }
-        return total
+        return Chunks.map(assets.count, chunk: chunk, count).reduce(into: LibraryCounts()) { $0.add($1) }
     }
 
     /// The library's cameras and lenses, most used first: what the filter bar offers.
@@ -506,21 +490,11 @@ extension AppState {
             }
             return (counts, first)
         }
-        let chunk = max(chunk, 1)
-        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
-        guard chunks > 1 else {
-            let whole = count(assets.indices)
-            return MetadataValueCounts(counts: whole.counts, first: whole.first)
-        }
-        let lock = NSLock()
-        var counts: [String: Int] = [:]
-        var first: [String: Int] = [:]
-        DispatchQueue.concurrentPerform(iterations: chunks) { index in
-            let part = count(index * chunk ..< min(assets.count, (index + 1) * chunk))
-            lock.withLock {
-                counts.merge(part.counts, uniquingKeysWith: +)
-                first.merge(part.first, uniquingKeysWith: min)
-            }
+        let parts = Chunks.map(assets.count, chunk: chunk, count)
+        var (counts, first) = parts.first ?? ([:], [:])
+        for part in parts.dropFirst() {
+            counts.merge(part.counts, uniquingKeysWith: +)
+            first.merge(part.first, uniquingKeysWith: min)
         }
         return MetadataValueCounts(counts: counts, first: first)
     }

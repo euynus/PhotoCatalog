@@ -172,21 +172,11 @@ enum FolderTreeService {
             if run > 0 { perSource[source, default: 0] += run }
             return (perSource, perPlace)
         }
-        var perSource: [String: Int] = [:]
-        var perPlace: [Place: Int] = [:]
-        let chunk = max(chunk, 1)
-        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
-        if chunks > 1 {
-            let lock = NSLock()
-            DispatchQueue.concurrentPerform(iterations: chunks) { index in
-                let part = count(index * chunk ..< min(assets.count, (index + 1) * chunk))
-                lock.withLock {
-                    perSource.merge(part.sources, uniquingKeysWith: +)
-                    perPlace.merge(part.places, uniquingKeysWith: +)
-                }
-            }
-        } else {
-            (perSource, perPlace) = count(assets.indices)
+        let parts = Chunks.map(assets.count, chunk: chunk, count)
+        var (perSource, perPlace) = parts.first ?? ([:], [:])
+        for part in parts.dropFirst() {
+            perSource.merge(part.sources, uniquingKeysWith: +)
+            perPlace.merge(part.places, uniquingKeysWith: +)
         }
         for (source, number) in perSource {
             for rootId in rootIdsBySource[source] ?? [] {
