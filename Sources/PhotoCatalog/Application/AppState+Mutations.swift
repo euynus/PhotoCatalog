@@ -37,12 +37,11 @@ extension AppState {
             replayedOld.append(stepOld)
             replayedNew.append(stepNew)
         }
-        // saved, and their sidecar writes queued
-        guard !edits.isEmpty, persistChanged(edits.map(\.asset)) else { return }
+        guard !edits.isEmpty else { return }
+        // saved (only the columns the step changes), and their sidecar writes queued
+        let scope = editScope(of: edits)
+        guard persistChanged(edits.map(\.asset), editing: scope) else { return }
         let deletionChanged = zip(current, edits).contains { $0.deleted != $1.asset.deleted }
-        let scope = zip(current, edits).reduce(into: AssetEditScope()) {
-            $0.formUnion(Self.editScope(from: $1.0, to: $1.1.asset))
-        }
         applyAssetEdits(edits, scope: scope)
         ensurePrimaryValid()
         if deletionChanged { recomputeDuplicates() }
@@ -94,11 +93,9 @@ extension AppState {
         // narrowest invalidation their changes need (a keyword edit keeps pairing and trees).
         let edits = editedCopies(of: target, transform)
         guard !edits.isEmpty else { return false }
-        guard persistChanged(edits.map(\.asset), writingSidecars: writingSidecars) else { return false }
         let before = edits.map { assets[$0.offset] }
-        let scope = zip(before, edits).reduce(into: AssetEditScope()) {
-            $0.formUnion(Self.editScope(from: $1.0, to: $1.1.asset))
-        }
+        let scope = editScope(of: edits)
+        guard persistChanged(edits.map(\.asset), writingSidecars: writingSidecars, editing: scope) else { return false }
         applyAssetEdits(edits, scope: scope)
         ensurePrimaryValid()
         registerUndo(from: before, to: edits.map(\.asset), actionName: undoName)
@@ -116,6 +113,12 @@ extension AppState {
             transform(&asset)
             return (offset, asset)
         }.sorted { $0.offset < $1.offset }
+    }
+
+    /// What these edits change in the photos as they are now: how far their effects reach, and
+    /// which columns saving them writes.
+    func editScope(of edits: [(offset: Int, asset: Asset)]) -> AssetEditScope {
+        edits.reduce(into: AssetEditScope()) { $0.formUnion(Self.editScope(from: assets[$1.offset], to: $1.asset)) }
     }
 
     @discardableResult

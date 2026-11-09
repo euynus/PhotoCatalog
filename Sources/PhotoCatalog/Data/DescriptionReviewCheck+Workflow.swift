@@ -75,7 +75,7 @@ extension DescriptionReviewCheck {
                 assert(!app.applyReviewedDescriptions([photos[0].id: altered]), "stale or forged payloads cannot be applied")
                 let selectedBeforeFailure = app.descriptionReview
                 try store.db.execChecked("""
-                    CREATE TRIGGER description_review_reject BEFORE INSERT ON assets
+                    CREATE TRIGGER description_review_reject BEFORE UPDATE ON assets
                     BEGIN SELECT RAISE(ABORT, 'description review check failure'); END;
                     """)
                 assert(!app.applyReviewedDescriptions(firstPayload), "a failed catalog transaction is not reported as applied")

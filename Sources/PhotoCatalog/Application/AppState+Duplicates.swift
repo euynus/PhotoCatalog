@@ -125,15 +125,23 @@ extension AppState {
         return persistChanged(snapshot.filter { ids.contains($0.id) })
     }
 
-    /// Saves these photos (demo photos are never persisted) and queues their XMP sidecars.
-    func persistChanged(_ edited: [Asset], writingSidecars: Bool = true) -> Bool {
+    /// Saves these photos (demo photos are never persisted) and queues their XMP sidecars. An
+    /// edit that says what it changed (`scope`) and changed no structural field writes only its
+    /// review and metadata columns, and none when it changed nothing; any other, the whole row.
+    func persistChanged(_ edited: [Asset], writingSidecars: Bool = true,
+                        editing scope: AssetEditScope? = nil) -> Bool {
         let changed = edited.filter { !$0.isDemo }
         guard let store else { return true }
         if !changed.isEmpty {
             // this is the single funnel for every metadata edit and the soft-delete-on-trash;
             // a swallowed failure here desyncs the catalog from disk, so surface it (§16.2).
             do {
-                try store.upsert(changed)
+                if let scope, !scope.contains(.structure) {
+                    try store.updateEditableColumns(changed, review: scope.contains(.review),
+                                                    metadata: scope.contains(.metadata))
+                } else {
+                    try store.upsert(changed)
+                }
             } catch {
                 push("保存失败，更改未写入目录库", "warning")
                 return false
