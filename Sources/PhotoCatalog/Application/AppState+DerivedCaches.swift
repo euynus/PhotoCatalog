@@ -435,7 +435,6 @@ extension AppState {
         var patchedSidebar: SidebarCountIndex?
         var projectChanges: [(offset: Int, old: String, new: String)] = []
         var clientChanges: [(offset: Int, old: String, new: String)] = []
-        var listBefore: ListSignature?
         let pairing = assetPairing
         // Matching each edited photo before and after against every smart album: past half
         // the library, recounting it (once, when the sidebar next reads) is the cheaper way.
@@ -457,19 +456,24 @@ extension AppState {
                 }
             }
         }
-        let membershipCanChange = (scope.contains(.review) && listDependsOnReviewFields)
+        let membershipCanChange = (scope.contains(.review) && listMembershipDependsOnReviewFields)
             || (scope.contains(.metadata) && listDependsOnMetadataFields)
-        if !membershipCanChange { listBefore = currentListSignature }
+        // a sort by rating lists the same photos in another order
+        let orderCanChange = scope.contains(.review) && sort.field == .rating
+        var keepsMembers = !membershipCanChange
         // A review key that only takes photos out (rated out of Unrated, a filter or a smart album)
         // takes them out of the cached list instead of working it out again from every photo.
         var listRemoval: (before: ListSignature, leaving: Set<String>, staying: [Asset])?
         if membershipCanChange, scope == .review, let moves = reviewListMoves(edits) {
             if moves.leaving.isEmpty {
-                listBefore = currentListSignature
-            } else {
+                keepsMembers = true
+            } else if !orderCanChange {
                 listRemoval = (currentListSignature, moves.leaving, moves.staying)
             }
         }
+        // the list's inputs before the edit, when the same photos stay in it
+        let membersBefore = keepsMembers ? currentListSignature : nil
+        let listBefore = orderCanChange ? nil : membersBefore
         if scope.contains(.metadata) {
             patchedKeywords = keywordCountsCache.flatMap { cache -> KeywordTally? in
                 var patched = cache
@@ -507,12 +511,11 @@ extension AppState {
         if let patchedSidebar { sidebarCountIndexCache = patchedSidebar }
         patch(&projectCountsCache, projectChanges, \.project)
         patch(&clientCountsCache, clientChanges, \.client)
-        if let listBefore {
-            patchListCaches(with: edits, validFor: listBefore)
-            // the same photos match, each where it was in `assets`: a new sort needs no new pass
-            if let cache = matchingPositionsCache, cache.signature.hasPhotosBeforeSorting(of: listBefore) {
-                matchingPositionsCache = (currentListSignature, cache.positions)
-            }
+        if let listBefore { patchListCaches(with: edits, validFor: listBefore) }
+        // the same photos match, each where it was in `assets`: a new order (a sort by rating the
+        // edit moved, or a new sort) sorts them again without a new pass
+        if let membersBefore, let cache = matchingPositionsCache, cache.signature.hasPhotosBeforeSorting(of: membersBefore) {
+            matchingPositionsCache = (currentListSignature, cache.positions)
         }
         if let listRemoval {
             removeFromListCaches(listRemoval.leaving, staying: listRemoval.staying, validFor: listRemoval.before)
@@ -520,13 +523,12 @@ extension AppState {
         didMutateAssets()
     }
 
-    /// How review edits move photos through a list that depends on review fields: the photos they
-    /// take out, and the edited photos that stay in. Nil when one comes in, or when the list can't
-    /// be told this way: a search, a sort by rating (the order moves), Recently Imported (its
-    /// cutoff moves with the clock, so the cached list may hold photos the test now leaves out),
-    /// the collection gone.
+    /// How review edits move photos through a list whose photos depend on review fields: the photos
+    /// they take out, and the edited photos that stay in. Nil when one comes in, or when the list
+    /// can't be told this way: a search, Recently Imported (its cutoff moves with the clock, so the
+    /// cached list may hold photos the test now leaves out), the collection gone.
     private func reviewListMoves(_ edits: [(offset: Int, asset: Asset)]) -> (leaving: Set<String>, staying: [Asset])? {
-        guard sort.field != .rating, search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        guard search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !(selection.type == .lib && selection.id == "recent"),
               let makeTest = listTest(now: sidebarClock()) else { return nil }
         let test = makeTest()
@@ -792,9 +794,11 @@ extension AppState {
         return selection.type == .lib && selection.id == "places"
     }
 
-    private var listDependsOnReviewFields: Bool {
+    /// Whether which photos the current list holds can move with a review edit (its order also
+    /// moves when sorted by rating).
+    private var listMembershipDependsOnReviewFields: Bool {
         if filters.minRating > 0 || filters.flag != "any" || filters.color != "any" { return true }
-        if sort.field == .rating || selection.type == .smart { return true }
+        if selection.type == .smart { return true }
         return selection.type == .lib && ["unrated", "picks", "rejected"].contains(selection.id)
     }
 
