@@ -70,14 +70,28 @@ enum ChromaticAberration {
     /// The correction `image` needs; none when it shows too few achromatic edges to tell, or
     /// lining the channels up doesn't bring them closer.
     static func measure(_ image: CIImage) -> Correction {
+        measure(image, fitsConcurrently: true)
+    }
+
+    /// `measure`, with red's and blue's fits side by side or (for checks) one after the other.
+    /// A separate overload, so `measure` still passes as a `(CIImage) -> Correction`.
+    static func measure(_ image: CIImage, fitsConcurrently: Bool) -> Correction {
         let rect = image.extent.integral
         let width = Int(rect.width), height = Int(rect.height)
         guard width >= 64, height >= 64 else { return .none }
         var pixels = [Float](repeating: 0, count: width * height * 4)
         DevelopRenderer.context.render(image, toBitmap: &pixels, rowBytes: width * 16, bounds: rect,
                                        format: .RGBAf, colorSpace: DevelopRenderer.outputColorSpace)
+        // the planes are built one channel at a time: side by side they'd take ~225 MB more at
+        // the analysis size
         let planes = Planes(pixels, width: width, height: height)
-        return Correction(red: planes.scale(of: 0), blue: planes.scale(of: 2))
+        guard fitsConcurrently else { return Correction(red: planes.scale(of: 0), blue: planes.scale(of: 2)) }
+        // each fit only reads the planes, so red's and blue's run at once, each into its own slot
+        var scales = [Scale](repeating: .none, count: 2)
+        scales.withUnsafeMutableBufferPointer { slots in
+            DispatchQueue.concurrentPerform(iterations: 2) { slots[$0] = planes.scale(of: $0 * 2) }
+        }
+        return Correction(red: scales[0], blue: scales[1])
     }
 
     /// The photo's channels as logs of display-encoded values, where an achromatic edge has the
