@@ -22,13 +22,10 @@ enum CacheCheck {
         }
         let app = AppState.selfCheckFixture(importingInto: store)
         app.runsBackgroundMaintenance = false
-        let savedLimit = UserDefaults.app.object(forKey: "pc_cacheLimitMB")
-        defer {
-            if let savedLimit { UserDefaults.app.set(savedLimit, forKey: "pc_cacheLimitMB") }
-            else { UserDefaults.app.removeObject(forKey: "pc_cacheLimitMB") }
-        }
+        let savedLimit = PreferenceSnapshot(keys: ["pc_cacheLimitMB"])
+        defer { savedLimit.restore() }
         app.importFolder(photos)
-        spin { !app.importing && app.assets.filter { !$0.isDemo }.count == count }
+        CheckWait.until(30) { !app.importing && app.assets.filter { !$0.isDemo }.count == count }
 
         // as after a prune: nothing cached
         let thumbnails = store.cacheURL.appendingPathComponent("Thumbnails")
@@ -48,8 +45,8 @@ enum CacheCheck {
         @MainActor func backfill() {
             app.runsBackgroundMaintenance = true
             app.backfillThumbnails()
-            spin(60) { !app.isBackfilling }
-            spin(2) { false }   // the prune after the pass
+            CheckWait.until(backgroundPass) { !app.isBackfilling }
+            CheckWait.until(2) { false }   // the prune after the pass
             app.runsBackgroundMaintenance = false
         }
         backfill()
@@ -74,11 +71,11 @@ enum CacheCheck {
         let publishes = TaskListPublishes(app)
         app.runsBackgroundMaintenance = true
         app.backfillThumbnails()
-        spin(60, step: 0.002) { !app.isBackfilling }
+        CheckWait.until(backgroundPass, poll: 0.002) { !app.isBackfilling }
         // from the update saying it runs, the second: not the 750 ms it waits for the window first
         let elapsed = publishes.times.count > 1 ? Date().timeIntervalSince(publishes.times[1]) : .infinity
         let published = publishes.times.count
-        spin(2) { false }   // the prune after the pass
+        CheckWait.until(2) { false }   // the prune after the pass
         app.runsBackgroundMaintenance = false
         let after = Dictionary(uniqueKeysWithValues: files(in: store.cacheURL).map { ($0.url.path, $0.modified) })
         check(before == after, "cache: a second pass makes and deletes nothing")
@@ -124,10 +121,8 @@ enum CacheCheck {
         }
     }
 
-    private static func spin(_ timeout: Double = 30, step: Double = 0.02, until done: () -> Bool) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !done(), Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(step)) }
-    }
+    /// How long a background pass is waited for, in seconds: on a loaded Mac one took over a minute.
+    private static let backgroundPass: TimeInterval = 180
 
     /// When `app` set its task list (`backgroundTasks`), each time from when this is made.
     @MainActor
