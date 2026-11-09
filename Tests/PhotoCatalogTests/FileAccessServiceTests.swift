@@ -7,19 +7,17 @@ import XCTest
 final class FileAccessServiceTests: XCTestCase {
     nonisolated private static let key = "pc_rememberedLocations"
     // set up and torn down around each test, which XCTest runs one at a time on one thread
-    nonisolated(unsafe) private var saved: Any?
     nonisolated(unsafe) private var root: URL!
 
     override func setUp() {
         super.setUp()
-        saved = UserDefaults.app.object(forKey: Self.key)
+        preservingPreferences([Self.key])
         UserDefaults.app.removeObject(forKey: Self.key)
         root = FileManager.default.temporaryDirectory.appendingPathComponent("pc-file-access-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
 
     override func tearDown() {
-        if let saved { UserDefaults.app.set(saved, forKey: Self.key) } else { UserDefaults.app.removeObject(forKey: Self.key) }
         if let root { try? FileManager.default.removeItem(at: root) }
         super.tearDown()
     }

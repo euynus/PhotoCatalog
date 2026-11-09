@@ -51,31 +51,19 @@ private final class HydrationGate {
 
 /// Opening, switching, creating and closing catalogs: nothing of the previous catalog — undo
 /// steps, a tethered session, sidecar changes, demo photos — carries over into the next.
-final class CatalogLifecycleTests: XCTestCase {
-    private var root: URL!
-
+final class CatalogLifecycleTests: CatalogTestCase {
     override func setUp() {
         super.setUp()
-        let defaults = UserDefaults.app
-        preservingAllPreferences()
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("pc-lifecycle-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defaults.set(false, forKey: "pc_openLast")
         // never the real library, even on a fallback path
-        defaults.set(root.appendingPathComponent("Fallback.photolibrary"), forKey: "pc_catalogURL")
-    }
-
-    override func tearDown() {
-        if let root { try? FileManager.default.removeItem(at: root) }
-        super.tearDown()
+        UserDefaults.app.set(scratch.appendingPathComponent("Fallback.photolibrary"), forKey: "pc_catalogURL")
     }
 
     // MARK: - helpers
 
     @MainActor
     private func makeCatalog(_ name: String, assets indices: [Int]) throws -> (url: URL, store: CatalogStore) {
-        let url = root.appendingPathComponent("\(name).photolibrary")
-        let source = root.appendingPathComponent("Source-\(name)")
+        let url = scratch.appendingPathComponent("\(name).photolibrary")
+        let source = scratch.appendingPathComponent("Source-\(name)")
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
         let store = try CatalogStore(packageURL: url)
         let assets = try indices.map { index -> Asset in
@@ -153,7 +141,7 @@ final class CatalogLifecycleTests: XCTestCase {
 
         XCTAssertTrue(app.openCatalog(at: first.url))
         registerStep()
-        XCTAssertTrue(app.createCatalog(at: root.appendingPathComponent("Third.photolibrary")))
+        XCTAssertTrue(app.createCatalog(at: scratch.appendingPathComponent("Third.photolibrary")))
         XCTAssertFalse(undo.canUndo, "undo steps survive New Catalog")
 
         XCTAssertTrue(app.openCatalog(at: first.url))
@@ -176,13 +164,13 @@ final class CatalogLifecycleTests: XCTestCase {
     func testClosingCatalogEndsTetheredSession() throws {
         let first = try makeCatalog("First", assets: [0])
         let second = try makeCatalog("Second", assets: [1])
-        let fixture = root.appendingPathComponent("fixture.jpg")
+        let fixture = scratch.appendingPathComponent("fixture.jpg")
         try writeJPEG(fixture)
         let app = makeApp()
         XCTAssertTrue(app.openCatalog(at: first.url))
         var settings = TetherSettings()
         settings.sessionName = "Studio"
-        settings.destinationPath = root.appendingPathComponent("Sessions").path
+        settings.destinationPath = scratch.appendingPathComponent("Sessions").path
         let camera = FakeTetherSource(fixture: fixture)
         XCTAssertTrue(app.startTether(settings, source: camera))
 
@@ -195,14 +183,14 @@ final class CatalogLifecycleTests: XCTestCase {
     func testShotInFlightDoesNotLandInNextCatalog() async throws {
         let first = try makeCatalog("First", assets: [0])
         let second = try makeCatalog("Second", assets: [1])
-        let fixture = root.appendingPathComponent("fixture.jpg")
+        let fixture = scratch.appendingPathComponent("fixture.jpg")
         try writeJPEG(fixture)
         let app = makeApp()
         XCTAssertTrue(app.openCatalog(at: first.url))
         var settings = TetherSettings()
         settings.sessionName = "Studio"
-        settings.destinationPath = root.appendingPathComponent("Sessions").path
-        let session = root.appendingPathComponent("Sessions/Studio").standardizedFileURL.path
+        settings.destinationPath = scratch.appendingPathComponent("Sessions").path
+        let session = scratch.appendingPathComponent("Sessions/Studio").standardizedFileURL.path
         let camera = FakeTetherSource(fixture: fixture)
         XCTAssertTrue(app.startTether(settings, source: camera))
 
@@ -226,14 +214,14 @@ final class CatalogLifecycleTests: XCTestCase {
     @MainActor
     func testTetheredShotThatFailsToSaveLeavesNothingInTheCatalog() async throws {
         let first = try makeCatalog("First", assets: [0])
-        let fixture = root.appendingPathComponent("fixture.jpg")
+        let fixture = scratch.appendingPathComponent("fixture.jpg")
         try writeJPEG(fixture)
         let app = makeApp()
         XCTAssertTrue(app.openCatalog(at: first.url))
         var settings = TetherSettings()
         settings.sessionName = "Studio"
-        settings.destinationPath = root.appendingPathComponent("Sessions").path
-        let session = root.appendingPathComponent("Sessions/Studio").standardizedFileURL.path
+        settings.destinationPath = scratch.appendingPathComponent("Sessions").path
+        let session = scratch.appendingPathComponent("Sessions/Studio").standardizedFileURL.path
         let camera = FakeTetherSource(fixture: fixture)
         XCTAssertTrue(app.startTether(settings, source: camera))
         try first.store.db.execChecked("""
@@ -259,11 +247,14 @@ final class CatalogLifecycleTests: XCTestCase {
     @MainActor
     func testTetheredShotAtARemovedPhotosPathIsANewPhoto() async throws {
         let catalog = try makeCatalog("First", assets: [0])
-        let fixture = root.appendingPathComponent("fixture.jpg")
+        let fixture = scratch.appendingPathComponent("fixture.jpg")
         try writeJPEG(fixture)
-        let sessionFolder = root.appendingPathComponent("Sessions/Studio").standardizedFileURL
+        // made before it's standardized, as the session finds it: standardizing an existing
+        // /private/var path gives /var
+        try FileManager.default.createDirectory(at: scratch.appendingPathComponent("Sessions/Studio"),
+                                                withIntermediateDirectories: true)
+        let sessionFolder = scratch.appendingPathComponent("Sessions/Studio").standardizedFileURL
         let earlier = sessionFolder.appendingPathComponent("Studio-0001.JPG")
-        try FileManager.default.createDirectory(at: sessionFolder, withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: fixture, to: earlier)
         var removed = try XCTUnwrap(ImportCoordinator(store: catalog.store).importFiles([earlier], from: sessionFolder).first)
         removed.rating = 5
@@ -281,7 +272,7 @@ final class CatalogLifecycleTests: XCTestCase {
         XCTAssertTrue(app.openCatalog(at: catalog.url))
         var settings = TetherSettings()
         settings.sessionName = "Studio"
-        settings.destinationPath = root.appendingPathComponent("Sessions").path
+        settings.destinationPath = scratch.appendingPathComponent("Sessions").path
         let camera = FakeTetherSource(fixture: fixture)
         XCTAssertTrue(app.startTether(settings, source: camera))
         camera.shoot()
@@ -372,7 +363,7 @@ final class CatalogLifecycleTests: XCTestCase {
         XCTAssertTrue(app.openCatalog(at: first.url))
         app.applyExternalXMPCheck(seeded: [id: 100], changed: [:])
         app.externallyChangedXMPIds = [id]
-        XCTAssertTrue(app.createCatalog(at: root.appendingPathComponent("New.photolibrary")))
+        XCTAssertTrue(app.createCatalog(at: scratch.appendingPathComponent("New.photolibrary")))
         XCTAssertTrue(app.externallyChangedXMPIds.isEmpty, "New Catalog still lists the previous catalog's changed sidecars")
         XCTAssertNil(app.xmpSyncTime(for: id), "New Catalog keeps the previous catalog's sidecar baselines")
 
@@ -392,7 +383,7 @@ final class CatalogLifecycleTests: XCTestCase {
         let app = makeApp()
         XCTAssertTrue(app.openCatalog(at: first.url))
         // a snapshot from a newer version: a valid backup, but this version can't open it
-        let snapshot = root.appendingPathComponent("catalog-newer.sqlite")
+        let snapshot = scratch.appendingPathComponent("catalog-newer.sqlite")
         do {
             // closed before it's restored, so its tables are in the file rather than the WAL
             let db = try Database(path: snapshot.path)
@@ -430,7 +421,7 @@ final class CatalogLifecycleTests: XCTestCase {
 
         // Welcome → Add Photo Folder: enters the app, then imports a folder
         app.onboarded = true
-        let folder = root.appendingPathComponent("Empty Folder")
+        let folder = scratch.appendingPathComponent("Empty Folder")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         app.importFolder(folder)
         try await waitUntil("Timed out waiting for the import", timeout: 3) { !app.importing }
@@ -450,13 +441,13 @@ final class CatalogLifecycleTests: XCTestCase {
 
     @MainActor
     func testFirstRunImportCreatesCatalogWithoutDemoSet() async throws {
-        let url = root.appendingPathComponent("First Run.photolibrary")
+        let url = scratch.appendingPathComponent("First Run.photolibrary")
         UserDefaults.app.set(url, forKey: "pc_catalogURL")
         let app = makeApp()
         XCTAssertFalse(app.hasOpenCatalog)
         XCTAssertTrue(app.assets.contains { $0.isDemo })
 
-        let folder = root.appendingPathComponent("Empty Folder")
+        let folder = scratch.appendingPathComponent("Empty Folder")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         app.importFolder(folder)
         try await waitUntil("Timed out waiting for the import", timeout: 3) { !app.importing }
@@ -474,7 +465,7 @@ final class CatalogLifecycleTests: XCTestCase {
     func testImportWaitsForCatalogBeingOpened() async throws {
         let first = try makeCatalog("First", assets: [0])
         let second = try makeCatalog("Second", assets: [1])
-        let folder = root.appendingPathComponent("Empty Folder")
+        let folder = scratch.appendingPathComponent("Empty Folder")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let app = makeApp()
         XCTAssertTrue(app.openCatalog(at: first.url))
@@ -536,9 +527,9 @@ final class CatalogLifecycleTests: XCTestCase {
     @MainActor
     func testPairingChangedWhileCatalogLoadsIsHonored() async throws {
         let first = try makeCatalog("First", assets: [0])
-        let url = root.appendingPathComponent("Pairs.photolibrary")
+        let url = scratch.appendingPathComponent("Pairs.photolibrary")
         let store = try CatalogStore(packageURL: url)
-        let folder = root.appendingPathComponent("Pair")
+        let folder = scratch.appendingPathComponent("Pair")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var raw = try XCTUnwrap(DemoData.assets.first { $0.isRaw })
         // the RAW's own JPEG: one shot, by its camera at its moment

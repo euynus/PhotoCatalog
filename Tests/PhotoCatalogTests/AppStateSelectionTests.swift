@@ -3,11 +3,9 @@ import ImageIO
 import UniformTypeIdentifiers
 @testable import PhotoCatalog
 
-final class AppStateSelectionTests: XCTestCase {
+final class AppStateSelectionTests: CatalogTestCase {
     override func setUp() {
         super.setUp()
-        preservingAllPreferences()
-        UserDefaults.app.set(false, forKey: "pc_openLast")
         UserDefaults.app.removeObject(forKey: "pc_pinnedSidebarItems")
     }
 
