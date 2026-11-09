@@ -224,12 +224,8 @@ final class CatalogLifecycleTests: CatalogTestCase {
         let session = scratch.appendingPathComponent("Sessions/Studio").standardizedFileURL.path
         let camera = FakeTetherSource(fixture: fixture)
         XCTAssertTrue(app.startTether(settings, source: camera))
-        try first.store.db.execChecked("""
-        CREATE TRIGGER fail_session_folder BEFORE INSERT ON source_roots
-        BEGIN
-          SELECT RAISE(ABORT, 'forced source folder save failure');
-        END;
-        """)
+        try first.store.db.failWrites("fail_session_folder", before: "INSERT", on: "source_roots",
+                                      message: "forced source folder save failure")
 
         camera.shoot()
         try await waitUntil("The shot's save never failed", timeout: 5) {

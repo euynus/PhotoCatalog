@@ -33,3 +33,16 @@ extension Asset {
               masterId: masterId, copyName: copyName, duration: duration)
     }
 }
+
+extension Database {
+    /// Makes `operation` on `table` fail with `message` from now on, for checks and tests of a
+    /// save that fails: a trigger, `name`, that aborts it. `operation` is `INSERT`, `DELETE`,
+    /// `UPDATE` or `UPDATE OF <columns>`; `condition`, a `WHEN …` clause, limits it to some rows.
+    func failWrites(_ name: String, before operation: String, on table: String, when condition: String = "",
+                    message: String) throws {
+        try execChecked("""
+        CREATE TRIGGER \(name) BEFORE \(operation) ON \(table) \(condition)
+        BEGIN SELECT RAISE(ABORT, '\(message)'); END;
+        """)
+    }
+}

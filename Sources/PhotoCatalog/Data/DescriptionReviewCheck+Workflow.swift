@@ -72,10 +72,8 @@ extension DescriptionReviewCheck {
                 altered.title = "Not the reviewed result"
                 assert(!app.applyReviewedDescriptions([photos[0].id: altered]), "stale or forged payloads cannot be applied")
                 let selectedBeforeFailure = app.descriptionReview
-                try store.db.execChecked("""
-                    CREATE TRIGGER description_review_reject BEFORE UPDATE ON assets
-                    BEGIN SELECT RAISE(ABORT, 'description review check failure'); END;
-                    """)
+                try store.db.failWrites("description_review_reject", before: "UPDATE", on: "assets",
+                                        message: "description review check failure")
                 assert(!app.applyReviewedDescriptions(firstPayload), "a failed catalog transaction is not reported as applied")
                 assert(app.descriptionReview == selectedBeforeFailure && app.asset(id: photos[0].id)?.title == "",
                        "failed persistence retains the exact proposals and selection without changing live metadata")

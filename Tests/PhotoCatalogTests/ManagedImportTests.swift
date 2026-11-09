@@ -51,12 +51,8 @@ final class ManagedImportTests: CatalogTestCase {
         try makeTestJPEG(at: folder.appendingPathComponent("shot.jpg"), shade: 5)
         let package = scratch.appendingPathComponent("Library.photolibrary")
         let store = try CatalogStore(packageURL: package)
-        try store.db.execChecked("""
-        CREATE TRIGGER fail_import_insert BEFORE INSERT ON assets
-        BEGIN
-          SELECT RAISE(ABORT, 'forced import save failure');
-        END;
-        """)
+        try store.db.failWrites("fail_import_insert", before: "INSERT", on: "assets",
+                                message: "forced import save failure")
         func copies() -> [String] {
             (FileManager.default.enumerator(atPath: store.originalsURL.path)?.allObjects as? [String] ?? [])
                 .filter { $0.hasSuffix(".jpg") }

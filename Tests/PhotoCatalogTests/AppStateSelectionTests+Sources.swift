@@ -61,12 +61,8 @@ extension AppStateSelectionTests {
         try store.upsert([asset])
 
         let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
-        try db.execChecked("""
-        CREATE TRIGGER fail_source_root_delete BEFORE DELETE ON source_roots
-        BEGIN
-          SELECT RAISE(ABORT, 'forced source root delete failure');
-        END;
-        """)
+        try db.failWrites("fail_source_root_delete", before: "DELETE", on: "source_roots",
+                          message: "forced source root delete failure")
 
         let app = AppState()
         app.onboarded = true
