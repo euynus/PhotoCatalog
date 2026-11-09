@@ -9,6 +9,8 @@ struct CachePruneReport: Sendable {
     let removedFiles: Int
     /// The limit the cache was held to.
     let maxBytes: Int64
+    /// Files still being written, left out of the sizes above: with them, the cache's whole size.
+    let writingBytes: Int64
 
     var removedBytes: Int64 { max(0, beforeBytes - afterBytes) }
 }
@@ -68,11 +70,12 @@ enum CacheService {
 
     /// Prunes to the limit `maxBytes` gives for the cache's size as found.
     static func prune(_ cacheURL: URL, maxBytes limit: (Int64) -> Int64) -> CachePruneReport {
-        let files = cacheFiles(in: cacheURL)
+        let (files, writingBytes) = cacheFiles(in: cacheURL)
         let before = files.reduce(Int64(0)) { $0 + $1.size }
         let maxBytes = limit(before)
         guard maxBytes > 0, before > maxBytes else {
-            return CachePruneReport(beforeBytes: before, afterBytes: before, removedFiles: 0, maxBytes: maxBytes)
+            return CachePruneReport(beforeBytes: before, afterBytes: before, removedFiles: 0, maxBytes: maxBytes,
+                                    writingBytes: writingBytes)
         }
 
         var current = before
@@ -91,34 +94,67 @@ enum CacheService {
             }
         }
         return CachePruneReport(beforeBytes: before, afterBytes: max(0, current), removedFiles: removed,
-                                maxBytes: maxBytes)
+                                maxBytes: maxBytes, writingBytes: writingBytes)
+    }
+
+    /// The cache's size, and how much of it is plain thumbnails (`Thumbnails/`, not developed
+    /// ones), in one walk. Counts every file, as `CatalogHealth.directorySize` does.
+    static func usage(_ cacheURL: URL) -> (total: Int64, thumbnails: Int64) {
+        let keys: [URLResourceKey] = [.fileSizeKey, .isRegularFileKey]
+        guard let enumerator = FileManager.default.enumerator(at: cacheURL, includingPropertiesForKeys: keys) else {
+            return (0, 0)
+        }
+        let root = enumeratedPath(of: cacheURL)
+        var total: Int64 = 0, thumbnails: Int64 = 0
+        for case let url as URL in enumerator {
+            guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { continue }
+            let size = Int64(values.fileSize ?? 0)
+            total += size
+            if relativePath(url, to: root).hasPrefix("/Thumbnails/") { thumbnails += size }
+        }
+        return (total, thumbnails)
     }
 
     /// How long a file being written into the cache (`.tmp-…`, moved into place once encoded)
     /// is left to its writer; one older than that was left by a crash.
     static let writingGrace: TimeInterval = 600
 
-    private static func cacheFiles(in cacheURL: URL) -> [CacheFile] {
+    /// The cache's files, less those being written, whose sizes come back apart.
+    private static func cacheFiles(in cacheURL: URL) -> (files: [CacheFile], writingBytes: Int64) {
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
         guard let enumerator = FileManager.default.enumerator(at: cacheURL, includingPropertiesForKeys: keys) else {
-            return []
+            return ([], 0)
         }
-        // the enumerator hands back resolved paths (/tmp → /private/tmp)
-        let root = cacheURL.resolvingSymlinksInPath().path
+        let root = enumeratedPath(of: cacheURL)
         let writing = Date().addingTimeInterval(-writingGrace)
-        return enumerator.compactMap { item -> CacheFile? in
+        var writingBytes: Int64 = 0
+        let files = enumerator.compactMap { item -> CacheFile? in
             guard let url = item as? URL,
                   let values = try? url.resourceValues(forKeys: Set(keys)),
                   values.isRegularFile == true else { return nil }
             if url.lastPathComponent.hasPrefix(".tmp-"), (values.contentModificationDate ?? .distantPast) > writing {
+                writingBytes += Int64(values.fileSize ?? 0)
                 return nil
             }
-            let relative = url.path.hasPrefix(root) ? url.path.dropFirst(root.count) : Substring(url.path)
+            let relative = relativePath(url, to: root)
             return CacheFile(url: url,
                              size: Int64(values.fileSize ?? 0),
                              modifiedAt: values.contentModificationDate ?? .distantPast,
                              evictionRank: relative.contains("/Thumbnails/") ? 2 : relative.hasPrefix("/Edited/") ? 1 : 0)
         }
+        return (files, writingBytes)
+    }
+
+    /// The cache folder's path as its enumerator hands back what's in it: links resolved, /tmp as
+    /// /private/tmp. Not `resolvingSymlinksInPath`, which takes the /private off again.
+    private static func enumeratedPath(of cacheURL: URL) -> String {
+        (try? cacheURL.resourceValues(forKeys: [.canonicalPathKey]).canonicalPath)
+            ?? cacheURL.resolvingSymlinksInPath().path
+    }
+
+    /// `url`'s path below the cache folder `root`, starting with "/".
+    private static func relativePath(_ url: URL, to root: String) -> Substring {
+        url.path.hasPrefix(root) ? url.path.dropFirst(root.count) : Substring(url.path)
     }
 }
 

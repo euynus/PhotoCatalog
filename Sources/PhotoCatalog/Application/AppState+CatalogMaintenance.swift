@@ -123,7 +123,7 @@ extension AppState {
         let previewSize = previewMaxPixel
         let lowPowerSensitive = reduceBackgroundOnLowPower
         let limit = cacheLimit
-        let cacheURL = store.cacheURL, thumbnailsURL = store.thumb512URL.deletingLastPathComponent()
+        let cacheURL = store.cacheURL
         let thumbnails: [(Asset, ThumbnailService.Kind)] = real.map { ($0, .thumb512) }
         let previews: [(Asset, ThumbnailService.Kind)] = real.sorted { $0.date > $1.date }.map {
             ($0, ThumbnailService.previewKind(forCachePath: $0.preview, fallbackMaxPixel: previewSize))
@@ -172,8 +172,8 @@ extension AppState {
             if let originHistory { self?.recordBackgroundTask(task, originHistory: originHistory) }
             let measured = await ThumbnailRepairQueue.run(.background) {
                 () -> (used: Int64, thumbnails: Int64, limit: Int64) in
-                let used = CatalogHealth.directorySize(cacheURL)
-                return (used, CatalogHealth.directorySize(thumbnailsURL), limit.bytes(cacheBytes: used))
+                let usage = CacheService.usage(cacheURL)
+                return (usage.total, usage.thumbnails, limit.bytes(cacheBytes: usage.total))
             }
             guard let measured else {
                 task.state = .interrupted
@@ -387,7 +387,8 @@ extension AppState {
             let result = await Task.detached(priority: .utility) {
                 let report = CacheService.prune(store.cacheURL) { passLimit ?? limit.bytes(cacheBytes: $0) }
                 let health = report.removedFiles > 0 ? CatalogHealth.check(store, assets: snapshot) : nil
-                let cacheBytes = health?.cacheBytes ?? CatalogHealth.directorySize(store.cacheURL)
+                // nothing removed: the prune's own walk has the cache's size
+                let cacheBytes = health?.cacheBytes ?? report.afterBytes + report.writingBytes
                 return (health, cacheBytes)
             }.value
             guard let self, self.store?.packageURL == packageURL else { return }
