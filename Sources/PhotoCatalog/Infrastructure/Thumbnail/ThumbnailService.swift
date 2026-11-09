@@ -201,7 +201,16 @@ final class ThumbnailService: @unchecked Sendable {
     @discardableResult
     func ensureEdited(from source: URL, isRaw: Bool, settings: DevelopSettings, assetId: String,
                       kind: Kind, originalModificationDate: Date? = nil) -> URL? {
-        let out = editedCachePath(assetId: assetId, kind: kind, settings: settings)
+        ensureEdited(from: source, isRaw: isRaw, settings: settings, fingerprint: settings.fingerprint,
+                     assetId: assetId, kind: kind, originalModificationDate: originalModificationDate)
+    }
+
+    /// `ensureEdited` named by `fingerprint`, the one the caller looked the file up by (a photo's
+    /// remembered one): settings equal to those it was made from can format otherwise (0 and -0),
+    /// and the render must land where it's looked for.
+    func ensureEdited(from source: URL, isRaw: Bool, settings: DevelopSettings, fingerprint: String, assetId: String,
+                      kind: Kind, originalModificationDate: Date? = nil) -> URL? {
+        let out = editedCachePath(assetId: assetId, kind: kind, fingerprint: fingerprint)
         if FileManager.default.fileExists(atPath: out.path),
            !Self.cacheIsStale(cache: out, originalModificationDate: originalModificationDate) {
             return out

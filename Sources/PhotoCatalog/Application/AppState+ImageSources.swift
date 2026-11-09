@@ -167,7 +167,7 @@ extension AppState {
         guard let source else { return nil }
         let assetId = asset.id
         guard let rendered = await ThumbnailRepairQueue.run(.visible, {
-            thumbnails.ensureEdited(from: source.url, isRaw: source.isRaw, settings: settings,
+            thumbnails.ensureEdited(from: source.url, isRaw: source.isRaw, settings: settings, fingerprint: fingerprint,
                                     assetId: assetId, kind: kind, originalModificationDate: asset.fileModifiedAt)
         }), let rendered else { return nil }
         markVerified(Self.cacheCheckKey(rendered.path, asset), for: assetId)
