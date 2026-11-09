@@ -6,12 +6,16 @@ extension AppState {
     /// Records how to take back the step that turned `before` into `after` (the same photos, in
     /// the same order). Undoing registers the reverse, which is what redo replays.
     private func registerUndo(from before: [Asset], to after: [Asset], actionName: String?) {
-        guard let actionName, let undoManager, !before.isEmpty else { return }
+        guard let actionName, !before.isEmpty else { return }
+        registerUndoStep(actionName) { $0.replayStep(from: after, to: before, actionName: actionName) }
+    }
+
+    /// Registers `undo` as an undo step named `name`; nothing without a name or an undo manager.
+    func registerUndoStep(_ name: String?, _ undo: @escaping @MainActor (AppState) -> Void) {
+        guard let name, let undoManager else { return }
         UndoSteps.register(on: undoManager) {
-            undoManager.registerUndo(withTarget: self) { app in
-                MainActor.assumeIsolated { app.replayStep(from: after, to: before, actionName: actionName) }
-            }
-            undoManager.setActionName(actionName)
+            undoManager.registerUndo(withTarget: self) { app in MainActor.assumeIsolated { undo(app) } }
+            undoManager.setActionName(name)
         }
     }
 
@@ -337,13 +341,7 @@ extension AppState {
                 push("快捷收藏保存失败", "warning")
             }
         }
-        guard let undoManager else { return }
-        UndoSteps.register(on: undoManager) {
-            undoManager.registerUndo(withTarget: self) { app in
-                MainActor.assumeIsolated { app.setQuickCollection(before, undoName: undoName) }
-            }
-            undoManager.setActionName(undoName)
-        }
+        registerUndoStep(undoName) { $0.setQuickCollection(before, undoName: undoName) }
     }
 
     func createAlbumFromSelection(in setId: String? = nil) {
