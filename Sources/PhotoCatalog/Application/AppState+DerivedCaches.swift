@@ -544,7 +544,8 @@ extension AppState {
         var leaving = Set<String>()
         var staying: [Asset] = []
         for edit in edits {
-            let (was, isIn) = (test(photos[edit.offset]), test(edit.asset))
+            // the edited photo stays where it was
+            let (was, isIn) = (test(photos[edit.offset], edit.offset), test(edit.asset, edit.offset))
             if isIn && !was { return nil }
             if was && !isIn { leaving.insert(edit.asset.id) } else if was { staying.append(edit.asset) }
         }
