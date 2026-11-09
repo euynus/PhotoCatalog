@@ -60,14 +60,11 @@ extension AppState {
             await Task.detached(priority: .utility) {
                 for a in real {
                     if let path = a.localPath {
-                        let original = URL(fileURLWithPath: path)
-                        _ = coordinator.thumbnails.generate(from: original, assetId: a.id, kind: .thumb256)
-                        _ = coordinator.thumbnails.generate(from: original, assetId: a.id, kind: .thumb512)
-                        _ = coordinator.thumbnails.generate(
-                            from: original,
-                            assetId: a.id,
-                            kind: ThumbnailService.previewKind(forCachePath: a.preview,
-                                                               fallbackMaxPixel: previewSize))
+                        // the original decoded once, for the preview, which the thumbnails are made
+                        // from, as an import makes them; the photo keeps its preview's size
+                        let kind = ThumbnailService.previewKind(forCachePath: a.preview, fallbackMaxPixel: previewSize)
+                        _ = coordinator.thumbnails.generateAll(from: URL(fileURLWithPath: path), assetId: a.id,
+                                                               previewMaxPixel: kind == .preview1600 ? 1600 : 2048)
                     }
                 }
             }.value
