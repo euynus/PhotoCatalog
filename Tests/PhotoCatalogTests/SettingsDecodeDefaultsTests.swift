@@ -2,13 +2,21 @@ import XCTest
 import CoreGraphics
 @testable import PhotoCatalog
 
-/// The nested settings types decode a missing key to its default and every key they write back
-/// to the same field. DevelopSettings substitutes a whole `LensBlur()`, `ColorGrading()` or
-/// `ColorMixer()` when its key is absent, so the "{}" checks of DevelopSettings never reach the
-/// defaults written into these types' own decoders.
+/// The nested settings types decode a missing key to its default, write every field under the
+/// key it has always had, and read each key back to the same field. DevelopSettings substitutes
+/// a whole `LensBlur()`, `ColorGrading()` or `ColorMixer()` when its key is absent, so the "{}"
+/// checks of DevelopSettings never reach the defaults written into these types' own decoders.
 final class SettingsDecodeDefaultsTests: XCTestCase {
     private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
         try JSONDecoder().decode(T.self, from: Data(json.utf8))
+    }
+
+    /// The names `value` is stored under. A renamed property changes its key, and photos edited
+    /// before would decode that field to its default: these lists change only on purpose.
+    private func assertStoredKeys<T: Encodable>(_ value: T, _ expected: [String],
+                                                file: StaticString = #filePath, line: UInt = #line) throws {
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? [String: Any]
+        XCTAssertEqual(object?.keys.sorted(), expected.sorted(), "\(T.self)'s stored keys", file: file, line: line)
     }
 
     private func roundTrip<T: Codable>(_ value: T) throws -> T {
@@ -35,6 +43,7 @@ final class SettingsDecodeDefaultsTests: XCTestCase {
         blur.range = 45
         assertEveryFieldChanged(blur, from: LensBlur())
         XCTAssertEqual(try roundTrip(blur), blur)
+        try assertStoredKeys(blur, ["amount", "enabled", "focus", "range"])
     }
 
     func testColorGrading() throws {
@@ -50,6 +59,7 @@ final class SettingsDecodeDefaultsTests: XCTestCase {
         assertEveryFieldChanged(grading, from: ColorGrading())
         assertEveryFieldChanged(grading.shadows, from: ColorGrading.Grade())
         XCTAssertEqual(try roundTrip(grading), grading)
+        try assertStoredKeys(grading, ["balance", "blending", "global", "highlights", "midtones", "shadows"])
     }
 
     func testColorMixer() throws {
@@ -60,6 +70,7 @@ final class SettingsDecodeDefaultsTests: XCTestCase {
         mixer.luminance = [11, 12, 13, 14, 15, 16, 17, 18]
         assertEveryFieldChanged(mixer, from: ColorMixer())
         XCTAssertEqual(try roundTrip(mixer), mixer)
+        try assertStoredKeys(mixer, ["hue", "luminance", "saturation"])
     }
 
     /// ToneCurve's decoder is the synthesized one, which needs every channel; it is always
@@ -72,6 +83,7 @@ final class SettingsDecodeDefaultsTests: XCTestCase {
         curve.blue = [CurvePoint(x: 0, y: 0), CurvePoint(x: 1, y: 0.9)]
         assertEveryFieldChanged(curve, from: ToneCurve())
         XCTAssertEqual(try roundTrip(curve), curve)
+        try assertStoredKeys(curve, ["blue", "green", "red", "rgb"])
     }
 
     func testLocalAdjustment() throws {
@@ -106,6 +118,11 @@ final class SettingsDecodeDefaultsTests: XCTestCase {
         defaults.id = ""
         assertEveryFieldChanged(mask, from: defaults)
         XCTAssertEqual(try roundTrip(mask), mask)
+        try assertStoredKeys(mask, [
+            "angle", "blacks", "center", "clarity", "contrast", "dehaze", "end", "exposure", "feather", "highlights",
+            "id", "inverted", "kind", "landscape", "part", "person", "prompt", "radiusX", "radiusY", "range",
+            "saturation", "shadows", "start", "strokes", "temperature", "texture", "tint", "whites"
+        ])
     }
 
     func testMaskRange() throws {
@@ -118,6 +135,7 @@ final class SettingsDecodeDefaultsTests: XCTestCase {
         range.amount = 60
         assertEveryFieldChanged(range, from: MaskRange(kind: .luminance))
         XCTAssertEqual(try roundTrip(range), range)
+        try assertStoredKeys(range, ["amount", "high", "kind", "low", "samples", "smoothness"])
     }
 
     func testBrushStroke() throws {
@@ -130,6 +148,7 @@ final class SettingsDecodeDefaultsTests: XCTestCase {
         stroke.erase = true
         assertEveryFieldChanged(stroke, from: BrushStroke())
         XCTAssertEqual(try roundTrip(stroke), stroke)
+        try assertStoredKeys(stroke, ["density", "erase", "feather", "points", "radius"])
     }
 
     func testSpotRemoval() throws {
@@ -152,6 +171,7 @@ final class SettingsDecodeDefaultsTests: XCTestCase {
         defaults.id = ""
         assertEveryFieldChanged(spot, from: defaults)
         XCTAssertEqual(try roundTrip(spot), spot)
+        try assertStoredKeys(spot, ["feather", "id", "mode", "opacity", "radius", "source", "strokes", "target"])
     }
 
     func testExportSettings() throws {
@@ -179,6 +199,11 @@ final class SettingsDecodeDefaultsTests: XCTestCase {
         export.revealInFinder = false
         assertEveryFieldChanged(export, from: ExportSettings())
         XCTAssertEqual(try roundTrip(export), export)
+        try assertStoredKeys(export, [
+            "allowEnlarge", "collision", "colorSpace", "edge", "fileNameTemplate", "format", "maxHeight", "maxWidth",
+            "metadata", "quality", "removeLocation", "resize", "revealInFinder", "sequenceStart", "sharpenAmount",
+            "sharpenFor", "sixteenBit", "subfolder", "watermark", "watermarkEnabled"
+        ])
     }
 
     func testPrintSettings() throws {
@@ -201,5 +226,9 @@ final class SettingsDecodeDefaultsTests: XCTestCase {
         settings.resolution = 240
         assertEveryFieldChanged(settings, from: PrintSettings())
         XCTAssertEqual(try roundTrip(settings), settings)
+        try assertStoredKeys(settings, [
+            "caption", "columns", "fill", "intent", "layout", "margin", "orientation", "paper", "profile",
+            "resolution", "rotateToFit", "rows", "sharpenAmount", "sharpenFor", "spacing"
+        ])
     }
 }
