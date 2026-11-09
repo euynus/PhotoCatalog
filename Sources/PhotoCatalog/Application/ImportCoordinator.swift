@@ -5,7 +5,6 @@
 // ============================================================
 import Foundation
 import CryptoKit
-import UniformTypeIdentifiers
 
 enum ImportMode: String, Sendable { case referenced, managed }
 
@@ -355,8 +354,7 @@ final class ImportCoordinator: @unchecked Sendable {
         let (thumb, preview) = thumbnails.generateAll(from: finalURL, assetId: assetId,
                                                       previewMaxPixel: previewMaxPixel)
         let ext = finalURL.pathExtension.uppercased()
-        let isRaw = UTType(filenameExtension: finalURL.pathExtension.lowercased())?.conforms(to: .rawImage) ?? false
-            || ["CR2", "CR3", "NEF", "ARW", "RAF", "ORF", "RW2", "DNG"].contains(ext)
+        let isRaw = FileScanner.isRaw(extension: finalURL.pathExtension.lowercased())
 
         var asset = Asset(
             id: assetId, pid: pid, ori: meta.width >= meta.height ? "l" : "p",

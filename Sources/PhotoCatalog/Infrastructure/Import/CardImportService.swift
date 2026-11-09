@@ -2,7 +2,6 @@
 //  Memory-card import — find cards, list their photos, copy them off
 // ============================================================
 import Foundation
-import UniformTypeIdentifiers
 
 /// A mounted volume with a camera's DCIM folder.
 struct CardVolume: Identifiable, Hashable, Sendable {
@@ -114,9 +113,7 @@ enum CardImportService {
         FileScanner.scan(root).compactMap { url -> CardFile? in
             let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
             let size = Int64(values?.fileSize ?? 0)
-            let ext = url.pathExtension.lowercased()
-            let isRaw = UTType(filenameExtension: ext)?.conforms(to: .rawImage) ?? false
-                || ["cr2", "cr3", "nef", "arw", "raf", "orf", "rw2", "dng"].contains(ext)
+            let isRaw = FileScanner.isRaw(extension: url.pathExtension.lowercased())
             var file = CardFile(url: url, size: size, modified: values?.contentModificationDate ?? .distantPast,
                                 isRaw: isRaw)
             file.alreadyImported = catalog.contains(name: url.lastPathComponent, size: size,
