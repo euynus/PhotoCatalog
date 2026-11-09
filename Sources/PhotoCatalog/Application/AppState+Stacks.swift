@@ -108,7 +108,7 @@ extension AppState {
     /// The photos `pairing` shows that name a camera, in capture order (as
     /// `PhotoStackService.captureTimeGroups` orders them): their keys read in chunks side by
     /// side, then sorted in runs side by side and merged.
-    nonisolated static func captureOrder(of assets: [Asset], pairing: AssetPairing, chunk: Int = 65_536,
+    nonisolated static func captureOrder(of assets: [Asset], pairing: AssetPairing, chunk: Int = 8_192,
                                          run: Int = 16_384) -> PhotoStackService.CaptureOrder {
         typealias Key = PhotoStackService.CaptureKey
         // the photos through a pointer: threads reading one array retained its buffer by turns

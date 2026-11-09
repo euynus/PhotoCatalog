@@ -44,7 +44,7 @@ enum EditedVersions {
 
     /// Each original with its edited copies, as groups for stacking. The original is the RAW
     /// when a RAW and a JPEG share its name; virtual copies take no part.
-    static func groups(_ assets: [Asset], chunk: Int = 65_536) -> [DuplicateGroup] {
+    static func groups(_ assets: [Asset], chunk: Int = 8_192) -> [DuplicateGroup] {
         Index(assets, chunk: chunk).groups(of: assets)
     }
 
@@ -65,7 +65,7 @@ enum EditedVersions {
         /// Both passes over the photos run in chunks side by side, joined in catalog order: on
         /// one thread they took ~60 ms at 500k photos without edited copies, ~500 ms with some,
         /// after every structural change.
-        init(_ assets: [Asset], chunk: Int = 65_536) {
+        init(_ assets: [Asset], chunk: Int = 8_192) {
             count = assets.count
             let found = PhotoStackService.found(in: assets, chunk: chunk) { asset, position in
                 EditedVersions.editedCopy(asset).map { (position: position, dir: $0.dir, key: $0.key) }

@@ -9,7 +9,7 @@ enum PhotoStackService {
     /// a photo already in a stack isn't taken again. Each stack's id is worked out in chunks
     /// side by side: one by one they took ~20 ms for 30k stacks.
     static func stacks(from groups: [DuplicateGroup], captureTimeGroups: [[String]] = [],
-                       chunk: Int = 4_096) -> [PhotoStack] {
+                       chunk: Int = 1_024) -> [PhotoStack] {
         var used = Set<String>(minimumCapacity: groups.reduce(0) { $0 + $1.items.count }
                                    + captureTimeGroups.reduce(0) { $0 + $1.count })
         var members: [(method: String, ids: [String])] = []

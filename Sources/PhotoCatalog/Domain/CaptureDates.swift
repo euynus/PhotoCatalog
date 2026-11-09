@@ -151,7 +151,7 @@ enum CaptureDates {
     /// How many of the photos as shown were taken on each day, by days since 1970, counted in
     /// chunks on every core. Capture times are UTC wall clock, so a photo's day is integer
     /// arithmetic; a Calendar call per photo was most of the half second this took at 500k photos.
-    static func dayCounts(_ assets: [Asset], pairing: AssetPairing, chunk: Int = 65_536) -> [Int: Int] {
+    static func dayCounts(_ assets: [Asset], pairing: AssetPairing, chunk: Int = 8_192) -> [Int: Int] {
         func count(_ range: Range<Int>) -> [Int: Int] {
             var days: [Int: Int] = [:]
             for position in range where pairing.isShown(assets[position], at: position) {
