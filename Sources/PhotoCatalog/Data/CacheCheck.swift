@@ -46,6 +46,8 @@ enum CacheCheck {
             app.runsBackgroundMaintenance = true
             app.backfillThumbnails()
             CheckWait.until(backgroundPass) { !app.isBackfilling }
+            // a pass still running would be read as finished below, and taken for the next pass
+            check(!app.isBackfilling, "cache: the background pass ends within \(Int(backgroundPass)) s")
             CheckWait.until(2) { false }   // the prune after the pass
             app.runsBackgroundMaintenance = false
         }
@@ -70,7 +72,9 @@ enum CacheCheck {
         app.configureTaskHistory()
         let publishes = TaskListPublishes(app)
         app.runsBackgroundMaintenance = true
+        let generation = app.backfillGeneration
         app.backfillThumbnails()
+        check(app.backfillGeneration != generation, "cache: the second pass starts")
         CheckWait.until(backgroundPass, poll: 0.002) { !app.isBackfilling }
         // from the update saying it runs, the second: not the 750 ms it waits for the window first
         let elapsed = publishes.times.count > 1 ? Date().timeIntervalSince(publishes.times[1]) : .infinity
@@ -112,11 +116,13 @@ enum CacheCheck {
         let modified: Date
     }
 
+    /// The cache files in `folder`, less one being written (`.tmp-…`, not a cached image yet).
     private static func files(in folder: URL) -> [CachedFile] {
         let keys: [URLResourceKey] = [.fileSizeKey, .isRegularFileKey, .contentModificationDateKey]
         let enumerator = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys)
         return (enumerator?.compactMap { $0 as? URL } ?? []).compactMap { url in
-            guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { return nil }
+            guard !url.lastPathComponent.hasPrefix(".tmp-"),
+                  let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { return nil }
             return CachedFile(url: url, size: Int64(values.fileSize ?? 0), modified: values.contentModificationDate ?? .distantPast)
         }
     }
