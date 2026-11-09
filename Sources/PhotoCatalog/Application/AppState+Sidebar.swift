@@ -558,10 +558,7 @@ extension AppState {
     }
 
     func managementDisplayText(for asset: Asset) -> String {
-        switch managementMode(for: asset) {
-        case .managed: return L("复制到目录库")
-        case .referenced: return L("原位添加")
-        }
+        managementMode(for: asset).displayName
     }
 
     func managementMode(for asset: Asset) -> ImportMode {
