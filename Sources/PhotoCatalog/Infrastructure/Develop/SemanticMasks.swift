@@ -67,8 +67,7 @@ enum SemanticMasks {
     }()
     /// One lock per mask being computed, so two renders of a photo share one computation while
     /// other photos go ahead.
-    private static let locksLock = NSLock()
-    nonisolated(unsafe) private static var locks: [String: (lock: NSLock, users: Int)] = [:]
+    private static let computing = KeyedLocks()
 
     /// The mask for `kind` (subject or sky), or nil when the photo has none or can't be read.
     static func mask(_ kind: LocalAdjustment.Kind, url: URL, isRaw: Bool) -> Result? {
@@ -79,17 +78,7 @@ enum SemanticMasks {
         let key = "\(kind.rawValue)|" + fileKey(url)
         if let hit = results.lookup(key) { return hit }
         // Vision and the RAW decode are the slow part: done once per mask, not once per render
-        let lock = locksLock.withLock {
-            let entry = locks[key] ?? (NSLock(), 0)
-            locks[key] = (entry.lock, entry.users + 1)
-            return entry.lock
-        }
-        defer {
-            locksLock.withLock {
-                if let entry = locks[key] { locks[key] = entry.users > 1 ? (entry.lock, entry.users - 1) : nil }
-            }
-        }
-        return lock.withLock {
+        return computing.withLock(key) {
             if let hit = results.lookup(key) { return hit }
             guard let image = canonical(url: url, isRaw: isRaw) else { return .unreadable }
             let result: Result? = switch kind {
