@@ -299,6 +299,9 @@ extension AppState {
                     : fresh.map(\.id).filter { !albums[index].assetIds.contains($0) }
                 albums[index].assetIds.append(contentsOf: added)
             } else {
+                // a new album of photos still to come counts none until they're added, as a recount
+                // gives it: a batch none of whose photos is shown (JPEGs behind their RAWs) moves nothing
+                if albumsGainOnlyPhotosToCome { sidebarCountIndexCache?.counts.albums[albumId] = 0 }
                 albums.append(Album(id: albumId, name: albumName, assetIds: fresh.map(\.id)))
             }
         }
