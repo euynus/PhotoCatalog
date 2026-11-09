@@ -338,8 +338,10 @@ extension AppState {
         quickCollection = members
         if let store {
             do {
-                try store.saveAlbum(Album(id: Self.quickCollectionID, name: L("快捷收藏"), assetIds: members.sorted()),
-                                    sortOrder: -1)
+                // only the photos that came or went: the others' rows stay
+                try store.updateAlbumMembers(albumId: Self.quickCollectionID, name: L("快捷收藏"), sortOrder: -1,
+                                             adding: members.subtracting(before),
+                                             removing: before.subtracting(members))
             } catch {
                 push("快捷收藏保存失败", "warning")
             }
