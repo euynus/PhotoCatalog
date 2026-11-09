@@ -1,8 +1,6 @@
 import CoreGraphics
 import CoreImage
 import Foundation
-import ImageIO
-import UniformTypeIdentifiers
 
 /// Lens blur: every develop kernel compiles; the setting persists and travels as one; a depth
 /// map stores, reads and lines up with the photo; the blur falls outside the band in focus; the
@@ -79,15 +77,6 @@ enum LensBlurCheck {
         return pixel[0]
     }
 
-    /// Writes `image` to a temporary PNG, as a photo on disk.
-    private static func pngFile(_ image: CGImage) -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-lensblur-\(UUID().uuidString).png")
-        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
-        CGImageDestinationAddImage(destination, image, nil)
-        CGImageDestinationFinalize(destination)
-        return url
-    }
-
     /// A `width` × `height` RGB image from a color per pixel, rows from the top.
     private static func picture(_ width: Int, _ height: Int, _ color: (Int, Int) -> (Double, Double, Double)) -> CGImage {
         var pixels = [UInt8](repeating: 255, count: width * height * 4)
@@ -117,7 +106,7 @@ enum LensBlurCheck {
     private static func checkRendering() {
         // fine stripes everywhere; the top half far away, the bottom half near
         let stripes = picture(256, 256) { x, _ in x / 2 % 2 == 0 ? (0.2, 0.2, 0.2) : (0.8, 0.8, 0.8) }
-        let url = pngFile(stripes)
+        let url = CheckImages.temporaryPNG(stripes, prefix: "pc-lensblur-")
         defer { try? FileManager.default.removeItem(at: url) }
         DepthMap.remember(DepthMap.Map(width: 4, height: 4, values: (0..<16).map { $0 < 8 ? 0.1 : 0.9 }), for: url)
         let source = DevelopRenderer.Source(url: url, isRaw: false, maxPixel: nil)!
@@ -174,7 +163,7 @@ enum LensBlurCheck {
             let light = (Int(floor(across * 4)) + Int(floor(distance * 4))) % 2 == 0
             return light ? (0.85, 0.82, 0.75) : (0.3, 0.25, 0.2)
         }
-        let url = pngFile(scene)
+        let url = CheckImages.temporaryPNG(scene, prefix: "pc-lensblur-")
         defer { try? FileManager.default.removeItem(at: url) }
         guard let map = DepthMap.compute(url: url, isRaw: false) else { return assertionFailure("the depth model ran") }
         let near = map.depth(at: CGPoint(x: 0.5, y: 0.95)), far = map.depth(at: CGPoint(x: 0.5, y: 0.45))

@@ -5,39 +5,6 @@ import ColorSync
 import CoreGraphics
 import Foundation
 
-/// How Develop proofs the photo (Lightroom's Soft Proofing): the profile it's shown through,
-/// the rendering intent, whether paper white and ink black are simulated, and whether colors
-/// the profile can't hold are marked.
-struct SoftProof: Codable, Equatable, Sendable {
-    enum Intent: String, Codable, CaseIterable, Identifiable, Sendable {
-        case perceptual, relative
-
-        var id: Self { self }
-        var title: String {
-            switch self {
-            case .perceptual: L("可感知")
-            case .relative: L("相对比色")
-            }
-        }
-    }
-
-    /// A built-in space ("sRGB", "displayP3", "adobeRGB") or the path of an ICC profile.
-    var profile = "sRGB"
-    var intent = Intent.perceptual
-    var simulatePaper = false
-    var gamutWarning = false
-
-    init() {}
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        profile = try c.decodeIfPresent(String.self, forKey: .profile) ?? "sRGB"
-        intent = try c.decodeIfPresent(Intent.self, forKey: .intent) ?? .perceptual
-        simulatePaper = try c.decodeIfPresent(Bool.self, forKey: .simulatePaper) ?? false
-        gamutWarning = try c.decodeIfPresent(Bool.self, forKey: .gamutWarning) ?? false
-    }
-}
-
 enum SoftProofing {
     /// A profile to proof with.
     struct Profile: Identifiable, Hashable, Sendable {
@@ -178,7 +145,7 @@ enum SoftProofing {
 
     /// How 8-bit pixels lie in memory: RGB with a fourth byte skipped, or `n` packed components
     /// (RGB, CMYK or gray).
-    private enum Layout {
+    enum Layout {
         case rgbx
         case plain(Int)
 
@@ -214,13 +181,19 @@ enum SoftProofing {
     /// Pixels ColorSync converts in one call. It works through a call in float buffers of 12–16
     /// bytes a pixel, which malloc keeps dirty once freed: converted whole, a print photo left
     /// some 180 MB behind. A band of rows this size leaves a megabyte or two.
-    private static let bandPixels = 1 << 16
+    static let bandPixels = 1 << 16
 
-    /// The same, from `pixels` into `output`, a band of rows at a time (see `bandPixels`).
-    private static func convert(_ pixels: UnsafeRawPointer, _ size: (width: Int, height: Int),
-                                from source: (profile: ColorSyncProfile, layout: Layout),
-                                to destination: (profile: ColorSyncProfile, layout: Layout),
-                                intent: String, into output: UnsafeMutableRawPointer) -> Bool {
+    /// Threads that convert one image at most. ColorSync works through a call on one thread, so
+    /// runs of bands converted at once finish sooner; but each thread leaves its own float
+    /// buffers dirty in malloc, so a few are enough.
+    static let maxWorkers = min(4, ProcessInfo.processInfo.activeProcessorCount)
+
+    /// The same, from `pixels` into `output`, a band of rows at a time (see `bandPixels`), the
+    /// bands split into up to `workers` runs converted at once.
+    static func convert(_ pixels: UnsafeRawPointer, _ size: (width: Int, height: Int),
+                        from source: (profile: ColorSyncProfile, layout: Layout),
+                        to destination: (profile: ColorSyncProfile, layout: Layout),
+                        intent: String, into output: UnsafeMutableRawPointer, workers: Int = maxWorkers) -> Bool {
         let key = { (k: Unmanaged<CFString>) in k.takeUnretainedValue() as String }
         let steps: [[String: Any]] = [
             [key(kColorSyncProfile): source.profile, key(kColorSyncRenderingIntent): intent,
@@ -228,18 +201,31 @@ enum SoftProofing {
             [key(kColorSyncProfile): destination.profile, key(kColorSyncRenderingIntent): intent,
              key(kColorSyncTransformTag): kColorSyncTransformPCSToDevice.takeUnretainedValue()],
         ]
-        guard size.width > 0, size.height > 0,
-              let transform = ColorSyncTransformCreate(steps as CFArray, nil)?.takeRetainedValue() else { return false }
+        guard size.width > 0, size.height > 0 else { return false }
         let sourceRow = size.width * source.layout.bytes, destinationRow = size.width * destination.layout.bytes
         let band = max(1, bandPixels / size.width)
-        for top in stride(from: 0, to: size.height, by: band) {
-            let rows = min(band, size.height - top)
-            guard ColorSyncTransformConvert(transform, size.width, rows, output + top * destinationRow, kColorSync8BitInteger,
-                                            destination.layout.colorSync, destinationRow,
-                                            pixels + top * sourceRow, kColorSync8BitInteger, source.layout.colorSync,
-                                            sourceRow, nil) else { return false }
+        let bands = (size.height - 1) / band + 1
+        /// The rows of `run`'s bands, through a transform of their own: one isn't shared across threads.
+        func convert(_ run: Range<Int>) -> Bool {
+            guard let transform = ColorSyncTransformCreate(steps as CFArray, nil)?.takeRetainedValue() else { return false }
+            for top in stride(from: run.lowerBound * band, to: min(size.height, run.upperBound * band), by: band) {
+                let rows = min(band, size.height - top)
+                guard ColorSyncTransformConvert(transform, size.width, rows, output + top * destinationRow, kColorSync8BitInteger,
+                                                destination.layout.colorSync, destinationRow,
+                                                pixels + top * sourceRow, kColorSync8BitInteger, source.layout.colorSync,
+                                                sourceRow, nil) else { return false }
+            }
+            return true
         }
-        return true
+        let runs = min(workers, bands)
+        guard runs > 1 else { return convert(0..<bands) }
+        // contiguous runs of whole bands: the same ColorSync calls one thread makes, so the same bytes
+        let lock = NSLock()
+        var failed = false
+        DispatchQueue.concurrentPerform(iterations: runs) { index in
+            if !convert(index * bands / runs ..< (index + 1) * bands / runs) { lock.withLock { failed = true } }
+        }
+        return !failed
     }
 
     /// Display P3 RGBA bytes of `image`.

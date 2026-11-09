@@ -1,7 +1,5 @@
 import Foundation
 import CoreImage
-import ImageIO
-import UniformTypeIdentifiers
 
 /// Develop adjustments render in the right direction, persist, and undo.
 enum DevelopCheck {
@@ -56,11 +54,8 @@ enum DevelopCheck {
     /// Renders `settings` on `image` through a PNG file, as the app renders a photo.
     static func develop(_ image: CGImage, _ settings: DevelopSettings, wholeFrame: Bool = false,
                                 overlayMask: String? = nil) -> CGImage {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-develop-\(UUID().uuidString).png")
+        let url = CheckImages.temporaryPNG(image, prefix: "pc-develop-")
         defer { try? FileManager.default.removeItem(at: url) }
-        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
-        CGImageDestinationAddImage(destination, image, nil)
-        CGImageDestinationFinalize(destination)
         let source = DevelopRenderer.Source(url: url, isRaw: false, maxPixel: nil)!
         return DevelopRenderer.render(source.image(settings, wholeFrame: wholeFrame, overlayMask: overlayMask)!)!
     }
@@ -126,10 +121,6 @@ enum DevelopCheck {
 
     /// Writes `image` to a temporary PNG, as a photo on disk for the automatic adjustments.
     static func pngFile(_ image: CGImage) -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-auto-\(UUID().uuidString).png")
-        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
-        CGImageDestinationAddImage(destination, image, nil)
-        CGImageDestinationFinalize(destination)
-        return url
+        CheckImages.temporaryPNG(image, prefix: "pc-auto-")
     }
 }

@@ -61,8 +61,9 @@ enum PhotoMerge {
         }
     }
 
-    /// Frames are lined up on renders this size, and deghosting measures exposures on them.
-    private static let analysisPixel = 1024
+    /// Frames are lined up on renders this size, and deghosting measures exposures on them. An
+    /// HDR preview asked at this size merges those renders rather than decoding each frame again.
+    static let analysisPixel = 1024
 
     // ---- HDR ----
     /// The HDR merge of `frames` at `maxPixel` (nil: full size), in the working space, and the
@@ -189,8 +190,9 @@ enum PhotoMerge {
     /// rectangle they all fill. `maxPixel` bounds the frames' size (nil: full size).
     static func panorama(_ frames: [Frame], maxPixel: Int?) -> Result<CIImage, PanoramaFailure> {
         guard frames.count >= 2 else { return .failure(.unreadable) }
-        let small = frames.compactMap { decode($0, maxPixel: analysisPixel) }
-        guard small.count == frames.count else { return .failure(.unreadable) }
+        let decoded = frames.compactMap { decodeWithSize($0, maxPixel: analysisPixel) }
+        guard decoded.count == frames.count else { return .failure(.unreadable) }
+        let small = decoded.map(\.image)
         let size = small[0].extent.size
         let f = panoramaFocal35(frames) * Double(hypot(size.width, size.height)) / 43.27
 
@@ -202,16 +204,24 @@ enum PhotoMerge {
             return .failure(.unreadable)
         }
 
-        // full size (or as large as the panorama may be), in the same layout
-        let fullLongEdge = decode(frames[0], maxPixel: nil).map { max($0.extent.width, $0.extent.height) }
-            ?? max(size.width, size.height)
+        // full size (or as large as the panorama may be), in the same layout. The file says how
+        // large it is; a RAW's full render can differ from its native size by a few pixels, so
+        // its long edge is measured on one.
+        let fullLongEdge = frames[0].isRaw
+            ? decode(frames[0], maxPixel: nil).map { max($0.extent.width, $0.extent.height) } ?? max(size.width, size.height)
+            : decoded[0].fullLongEdge
         let smallLong = max(size.width, size.height)
         var scale = fullLongEdge / smallLong
         let canvasLong = max(plan.canvas.width, plan.canvas.height) * scale
         if canvasLong > CGFloat(maxPanoramaPixel) { scale *= CGFloat(maxPanoramaPixel) / canvasLong }
         if let maxPixel { scale = min(scale, CGFloat(maxPixel) / smallLong) }
         let pixel = Int((smallLong * scale).rounded())
-        let full = frames.compactMap { decode($0, maxPixel: pixel) }
+        // a preview no larger than the frames were lined up at scales those down rather than
+        // decoding each frame again (not a RAW: decoded smaller, it develops a little differently)
+        let full = frames.indices.compactMap { index -> CIImage? in
+            if maxPixel != nil, pixel <= analysisPixel, !frames[index].isRaw { return downscaled(small[index], longEdge: pixel) }
+            return decode(frames[index], maxPixel: pixel)
+        }
         guard full.count == frames.count else { return .failure(.unreadable) }
         let ratio = full[0].extent.width / size.width
         let canvas = CGRect(x: 0, y: 0, width: (plan.canvas.width * ratio).rounded(.up),
@@ -508,8 +518,28 @@ enum PhotoMerge {
     // ---- frames ----
     /// The photo as shot (neutral develop settings), at `maxPixel`, with its origin at zero.
     static func decode(_ frame: Frame, maxPixel: Int?) -> CIImage? {
-        DevelopRenderer.Source(url: frame.url, isRaw: frame.isRaw, maxPixel: maxPixel, interactive: false)?
-            .image(.neutral).map(atOrigin)
+        decodeWithSize(frame, maxPixel: maxPixel)?.image
+    }
+
+    /// `decode`, with the long edge of the frame at full size.
+    static func decodeWithSize(_ frame: Frame, maxPixel: Int?) -> (image: CIImage, fullLongEdge: CGFloat)? {
+        guard let source = DevelopRenderer.Source(url: frame.url, isRaw: frame.isRaw, maxPixel: maxPixel, interactive: false),
+              let image = source.image(.neutral) else { return nil }
+        return (atOrigin(image), source.fullLongEdge)
+    }
+
+    /// `image` (at the origin) scaled down to `longEdge` pixels on its long side, as a decode
+    /// that size would be; as it is when it's no larger.
+    static func downscaled(_ image: CIImage, longEdge: Int) -> CIImage {
+        let extent = image.extent
+        let long = max(extent.width, extent.height)
+        guard CGFloat(longEdge) < long else { return image }
+        let scale = CGFloat(longEdge) / long
+        // whole pixels, like a decode, with the edges repeated rather than faded out
+        let size = CGRect(x: 0, y: 0, width: (extent.width * scale).rounded(), height: (extent.height * scale).rounded())
+        return image.clampedToExtent()
+            .applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1])
+            .cropped(to: size)
     }
 
     /// The middle exposure: by the metadata when every frame has it, else by how bright each looks.

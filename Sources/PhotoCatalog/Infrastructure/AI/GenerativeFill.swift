@@ -273,12 +273,8 @@ enum GenerativeFill {
         }
         let healed = DevelopKernels.heal(patch, sourceRing: surroundings(patch), targetRing: surroundings(image),
                                          extent: extent) ?? patch
-        let strength = grown.applyingGaussianBlur(sigma: reach * 0.5).cropped(to: extent)
-            .applyingFilter("CIColorMatrix", parameters: [
-                "inputRVector": CIVector(x: opacity / 100, y: 0, z: 0, w: 0),
-                "inputGVector": CIVector(x: 0, y: opacity / 100, z: 0, w: 0),
-                "inputBVector": CIVector(x: 0, y: 0, z: opacity / 100, w: 0),
-            ])
+        let strength = DevelopRenderer.scaled(grown.applyingGaussianBlur(sigma: reach * 0.5).cropped(to: extent),
+                                              by: opacity / 100)
         return healed.applyingFilter("CIBlendWithMask", parameters: [
             kCIInputBackgroundImageKey: image, kCIInputMaskImageKey: strength,
         ]).cropped(to: extent)

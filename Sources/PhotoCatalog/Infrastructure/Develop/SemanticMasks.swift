@@ -67,8 +67,7 @@ enum SemanticMasks {
     }()
     /// One lock per mask being computed, so two renders of a photo share one computation while
     /// other photos go ahead.
-    private static let locksLock = NSLock()
-    nonisolated(unsafe) private static var locks: [String: (lock: NSLock, users: Int)] = [:]
+    private static let computing = KeyedLocks()
 
     /// The mask for `kind` (subject or sky), or nil when the photo has none or can't be read.
     static func mask(_ kind: LocalAdjustment.Kind, url: URL, isRaw: Bool) -> Result? {
@@ -79,17 +78,7 @@ enum SemanticMasks {
         let key = "\(kind.rawValue)|" + fileKey(url)
         if let hit = results.lookup(key) { return hit }
         // Vision and the RAW decode are the slow part: done once per mask, not once per render
-        let lock = locksLock.withLock {
-            let entry = locks[key] ?? (NSLock(), 0)
-            locks[key] = (entry.lock, entry.users + 1)
-            return entry.lock
-        }
-        defer {
-            locksLock.withLock {
-                if let entry = locks[key] { locks[key] = entry.users > 1 ? (entry.lock, entry.users - 1) : nil }
-            }
-        }
-        return lock.withLock {
+        return computing.withLock(key) {
             if let hit = results.lookup(key) { return hit }
             guard let image = canonical(url: url, isRaw: isRaw) else { return .unreadable }
             let result: Result? = switch kind {
@@ -291,13 +280,9 @@ enum SemanticMasks {
         return context.makeImage()
     }
 
+    /// Display P3 RGBA bytes of `image` (one readback, SoftProofing's, for both).
     static func rgba(_ image: CGImage) -> [UInt8]? {
-        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
-        guard let context = CGContext(data: &pixels, width: image.width, height: image.height, bitsPerComponent: 8,
-                                      bytesPerRow: image.width * 4, space: DevelopRenderer.outputColorSpace,
-                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
-        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-        return pixels
+        SoftProofing.rgba(image)
     }
 
     /// Mean luma gradient over a 5 × 5 window: how busy each pixel's neighborhood is.

@@ -3,12 +3,40 @@ import Foundation
 extension CatalogStore {
     // ---------- develop settings ----------
     func loadDevelopSettings() throws -> [String: DevelopSettings] {
-        let decoder = JSONDecoder()
+        // only copied under the database lock; decoded after it is released
+        let rows = try db.queryRows("SELECT asset_id, settings FROM develop_settings;") { row -> (String, Data)? in
+            guard let id = row.text(0), !row.isNull(1) else { return nil }
+            return (id, Data(buffer: row.bytes(1)))
+        }
+        return Self.decodeDevelopSettings(rows)
+    }
+
+    /// Stored settings by photo, skipping any row that doesn't decode. A catalog with many
+    /// edited photos decodes in parallel chunks of `chunk` rows, each with its own decoder.
+    static func decodeDevelopSettings(_ rows: [(String, Data)], chunk: Int = 512,
+                                      serialBelow: Int = 1_000) -> [String: DevelopSettings] {
+        func decode(_ range: Range<Int>) -> [(String, DevelopSettings)] {
+            let decoder = JSONDecoder()
+            return rows[range].compactMap { id, json in
+                (try? decoder.decode(DevelopSettings.self, from: json)).map { (id, $0) }
+            }
+        }
+        let chunk = max(chunk, 1)
+        let chunks = rows.isEmpty ? 0 : (rows.count - 1) / chunk + 1
+        guard rows.count >= serialBelow, chunks > 1 else {
+            return Dictionary(decode(rows.indices), uniquingKeysWith: { $1 })
+        }
+        let lock = NSLock()
+        var parts = [[(String, DevelopSettings)]](repeating: [], count: chunks)
+        DispatchQueue.concurrentPerform(iterations: chunks) { index in
+            let part = decode(index * chunk ..< min(rows.count, (index + 1) * chunk))
+            lock.withLock { parts[index] = part }
+        }
         var result: [String: DevelopSettings] = [:]
-        for row in try db.query("SELECT asset_id, settings FROM develop_settings;") {
-            guard let id = row.text("asset_id"), let json = row.text("settings"),
-                  let settings = try? decoder.decode(DevelopSettings.self, from: Data(json.utf8)) else { continue }
-            result[id] = settings
+        result.reserveCapacity(rows.count)
+        // asset_id is the key, so no two rows are the same photo's
+        for part in parts {
+            for (id, settings) in part { result[id] = settings }
         }
         return result
     }
@@ -16,6 +44,12 @@ extension CatalogStore {
     /// Stores `settings` for each asset; neutral settings delete the row (the photo is as shot).
     func saveDevelopSettings(_ settings: [String: DevelopSettings]) throws {
         try db.transaction { try writeDevelopSettings(settings) }
+    }
+
+    /// As `saveDevelopSettings(_:)`, with the stored text of some of the values already encoded
+    /// (`DevelopHistoryStep.json`); the others are encoded here.
+    func saveDevelopSettings(_ settings: [String: DevelopSettings], json: [String: String]) throws {
+        try db.transaction { try writeDevelopSettings(settings, json: json) }
     }
 
     /// Virtual copies with the develop settings they start from, in one transaction: a copy is
@@ -27,14 +61,14 @@ extension CatalogStore {
         }
     }
 
-    private func writeDevelopSettings(_ settings: [String: DevelopSettings]) throws {
+    private func writeDevelopSettings(_ settings: [String: DevelopSettings], json encoded: [String: String] = [:]) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         for (id, value) in settings {
             if value.isNeutral {
                 try db.run("DELETE FROM develop_settings WHERE asset_id=?;", [.text(id)])
             } else {
-                let json = String(decoding: try encoder.encode(value), as: UTF8.self)
+                let json = try encoded[id] ?? String(decoding: encoder.encode(value), as: UTF8.self)
                 try db.run("""
                 INSERT INTO develop_settings(asset_id, settings, updated_at) VALUES(?, ?, ?)
                 ON CONFLICT(asset_id) DO UPDATE SET settings=excluded.settings, updated_at=excluded.updated_at;
@@ -82,11 +116,19 @@ extension CatalogStore {
     @discardableResult
     func appendDevelopHistory(_ steps: [String: (name: String, settings: DevelopSettings)], date: Date = .now) throws
         -> [String: DevelopHistoryStep] {
+        try appendDevelopHistory(steps.mapValues { (name: $0.name, json: DevelopHistoryStep.json($0.settings)) },
+                                 date: date)
+    }
+
+    /// As above, with each step's settings already in their stored form (`DevelopHistoryStep.json`).
+    @discardableResult
+    func appendDevelopHistory(_ steps: [String: (name: String, json: String)], date: Date = .now) throws
+        -> [String: DevelopHistoryStep] {
         var stored: [String: DevelopHistoryStep] = [:]
         let created = Self.iso(date)
         try db.transaction {
             for (id, step) in steps {
-                let json = DevelopHistoryStep.json(step.settings)
+                let json = step.json
                 // one statement numbers and inserts the step
                 guard let seq = try db.queryMap("""
                 INSERT INTO develop_history(asset_id, seq, name, created_at, settings)

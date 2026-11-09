@@ -37,6 +37,17 @@ struct DevelopHistoryStep: Equatable, Sendable, Identifiable {
         return (try? encoder.encode(settings)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
     }
 
+    /// The stored form of each photo's settings, encoded once for both the settings and the
+    /// history tables. Throws rather than store "{}": a value that can't be encoded isn't saved.
+    static func json(_ settings: [String: DevelopSettings]) throws -> [String: String] {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        var result: [String: String] = [:]
+        result.reserveCapacity(settings.count)
+        for (id, value) in settings { result[id] = String(decoding: try encoder.encode(value), as: UTF8.self) }
+        return result
+    }
+
     /// Steps kept per photo; older ones are dropped.
     static let limit = 100
 }
@@ -53,5 +64,9 @@ struct DevelopSnapshot: Equatable, Sendable, Identifiable {
 /// that step away again, and redoing puts it back.
 enum DevelopHistoryChange: Sendable {
     case append
-    case revert
+    /// Only the photos whose step was stored: one that failed to store has none to take away.
+    case revert(Set<String>)
+    /// Redoing an undone edit: a step again for each photo but these, whose step the undo
+    /// couldn't take away and which still have it.
+    case appendSkipping(Set<String>)
 }

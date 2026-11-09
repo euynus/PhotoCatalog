@@ -1,7 +1,5 @@
 import Foundation
 import CoreImage
-import ImageIO
-import UniformTypeIdentifiers
 
 extension DevelopCheck {
     /// 64 × 32: red left half, blue right half.
@@ -284,11 +282,8 @@ extension DevelopCheck {
         context.addLines(between: [CGPoint(x: 0, y: 0), CGPoint(x: 0, y: 250 - rise),
                                    CGPoint(x: 800, y: 250 + rise), CGPoint(x: 800, y: 0)])
         context.fillPath()
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-horizon-\(UUID().uuidString).png")
+        let url = CheckImages.temporaryPNG(context.makeImage()!, prefix: "pc-horizon-")
         defer { try? FileManager.default.removeItem(at: url) }
-        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
-        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
-        CGImageDestinationFinalize(destination)
         let horizon = DevelopRenderer.horizonAngle(url: url, isRaw: false, settings: DevelopSettings())
         assert(horizon.map { (3...5).contains($0) } == true, "auto straighten levels a horizon rising to the right")
     }

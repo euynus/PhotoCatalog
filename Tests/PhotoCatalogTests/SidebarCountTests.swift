@@ -8,13 +8,9 @@ final class SidebarCountTests: CatalogTestCase {
 
     private func photo(_ id: String, _ name: String, raw: Bool, offset: TimeInterval = 0, rating: Int = 0,
                        keywords: [String] = [], project: String = "") -> Asset {
-        var asset = Asset(id: id, pid: 0, ori: "l", thumb: "", preview: "", filename: name,
-                          type: raw ? "CR3" : "JPEG", isRaw: raw, folderId: "day", folderName: "2026-10-12",
-                          date: shot.addingTimeInterval(offset), width: 6000, height: 4000, orientation: 1,
-                          camera: "Canon EOS R5", lens: "", focal: 50, aperture: 4, shutter: "1/100", iso: 100,
-                          colorSpace: "sRGB", fileMB: 1, rating: rating, flag: .none, keywords: keywords,
-                          title: "", caption: "", location: "", gps: (0, 0), status: .ready, importedAt: shot,
-                          localPath: scratch.appendingPathComponent(name).path)
+        var asset = Asset.dayShot(id, name, type: raw ? "CR3" : "JPEG", isRaw: raw, camera: "Canon EOS R5",
+                                  date: shot.addingTimeInterval(offset), importedAt: shot, rating: rating,
+                                  keywords: keywords, localPath: scratch.appendingPathComponent(name).path, isDemo: true)
         asset.project = project
         return asset
     }

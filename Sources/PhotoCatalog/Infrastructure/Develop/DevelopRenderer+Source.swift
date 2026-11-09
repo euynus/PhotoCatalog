@@ -31,7 +31,7 @@ extension DevelopRenderer {
         private(set) var sourceSize: CGSize?
         /// Long edge of the original at full resolution: detail radii are given at that size and
         /// scale down with the render so a preview shows the same look as the full photo.
-        private let fullLongEdge: CGFloat
+        let fullLongEdge: CGFloat
 
         private struct RawStageKey: Equatable {
             let temperature: Double
@@ -128,11 +128,7 @@ extension DevelopRenderer {
                     let delta = key.exposure - stage.key.exposure
                     if let curve = boostCurve() {
                         // exposure acts before the engine's tone curve, as in the settled render
-                        image = image.applyingFilter("CIColorCurves", parameters: [
-                            "inputCurvesData": curve.exposureTable(delta: delta),
-                            "inputCurvesDomain": CIVector(x: 0, y: 1),
-                            "inputColorSpace": DevelopRenderer.outputColorSpace,
-                        ])
+                        image = DevelopRenderer.applyingCurves(image, curve.exposureTable(delta: delta))
                     } else {
                         image = image.applyingFilter("CIExposureAdjust", parameters: ["inputEV": delta])
                     }
@@ -150,16 +146,7 @@ extension DevelopRenderer {
             if settings.exposure != 0 {
                 image = image.applyingFilter("CIExposureAdjust", parameters: ["inputEV": settings.exposure])
             }
-            let warmth = settings.temperature ?? 0
-            let tint = settings.tint ?? 0
-            if warmth != 0 || tint != 0 {
-                // Relative shifts: telling Core Image the scene was lit by a cooler source warms it.
-                image = image.applyingFilter("CITemperatureAndTint", parameters: [
-                    "inputNeutral": CIVector(x: 6500 + warmth * 25, y: tint * 0.5),
-                    "inputTargetNeutral": CIVector(x: 6500, y: 0),
-                ])
-            }
-            return image
+            return DevelopRenderer.relativeWhiteBalance(image, temperature: settings.temperature ?? 0, tint: settings.tint ?? 0)
         }
 
         /// The engine's tone curve for exposure drafts. The first call starts measuring this

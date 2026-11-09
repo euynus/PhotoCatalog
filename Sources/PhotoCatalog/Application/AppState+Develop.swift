@@ -20,6 +20,60 @@ extension AppState {
         return DevelopGeometry.rotatedSize(size, settings.rotation)
     }
 
+    /// Shrinks the crop to fit after a straighten or perspective change. The frame depends only
+    /// on the quarter turns, so every such change refits the same way.
+    func refitCrop(_ settings: inout DevelopSettings, for asset: Asset) {
+        settings.crop = DevelopGeometry.refit(settings, frame: developFrame(for: asset, settings: settings))
+    }
+
+    // ----- crop tool: shape, orientation and straighten -----
+    /// Picks a crop shape and reshapes the crop to the largest of it around the same center.
+    func setCropAspect(_ aspect: CropAspect, for asset: Asset) {
+        developCropAspect = aspect
+        let shown = developSettings(for: asset.id)
+        let frame = developFrame(for: asset, settings: shown)
+        guard let ratio = aspect.ratio(frame: frame) else { return }
+        let current = DevelopGeometry.effectiveCrop(shown, frame: frame)
+        reshapeCrop(asset, aspect: DevelopGeometry.oriented(ratio: ratio, like: current, frame: frame), around: current,
+                    frame: frame, undoName: L("裁剪比例"))
+    }
+
+    /// Turns the crop from landscape to portrait or back, keeping its shape and center.
+    func swapCropOrientation(for asset: Asset) {
+        let shown = developSettings(for: asset.id)
+        let frame = developFrame(for: asset, settings: shown)
+        let current = DevelopGeometry.effectiveCrop(shown, frame: frame)
+        let aspect = current.height * frame.height / max(current.width * frame.width, 1e-9)
+        reshapeCrop(asset, aspect: aspect, around: current, frame: frame, undoName: L("切换裁剪框横竖"))
+    }
+
+    /// The straighten slider's live preview: the angle, with the crop shrunk to fit it.
+    func draftStraighten(_ angle: Double, for asset: Asset) {
+        // shrink from the saved crop, so dragging back toward level grows it again
+        var next = developSettings[asset.id] ?? .neutral
+        next.straighten = angle
+        refitCrop(&next, for: asset)
+        updateDevelopDraft(next, for: asset.id)
+    }
+
+    /// The largest crop of `aspect` around the current one's center, inside the saved straighten
+    /// and perspective.
+    private func reshapeCrop(_ asset: Asset, aspect: Double, around current: DevelopCrop, frame: CGSize,
+                             undoName: String) {
+        commitDevelop(asset.id, undoName: undoName) { next in
+            let perspective = DevelopGeometry.perspective(next, frame: frame)
+            let largest = DevelopGeometry.inscribed(aspect: aspect, angle: next.straighten, perspective: perspective,
+                                                    frame: frame)
+            let crop = DevelopGeometry.move(largest, dx: current.midX - largest.midX, dy: current.midY - largest.midY,
+                                            angle: next.straighten, perspective: perspective, frame: frame)
+            // the whole photo's own shape is what "no crop" already means
+            let isWhole = crop == DevelopGeometry.inscribed(aspect: frame.width / max(frame.height, 1),
+                                                            angle: next.straighten, perspective: perspective,
+                                                            frame: frame)
+            next.crop = isWhole ? nil : crop
+        }
+    }
+
     /// Photos with pixels to render: a local original, or at least a local preview. Never a video.
     func canDevelop(_ asset: Asset) -> Bool {
         guard !asset.isVideo else { return false }
@@ -263,9 +317,7 @@ extension AppState {
             let asset = self.assetIndex[id].map { self.assets[$0] }
             self.commitDevelopChange([id], undoName: mode == .auto ? L("自动透视") : L("垂直透视")) { _, settings in
                 settings = found.applied(to: settings)
-                if let asset {
-                    settings.crop = DevelopGeometry.refit(settings, frame: self.developFrame(for: asset, settings: settings))
-                }
+                if let asset { self.refitCrop(&settings, for: asset) }
             }
         }
     }
@@ -286,9 +338,7 @@ extension AppState {
             let asset = self.assetIndex[id].map { self.assets[$0] }
             self.commitDevelopChange([id], undoName: L("自动拉直")) { _, settings in
                 settings.straighten = (angle * 10).rounded() / 10
-                if let asset {
-                    settings.crop = DevelopGeometry.refit(settings, frame: self.developFrame(for: asset, settings: settings))
-                }
+                if let asset { self.refitCrop(&settings, for: asset) }
             }
         }
     }
@@ -317,7 +367,7 @@ extension AppState {
             let asset = assets[index]
             var next = transfer.applied(to: developSettings[id] ?? .neutral, targetIsRaw: asset.isRaw)
             // a crop from another photo may reach past this one's straightened edges
-            next.crop = DevelopGeometry.refit(next, frame: developFrame(for: asset, settings: next))
+            refitCrop(&next, for: asset)
             changes[id] = next
         }
         guard !changes.isEmpty else { return 0 }
@@ -370,23 +420,61 @@ extension AppState {
         if let draft = developDraft, settings[draft.assetId] != nil { developDraft = nil }
         let before = Dictionary(uniqueKeysWithValues: settings.keys.map { ($0, developSettings[$0] ?? .neutral) })
         guard before != settings else { return }
+        let changed = settings.filter { before[$0.key] != $0.value }
+        // each changed photo's settings encoded once, for both the settings and the history rows
+        var json: [String: String] = [:]
         do {
-            try store?.saveDevelopSettings(settings)
+            if let store {
+                json = try DevelopHistoryStep.json(changed.filter { !$0.value.isNeutral })
+                try store.saveDevelopSettings(settings, json: json)
+            }
         } catch {
             push("保存调整失败，更改未写入目录库", "warning")
             return
         }
         for (id, value) in settings { developSettings[id] = value.isNeutral ? nil : value }
-        recordDevelopHistory(settings.filter { before[$0.key] != $0.value }, name: undoName, change: change)
+        let recorded = recordDevelopHistory(changed, name: undoName, change: change, json: json)
+        // undo takes away only the steps this edit stored; redo appends anew and keeps its own,
+        // except where the undo couldn't take the step away (it is still there)
+        let opposite: DevelopHistoryChange
+        switch change {
+        case .append: opposite = .revert(recorded)
+        case .appendSkipping(let kept): opposite = .revert(recorded.union(kept))
+        case .revert(let ids): opposite = .appendSkipping(Set(changed.keys).intersection(ids).subtracting(recorded))
+        }
         guard let undoManager else { return }
         UndoSteps.register(on: undoManager) {
             undoManager.registerUndo(withTarget: self) { app in
                 MainActor.assumeIsolated {
-                    app.commitDevelop(before, undoName: undoName, history: change == .append ? .revert : .append)
+                    app.commitDevelop(before, undoName: undoName, history: opposite)
                 }
             }
             undoManager.setActionName(undoName)
         }
+    }
+
+    /// Saves a change to one photo's saved settings (not its draft) as one undo step.
+    func commitDevelop(_ id: String, undoName: String, _ change: (inout DevelopSettings) -> Void) {
+        var next = developSettings[id] ?? .neutral
+        change(&next)
+        commitDevelop([id: next], undoName: undoName)
+    }
+
+    /// The spot tool's mode picker: sets the brush's mode and switches the selected spot's. Heal
+    /// and clone trade places; a remove spot is made by painting, not by switching, so choosing
+    /// remove, or another mode for a remove spot, only deselects it.
+    func setSpotMode(_ mode: SpotRemoval.Mode, for asset: Asset) {
+        developSpotBrush.mode = mode
+        let shown = developSettings(for: asset.id)
+        let index = shown.spots.firstIndex { $0.id == developSelectedSpotId }
+        guard let index, mode != .remove, shown.spots[index].mode != .remove else {
+            if mode == .remove || index.map({ shown.spots[$0].mode == .remove }) == true {
+                developSelectedSpotId = nil
+            }
+            return
+        }
+        guard (developSettings[asset.id] ?? .neutral).spots.indices.contains(index) else { return }
+        commitDevelop(asset.id, undoName: L("污点模式")) { $0.spots[index].mode = mode }
     }
 
     /// Saves a change background work made (a spot's source found, a subject masked, auto tone

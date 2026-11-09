@@ -26,8 +26,6 @@ extension DevelopPanel {
     }
 
     func commit(_ asset: Asset, _ title: String, _ apply: (inout DevelopSettings) -> Void) {
-        var next = app.developSettings[asset.id] ?? .neutral
-        apply(&next)
-        app.commitDevelop([asset.id: next], undoName: L("复位\(title)"))
+        app.commitDevelop(asset.id, undoName: L("复位\(title)"), apply)
     }
 }

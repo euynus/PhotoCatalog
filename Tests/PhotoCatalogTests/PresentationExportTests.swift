@@ -5,12 +5,9 @@ import XCTest
 final class PresentationExportTests: CatalogTestCase {
     private func asset(_ id: String, original: URL, preview: URL? = nil, status: AssetStatus = .ready,
                        title: String = "", caption: String = "") -> Asset {
-        Asset(id: id, pid: 1, ori: "l", thumb: "", preview: preview?.path ?? "", filename: original.lastPathComponent,
-              type: "JPG", isRaw: false, folderId: "src-presentation", folderName: "Photos",
-              date: Date(timeIntervalSince1970: 1_700_000_000), width: 80, height: 60, orientation: 1, camera: "",
-              lens: "", focal: 0, aperture: 0, shutter: "", iso: 0, colorSpace: "sRGB", fileMB: 0.01, rating: 0,
-              flag: .none, keywords: [], title: title, caption: caption, location: "", gps: (0, 0), status: status,
-              importedAt: .now, localPath: original.path, isDemo: false)
+        .smallPhoto(id, filename: original.lastPathComponent, type: "JPG", folderId: "src-presentation",
+                    folderName: "Photos", date: Date(timeIntervalSince1970: 1_700_000_000), localPath: original.path,
+                    preview: preview?.path ?? "", status: status, title: title, caption: caption, isDemo: false)
     }
 
     /// A photo whose original is offline was rendered from its 2048 px preview, though a book,

@@ -81,11 +81,11 @@ extension DevelopPanel {
             HStack(spacing: 6) {
                 Text("比例").font(.system(size: 12)).foregroundStyle(Theme.text2)
                 Picker("比例", selection: Binding(get: { app.developCropAspect },
-                                                set: { applyAspect($0, asset, settings) })) {
+                                                set: { app.setCropAspect($0, for: asset) })) {
                     ForEach(CropAspect.allCases) { Text($0.title).tag($0) }
                 }
                 .labelsHidden()
-                Button { swapCropOrientation(asset, settings) } label: {
+                Button { app.swapCropOrientation(for: asset) } label: {
                     Image(systemName: "rectangle.portrait.rotate")
                 }
                 .help("切换裁剪框横竖")
@@ -97,18 +97,21 @@ extension DevelopPanel {
                       range: -DevelopGeometry.maxStraighten...DevelopGeometry.maxStraighten, step: 0.1,
                       format: { $0 == 0 ? "0°" : String(format: "%+.1f°", $0) },
                       isNeutral: settings.straighten == 0,
-                      onChange: { straightenDraft(asset, $0) },
-                      onReset: { commitStraighten(asset, 0) },
+                      onChange: { app.draftStraighten($0, for: asset) },
+                      onReset: {
+                          app.draftStraighten(0, for: asset)
+                          commitDraft(asset, L("角度"))
+                      },
                       onCommit: { commitDraft(asset, L("角度")) })
         HStack(spacing: 8) {
             Button("自动拉直") { app.autoStraighten(asset) }
                 .help("按画面中的地平线自动拉直")
             Spacer(minLength: 0)
             Button("复位裁剪") {
-                var next = app.developSettings[asset.id] ?? .neutral
-                next.crop = nil
-                next.straighten = 0
-                app.commitDevelop([asset.id: next], undoName: L("复位裁剪"))
+                app.commitDevelop(asset.id, undoName: L("复位裁剪")) {
+                    $0.crop = nil
+                    $0.straighten = 0
+                }
             }
             .disabled(settings.crop == nil && settings.straighten == 0)
         }
@@ -124,9 +127,7 @@ extension DevelopPanel {
             if !settings.spots.isEmpty {
                 Text("\(settings.spots.count) 处").font(.system(size: 11)).foregroundStyle(Theme.text3)
                 Button("全部清除") {
-                    var next = app.developSettings[asset.id] ?? .neutral
-                    next.spots = []
-                    app.commitDevelop([asset.id: next], undoName: L("清除污点去除"))
+                    app.commitDevelop(asset.id, undoName: L("清除污点去除")) { $0.spots = [] }
                 }
             }
         }
@@ -135,20 +136,7 @@ extension DevelopPanel {
             let index = settings.spots.firstIndex { $0.id == app.developSelectedSpotId }
             Picker("污点模式", selection: Binding(
                 get: { index.map { settings.spots[$0].mode } ?? app.developSpotBrush.mode },
-                set: { mode in
-                    app.developSpotBrush.mode = mode
-                    // heal and clone trade places; a remove spot is made by painting, not by switching
-                    guard let index, mode != .remove, settings.spots[index].mode != .remove else {
-                        if mode == .remove || index.map({ settings.spots[$0].mode == .remove }) == true {
-                            app.developSelectedSpotId = nil
-                        }
-                        return
-                    }
-                    var next = app.developSettings[asset.id] ?? .neutral
-                    guard next.spots.indices.contains(index) else { return }
-                    next.spots[index].mode = mode
-                    app.commitDevelop([asset.id: next], undoName: L("污点模式"))
-                })) {
+                set: { app.setSpotMode($0, for: asset) })) {
                 ForEach(SpotRemoval.Mode.allCases) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented)
@@ -208,52 +196,5 @@ extension DevelopPanel {
         guard next.spots.indices.contains(index) else { return }
         apply(&next.spots[index])
         app.updateDevelopDraft(next, for: asset.id)
-    }
-
-    // ---- crop: fractions of the rotated frame, kept inside the straightened photo ----
-    private func straightenDraft(_ asset: Asset, _ angle: Double) {
-        // shrink from the saved crop, so dragging back toward level grows it again
-        var next = app.developSettings[asset.id] ?? .neutral
-        let frame = app.developFrame(for: asset, settings: next)
-        next.straighten = angle
-        next.crop = DevelopGeometry.refit(next, frame: frame)
-        app.updateDevelopDraft(next, for: asset.id)
-    }
-
-    private func commitStraighten(_ asset: Asset, _ angle: Double) {
-        straightenDraft(asset, angle)
-        commitDraft(asset, L("角度"))
-    }
-
-    /// Picks a crop shape and reshapes the crop to the largest of it around the same center.
-    private func applyAspect(_ aspect: CropAspect, _ asset: Asset, _ settings: DevelopSettings) {
-        app.developCropAspect = aspect
-        let frame = app.developFrame(for: asset, settings: settings)
-        guard let ratio = aspect.ratio(frame: frame) else { return }
-        let current = DevelopGeometry.effectiveCrop(settings, frame: frame)
-        let landscape = current.width * frame.width >= current.height * frame.height
-        reshapeCrop(asset, aspect: landscape ? ratio : 1 / ratio, around: current, frame: frame, undoName: L("裁剪比例"))
-    }
-
-    private func swapCropOrientation(_ asset: Asset, _ settings: DevelopSettings) {
-        let frame = app.developFrame(for: asset, settings: settings)
-        let current = DevelopGeometry.effectiveCrop(settings, frame: frame)
-        let aspect = current.height * frame.height / max(current.width * frame.width, 1e-9)
-        reshapeCrop(asset, aspect: aspect, around: current, frame: frame, undoName: L("切换裁剪框横竖"))
-    }
-
-    private func reshapeCrop(_ asset: Asset, aspect: Double, around current: DevelopCrop, frame: CGSize,
-                             undoName: String) {
-        var next = app.developSettings[asset.id] ?? .neutral
-        let perspective = DevelopGeometry.perspective(next, frame: frame)
-        let largest = DevelopGeometry.inscribed(aspect: aspect, angle: next.straighten, perspective: perspective,
-                                                frame: frame)
-        let crop = DevelopGeometry.move(largest, dx: current.midX - largest.midX, dy: current.midY - largest.midY,
-                                        angle: next.straighten, perspective: perspective, frame: frame)
-        // the whole photo's own shape is what "no crop" already means
-        let isWhole = crop == DevelopGeometry.inscribed(aspect: frame.width / max(frame.height, 1),
-                                                        angle: next.straighten, perspective: perspective, frame: frame)
-        next.crop = isWhole ? nil : crop
-        app.commitDevelop([asset.id: next], undoName: undoName)
     }
 }

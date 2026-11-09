@@ -45,28 +45,59 @@ extension AppState {
         }
     }
 
-    func recordDevelopHistory(_ changed: [String: DevelopSettings], name: String, change: DevelopHistoryChange) {
-        guard !changed.isEmpty else { return }
+    /// Adds or takes away each photo's step; returns the photos whose history changed. Memory
+    /// changes only once the catalog has (without one, every photo's). `json` holds settings
+    /// already in their stored form (`DevelopHistoryStep.json`), so they aren't encoded twice.
+    @discardableResult
+    func recordDevelopHistory(_ changed: [String: DevelopSettings], name: String,
+                              change: DevelopHistoryChange, json encoded: [String: String] = [:]) -> Set<String> {
+        guard !changed.isEmpty else { return [] }
+        let recorded: Set<String>
         switch change {
-        case .append:
-            let stored = (try? store?.appendDevelopHistory(changed.mapValues { (name: name, settings: $0) })) ?? [:]
-            for (id, value) in changed where developHistoryCache[id] != nil {
+        case .append, .appendSkipping:
+            var appending = changed
+            if case .appendSkipping(let kept) = change { appending = changed.filter { !kept.contains($0.key) } }
+            guard !appending.isEmpty else { return [] }
+            var stored: [String: DevelopHistoryStep] = [:]
+            if let store {
+                var steps: [String: (name: String, json: String)] = [:]
+                steps.reserveCapacity(appending.count)
+                for (id, value) in appending { steps[id] = (name, encoded[id] ?? DevelopHistoryStep.json(value)) }
+                do {
+                    stored = try store.appendDevelopHistory(steps)
+                } catch {
+                    push("保存历史记录失败", "warning")
+                    return []
+                }
+            }
+            recorded = store == nil ? Set(appending.keys) : Set(stored.keys)
+            for (id, value) in appending where developHistoryCache[id] != nil {
                 // with a catalog, only what was stored is listed, so undo removes the same step from both
                 if store != nil, stored[id] == nil { continue }
                 let seq = stored[id]?.seq ?? (developHistoryCache[id]?.last?.seq ?? 0) + 1
-                developHistoryCache[id]?.append(stored[id] ?? DevelopHistoryStep(seq: seq, name: name, date: .now,
-                                                                                 settings: value))
+                developHistoryCache[id]?.append(stored[id] ?? DevelopHistoryStep(
+                    seq: seq, name: name, date: .now, json: encoded[id] ?? DevelopHistoryStep.json(value)))
                 if let count = developHistoryCache[id]?.count, count > DevelopHistoryStep.limit {
                     developHistoryCache[id]?.removeFirst(count - DevelopHistoryStep.limit)
                 }
             }
-        case .revert:
-            try? store?.removeLastDevelopHistory(Array(changed.keys))
-            for id in changed.keys where developHistoryCache[id]?.isEmpty == false {
+        case .revert(let ids):
+            // a photo whose step never stored has none to take away: its newest is an earlier edit
+            let reverted = changed.keys.filter { ids.contains($0) }
+            guard !reverted.isEmpty else { return [] }
+            do {
+                try store?.removeLastDevelopHistory(reverted)
+            } catch {
+                push("更新历史记录失败", "warning")
+                return []
+            }
+            for id in reverted where developHistoryCache[id]?.isEmpty == false {
                 developHistoryCache[id]?.removeLast()
             }
+            recorded = Set(reverted)
         }
         developRecordsVersion &+= 1
+        return recorded
     }
 
     /// Returns the photo to a history step's settings, as a new step (undoable).
@@ -85,7 +116,12 @@ extension AppState {
     }
 
     func clearDevelopHistory(for id: String) {
-        try? store?.clearDevelopHistory(id)
+        do {
+            try store?.clearDevelopHistory(id)
+        } catch {
+            push("清除历史记录失败", "warning")
+            return
+        }
         developHistoryCache[id] = []
         touchDevelopRecords(id)
         developRecordsVersion &+= 1
@@ -114,7 +150,12 @@ extension AppState {
     }
 
     func deleteDevelopSnapshot(_ snapshotId: String, for id: String) {
-        try? store?.deleteDevelopSnapshot(snapshotId)
+        do {
+            try store?.deleteDevelopSnapshot(snapshotId)
+        } catch {
+            push("删除快照失败", "warning")
+            return
+        }
         developSnapshotCache[id] = developSnapshots(for: id).filter { $0.id != snapshotId }
         developRecordsVersion &+= 1
     }

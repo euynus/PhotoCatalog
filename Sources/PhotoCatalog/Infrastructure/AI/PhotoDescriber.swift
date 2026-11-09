@@ -8,11 +8,7 @@ import ImageIO
 /// Asks a language model that reads images for a photo's title, caption and keywords, and reads
 /// its answer.
 enum PhotoDescriber {
-    struct Description: Equatable, Sendable {
-        var title: String
-        var caption: String
-        var keywords: [String]
-    }
+    typealias Description = PhotoDescription
 
     /// Catalog hints, sent only when the user explicitly includes metadata.
     struct Details: Sendable {

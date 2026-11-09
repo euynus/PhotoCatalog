@@ -1,7 +1,5 @@
 import Foundation
 import CoreImage
-import ImageIO
-import UniformTypeIdentifiers
 
 extension DevelopCheck {
     /// A drawn face with its landmarks where they are, and a second one when `pair`: people
@@ -268,11 +266,8 @@ extension DevelopCheck {
                 landscape.fill(CGRect(x: x, y: y, width: y < 90 ? 2 : 3, height: 1))
             }
         }
-        let landscapeURL = FileManager.default.temporaryDirectory.appendingPathComponent("pc-sky-\(UUID().uuidString).png")
+        let landscapeURL = CheckImages.temporaryPNG(landscape.makeImage()!, prefix: "pc-sky-")
         defer { try? FileManager.default.removeItem(at: landscapeURL) }
-        let landscapeFile = CGImageDestinationCreateWithURL(landscapeURL as CFURL, UTType.png.identifier as CFString, 1, nil)!
-        CGImageDestinationAddImage(landscapeFile, landscape.makeImage()!, nil)
-        CGImageDestinationFinalize(landscapeFile)
         let foundSky = SemanticMasks.mask(.sky, url: landscapeURL, isRaw: false)
         assert(foundSky.map { (0.3...0.5).contains($0.coverage) && $0.centroid.y < 0.3 } == true,
                "the sky is found above the grass")
@@ -288,11 +283,8 @@ extension DevelopCheck {
                && abs(luma(skyRender, 120, 140) - luma(plainRender, 120, 140)) < 3,
                "a sky mask darkens the sky and leaves the ground alone")
         let wall = image { x, y in (0.86 + 0.02 * Double((x / 8 + y / 8) % 2), 0.85, 0.83) }
-        let wallURL = FileManager.default.temporaryDirectory.appendingPathComponent("pc-wall-\(UUID().uuidString).png")
+        let wallURL = CheckImages.temporaryPNG(wall, prefix: "pc-wall-")
         defer { try? FileManager.default.removeItem(at: wallURL) }
-        let wallFile = CGImageDestinationCreateWithURL(wallURL as CFURL, UTType.png.identifier as CFString, 1, nil)!
-        CGImageDestinationAddImage(wallFile, wall, nil)
-        CGImageDestinationFinalize(wallFile)
         assert(SemanticMasks.mask(.sky, url: wallURL, isRaw: false) == nil, "a pale wall is not sky")
         var noSky = LocalAdjustment(kind: .sky)
         let wallExtent = CGRect(x: 0, y: 0, width: 64, height: 64)

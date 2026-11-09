@@ -84,10 +84,7 @@ extension DevelopPanel {
         if app.developMasking, let index = settings.masks.firstIndex(where: { $0.id == app.developSelectedMaskId }) {
             let mask = settings.masks[index]
             Toggle("反相", isOn: Binding(get: { mask.inverted }, set: { inverted in
-                var next = app.developSettings[asset.id] ?? .neutral
-                guard next.masks.indices.contains(index) else { return }
-                next.masks[index].inverted = inverted
-                app.commitDevelop([asset.id: next], undoName: L("反相蒙版"))
+                commitMask(asset, index, L("反相蒙版")) { $0.inverted = inverted }
             }))
             .toggleStyle(.checkbox)
             .controlSize(.small)
@@ -116,10 +113,7 @@ extension DevelopPanel {
                     Spacer(minLength: 0)
                     if !mask.strokes.isEmpty {
                         Button("清除修整") {
-                            var next = app.developSettings[asset.id] ?? .neutral
-                            guard next.masks.indices.contains(index) else { return }
-                            next.masks[index].strokes = []
-                            app.commitDevelop([asset.id: next], undoName: L("清除蒙版修整"))
+                            commitMask(asset, index, L("清除蒙版修整")) { $0.strokes = [] }
                         }
                     }
                 }
@@ -129,10 +123,7 @@ extension DevelopPanel {
             ForEach(DevelopControl.local(index)) { control in slider(control, asset, settings) }
             HStack(spacing: 8) {
                 Button("复位滑块") {
-                    var next = app.developSettings[asset.id] ?? .neutral
-                    guard next.masks.indices.contains(index) else { return }
-                    next.masks[index] = mask.withoutAdjustments
-                    app.commitDevelop([asset.id: next], undoName: L("复位蒙版调整"))
+                    commitMask(asset, index, L("复位蒙版调整")) { $0 = mask.withoutAdjustments }
                 }
                 .disabled(!mask.hasEffect)
                 Spacer(minLength: 0)
@@ -141,6 +132,13 @@ extension DevelopPanel {
             }
             .controlSize(.small)
         }
+    }
+
+    /// Changes the saved settings' mask at `index` as one undo step; nothing once it's gone.
+    private func commitMask(_ asset: Asset, _ index: Int, _ undoName: String,
+                            _ change: (inout LocalAdjustment) -> Void) {
+        guard (app.developSettings[asset.id] ?? .neutral).masks.indices.contains(index) else { return }
+        app.commitDevelop(asset.id, undoName: undoName) { change(&$0.masks[index]) }
     }
 
     /// A people mask's part, and whose it is when the photo shows more than one person.
