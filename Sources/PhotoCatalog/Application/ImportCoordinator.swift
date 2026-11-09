@@ -145,14 +145,11 @@ final class ImportCoordinator: @unchecked Sendable {
     }
 
     /// Incremental: only files not already imported by path (for FSEvents rescans, §12.8).
-    func scanNew(in folder: URL, knownPaths: Set<String>, mode: ImportMode = .referenced,
+    /// `knownAliases` holds every alias of each known path: a file with any of them is known.
+    func scanNew(in folder: URL, knownAliases: Set<String>, mode: ImportMode = .referenced,
                  autoTag: Bool = false, readSidecar: Bool = true, previewMaxPixel: Int = 2048,
                  sourceRootId: String? = nil, folderName: String? = nil,
                  scanned: [(url: URL, aliases: Set<String>)]? = nil) -> [Asset] {
-        var knownAliases = knownPaths
-        for path in knownPaths {
-            knownAliases.formUnion(PathIdentity.aliases(forPath: path))
-        }
         let files = (scanned ?? Self.scanWithAliases(folder))
             .filter { $0.aliases.isDisjoint(with: knownAliases) }
             .map(\.url)

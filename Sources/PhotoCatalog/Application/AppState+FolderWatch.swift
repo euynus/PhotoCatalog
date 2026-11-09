@@ -63,9 +63,13 @@ extension AppState {
                     }
                 }
             }
-            var knownPaths = Set(knownAssetsByPath.keys)
+            // the paths a rescan doesn't add, each with its aliases, made once for every root (the
+            // index's keys are aliases already, and an alias's aliases are among its path's)
+            var knownAliases = Set(knownAssetsByPath.keys)
             // files an import skipped as exact duplicates of photos it cataloged stay out
-            knownPaths.formUnion((try? store.skippedDuplicatePaths()) ?? [])
+            for path in (try? store.skippedDuplicatePaths()) ?? [] {
+                knownAliases.formUnion(PathIdentity.aliases(forPath: path))
+            }
             // a photo removed from the catalog stays removed: its file, there still or saved over
             // by an editor, isn't a new one (only an import brings it back); another photo saved
             // at its path is. Removed in an earlier session, it isn't in `snapshot`.
@@ -92,10 +96,10 @@ extension AppState {
                 for file in scanned {
                     let removed = file.aliases.flatMap { removedByPath[$0] ?? [] }
                     if removed.contains(where: { ImportCoordinator.isRemovedPhoto(file.url, removed: $0) }) {
-                        knownPaths.insert(file.url.path)
+                        knownAliases.formUnion(file.aliases)
                     }
                 }
-                fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
+                fresh.append(contentsOf: coordinator.scanNew(in: root, knownAliases: knownAliases,
                                                              mode: .referenced, autoTag: vision,
                                                              readSidecar: readXMP,
                                                              previewMaxPixel: previewSize,
