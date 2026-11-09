@@ -68,8 +68,13 @@ enum CacheService {
         prune(cacheURL) { _ in maxBytes }
     }
 
-    /// Prunes to the limit `maxBytes` gives for the cache's size as found.
-    static func prune(_ cacheURL: URL, maxBytes limit: (Int64) -> Int64) -> CachePruneReport {
+    /// Prunes to the limit `maxBytes` gives for the cache's size as found. Of each kind, the files
+    /// of the photos taken longest ago go first, as `captureDates` (by photo id) dates them, so a
+    /// prune keeps the newest photos' previews, as the background pass makes them; files of no
+    /// photo there go before those, and among the rest the oldest written go first. Not by when
+    /// a file was written alone: the background pass writes the newest photos' previews first.
+    static func prune(_ cacheURL: URL, captureDates: [String: Date] = [:],
+                      maxBytes limit: (Int64) -> Int64) -> CachePruneReport {
         let (files, writingBytes) = cacheFiles(in: cacheURL)
         let before = files.reduce(Int64(0)) { $0 + $1.size }
         let maxBytes = limit(before)
@@ -83,8 +88,12 @@ enum CacheService {
         let fm = FileManager.default
         // previews go first and thumbnails last: the grid needs a thumbnail for every photo,
         // while a preview is only wanted when one photo is opened, and is remade then
-        for file in files.sorted(by: { ($0.evictionRank, $0.modifiedAt) < ($1.evictionRank, $1.modifiedAt) })
-        where current > maxBytes {
+        let ranked = files.map { file in
+            (file: file, taken: captureDates.isEmpty ? Date.distantPast : captureDates[file.photoId] ?? .distantPast)
+        }
+        for (file, _) in ranked.sorted(by: {
+            ($0.file.evictionRank, $0.taken, $0.file.modifiedAt) < ($1.file.evictionRank, $1.taken, $1.file.modifiedAt)
+        }) where current > maxBytes {
             do {
                 try fm.removeItem(at: file.url)
                 current -= file.size
@@ -137,10 +146,15 @@ enum CacheService {
                 return nil
             }
             let relative = relativePath(url, to: root)
+            let edited = relative.hasPrefix("/Edited/")
+            // "<id>.jpg", or developed "<id>-<settings fingerprint>.jpg" (the fingerprint has no "-")
+            var photoId = Substring(url.deletingPathExtension().lastPathComponent)
+            if edited, let dash = photoId.lastIndex(of: "-") { photoId = photoId[..<dash] }
             return CacheFile(url: url,
                              size: Int64(values.fileSize ?? 0),
                              modifiedAt: values.contentModificationDate ?? .distantPast,
-                             evictionRank: relative.contains("/Thumbnails/") ? 2 : relative.hasPrefix("/Edited/") ? 1 : 0)
+                             evictionRank: relative.contains("/Thumbnails/") ? 2 : edited ? 1 : 0,
+                             photoId: String(photoId))
         }
         return (files, writingBytes)
     }
@@ -165,4 +179,6 @@ private struct CacheFile {
     /// Which files a prune removes first: previews (and anything else), then developed
     /// previews, then thumbnails, plain or developed.
     let evictionRank: Int
+    /// The photo it shows, by id.
+    let photoId: String
 }

@@ -75,17 +75,9 @@ struct ImportOptionsSnapshot: Codable, Equatable, Sendable {
 
     func developSteps(for asset: Asset) -> [(name: String, settings: DevelopSettings)] {
         guard !asset.isVideo else { return [] }
-        var steps: [(name: String, settings: DevelopSettings)] = []
-        var settings = DevelopSettings.neutral
-        if asset.isRaw, !rawDefaultOptOuts.contains(asset.camera),
-           let camera = rawDefaults[asset.camera] ?? rawDefaults[""] {
-            settings = camera.transfer.applied(to: settings, targetIsRaw: true)
-            if !settings.isNeutral { steps.append((L("RAW 默认设置“\(camera.name)”"), settings)) }
-        }
-        if let preset {
-            let applied = preset.transfer.applied(to: settings, targetIsRaw: asset.isRaw)
-            if applied != settings { steps.append((L("导入预设“\(preset.name)”"), applied)) }
-        }
-        return steps
+        let camera = asset.isRaw ? RawDefaults(presets: rawDefaults, optOuts: rawDefaultOptOuts)
+            .preset(forCamera: asset.camera) : nil
+        let steps = DevelopPreset.importSteps(from: .neutral, isRaw: asset.isRaw, cameraDefault: camera, preset: preset)
+        return [steps.camera, steps.preset].compactMap { $0 }
     }
 }

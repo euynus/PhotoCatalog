@@ -382,6 +382,7 @@ extension AppState {
 
     private func restoreAlbums(from store: CatalogStore, collections: CatalogCollections) {
         developSettings = collections.developSettings
+        developFingerprintCache = [:]
         clearDevelopRecordCaches()
         loadFaces(from: store)
         // the quick collection is stored as an album under a reserved id, and listed apart

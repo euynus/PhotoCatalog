@@ -399,7 +399,9 @@ extension AppState {
         let limit = cacheLimit
         Task { [weak self, store, packageURL, snapshot, limit] in
             let result = await Task.detached(priority: .utility) {
-                let report = CacheService.prune(store.cacheURL) { limit.bytes(cacheBytes: $0) }
+                let report = CacheService.prune(store.cacheURL, captureDates: Self.captureDates(of: snapshot)) {
+                    limit.bytes(cacheBytes: $0)
+                }
                 return (report, CatalogHealth.check(store, assets: snapshot))
             }.value
             guard let self, self.store?.packageURL == packageURL else { return }
@@ -425,7 +427,9 @@ extension AppState {
         let passLimit = limit.chosenMB > 0 ? nil : automaticLimitBytes
         Task { [weak self, store, packageURL, snapshot, limit, passLimit] in
             let result = await Task.detached(priority: .utility) {
-                let report = CacheService.prune(store.cacheURL) { passLimit ?? limit.bytes(cacheBytes: $0) }
+                let report = CacheService.prune(store.cacheURL, captureDates: Self.captureDates(of: snapshot)) {
+                    passLimit ?? limit.bytes(cacheBytes: $0)
+                }
                 let health = report.removedFiles > 0 ? CatalogHealth.check(store, assets: snapshot) : nil
                 // nothing removed: the prune's own walk has the cache's size
                 let cacheBytes = health?.cacheBytes ?? report.afterBytes + report.writingBytes
@@ -439,6 +443,12 @@ extension AppState {
                 self.statusMetrics.cacheBytes = result.1
             }
         }
+    }
+
+    /// When each photo was taken, by id: a prune keeps the newest photos' previews, as the
+    /// background pass makes them.
+    nonisolated static func captureDates(of assets: [Asset]) -> [String: Date] {
+        Dictionary(assets.lazy.filter { !$0.isDemo }.map { ($0.id, $0.date) }, uniquingKeysWith: { first, _ in first })
     }
 
     private func formatCacheMB(_ bytes: Int64) -> String {
@@ -695,6 +705,7 @@ extension AppState {
         albumSets = []
         folders = demo ? DemoData.folders : []
         developSettings = [:]
+        developFingerprintCache = [:]
         clearDevelopRecordCaches()
         clearFaces()
         // sidecar state is the catalog's (a loaded one reads its own)

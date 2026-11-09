@@ -387,7 +387,17 @@ extension AppState {
     }
 
     /// Changes whenever a photo's saved adjustments change; image views key their loads on it.
-    func developFingerprint(for id: String) -> String? { developSettings[id]?.fingerprint }
+    /// Made again only when the settings differ from those it was last made from.
+    func developFingerprint(for id: String) -> String? {
+        guard let settings = developSettings[id] else {
+            if developFingerprintCache[id] != nil { developFingerprintCache[id] = nil }
+            return nil
+        }
+        if let cached = developFingerprintCache[id], cached.settings == settings { return cached.fingerprint }
+        let fingerprint = settings.fingerprint
+        developFingerprintCache[id] = (settings, fingerprint)
+        return fingerprint
+    }
 
     func developSettings(for id: String) -> DevelopSettings {
         if let draft = developDraft, draft.assetId == id { return draft.settings }

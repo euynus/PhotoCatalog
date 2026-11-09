@@ -155,10 +155,15 @@ final class ThumbnailService: @unchecked Sendable {
     /// Where a developed rendering lives; the settings fingerprint in the name means an edit
     /// never reuses an older render, and clearing the edit falls back to the untouched cache.
     func editedCachePath(assetId: String, kind: Kind, settings: DevelopSettings) -> URL {
+        editedCachePath(assetId: assetId, kind: kind, fingerprint: settings.fingerprint)
+    }
+
+    /// `editedCachePath(assetId:kind:settings:)` for settings whose fingerprint is `fingerprint`.
+    func editedCachePath(assetId: String, kind: Kind, fingerprint: String) -> URL {
         guard !Self.hasSlash(assetId) else {
-            return appendedEditedCachePath(assetId: assetId, kind: kind, settings: settings)
+            return appendedEditedCachePath(assetId: assetId, kind: kind, fingerprint: fingerprint)
         }
-        let name = "\(assetId)-\(settings.fingerprint).jpg"
+        let name = "\(assetId)-\(fingerprint).jpg"
         return URL(fileURLWithPath: "\(folders(kind).edited)/\(Self.shard(assetId))/\(name)", isDirectory: false)
     }
 
@@ -181,13 +186,13 @@ final class ThumbnailService: @unchecked Sendable {
             .appendingPathComponent("\(assetId).jpg")
     }
 
-    private func appendedEditedCachePath(assetId: String, kind: Kind, settings: DevelopSettings) -> URL {
+    private func appendedEditedCachePath(assetId: String, kind: Kind, fingerprint: String) -> URL {
         let plain = appendedCachePath(assetId: assetId, kind: kind)
         let shard = plain.deletingLastPathComponent()
         let relative = shard.path.replacingOccurrences(of: store.cacheURL.path, with: "")
         return store.cacheURL.appendingPathComponent("Edited")
             .appendingPathComponent(relative)
-            .appendingPathComponent("\(assetId)-\(settings.fingerprint).jpg")
+            .appendingPathComponent("\(assetId)-\(fingerprint).jpg")
     }
 
     /// Returns the developed rendering at the kind's size, rendering it from `source`

@@ -227,3 +227,52 @@ struct DevelopPreset: Codable, Equatable, Identifiable, Sendable {
                              transfer: DevelopTransfer(settings: settings, fields: fields, sourceIsRaw: false))
     }
 }
+
+/// The RAW default chosen for each camera ("" for every camera), as presets, and the cameras
+/// kept as shot. Imports, tethered capture and 复位 all find a photo's default through it.
+struct RawDefaults: Equatable, Sendable {
+    /// Each camera's preset; one chosen and since deleted isn't here.
+    var presets: [String: DevelopPreset]
+    var optOuts: Set<String>
+
+    /// `chosen` maps cameras to preset ids, or "none" for as shot; `preset` finds an id's preset.
+    init(chosen: [String: String], preset: (String) -> DevelopPreset?) {
+        presets = chosen.compactMapValues(preset)
+        optOuts = Set(chosen.filter { $0.value == "none" }.map(\.key))
+    }
+
+    init(presets: [String: DevelopPreset], optOuts: Set<String>) {
+        self.presets = presets
+        self.optOuts = optOuts
+    }
+
+    /// The default for a RAW photo from `camera`: its own, or every camera's when it has none or
+    /// its preset was deleted. Nil when the camera, or every camera, is kept as shot.
+    func preset(forCamera camera: String) -> DevelopPreset? {
+        guard !optOuts.contains(camera) else { return nil }
+        return presets[camera] ?? presets[""]
+    }
+}
+
+extension DevelopPreset {
+    /// What a new photo starts from: `cameraDefault` (its RAW default) applied to `start`, then
+    /// `preset` (the import's or a tethered session's), each with its history step's name and the
+    /// settings after it; a step that changes nothing is left out.
+    static func importSteps(from start: DevelopSettings, isRaw: Bool, cameraDefault: DevelopPreset?,
+                            preset: DevelopPreset?)
+        -> (camera: (name: String, settings: DevelopSettings)?, preset: (name: String, settings: DevelopSettings)?) {
+        var settings = start
+        var cameraStep: (name: String, settings: DevelopSettings)?
+        if let cameraDefault {
+            let applied = cameraDefault.transfer.applied(to: settings, targetIsRaw: isRaw)
+            if applied != settings { cameraStep = (L("RAW 默认设置“\(cameraDefault.name)”"), applied) }
+            settings = applied
+        }
+        var presetStep: (name: String, settings: DevelopSettings)?
+        if let preset {
+            let applied = preset.transfer.applied(to: settings, targetIsRaw: isRaw)
+            if applied != settings { presetStep = (L("导入预设“\(preset.name)”"), applied) }
+        }
+        return (cameraStep, presetStep)
+    }
+}

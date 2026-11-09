@@ -219,7 +219,7 @@ extension AppState {
     }
 
     private func importOptionsSnapshot(for folder: URL, mode: ImportMode) -> ImportOptionsSnapshot {
-        let presets = Dictionary(allDevelopPresets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let rawDefaults = rawDefaults
         let albumName = importPostAlbumName.trimmingCharacters(in: .whitespacesAndNewlines)
         // a managed import's photos are its copies in Originals, which an import again finds there
         let photosFolder = mode == .managed ? store?.originalsURL ?? folder : folder
@@ -229,8 +229,7 @@ extension AppState {
             colorLabel: ColorLabel(rawValue: importPostColorLabel)?.rawValue,
             author: importAuthor, copyright: importCopyright, albumName: albumName,
             albumId: albumName.isEmpty ? nil : (albums.first { $0.name == albumName }?.id ?? "al-" + UUID().uuidString),
-            preset: importDevelopPreset, rawDefaults: rawDefaultPresetIds.compactMapValues { presets[$0] },
-            rawDefaultOptOuts: Set(rawDefaultPresetIds.filter { $0.value == "none" }.map(\.key)),
+            preset: importDevelopPreset, rawDefaults: rawDefaults.presets, rawDefaultOptOuts: rawDefaults.optOuts,
             bookmark: FileAccessService.createBookmark(for: folder),
             // taken as the import begins: photos removed later, while it runs, stay removed
             revivableIds: try? store?.removedAssetIds(under: photosFolder))
