@@ -40,9 +40,9 @@ struct DevelopProfilePicker: View {
                                   app.updateDevelopDraft(next, for: asset.id)
                               },
                               onReset: {
-                                  var next = app.developSettings[asset.id] ?? .neutral
-                                  next.profileAmount = control.neutral
-                                  app.commitDevelop([asset.id: next], undoName: L("配置文件数量"))
+                                  app.commitDevelop(asset.id, undoName: L("配置文件数量")) {
+                                      $0.profileAmount = control.neutral
+                                  }
                               },
                               onCommit: { app.commitDevelopDraft(for: asset.id, undoName: L("配置文件数量")) })
             }

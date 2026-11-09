@@ -138,12 +138,12 @@ struct CropEditor: View {
     }
 
     private func straighten(along start: CGPoint, _ end: CGPoint, frame: CGSize) {
-        var edit = app.developSettings[asset.id] ?? .neutral
-        guard let angle = DevelopGeometry.straightenLevelling(from: start, to: end, current: edit.straighten)
-        else { return }
-        edit.straighten = angle
-        edit.crop = DevelopGeometry.refit(edit, frame: frame)
-        app.commitDevelop([asset.id: edit], undoName: L("拉直"))
+        let current = (app.developSettings[asset.id] ?? .neutral).straighten
+        guard let angle = DevelopGeometry.straightenLevelling(from: start, to: end, current: current) else { return }
+        app.commitDevelop(asset.id, undoName: L("拉直")) { edit in
+            edit.straighten = angle
+            edit.crop = DevelopGeometry.refit(edit, frame: frame)
+        }
     }
 
     // ---- layout and hit testing ----

@@ -87,9 +87,7 @@ extension DevelopPanel {
                 section(L("镜头校正"), id: "lens") {
                     ForEach(DevelopControl.lens) { control in slider(control, asset, settings) }
                     Toggle("删除色差", isOn: Binding(get: { settings.removeChromaticAberration }, set: { on in
-                        var next = app.developSettings[asset.id] ?? .neutral
-                        next.removeChromaticAberration = on
-                        app.commitDevelop([asset.id: next], undoName: L("删除色差"))
+                        app.commitDevelop(asset.id, undoName: L("删除色差")) { $0.removeChromaticAberration = on }
                     }))
                     .toggleStyle(.checkbox)
                     .controlSize(.small)

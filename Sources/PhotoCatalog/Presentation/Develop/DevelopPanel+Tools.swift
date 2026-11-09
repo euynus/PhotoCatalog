@@ -105,10 +105,10 @@ extension DevelopPanel {
                 .help("按画面中的地平线自动拉直")
             Spacer(minLength: 0)
             Button("复位裁剪") {
-                var next = app.developSettings[asset.id] ?? .neutral
-                next.crop = nil
-                next.straighten = 0
-                app.commitDevelop([asset.id: next], undoName: L("复位裁剪"))
+                app.commitDevelop(asset.id, undoName: L("复位裁剪")) {
+                    $0.crop = nil
+                    $0.straighten = 0
+                }
             }
             .disabled(settings.crop == nil && settings.straighten == 0)
         }
@@ -124,9 +124,7 @@ extension DevelopPanel {
             if !settings.spots.isEmpty {
                 Text("\(settings.spots.count) 处").font(.system(size: 11)).foregroundStyle(Theme.text3)
                 Button("全部清除") {
-                    var next = app.developSettings[asset.id] ?? .neutral
-                    next.spots = []
-                    app.commitDevelop([asset.id: next], undoName: L("清除污点去除"))
+                    app.commitDevelop(asset.id, undoName: L("清除污点去除")) { $0.spots = [] }
                 }
             }
         }
@@ -135,20 +133,7 @@ extension DevelopPanel {
             let index = settings.spots.firstIndex { $0.id == app.developSelectedSpotId }
             Picker("污点模式", selection: Binding(
                 get: { index.map { settings.spots[$0].mode } ?? app.developSpotBrush.mode },
-                set: { mode in
-                    app.developSpotBrush.mode = mode
-                    // heal and clone trade places; a remove spot is made by painting, not by switching
-                    guard let index, mode != .remove, settings.spots[index].mode != .remove else {
-                        if mode == .remove || index.map({ settings.spots[$0].mode == .remove }) == true {
-                            app.developSelectedSpotId = nil
-                        }
-                        return
-                    }
-                    var next = app.developSettings[asset.id] ?? .neutral
-                    guard next.spots.indices.contains(index) else { return }
-                    next.spots[index].mode = mode
-                    app.commitDevelop([asset.id: next], undoName: L("污点模式"))
-                })) {
+                set: { app.setSpotMode($0, for: asset) })) {
                 ForEach(SpotRemoval.Mode.allCases) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented)

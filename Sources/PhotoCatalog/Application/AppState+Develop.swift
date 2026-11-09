@@ -398,6 +398,30 @@ extension AppState {
         }
     }
 
+    /// Saves a change to one photo's saved settings (not its draft) as one undo step.
+    func commitDevelop(_ id: String, undoName: String, _ change: (inout DevelopSettings) -> Void) {
+        var next = developSettings[id] ?? .neutral
+        change(&next)
+        commitDevelop([id: next], undoName: undoName)
+    }
+
+    /// The spot tool's mode picker: sets the brush's mode and switches the selected spot's. Heal
+    /// and clone trade places; a remove spot is made by painting, not by switching, so choosing
+    /// remove, or another mode for a remove spot, only deselects it.
+    func setSpotMode(_ mode: SpotRemoval.Mode, for asset: Asset) {
+        developSpotBrush.mode = mode
+        let shown = developSettings(for: asset.id)
+        let index = shown.spots.firstIndex { $0.id == developSelectedSpotId }
+        guard let index, mode != .remove, shown.spots[index].mode != .remove else {
+            if mode == .remove || index.map({ shown.spots[$0].mode == .remove }) == true {
+                developSelectedSpotId = nil
+            }
+            return
+        }
+        guard (developSettings[asset.id] ?? .neutral).spots.indices.contains(index) else { return }
+        commitDevelop(asset.id, undoName: L("污点模式")) { $0.spots[index].mode = mode }
+    }
+
     /// Saves a change background work made (a spot's source found, a subject masked, auto tone
     /// measured) to each photo's saved settings — and, when the user is mid-drag on one of
     /// them, to the drag as well, so neither the change nor the drag is lost on release.

@@ -142,10 +142,10 @@ extension DevelopPanel {
                 .help("只让竖直线条竖直、平行")
             Spacer(minLength: 0)
             Button("复位变换") {
-                var next = app.developSettings[asset.id] ?? .neutral
-                next.perspectiveVertical = 0
-                next.perspectiveHorizontal = 0
-                app.commitDevelop([asset.id: next], undoName: L("复位变换"))
+                app.commitDevelop(asset.id, undoName: L("复位变换")) {
+                    $0.perspectiveVertical = 0
+                    $0.perspectiveHorizontal = 0
+                }
             }
             .disabled(!settings.hasPerspective)
         }
