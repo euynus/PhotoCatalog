@@ -265,15 +265,29 @@ extension AppState {
     }
 
     /// Lets go of the photo list's caches before photos are added or changed (the list is worked out
-    /// again after it): a list that is the photos' own array would have them copied whole by the
-    /// change, and any other is freed off the main thread (at 500k photos, ~6 ms).
+    /// again after it).
     private func letGoOfListCaches() {
-        let photos = assets.withUnsafeBufferPointer { $0.baseAddress }
         let lists = [listCache?.value, uncollapsedListCache?.value].compactMap { $0 }
-            .filter { list in list.withUnsafeBufferPointer { $0.baseAddress } != photos }
         (listCache, uncollapsedListCache) = (nil, nil)
         matchingPositionsCache = nil   // positions in the photos as they were
-        if !lists.isEmpty { DispatchQueue.global(qos: .utility).async { withExtendedLifetime(lists) {} } }
+        releaseOffMain(lists)
+    }
+
+    /// Frees photo lists the list's caches have let go of on another thread (at 500k photos, ~6 ms
+    /// of the main thread), but never one still in use: the photos' own array, or the array a list
+    /// cache holds now. Handed over, it would be held there a while, and the next change of it in
+    /// place would copy it whole.
+    func releaseOffMain(_ lists: [[Asset]]) {
+        func address(_ list: [Asset]?) -> UnsafePointer<Asset>? { list?.withUnsafeBufferPointer { $0.baseAddress } }
+        var seen: Set<UnsafePointer<Asset>> = []
+        for live in [address(assets), address(listCache?.value), address(uncollapsedListCache?.value)] {
+            if let live { seen.insert(live) }
+        }
+        // each array once, an empty one not at all
+        let freed = lists.filter { list in address(list).map { !list.isEmpty && seen.insert($0).inserted } ?? false }
+        guard !freed.isEmpty else { return }
+        listsReleasedOffMain += freed.count
+        listReleaseQueue.async { withExtendedLifetime(freed) {} }
     }
 
     /// Folder counts with a count (none yet) for each folder a grown tree put in, as counting

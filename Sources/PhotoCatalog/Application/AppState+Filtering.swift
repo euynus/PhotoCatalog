@@ -182,6 +182,8 @@ extension AppState {
     var list: [Asset] {
         let signature = currentListSignature
         if let cache = listCache, cache.signature == signature { return cache.value }
+        // the lists this one replaces, freed off the main thread once the new ones are in place
+        let replaced = [listCache?.value, uncollapsedListCache?.value].compactMap { $0 }
         // folding a stack or opening one leaves the photos before folding as they were
         let matching: [Asset]
         if let cache = uncollapsedListCache, cache.signature.hasPhotosBeforeFolding(of: signature) {
@@ -195,6 +197,7 @@ extension AppState {
             : PhotoStackService.visibleAssets(matching, stacks: photoStacks, collapsedStackIds: collapsedStackIds)
         listCache = (signature, value)
         listIdentity &+= 1
+        releaseOffMain(replaced)
         return value
     }
 
