@@ -233,28 +233,41 @@ final class Database: @unchecked Sendable {
 
     /// `PRAGMA integrity_check` through a read-only connection of its own: the check reads the
     /// whole file (seconds on a large catalog, tens of them cold), and on this connection it held
-    /// the lock every edit waits for. True when SQLite reports nothing wrong. Like `snapshot`, it needs the catalog's
-    /// security scope active and the WAL's -shm there, as it is while this connection is open; its
-    /// read holds back background checkpoints until it ends, so the WAL grows by what is written
-    /// meanwhile (the ceiling still bounds it).
+    /// the lock every edit waits for. True when SQLite reports nothing wrong. Like `snapshot`, it
+    /// needs the catalog's security scope active and the WAL's -shm there, as it is while this
+    /// connection is open. No checkpoint, not even the ceiling's, gets past its read until it
+    /// ends, so the WAL grows by everything written meanwhile, for as long as it runs: the first
+    /// checkpoint after it moves that into the database, and the WAL's space is used again. Only
+    /// in WAL mode (which that connection reads off the file, without waiting for this one's
+    /// lock): otherwise its read lock would keep every commit out, edits failing as busy once
+    /// they'd waited out the timeout, so the check runs on this connection, edits waiting for it
+    /// as before.
     func integrityCheck() throws -> Bool {
         let read = try Self.openReadOnly(path)
         defer { sqlite3_close(read) }
         sqlite3_busy_timeout(read, 4000)
+        // a mode it can't read (the catalog busy past the timeout) is taken as not WAL
+        guard (try? Self.firstColumn(of: "PRAGMA journal_mode;", on: read))?.first?.lowercased() == "wal" else {
+            return try query("PRAGMA integrity_check;").map { $0.text("integrity_check") } == ["ok"]
+        }
+        return try Self.firstColumn(of: "PRAGMA integrity_check;", on: read) == ["ok"]
+    }
+
+    /// Each row's first column, as text, of `sql` run on `connection`.
+    private static func firstColumn(of sql: String, on connection: OpaquePointer) throws -> [String] {
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(read, "PRAGMA integrity_check;", -1, &statement, nil) == SQLITE_OK,
-              let statement else {
-            throw DBError.prepare(String(cString: sqlite3_errmsg(read)))
+        guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            throw DBError.prepare(String(cString: sqlite3_errmsg(connection)))
         }
         defer { sqlite3_finalize(statement) }
         var rows: [String] = []
         while true {
             let rc = sqlite3_step(statement)
             if rc == SQLITE_DONE { break }
-            guard rc == SQLITE_ROW else { throw DBError.step(String(cString: sqlite3_errmsg(read))) }
+            guard rc == SQLITE_ROW else { throw DBError.step(String(cString: sqlite3_errmsg(connection))) }
             rows.append(sqlite3_column_text(statement, 0).map { String(cString: $0) } ?? "")
         }
-        return rows == ["ok"]
+        return rows
     }
 
     /// A read-only connection of its own to the database at `path`, for work that shouldn't wait
