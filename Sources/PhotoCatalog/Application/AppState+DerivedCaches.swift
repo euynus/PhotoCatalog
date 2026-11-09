@@ -507,7 +507,13 @@ extension AppState {
         if let patchedSidebar { sidebarCountIndexCache = patchedSidebar }
         patch(&projectCountsCache, projectChanges, \.project)
         patch(&clientCountsCache, clientChanges, \.client)
-        if let listBefore { patchListCaches(with: edits, validFor: listBefore) }
+        if let listBefore {
+            patchListCaches(with: edits, validFor: listBefore)
+            // the same photos match, each where it was in `assets`: a new sort needs no new pass
+            if let cache = matchingPositionsCache, cache.signature.hasPhotosBeforeSorting(of: listBefore) {
+                matchingPositionsCache = (currentListSignature, cache.positions)
+            }
+        }
         if let listRemoval {
             removeFromListCaches(listRemoval.leaving, staying: listRemoval.staying, validFor: listRemoval.before)
         }

@@ -93,6 +93,32 @@ final class ListSortReuseTests: CatalogTestCase {
         }
     }
 
+    /// A rating key that leaves the list's photos as they are (no filter or collection reads it,
+    /// or the photo stays in) keeps the last pass's photos for a new order: the sort after it
+    /// takes no new pass and lists what working the list out afresh lists.
+    @MainActor
+    func testAReviewKeyKeepsThePassForTheNextSort() {
+        let app = makeApp(library())
+        var rated = Filters()
+        rated.minRating = 2
+        let cases: [(String, Filters, String)] = [("no filter", Filters(), "p1"), ("a photo staying in a filter", rated, "p4")]
+        for (name, filters, id) in cases {
+            app.setSort(Sort())
+            app.setFilters(filters)
+            let listed = app.list.map(\.id)
+            XCTAssertTrue(listed.contains(id), name)
+            let passes = app.listFilterPasses
+            XCTAssertTrue(app.setRating(5, on: [id]), name)
+            XCTAssertEqual(app.list.map(\.id), listed, "\(name): the same photos")
+            for sort in [Sort(field: .name, descending: false), Sort(field: .rating, descending: true)] {
+                app.setSort(sort)
+                XCTAssertEqual(app.list.map(\.id), fresh(like: app), "\(name), \(sort)")
+                XCTAssertEqual(app.list.first { $0.id == id }?.rating, 5, "\(name), \(sort): as rated")
+            }
+            XCTAssertEqual(app.listFilterPasses, passes, "\(name): no pass for a new order after the key")
+        }
+    }
+
     /// Folded stacks and a new order together reuse the pass; any change of the photos, and the
     /// moving cutoff of Recently Imported, take a new one.
     @MainActor
