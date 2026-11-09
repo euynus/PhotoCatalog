@@ -535,6 +535,6 @@ final class ImportCoordinator: @unchecked Sendable {
     }
 
     private func shortHash(_ s: String) -> String {
-        String(SHA256.hash(data: Data(s.utf8)).compactMap { String(format: "%02x", $0) }.joined().prefix(16))
+        SHA256.hash(data: Data(s.utf8)).prefix(8).hexString
     }
 }

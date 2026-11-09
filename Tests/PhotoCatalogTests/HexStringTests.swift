@@ -34,10 +34,11 @@ final class HexStringTests: XCTestCase {
         }
     }
 
-    /// The asset-id form ImportCoordinator stores: the first 16 hex digits of a path's SHA-256.
+    /// The asset-id form ImportCoordinator stores: the first 16 hex digits of a path's SHA-256,
+    /// written from its first 8 bytes.
     func testShortHashOfANonASCIIPath() {
         let digest = SHA256.hash(data: Data("/Volumes/卡/DCIM/Café é.CR3".utf8))
-        XCTAssertEqual(String(digest.hexString.prefix(16)),
+        XCTAssertEqual(digest.prefix(8).hexString,
                        String(digest.compactMap { String(format: "%02x", $0) }.joined().prefix(16)))
     }
 }
