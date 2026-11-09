@@ -44,7 +44,7 @@ enum EditedVersions {
 
     /// Each original with its edited copies, as groups for stacking. The original is the RAW
     /// when a RAW and a JPEG share its name; virtual copies take no part.
-    static func groups(_ assets: [Asset], chunk: Int = 65_536) -> [DuplicateGroup] {
+    static func groups(_ assets: [Asset], chunk: Int = 8_192) -> [DuplicateGroup] {
         Index(assets, chunk: chunk).groups(of: assets)
     }
 
@@ -65,7 +65,7 @@ enum EditedVersions {
         /// Both passes over the photos run in chunks side by side, joined in catalog order: on
         /// one thread they took ~60 ms at 500k photos without edited copies, ~500 ms with some,
         /// after every structural change.
-        init(_ assets: [Asset], chunk: Int = 65_536) {
+        init(_ assets: [Asset], chunk: Int = 8_192) {
             count = assets.count
             let found = PhotoStackService.found(in: assets, chunk: chunk) { asset, position in
                 EditedVersions.editedCopy(asset).map { (position: position, dir: $0.dir, key: $0.key) }
@@ -132,7 +132,7 @@ enum EditedVersions {
         // a cheap test first: only names that could be an edited copy are parsed
         guard !asset.deleted, !asset.isVirtualCopy, mightBeEditedCopy(asset.filename),
               let path = asset.localPath else { return nil }
-        let (dir, stem) = split(path)
+        let (dir, stem) = (PathString.directory(of: path), fileStem(of: path))
         guard let original = originalStem(of: stem) else { return nil }
         return (dir, dir + "/" + original.lowercased())
     }
@@ -142,8 +142,9 @@ enum EditedVersions {
     private static func original(_ asset: Asset, in folders: Folders, names: [String: Int]) -> Int? {
         guard !asset.deleted, !asset.isVirtualCopy, let path = asset.localPath,
               folders.mightContain(folderOf: path) else { return nil }
-        let (dir, stem) = split(path)
+        let dir = PathString.directory(of: path)
         guard folders.names.contains(Substring(dir)) else { return nil }
+        let stem = fileStem(of: path)
         let key = dir + "/" + stem.lowercased()
         // an edited copy's name (which no original has) says "edit" or "编": the costly
         // pattern match is for names that might
@@ -151,29 +152,10 @@ enum EditedVersions {
         return name
     }
 
-    /// A path's folder and its file's name without the extension, as `PathString` takes them
-    /// (string splitting, not URLs: this runs over every photo in the catalog). Read from the
-    /// bytes when the last slash stands between plain ASCII, as catalog paths' does: counting the
-    /// path's characters, as `PathString` does to find it, took most of a pass over the photos.
-    private static func split(_ path: String) -> (dir: String, stem: String) {
-        guard let slash = lastSlash(in: path) else {
-            return (PathString.directory(of: path), String(PathString.splitExtension(PathString.lastComponent(path)).stem))
-        }
-        let end = path.utf8.index(path.utf8.startIndex, offsetBy: slash)
-        let name = String(path[path.utf8.index(after: end)...])
-        return (slash == 0 ? "/" : String(path[..<end]), String(PathString.splitExtension(name).stem))
-    }
-
-    /// Where `path`'s last slash is among its bytes, when it has plain ASCII on both sides (and
-    /// so is a character of its own, where `PathString` splits the path): nil for other paths.
-    private static func lastSlash(in path: String) -> Int? {
-        let slash = path.utf8.withContiguousStorageIfAvailable { bytes -> Int? in
-            guard let last = bytes.last, last != UInt8(ascii: "/"),
-                  let slash = bytes.lastIndex(of: UInt8(ascii: "/")),
-                  bytes[slash + 1] < 0x80, slash == 0 || bytes[slash - 1] < 0x80 else { return nil }
-            return slash
-        }
-        return slash ?? nil
+    /// A path's file name without the extension, as `PathString` takes it (string splitting, not
+    /// URLs: this runs over every photo in the catalog).
+    private static func fileStem(of path: String) -> String {
+        String(PathString.splitExtension(PathString.lastComponent(path)).stem)
     }
 
     /// The folders edited copies are in, which a pass over every photo tells most photos apart
@@ -208,7 +190,7 @@ enum EditedVersions {
         /// ASCII on both sides (catalog paths' always does): a character of its own, then, as
         /// `PathString.directory` takes it. Other paths may be in any of them.
         func mightContain(folderOf path: String) -> Bool {
-            guard let slash = EditedVersions.lastSlash(in: path) else { return true }
+            guard let slash = PathString.lastSlash(in: path) else { return true }
             // the root's folder is "/" itself
             let length = max(slash, 1)
             let answer = path.utf8.withContiguousStorageIfAvailable { bytes -> Bool in

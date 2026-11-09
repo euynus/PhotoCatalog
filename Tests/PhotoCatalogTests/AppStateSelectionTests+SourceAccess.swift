@@ -230,13 +230,8 @@ extension AppStateSelectionTests {
         XCTAssertTrue(app.openCatalog(at: package))
 
         let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
-        try db.execChecked("""
-        CREATE TRIGGER fail_status_update BEFORE UPDATE OF status ON assets
-        WHEN NEW.status != OLD.status
-        BEGIN
-          SELECT RAISE(ABORT, 'forced status save failure');
-        END;
-        """)
+        try db.failWrites("fail_status_update", before: "UPDATE OF status", on: "assets",
+                          when: "WHEN NEW.status != OLD.status", message: "forced status save failure")
         try FileManager.default.removeItem(at: original)
 
         app.detectMissingRealAssets()
@@ -264,13 +259,9 @@ extension AppStateSelectionTests {
         try store.upsert([asset])
 
         let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
-        try db.execChecked("""
-        CREATE TRIGGER reject_unrelated_availability_write
-        BEFORE UPDATE OF filename, title, caption, keywords, camera, lens ON assets
-        BEGIN
-          SELECT RAISE(ABORT, 'availability update touched unrelated metadata');
-        END;
-        """)
+        try db.failWrites("reject_unrelated_availability_write",
+                          before: "UPDATE OF filename, title, caption, keywords, camera, lens", on: "assets",
+                          message: "availability update touched unrelated metadata")
 
         try store.updateAssetAvailability([
             AssetAvailabilityUpdate(assetId: asset.id, status: .missing, localPath: asset.localPath)

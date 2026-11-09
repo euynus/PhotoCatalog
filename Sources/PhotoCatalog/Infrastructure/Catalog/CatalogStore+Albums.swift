@@ -47,6 +47,32 @@ extension CatalogStore {
         }
     }
 
+    /// Adds and removes these photos in an album, leaving its other members' rows as they are:
+    /// for the quick collection, a set, which saving whole renumbered on every change.
+    func updateAlbumMembers(albumId: String, name: String, sortOrder: Int, adding: Set<String>,
+                            removing: Set<String>, updatedAt: Date = .now) throws {
+        let now = Self.iso(updatedAt)
+        try db.transaction {
+            // the album's row first: its members' foreign key needs it
+            try upsertAlbumRow(id: albumId, setId: nil, type: "album", name: name, sortOrder: sortOrder, now: now)
+            if !removing.isEmpty {
+                let ids = String(decoding: try JSONSerialization.data(withJSONObject: removing.sorted()), as: UTF8.self)
+                try db.run("DELETE FROM album_assets WHERE album_id=? AND asset_id IN (SELECT value FROM json_each(?));",
+                           [.text(albumId), .text(ids)])
+            }
+            guard !adding.isEmpty else { return }
+            let position = try db.query("SELECT COALESCE(MAX(position),-1)+1 AS n FROM album_assets WHERE album_id=?;",
+                                        [.text(albumId)]).first?.int("n") ?? 0
+            // a photo the catalog has no row for (a demo photo) is left out, as saveAlbum does
+            for (offset, assetId) in adding.sorted().enumerated() {
+                try db.run("""
+                INSERT OR IGNORE INTO album_assets(album_id, asset_id, position, added_at)
+                SELECT ?, id, ?, ? FROM assets WHERE id=?;
+                """, [.text(albumId), .int(position + offset), .text(now), .text(assetId)])
+            }
+        }
+    }
+
     func renameAlbum(id: String, name: String, updatedAt: Date = .now) throws {
         try db.run("""
         UPDATE albums

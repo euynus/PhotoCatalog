@@ -780,10 +780,8 @@ enum ImportPersistenceCheck {
 
     private static func block(_ store: CatalogStore, table: String, operation: String,
                               condition: String = "") throws {
-        try store.db.execChecked("""
-        CREATE TRIGGER block_\(table) BEFORE \(operation) ON \(table) \(condition)
-        BEGIN SELECT RAISE(ABORT, 'blocked \(table)'); END;
-        """)
+        try store.db.failWrites("block_\(table)", before: operation, on: table, when: condition,
+                                message: "blocked \(table)")
     }
 
     private static func expectFailure(_ action: () throws -> Void) {

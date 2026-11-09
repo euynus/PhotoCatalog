@@ -47,6 +47,33 @@ class CatalogTestCase: XCTestCase {
         guard CGImageDestinationFinalize(destination) else { throw NSError(domain: "CatalogTestSupport", code: 3) }
     }
 
+    /// A catalog in the scratch folder, `Library.photolibrary`, holding one photo imported from
+    /// its source folder `Source`: `name`, an 80×60 JPEG of `shade`.
+    func importPhoto(_ name: String, shade: Int) throws
+        -> (store: CatalogStore, package: URL, asset: Asset, original: URL) {
+        let source = scratch.appendingPathComponent("Source")
+        let original = source.appendingPathComponent(name)
+        try makeTestJPEG(at: original, shade: shade)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+        let asset = try XCTUnwrap(ImportCoordinator(store: store)
+            .importFiles([original], from: source, sourceRootId: "source-1", folderName: "Source").first)
+        try store.upsert([asset])
+        return (store, package, asset, original)
+    }
+
+    /// `package` opened in a new, onboarded app, which runs no background maintenance unless asked to.
+    @MainActor
+    func openCatalog(_ package: URL, backgroundMaintenance: Bool = false,
+                     file: StaticString = #filePath, line: UInt = #line) -> AppState {
+        let app = AppState()
+        app.onboarded = true
+        app.runsBackgroundMaintenance = backgroundMaintenance
+        XCTAssertTrue(app.openCatalog(at: package), file: file, line: line)
+        return app
+    }
+
     /// Runs a rescan of the watched folders to its end (including any it queued behind it).
     @MainActor
     func rescanToCompletion(_ app: AppState) async throws {
@@ -63,7 +90,7 @@ extension XCTestCase {
     /// last registered first: a test's run before those its class registered in `setUp()`, and a
     /// subclass's before its superclass's.
     func preservingPreferences(_ keys: [String]) {
-        let saved = SavedPreferences(keys: keys)
+        let saved = PreferenceSnapshot(keys: keys)
         addTeardownBlock { saved.restore() }
     }
 
@@ -71,7 +98,7 @@ extension XCTestCase {
     /// does: for a test that opens catalogs, which writes more than the settings it changes (each
     /// catalog and folder is remembered, a catalog backed up automatically gets its date).
     func preservingAllPreferences() {
-        let saved = SavedPreferences(keys: nil)
+        let saved = PreferenceSnapshot(keys: nil)
         addTeardownBlock { saved.restore() }
     }
 
@@ -94,36 +121,5 @@ extension XCTestCase {
         }
         XCTFail(message)
         throw NSError(domain: "CatalogTestSupport.Wait", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
-    }
-}
-
-/// Preferences as a test found them in the run's suite (all of them when `keys` is nil), for its
-/// teardown block to put back. The suite's own values: one read through from another domain (a
-/// key set for every app on the Mac) put back would be the suite's from then on. `Any` isn't
-/// `Sendable`, but these are property-list values that nothing changes once they're read.
-private struct SavedPreferences: @unchecked Sendable {
-    private let suiteName = IsolatedRun.current?.suiteName ?? ""
-    private let keys: [String]?
-    private let values: [String: Any]
-
-    init(keys: [String]?) {
-        let suite = UserDefaults.app.persistentDomain(forName: suiteName) ?? [:]
-        self.keys = keys
-        values = keys.map { keys in suite.filter { keys.contains($0.key) } } ?? suite
-    }
-
-    func restore() {
-        let defaults = UserDefaults.app
-        guard let keys else {
-            defaults.setPersistentDomain(values, forName: suiteName)
-            return
-        }
-        for key in keys {
-            if let value = values[key] {
-                defaults.set(value, forKey: key)
-            } else {
-                defaults.removeObject(forKey: key)
-            }
-        }
     }
 }

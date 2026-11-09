@@ -4,12 +4,8 @@ import Observation
 /// RAW+JPEG pairs present as one photo and edit as one.
 enum PairingCheck {
     static func run() {
-        let pairing = UserDefaults.app.object(forKey: "pc_pairRawJpeg")
-        let autoStack = UserDefaults.app.object(forKey: "pc_autoStackSeconds")
-        defer {
-            UserDefaults.app.set(pairing, forKey: "pc_pairRawJpeg")
-            UserDefaults.app.set(autoStack, forKey: "pc_autoStackSeconds")
-        }
+        let saved = PreferenceSnapshot(keys: ["pc_pairRawJpeg", "pc_autoStackSeconds"])
+        defer { saved.restore() }
         checkPathStrings()
         MainActor.assumeIsolated {
             checkPresentationAndEdits()
@@ -24,20 +20,9 @@ enum PairingCheck {
     /// `file` as another file of `raw`'s shot — its JPEG — taken by the RAW's camera at the RAW's
     /// moment, as a pair needs; everything else stays `file`'s.
     static func sameShot(_ file: Asset, as raw: Asset) -> Asset {
-        Asset(id: file.id, pid: file.pid, ori: file.ori, thumb: file.thumb, preview: file.preview,
-              filename: file.filename, type: file.type, isRaw: file.isRaw, folderId: file.folderId,
-              folderName: file.folderName, date: raw.date, width: file.width, height: file.height,
-              orientation: file.orientation, camera: raw.camera, lens: file.lens, focal: file.focal,
-              aperture: file.aperture, shutter: file.shutter, iso: file.iso, colorSpace: file.colorSpace,
-              hasICCProfile: file.hasICCProfile, fileMB: file.fileMB, fileModifiedAt: file.fileModifiedAt,
-              fileCreatedAt: file.fileCreatedAt, rating: file.rating, flag: file.flag, colorLabel: file.colorLabel,
-              keywords: file.keywords, title: file.title, caption: file.caption, author: file.author,
-              copyright: file.copyright, makerNotes: file.makerNotes, project: file.project, client: file.client,
-              location: file.location, gps: file.gps, gpsAltitude: file.gpsAltitude, status: file.status,
-              importedAt: file.importedAt, deleted: file.deleted, localPath: file.localPath,
-              captureDateSource: file.captureDateSource, contentHash: file.contentHash, quickHash: file.quickHash,
-              isDemo: file.isDemo, faces: file.faces, perceptualHash: file.perceptualHash,
-              masterId: file.masterId, copyName: file.copyName, duration: file.duration)
+        var shot = file.rebuilt(camera: raw.camera)
+        shot.date = raw.date
+        return shot
     }
 
     @MainActor

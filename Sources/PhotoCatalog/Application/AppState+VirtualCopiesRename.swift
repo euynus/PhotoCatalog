@@ -42,16 +42,9 @@ extension AppState {
         }
         selectedIds = Set(copyIds)
         setPrimary(copyIds[0])
-        if let undoManager {
-            UndoSteps.register(on: undoManager) {
-                undoManager.registerUndo(withTarget: self) { app in
-                    MainActor.assumeIsolated {
-                        _ = app.mutate(Set(copyIds), undoName: L("创建虚拟副本")) { $0.deleted = true }
-                        app.ensurePrimaryValid()
-                    }
-                }
-                undoManager.setActionName(L("创建虚拟副本"))
-            }
+        registerUndoStep(L("创建虚拟副本")) { app in
+            _ = app.mutate(Set(copyIds), undoName: L("创建虚拟副本")) { $0.deleted = true }
+            app.ensurePrimaryValid()
         }
         push(copies.count == 1 ? "已创建\(copies[0].copyName ?? "")" : "已创建 \(copies.count) 个虚拟副本", "copy")
     }

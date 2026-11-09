@@ -9,7 +9,7 @@ enum PhotoStackService {
     /// a photo already in a stack isn't taken again. Each stack's id is worked out in chunks
     /// side by side: one by one they took ~20 ms for 30k stacks.
     static func stacks(from groups: [DuplicateGroup], captureTimeGroups: [[String]] = [],
-                       chunk: Int = 4_096) -> [PhotoStack] {
+                       chunk: Int = 1_024) -> [PhotoStack] {
         var used = Set<String>(minimumCapacity: groups.reduce(0) { $0 + $1.items.count }
                                    + captureTimeGroups.reduce(0) { $0 + $1.count })
         var members: [(method: String, ids: [String])] = []
@@ -33,16 +33,10 @@ enum PhotoStackService {
             PhotoStack(id: stableId(method: member.method, assetIds: member.ids), method: member.method,
                        assetIds: member.ids)
         }
-        let chunk = max(chunk, 1)
-        let chunks = members.isEmpty ? 0 : (members.count - 1) / chunk + 1
-        guard chunks > 1 else { return members.map(stack) }
-        let lock = NSLock()
-        var parts = [[PhotoStack]](repeating: [], count: chunks)
-        DispatchQueue.concurrentPerform(iterations: chunks) { index in
-            let part = members[index * chunk ..< min(members.count, (index + 1) * chunk)].map(stack)
-            lock.withLock { parts[index] = part }
+        // the members through a pointer: threads reading one array retained its buffer by turns
+        return members.withUnsafeBufferPointer { members in
+            Chunks.joined(Chunks.map(members.count, chunk: chunk) { range in members[range].map(stack) })
         }
-        return Array(parts.joined())
     }
 
     /// Bursts and brackets: photos from one camera each taken within `seconds` of the one before,
@@ -156,19 +150,9 @@ enum PhotoStackService {
     /// What `result` finds in each photo (given with its position), in chunks side by side,
     /// joined in catalog order: the passes over every photo that stacks take.
     static func found<T>(in assets: [Asset], chunk: Int, _ result: (Asset, Int) -> T?) -> [T] {
-        let chunk = max(chunk, 1)
-        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
         // the photos through a pointer: threads reading one array retained its buffer by turns
-        return assets.withUnsafeBufferPointer { photos in
-            func part(_ range: Range<Int>) -> [T] { range.compactMap { result(photos[$0], $0) } }
-            guard chunks > 1 else { return part(photos.indices) }
-            let lock = NSLock()
-            var parts = [[T]](repeating: [], count: chunks)
-            DispatchQueue.concurrentPerform(iterations: chunks) { index in
-                let found = part(index * chunk ..< min(assets.count, (index + 1) * chunk))
-                lock.withLock { parts[index] = found }
-            }
-            return Array(parts.joined())
+        assets.withUnsafeBufferPointer { photos in
+            Chunks.joined(Chunks.map(photos.count, chunk: chunk) { range in range.compactMap { result(photos[$0], $0) } })
         }
     }
 

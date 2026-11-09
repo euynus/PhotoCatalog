@@ -6,12 +6,9 @@ enum DescriptionReviewRequestCheck {
     static func run() {
         MainActor.assumeIsolated {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("pc-description-request-\(UUID().uuidString)")
-            let defaults = UserDefaults.app
-            let previous = ["pc_llm", "pc_autoWriteXMP"].map { ($0, defaults.object(forKey: $0)) }
+            let savedPreferences = PreferenceSnapshot(keys: ["pc_llm", "pc_autoWriteXMP"])
             defer {
-                for (key, value) in previous {
-                    if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
-                }
+                savedPreferences.restore()
                 try? FileManager.default.removeItem(at: root)
             }
             guard let server = StandInServer() else { return assertionFailure("Local description test server started") }
@@ -115,10 +112,7 @@ enum DescriptionReviewRequestCheck {
 
     @MainActor
     private static func waitForBatch(_ app: AppState) {
-        let deadline = Date().addingTimeInterval(30)
-        while app.describeProgress != nil, Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-        }
+        CheckWait.until(30, poll: 0.01) { app.describeProgress == nil }
         assert(app.describeProgress == nil, "description batch completed before its deadline")
     }
 

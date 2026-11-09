@@ -151,7 +151,7 @@ enum CaptureDates {
     /// How many of the photos as shown were taken on each day, by days since 1970, counted in
     /// chunks on every core. Capture times are UTC wall clock, so a photo's day is integer
     /// arithmetic; a Calendar call per photo was most of the half second this took at 500k photos.
-    static func dayCounts(_ assets: [Asset], pairing: AssetPairing, chunk: Int = 65_536) -> [Int: Int] {
+    static func dayCounts(_ assets: [Asset], pairing: AssetPairing, chunk: Int = 8_192) -> [Int: Int] {
         func count(_ range: Range<Int>) -> [Int: Int] {
             var days: [Int: Int] = [:]
             for position in range where pairing.isShown(assets[position], at: position) {
@@ -160,15 +160,9 @@ enum CaptureDates {
             }
             return days
         }
-        let chunk = max(chunk, 1)
-        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
-        guard chunks > 1 else { return count(assets.indices) }
-        let lock = NSLock()
-        var days: [Int: Int] = [:]
-        DispatchQueue.concurrentPerform(iterations: chunks) { index in
-            let part = count(index * chunk ..< min(assets.count, (index + 1) * chunk))
-            lock.withLock { days.merge(part, uniquingKeysWith: +) }
-        }
+        let parts = Chunks.map(assets.count, chunk: chunk, count)
+        var days = parts.first ?? [:]
+        for part in parts.dropFirst() { days.merge(part, uniquingKeysWith: +) }
         return days
     }
 

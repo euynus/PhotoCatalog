@@ -74,15 +74,65 @@ extension AppStateSelectionTests {
 
     @MainActor
     func testDuplicateResolutionRejectsKeepIdOutsideGroup() throws {
-        var assets = Array(DemoData.assets.prefix(2))
+        let assets = Array(DemoData.assets.prefix(2))
         let group = DuplicateGroup(id: "dg-invalid-keep", method: "contentHash", score: 1, items: assets)
 
-        let report = DuplicateResolutionService.resolve(group, keepId: "not-in-group",
-                                                        in: &assets, action: .removeFromCatalog)
+        let report = DuplicateResolutionService.resolve(group, current: assets, keepId: "not-in-group",
+                                                        action: .removeFromCatalog)
 
         XCTAssertTrue(report.removedIds.isEmpty)
         XCTAssertEqual(report.failedCount, 1)
-        XCTAssertTrue(assets.allSatisfy { !$0.deleted })
+    }
+
+    /// A photo of the group the catalog no longer has is skipped, not removed.
+    func testDuplicateResolutionSkipsPhotosNoLongerInTheCatalog() {
+        let assets = Array(DemoData.assets.prefix(3))
+        let group = DuplicateGroup(id: "dg-gone", method: "contentHash", score: 1, items: assets)
+
+        let report = DuplicateResolutionService.resolve(group, current: [assets[0], assets[1]], keepId: assets[0].id,
+                                                        action: .removeFromCatalog)
+
+        XCTAssertEqual(report.removedIds, [assets[1].id])
+        XCTAssertEqual(report.skippedCount, 1)
+    }
+
+    /// Removing a group's duplicates saves them as removed, with their virtual copies, and the
+    /// group no longer folds or lists them.
+    @MainActor
+    func testDuplicateCatalogRemovalSavesTheRemovedPhotosAndTheirCopies() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pc-duplicate-remove-\(UUID().uuidString)")
+        let package = dir.appendingPathComponent("Library.photolibrary")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try CatalogStore(packageURL: package)
+        var assets = Array(DemoData.assets.prefix(2))
+        for index in assets.indices {
+            assets[index].isDemo = false
+            assets[index].deleted = false
+            assets[index].contentHash = "same-content"
+        }
+        let copy = assets[1].virtualCopy(id: "v-duplicate-copy", name: "副本 1")
+        try store.upsert(assets + [copy])
+
+        let app = AppState()
+        app.onboarded = true
+        app.confirmDestructiveAction = { _, _, _ in true }
+        XCTAssertTrue(app.openCatalog(at: package))
+        let group = DuplicateGroup(id: "dg-remove", method: "contentHash", score: 1, items: assets)
+        app.duplicateGroupsCache = [group]
+        XCTAssertNotNil(app.stackInfo(for: assets[0]), "the group folds as a stack")
+
+        XCTAssertTrue(app.resolveDuplicateGroup(group, keepId: assets[0].id, action: .removeFromCatalog))
+
+        XCTAssertEqual(app.asset(id: assets[0].id)?.deleted, false)
+        XCTAssertEqual(app.asset(id: assets[1].id)?.deleted, true)
+        XCTAssertEqual(app.asset(id: copy.id)?.deleted, true, "a removed duplicate's virtual copy goes with it")
+        XCTAssertTrue(app.duplicateGroups.isEmpty)
+        XCTAssertNil(app.stackInfo(for: assets[0]))
+        XCTAssertFalse(app.list.contains { $0.id == assets[1].id || $0.id == copy.id })
+        let saved = try CatalogStore(packageURL: package).loadAssets()
+        XCTAssertEqual(Set(saved.map(\.id)), [assets[0].id], "the catalog keeps only the kept photo")
     }
 
     func testDuplicateReclaimEstimateSkipsKeptAsset() {

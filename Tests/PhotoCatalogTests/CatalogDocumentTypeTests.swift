@@ -6,25 +6,14 @@ import UniformTypeIdentifiers
 /// Catalogs opened from the Finder. A `.photolibrary` package has Apple's type
 /// (`com.apple.photo.library`, which Photos opens); the app declares it as a document type so
 /// Finder offers PhotoCatalog in Open With, and a catalog handed over that way opens.
-final class CatalogDocumentTypeTests: XCTestCase {
+final class CatalogDocumentTypeTests: CatalogTestCase {
     private static let repoRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    private var root: URL!
 
     override func setUp() {
         super.setUp()
-        let defaults = UserDefaults.app
-        preservingAllPreferences()
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("pc-document-type-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defaults.set(false, forKey: "pc_openLast")
         // never the real library, even on a fallback path
-        defaults.set(root.appendingPathComponent("Fallback.photolibrary"), forKey: "pc_catalogURL")
-    }
-
-    override func tearDown() {
-        if let root { try? FileManager.default.removeItem(at: root) }
-        super.tearDown()
+        UserDefaults.app.set(scratch.appendingPathComponent("Fallback.photolibrary"), forKey: "pc_catalogURL")
     }
 
     /// The Info.plist script/build_and_run.sh writes into the app bundle.
@@ -58,7 +47,7 @@ final class CatalogDocumentTypeTests: XCTestCase {
     /// App Store Connect wants the Xcode and SDK an upload was built with: an App Store build
     /// whose toolchain can't be read stops, rather than going out without them.
     func testAppStoreInfoPlistNeedsTheToolchain() throws {
-        let bin = root.appendingPathComponent("bin")
+        let bin = scratch.appendingPathComponent("bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
         let xcodebuild = bin.appendingPathComponent("xcodebuild")
         try Data("#!/bin/sh\nexit 1\n".utf8).write(to: xcodebuild)
@@ -95,14 +84,14 @@ final class CatalogDocumentTypeTests: XCTestCase {
     @MainActor
     func testCatalogsOpenedBeforeTheWindowAppearsAreHandedOnOnce() {
         let delegate = AppDelegate()
-        let first = root.appendingPathComponent("First.photolibrary")
-        delegate.application(NSApplication.shared, open: [first, root.appendingPathComponent("IMG_0001.JPG")])
+        let first = scratch.appendingPathComponent("First.photolibrary")
+        delegate.application(NSApplication.shared, open: [first, scratch.appendingPathComponent("IMG_0001.JPG")])
 
         var opened: [URL] = []
         delegate.openCatalogURL = { opened.append($0) }
         XCTAssertEqual(opened, [first], "a catalog opened at launch is lost, or another file is taken for one")
 
-        let second = root.appendingPathComponent("Second.photolibrary")
+        let second = scratch.appendingPathComponent("Second.photolibrary")
         delegate.application(NSApplication.shared, open: [second])
         XCTAssertEqual(opened, [first, second])
     }
@@ -110,8 +99,8 @@ final class CatalogDocumentTypeTests: XCTestCase {
     @MainActor
     func testCatalogOpenedFromFinderOpensFromTheWelcomeScreen() async throws {
         // a catalog this Mac has never opened, with the Welcome screen showing
-        let url = root.appendingPathComponent("Holiday.photolibrary")
-        let source = root.appendingPathComponent("Source")
+        let url = scratch.appendingPathComponent("Holiday.photolibrary")
+        let source = scratch.appendingPathComponent("Source")
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
         var asset = DemoData.assets[3]
         let original = source.appendingPathComponent(asset.filename)

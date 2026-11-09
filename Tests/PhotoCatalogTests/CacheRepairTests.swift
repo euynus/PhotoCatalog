@@ -9,19 +9,8 @@ final class CacheRepairTests: CatalogTestCase {
     /// would make missing cache files itself).
     @MainActor
     private func openCatalogWithPhoto() throws -> (AppState, Asset, CatalogStore) {
-        let source = scratch.appendingPathComponent("Source")
-        let package = scratch.appendingPathComponent("Library.photolibrary")
-        let photo = source.appendingPathComponent("a.jpg")
-        try makeTestJPEG(at: photo, shade: 3)
-        let store = try CatalogStore(packageURL: package)
-        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
-        let asset = try XCTUnwrap(ImportCoordinator(store: store)
-            .importFiles([photo], from: source, sourceRootId: "source-1", folderName: "Source").first)
-        try store.upsert([asset])
-        let app = AppState()
-        app.onboarded = true
-        app.runsBackgroundMaintenance = false
-        XCTAssertTrue(app.openCatalog(at: package))
+        let (store, package, asset, _) = try importPhoto("a.jpg", shade: 3)
+        let app = openCatalog(package)
         let opened = try XCTUnwrap(app.assets.first { $0.id == asset.id })
         XCTAssertTrue(exists(opened.thumb) && exists(opened.preview))
         return (app, opened, store)

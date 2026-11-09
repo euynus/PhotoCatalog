@@ -182,12 +182,8 @@ extension AppStateSelectionTests {
         XCTAssertTrue(app.openCatalog(at: package))
 
         let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
-        try db.execChecked("""
-        CREATE TRIGGER reject_backup_asset_update BEFORE UPDATE ON assets
-        BEGIN
-          SELECT RAISE(ABORT, 'backup must not rewrite asset rows');
-        END;
-        """)
+        try db.failWrites("reject_backup_asset_update", before: "UPDATE", on: "assets",
+                          message: "backup must not rewrite asset rows")
 
         app.runBackup()
 

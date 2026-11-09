@@ -71,6 +71,44 @@ struct IsolatedRun: Sendable {
     }
 }
 
+/// Preferences as a test or check found them in the run's suite (all of them when `keys` is
+/// nil), for it to put back when it ends: a key that had a value gets it back, and a key that had
+/// none is removed. The suite's own values: one read through from another domain (a key set for
+/// every app on the Mac) put back would be the suite's from then on. `Any` isn't `Sendable`, but
+/// these are property-list values that nothing changes once they're read.
+struct PreferenceSnapshot: @unchecked Sendable {
+    private let suiteName: String
+    private let keys: [String]?
+    private let values: [String: Any]
+
+    init(keys: [String]?) {
+        // an app run has no suite of its own: its snapshot would hold nothing, and restoring it
+        // would remove the user's settings
+        guard let run = IsolatedRun.current else {
+            preconditionFailure("preferences are put back only in a test or check run")
+        }
+        suiteName = run.suiteName
+        let suite = UserDefaults.app.persistentDomain(forName: suiteName) ?? [:]
+        self.keys = keys
+        values = keys.map { keys in suite.filter { keys.contains($0.key) } } ?? suite
+    }
+
+    func restore() {
+        let defaults = UserDefaults.app
+        guard let keys else {
+            defaults.setPersistentDomain(values, forName: suiteName)
+            return
+        }
+        for key in keys {
+            if let value = values[key] {
+                defaults.set(value, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+    }
+}
+
 extension UserDefaults {
     /// The app's preferences: the standard ones, except in a test or check run, which keeps a
     /// suite of its own (see `IsolatedRun`). Every `swift test` on this Mac shares the test

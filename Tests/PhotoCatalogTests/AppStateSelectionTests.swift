@@ -3,11 +3,9 @@ import ImageIO
 import UniformTypeIdentifiers
 @testable import PhotoCatalog
 
-final class AppStateSelectionTests: XCTestCase {
+final class AppStateSelectionTests: CatalogTestCase {
     override func setUp() {
         super.setUp()
-        preservingAllPreferences()
-        UserDefaults.app.set(false, forKey: "pc_openLast")
         UserDefaults.app.removeObject(forKey: "pc_pinnedSidebarItems")
     }
 
@@ -26,28 +24,19 @@ final class AppStateSelectionTests: XCTestCase {
         return store
     }
 
-    /// `base` made again through Asset's initializer with these fields changed, and not a demo
-    /// photo. Every other field is `base`'s, except masterId, copyName and duration, which it
-    /// leaves to the initializer (nil).
+    /// `base` with these fields changed, `localPath` always (nil included), and not a demo photo.
+    /// Every other field is `base`'s.
     func rebuiltAsset(_ base: Asset, id: String? = nil, preview: String? = nil, filename: String? = nil,
                       type: String? = nil, isRaw: Bool? = nil, folderId: String? = nil,
                       folderName: String? = nil, status: AssetStatus? = nil, localPath: String?) -> Asset {
-        Asset(id: id ?? base.id, pid: base.pid, ori: base.ori, thumb: base.thumb, preview: preview ?? base.preview,
-              filename: filename ?? base.filename, type: type ?? base.type, isRaw: isRaw ?? base.isRaw,
-              folderId: folderId ?? base.folderId, folderName: folderName ?? base.folderName,
-              date: base.date, width: base.width, height: base.height,
-              orientation: base.orientation, camera: base.camera, lens: base.lens, focal: base.focal,
-              aperture: base.aperture, shutter: base.shutter, iso: base.iso,
-              colorSpace: base.colorSpace, hasICCProfile: base.hasICCProfile, fileMB: base.fileMB,
-              fileModifiedAt: base.fileModifiedAt, fileCreatedAt: base.fileCreatedAt,
-              rating: base.rating, flag: base.flag, colorLabel: base.colorLabel,
-              keywords: base.keywords, title: base.title, caption: base.caption,
-              author: base.author, copyright: base.copyright, makerNotes: base.makerNotes,
-              project: base.project, client: base.client, location: base.location, gps: base.gps,
-              gpsAltitude: base.gpsAltitude, status: status ?? base.status, importedAt: base.importedAt,
-              deleted: base.deleted, localPath: localPath, captureDateSource: base.captureDateSource,
-              contentHash: base.contentHash, quickHash: base.quickHash, isDemo: false, faces: base.faces,
-              perceptualHash: base.perceptualHash)
+        var asset = base.rebuilt(id: id, preview: preview, type: type, isRaw: isRaw)
+        asset.filename = filename ?? base.filename
+        asset.folderId = folderId ?? base.folderId
+        asset.folderName = folderName ?? base.folderName
+        asset.status = status ?? base.status
+        asset.localPath = localPath
+        asset.isDemo = false
+        return asset
     }
 
     func writeTestJPEG(to url: URL, black: Bool, gps: [CFString: Any]? = nil) throws {

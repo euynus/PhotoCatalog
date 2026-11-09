@@ -165,10 +165,8 @@ enum AssetEditCheck {
 
         undo.removeAllActions()
         let counts = app.libraryCounts
-        try store.db.execChecked("""
-        CREATE TRIGGER reject_review BEFORE UPDATE OF rating ON assets
-        WHEN NEW.id='\(jpeg.id)' BEGIN SELECT RAISE(ABORT, 'blocked review'); END;
-        """)
+        try store.db.failWrites("reject_review", before: "UPDATE OF rating", on: "assets",
+                                when: "WHEN NEW.id='\(jpeg.id)'", message: "blocked review")
         assert(!app.setRating(1, on: [raw.id]), "a rejected pair update reports failure")
         assert(app.assets.filter { pairIDs.contains($0.id) }.allSatisfy { $0.rating == 4 }
                && app.photoList == before && app.libraryCounts == counts && !undo.canUndo,

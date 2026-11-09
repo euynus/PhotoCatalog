@@ -38,7 +38,8 @@ enum CatalogHealth {
     static func check(_ store: CatalogStore, assets: [Asset],
                       canRead: (String) -> Bool = FileAccessService.canRead) -> HealthReport {
         var r = HealthReport()
-        r.dbIntegrityOK = (store.db.scalarText("PRAGMA integrity_check;") ?? "") == "ok"
+        // on a connection of its own: edits on the catalog's carry on meanwhile
+        r.dbIntegrityOK = (try? store.db.integrityCheck()) ?? false
         let real = assets.filter { !$0.isDemo && !$0.deleted }
         r.assetCount = store.assetCount()
         let fm = FileManager.default

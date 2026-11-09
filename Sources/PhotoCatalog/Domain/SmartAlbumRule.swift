@@ -224,7 +224,7 @@ enum SmartMatcher {
             case .gps(let has): return a.hasGPS == has
             case .status(let status): return a.status == status
             // the joined text, as the search box searches it: a match can run across two fields
-            case .search(let needle): return memo.search(a.searchHaystack, for: needle)
+            case .search(let needle): return memo.search(a, for: needle)
             }
         }
     }
@@ -234,8 +234,8 @@ enum SmartMatcher {
     /// gives the same answer. Each pass, and each thread of one, keeps its own.
     struct Memo {
         private var found: [[String: Bool]] = []
-        /// Full-text search (no answer to keep: each photo's text is its own), with the locale it
-        /// searches in bridged once for the pass.
+        /// The locale-aware search every text test runs, with the locale bridged once for the
+        /// pass rather than on each keyword, camera or lens a photo's answer isn't known for.
         private var searching: LocalizedSearch?
 
         init() {}
@@ -245,17 +245,19 @@ enum SmartMatcher {
         }
 
         fileprivate mutating func text(_ text: String, contains needle: String, slot: Int?) -> Bool {
-            guard let slot, slot < found.count else { return text.localizedStandardContains(needle) }
+            if searching == nil { searching = LocalizedSearch() }
+            guard let slot, slot < found.count else { return searching!.text(text, contains: needle) }
             if let known = found[slot][text] { return known }
-            let result = text.localizedStandardContains(needle)
+            let result = searching!.text(text, contains: needle)
             found[slot][text] = result
             return result
         }
 
-        fileprivate mutating func search(_ text: String, for needle: String) -> Bool {
-            let search = searching ?? LocalizedSearch()
-            searching = search
-            return search.text(text, contains: needle)
+        /// Full-text search of the photo's `searchHaystack`: no answer to keep, as each photo's
+        /// text is its own. Searched in place, so the search's storage is reused photo to photo.
+        fileprivate mutating func search(_ asset: Asset, for needle: String) -> Bool {
+            if searching == nil { searching = LocalizedSearch() }
+            return searching!.haystack(of: asset, contains: needle)
         }
     }
 

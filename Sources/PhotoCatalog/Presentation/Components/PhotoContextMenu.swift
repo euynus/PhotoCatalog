@@ -14,7 +14,7 @@ struct PhotoContextMenu: View {
     let pairedJPEGPath: String?
 
     private var fileURL: URL? {
-        guard asset.status == .ready, let path = asset.localPath else { return nil }
+        guard app.canRevealOriginal(asset), let path = asset.localPath else { return nil }
         return URL(fileURLWithPath: path)
     }
 

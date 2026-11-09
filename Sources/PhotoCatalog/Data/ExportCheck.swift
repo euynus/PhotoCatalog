@@ -280,10 +280,7 @@ enum ExportCheck {
         s.subfolder = "第二批"
         app.startRenderedExport(settings: s, folder: folder)
         assert(app.renderedExportProgress?.queued == 1, "a second export waits behind the first")
-        let deadline = Date().addingTimeInterval(30)
-        while app.renderedExportProgress != nil, Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-        }
+        CheckWait.until(30, poll: 0.05) { app.renderedExportProgress == nil }
         let written = ["第一批", "第二批"].map { name in
             (try? FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent(name).path))?
                 .filter { $0.hasSuffix(".jpg") }.count ?? 0
@@ -303,10 +300,7 @@ enum ExportCheck {
         let cancelQueue = app.taskCenterActions(queued).cancel
         assert(cancelQueue != nil, "task center exposes the export engine's queue cancellation")
         cancelQueue?()
-        let cancelDeadline = Date().addingTimeInterval(30)
-        while app.renderedExportProgress != nil, Date() < cancelDeadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
-        }
+        CheckWait.until(30, poll: 0.05) { app.renderedExportProgress == nil }
         assert(app.renderedExportProgress == nil && app.backgroundTasks.first { $0.id == queued.id }?.state == .cancelled,
                "queued export cancellation is recorded without running that output job")
         assert(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("cancel-queued").path),

@@ -97,12 +97,7 @@ extension AppStateSelectionTests {
                                  mode: .referenced, autoTag: false, archiveRule: .date,
                                  readSidecar: true, previewMaxPixel: 2048)
         let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
-        try db.execChecked("""
-        CREATE TRIGGER fail_import_insert BEFORE INSERT ON assets
-        BEGIN
-          SELECT RAISE(ABORT, 'forced import save failure');
-        END;
-        """)
+        try db.failWrites("fail_import_insert", before: "INSERT", on: "assets", message: "forced import save failure")
 
         let app = AppState()
         app.onboarded = true
@@ -239,12 +234,7 @@ extension AppStateSelectionTests {
         XCTAssertTrue(app.openCatalog(at: package))
 
         let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
-        try db.execChecked("""
-        CREATE TRIGGER fail_rescan_insert BEFORE INSERT ON assets
-        BEGIN
-          SELECT RAISE(ABORT, 'forced rescan save failure');
-        END;
-        """)
+        try db.failWrites("fail_rescan_insert", before: "INSERT", on: "assets", message: "forced rescan save failure")
 
         let photo = source.appendingPathComponent("new-photo.jpg")
         try writeTestJPEG(to: photo, black: false)

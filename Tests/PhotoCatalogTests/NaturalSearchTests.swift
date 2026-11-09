@@ -3,20 +3,9 @@ import XCTest
 
 /// 用自然语言查找: the model's reply sets the filter bar and the search box.
 final class NaturalSearchTests: XCTestCase {
-    private var savedConfiguration: Data?
-
     override func setUp() {
         super.setUp()
-        savedConfiguration = UserDefaults.app.data(forKey: "pc_llm")
-    }
-
-    override func tearDown() {
-        if let savedConfiguration {
-            UserDefaults.app.set(savedConfiguration, forKey: "pc_llm")
-        } else {
-            UserDefaults.app.removeObject(forKey: "pc_llm")
-        }
-        super.tearDown()
+        preservingPreferences(["pc_llm"])
     }
 
     /// Eight demo photos, every other one rated four stars, and a model that answers `reply`.
@@ -68,12 +57,12 @@ final class NaturalSearchTests: XCTestCase {
         let filters = app.filters
         app.showNaturalSearch()
         app.startNaturalSearch("四星以上的照片")
-        try await waitUntil("the request is out") { app.naturalSearchRunning }
+        try await waitUntil("the request is out", timeout: 2) { app.naturalSearchRunning }
 
         app.sheet = nil            // 取消, or Esc
         app.sheet = "print"        // another dialog, opened while the request was out
         reply.release()
-        try await waitUntil("the reply is in") { !app.naturalSearchRunning }
+        try await waitUntil("the reply is in", timeout: 2) { !app.naturalSearchRunning }
         try await Task.sleep(for: .milliseconds(50))
 
         XCTAssertEqual(app.filters, filters, "a cancelled search changes no filter")
@@ -91,20 +80,10 @@ final class NaturalSearchTests: XCTestCase {
         }
         app.showNaturalSearch()
         app.startNaturalSearch("四星以上的照片")
-        try await waitUntil("the request is out") { app.naturalSearchRunning }
+        try await waitUntil("the request is out", timeout: 2) { app.naturalSearchRunning }
         reply.release()
-        try await waitUntil("the dialog closes") { app.sheet == nil }
+        try await waitUntil("the dialog closes", timeout: 2) { app.sheet == nil }
         XCTAssertEqual(app.filters.minRating, 4)
-    }
-
-    @MainActor
-    private func waitUntil(_ message: String, condition: @MainActor () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(2)
-        while Date() < deadline {
-            if condition() { return }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        XCTFail(message)
     }
 }
 

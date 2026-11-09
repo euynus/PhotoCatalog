@@ -6,12 +6,16 @@ extension AppState {
     /// Records how to take back the step that turned `before` into `after` (the same photos, in
     /// the same order). Undoing registers the reverse, which is what redo replays.
     private func registerUndo(from before: [Asset], to after: [Asset], actionName: String?) {
-        guard let actionName, let undoManager, !before.isEmpty else { return }
+        guard let actionName, !before.isEmpty else { return }
+        registerUndoStep(actionName) { $0.replayStep(from: after, to: before, actionName: actionName) }
+    }
+
+    /// Registers `undo` as an undo step named `name`; nothing without a name or an undo manager.
+    func registerUndoStep(_ name: String?, _ undo: @escaping @MainActor (AppState) -> Void) {
+        guard let name, let undoManager else { return }
         UndoSteps.register(on: undoManager) {
-            undoManager.registerUndo(withTarget: self) { app in
-                MainActor.assumeIsolated { app.replayStep(from: after, to: before, actionName: actionName) }
-            }
-            undoManager.setActionName(actionName)
+            undoManager.registerUndo(withTarget: self) { app in MainActor.assumeIsolated { undo(app) } }
+            undoManager.setActionName(name)
         }
     }
 
@@ -33,12 +37,11 @@ extension AppState {
             replayedOld.append(stepOld)
             replayedNew.append(stepNew)
         }
-        // saved, and their sidecar writes queued
-        guard !edits.isEmpty, persistChanged(edits.map(\.asset)) else { return }
+        guard !edits.isEmpty else { return }
+        // saved (only the columns the step changes), and their sidecar writes queued
+        let scope = editScope(of: edits)
+        guard persistChanged(edits.map(\.asset), editing: scope) else { return }
         let deletionChanged = zip(current, edits).contains { $0.deleted != $1.asset.deleted }
-        let scope = zip(current, edits).reduce(into: AssetEditScope()) {
-            $0.formUnion(Self.editScope(from: $1.0, to: $1.1.asset))
-        }
         applyAssetEdits(edits, scope: scope)
         ensurePrimaryValid()
         if deletionChanged { recomputeDuplicates() }
@@ -88,23 +91,34 @@ extension AppState {
         guard !target.isEmpty else { return false }
         // Edit copies of only the targeted photos and write them back in place, with the
         // narrowest invalidation their changes need (a keyword edit keeps pairing and trees).
+        let edits = editedCopies(of: target, transform)
+        guard !edits.isEmpty else { return false }
+        let before = edits.map { assets[$0.offset] }
+        let scope = editScope(of: edits)
+        guard persistChanged(edits.map(\.asset), writingSidecars: writingSidecars, editing: scope) else { return false }
+        applyAssetEdits(edits, scope: scope)
+        ensurePrimaryValid()
+        registerUndo(from: before, to: edits.map(\.asset), actionName: undoName)
+        return true
+    }
+
+    /// Copies of the photos with these ids (those the catalog has), each changed by `transform`,
+    /// in the order the photos are in.
+    private func editedCopies(of ids: Set<String>,
+                              _ transform: (inout Asset) -> Void) -> [(offset: Int, asset: Asset)] {
         let index = assetIndex
-        let edits = target.compactMap { id -> (offset: Int, asset: Asset)? in
+        return ids.compactMap { id -> (offset: Int, asset: Asset)? in
             guard let offset = index[id] else { return nil }
             var asset = assets[offset]
             transform(&asset)
             return (offset, asset)
         }.sorted { $0.offset < $1.offset }
-        guard !edits.isEmpty else { return false }
-        guard persistChanged(edits.map(\.asset), writingSidecars: writingSidecars) else { return false }
-        let before = edits.map { assets[$0.offset] }
-        let scope = zip(before, edits).reduce(into: AssetEditScope()) {
-            $0.formUnion(Self.editScope(from: $1.0, to: $1.1.asset))
-        }
-        applyAssetEdits(edits, scope: scope)
-        ensurePrimaryValid()
-        registerUndo(from: before, to: edits.map(\.asset), actionName: undoName)
-        return true
+    }
+
+    /// What these edits change in the photos as they are now: how far their effects reach, and
+    /// which columns saving them writes.
+    func editScope(of edits: [(offset: Int, asset: Asset)]) -> AssetEditScope {
+        edits.reduce(into: AssetEditScope()) { $0.formUnion(Self.editScope(from: assets[$1.offset], to: $1.asset)) }
     }
 
     @discardableResult
@@ -142,13 +156,7 @@ extension AppState {
         guard !ids.isEmpty else { return false }
         // Edit copies of only the targeted assets, persist, then write them back in place:
         // copying the whole array retained every string of every asset on each keystroke.
-        let index = assetIndex
-        let edits = ids.compactMap { id -> (offset: Int, asset: Asset)? in
-            guard let offset = index[id] else { return nil }
-            var asset = assets[offset]
-            transform(&asset)
-            return (offset, asset)
-        }.sorted { $0.offset < $1.offset }
+        let edits = editedCopies(of: ids, transform)
         guard !edits.isEmpty else { return false }
         let changed = edits.map(\.asset).filter { !$0.isDemo }
         if let store, !changed.isEmpty {
@@ -330,19 +338,15 @@ extension AppState {
         quickCollection = members
         if let store {
             do {
-                try store.saveAlbum(Album(id: Self.quickCollectionID, name: L("快捷收藏"), assetIds: members.sorted()),
-                                    sortOrder: -1)
+                // only the photos that came or went: the others' rows stay
+                try store.updateAlbumMembers(albumId: Self.quickCollectionID, name: L("快捷收藏"), sortOrder: -1,
+                                             adding: members.subtracting(before),
+                                             removing: before.subtracting(members))
             } catch {
                 push("快捷收藏保存失败", "warning")
             }
         }
-        guard let undoManager else { return }
-        UndoSteps.register(on: undoManager) {
-            undoManager.registerUndo(withTarget: self) { app in
-                MainActor.assumeIsolated { app.setQuickCollection(before, undoName: undoName) }
-            }
-            undoManager.setActionName(undoName)
-        }
+        registerUndoStep(undoName) { $0.setQuickCollection(before, undoName: undoName) }
     }
 
     func createAlbumFromSelection(in setId: String? = nil) {
@@ -686,8 +690,14 @@ extension AppState {
         NSWorkspace.shared.activateFileViewerSelecting(urls)
     }
 
+    /// Whether Show in Finder is offered for a photo, from what the catalog knows of its original:
+    /// views ask while they draw, so no file is looked at here (the action checks it).
+    func canRevealOriginal(_ asset: Asset) -> Bool {
+        !asset.isDemo && asset.status == .ready && asset.localPath != nil
+    }
+
     func revealInFinder(_ id: String) {
-        guard let asset = assets.first(where: { $0.id == id }), let path = asset.localPath else {
+        guard let asset = self.asset(id: id), let path = asset.localPath else {
             push("演示照片没有本地原件", "warning")
             return
         }
@@ -700,7 +710,7 @@ extension AppState {
     }
 
     func locate(_ id: String) {
-        guard let selected = assets.first(where: { $0.id == id }) else { return }
+        guard let selected = asset(id: id) else { return }
         // a virtual copy's file is its master's: relocate that, and the copies follow
         let asset = fileOwners([selected])[0]
         let id = asset.id

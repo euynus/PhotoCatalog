@@ -149,8 +149,7 @@ struct InspectorView: View {
                     .textSelection(.enabled)
                     .help(a.localPath ?? L("演示照片无本地原件"))
                 HStack(spacing: 6) {
-                    let canReveal = a.localPath.map { FileManager.default.fileExists(atPath: $0) } ?? false
-                    pathButton("folder", L("在访达中显示"), warn: false, disabled: !canReveal) {
+                    pathButton("folder", L("在访达中显示"), warn: false, disabled: !app.canRevealOriginal(a)) {
                         app.revealInFinder(a.id)
                     }
                     if a.status == .missing {

@@ -84,18 +84,25 @@ extension AppState {
             ) else { return false }
         }
 
-        var updated = assets
-        let report = DuplicateResolutionService.resolve(group, keepId: resolvedKeepId, in: &updated, action: action)
+        // the group's photos as they are now; one no longer in the catalog is skipped
+        let index = assetIndex
+        let current = group.items.compactMap { index[$0.id].map { assets[$0] } }
+        let report = DuplicateResolutionService.resolve(group, current: current, keepId: resolvedKeepId,
+                                                        action: action)
         guard !report.removedIds.isEmpty else {
             push(report.failedCount > 0 ? "重复文件处理失败" : "没有可处理的重复文件", "warning")
             return false
         }
 
         // the removed duplicates' virtual copies go with them
-        let copies = virtualCopyIds(of: Set(report.removedIds))
-        for index in updated.indices where copies.contains(updated[index].id) { updated[index].deleted = true }
-        let removedIds = Set(report.removedIds).union(copies)
-        guard persist(removedIds, in: updated) else {
+        let removedIds = report.removedIds.union(virtualCopyIds(of: report.removedIds))
+        // out of the cache before saving, which works out the list and stacks again: against the
+        // group, they would still fold the photos it resolved
+        let groups = duplicateGroupsCache
+        duplicateGroupsCache.removeAll { $0.id == group.id }
+        // the removed photos are all in the catalog, so a false here is a failed save
+        guard mutate(removedIds, { $0.deleted = true }) else {
+            duplicateGroupsCache = groups
             if action == .moveToTrash {
                 let rolledBack = OriginalFileOperationService.rollBackTrash(report.trashedLocations)
                 push(verbatim: L("重复文件处理未完成")
@@ -105,12 +112,9 @@ extension AppState {
             }
             return false
         }
-        replaceAssetsForMutation(updated)
         if action == .moveToTrash { trashedOriginalIds.formUnion(report.removedIds) }
         purgeCacheFiles(forAssetIds: removedIds)
-        duplicateGroupsCache.removeAll { $0.id == group.id }
         recomputeDuplicates()
-        ensurePrimaryValid()
 
         let done = action == .moveToTrash ? L("已移到废纸篓 \(report.affectedCount) 张重复照片")
                                           : L("已从目录库移除 \(report.affectedCount) 张重复照片")
@@ -119,21 +123,23 @@ extension AppState {
         return report.failedCount == 0
     }
 
-    @discardableResult
-    private func persist(_ ids: Set<String>, in sourceAssets: [Asset]? = nil) -> Bool {
-        let snapshot = sourceAssets ?? assets
-        return persistChanged(snapshot.filter { ids.contains($0.id) })
-    }
-
-    /// Saves these photos (demo photos are never persisted) and queues their XMP sidecars.
-    func persistChanged(_ edited: [Asset], writingSidecars: Bool = true) -> Bool {
+    /// Saves these photos (demo photos are never persisted) and queues their XMP sidecars. An
+    /// edit that says what it changed (`scope`) and changed no structural field writes only its
+    /// review and metadata columns, and none when it changed nothing; any other, the whole row.
+    func persistChanged(_ edited: [Asset], writingSidecars: Bool = true,
+                        editing scope: AssetEditScope? = nil) -> Bool {
         let changed = edited.filter { !$0.isDemo }
         guard let store else { return true }
         if !changed.isEmpty {
             // this is the single funnel for every metadata edit and the soft-delete-on-trash;
             // a swallowed failure here desyncs the catalog from disk, so surface it (§16.2).
             do {
-                try store.upsert(changed)
+                if let scope, !scope.contains(.structure) {
+                    try store.updateEditableColumns(changed, review: scope.contains(.review),
+                                                    metadata: scope.contains(.metadata))
+                } else {
+                    try store.upsert(changed)
+                }
             } catch {
                 push("保存失败，更改未写入目录库", "warning")
                 return false

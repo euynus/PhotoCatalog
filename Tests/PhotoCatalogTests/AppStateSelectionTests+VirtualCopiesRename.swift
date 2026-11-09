@@ -129,13 +129,8 @@ extension AppStateSelectionTests {
         try store.upsert([asset])
 
         let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
-        try db.execChecked("""
-        CREATE TRIGGER fail_rename_update BEFORE UPDATE OF filename ON assets
-        WHEN NEW.filename != OLD.filename
-        BEGIN
-          SELECT RAISE(ABORT, 'forced rename save failure');
-        END;
-        """)
+        try db.failWrites("fail_rename_update", before: "UPDATE OF filename", on: "assets",
+                          when: "WHEN NEW.filename != OLD.filename", message: "forced rename save failure")
 
         let app = AppState()
         app.onboarded = true
@@ -194,12 +189,8 @@ extension AppStateSelectionTests {
         app.primaryId = asset.id
         app.selectedIds = [asset.id]
         let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
-        try db.execChecked("""
-        CREATE TRIGGER fail_copy_settings BEFORE INSERT ON develop_settings
-        BEGIN
-          SELECT RAISE(ABORT, 'forced develop settings save failure');
-        END;
-        """)
+        try db.failWrites("fail_copy_settings", before: "INSERT", on: "develop_settings",
+                          message: "forced develop settings save failure")
 
         app.createVirtualCopies()
 

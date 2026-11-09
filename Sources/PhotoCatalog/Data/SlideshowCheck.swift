@@ -183,15 +183,13 @@ enum SlideshowCheck {
         let made = SlideshowVideo.export(slides, settings: settings, slideSeconds: 1, music: music, to: output,
                                          progress: { _ in }, cancelled: { false })
         let asset = AVURLAsset(url: output)
-        let done = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var duration = 0.0, size = CGSize.zero, audioTracks = 0
-        Task.detached {
-            duration = (try? await asset.load(.duration))?.seconds ?? 0
+        let (duration, size, audioTracks) = CheckWait.blocking { () async -> (Double, CGSize, Int) in
+            let duration = (try? await asset.load(.duration))?.seconds ?? 0
+            var size = CGSize.zero
             if let track = try? await asset.loadTracks(withMediaType: .video).first { size = (try? await track.load(.naturalSize)) ?? .zero }
-            audioTracks = (try? await asset.loadTracks(withMediaType: .audio))?.count ?? 0
-            done.signal()
+            let audioTracks = (try? await asset.loadTracks(withMediaType: .audio))?.count ?? 0
+            return (duration, size, audioTracks)
         }
-        done.wait()
         assert(made && abs(duration - 3) < 0.1 && size == CGSize(width: 1280, height: 720) && audioTracks == 1,
                "the video lasts as long as the show, at its size, with the music")
         let shots = [0.25, 1.25, 2.25, 0.75].compactMap { frame(output, at: $0) }.map(middle)

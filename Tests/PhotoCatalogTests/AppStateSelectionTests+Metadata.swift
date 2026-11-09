@@ -24,12 +24,7 @@ extension AppStateSelectionTests {
         app.selectedIds = [asset.id]
 
         let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
-        try db.execChecked("""
-        CREATE TRIGGER fail_rating_update BEFORE UPDATE ON assets
-        BEGIN
-          SELECT RAISE(ABORT, 'forced rating save failure');
-        END;
-        """)
+        try db.failWrites("fail_rating_update", before: "UPDATE", on: "assets", message: "forced rating save failure")
 
         XCTAssertFalse(app.handleKey("5", hasCommand: false))
         XCTAssertEqual(app.assets.first { $0.id == asset.id }?.rating, 0)

@@ -6,11 +6,9 @@ extension DescriptionReviewCheck {
         MainActor.assumeIsolated {
             let root = FileManager.default.temporaryDirectory
                 .appendingPathComponent("pc-description-review-\(UUID().uuidString)")
-            let defaults = UserDefaults.app
-            let oldXMP = defaults.object(forKey: "pc_autoWriteXMP")
+            let savedPreferences = PreferenceSnapshot(keys: ["pc_autoWriteXMP"])
             defer {
-                if let oldXMP { defaults.set(oldXMP, forKey: "pc_autoWriteXMP") }
-                else { defaults.removeObject(forKey: "pc_autoWriteXMP") }
+                savedPreferences.restore()
                 try? FileManager.default.removeItem(at: root)
             }
             do {
@@ -74,10 +72,8 @@ extension DescriptionReviewCheck {
                 altered.title = "Not the reviewed result"
                 assert(!app.applyReviewedDescriptions([photos[0].id: altered]), "stale or forged payloads cannot be applied")
                 let selectedBeforeFailure = app.descriptionReview
-                try store.db.execChecked("""
-                    CREATE TRIGGER description_review_reject BEFORE INSERT ON assets
-                    BEGIN SELECT RAISE(ABORT, 'description review check failure'); END;
-                    """)
+                try store.db.failWrites("description_review_reject", before: "UPDATE", on: "assets",
+                                        message: "description review check failure")
                 assert(!app.applyReviewedDescriptions(firstPayload), "a failed catalog transaction is not reported as applied")
                 assert(app.descriptionReview == selectedBeforeFailure && app.asset(id: photos[0].id)?.title == "",
                        "failed persistence retains the exact proposals and selection without changing live metadata")

@@ -44,15 +44,55 @@ extension CatalogStore {
 
     func upsertRows(_ assets: [Asset], updatingExisting: Bool = true) throws {
         let sql = updatingExisting ? Self.assetInsertSQL.upsert : Self.assetInsertSQL.insert
-        var searchRows: [(rowid: Int, id: String, content: String)] = []
+        var written: [(rowid: Int, asset: Asset)] = []
         for a in assets {
-            // keep the FTS index in sync; its rows share the asset's rowid (schema v20)
             guard let rowid = try db.queryMap(sql, Self.params(a), transform: { $0.int("r") }).first else { continue }
+            written.append((rowid, a))
+        }
+        try writeSearchRows(written, comparing: updatingExisting)
+    }
+
+    /// The columns a review edit and a metadata edit change (`AppState.editScope(from:to:)`).
+    private static let reviewColumns: Set<String> = ["rating", "flag", "color_label"]
+    private static let metadataColumns: Set<String> = [
+        "keywords", "title", "caption", "author", "copyright", "maker_notes",
+        "project", "client", "location", "gps_lat", "gps_lon", "gps_altitude",
+    ]
+
+    /// Writes only the review columns, the metadata columns or both of these photos, in one
+    /// transaction: an edit's own columns, rather than the whole row and every index on it as
+    /// the upsert does. A photo whose row has gone is written whole.
+    func updateEditableColumns(_ assets: [Asset], review: Bool, metadata: Bool) throws {
+        let edited = (review ? Self.reviewColumns : []).union(metadata ? Self.metadataColumns : [])
+        guard !edited.isEmpty, !assets.isEmpty else { return }
+        // the upsert's own values, taken by position, so both write a column the same way
+        let positions = Self.columnNames.indices.filter { edited.contains(Self.columnNames[$0]) }
+        let sql = "UPDATE assets SET " + positions.map { "\(Self.columnNames[$0])=?" }.joined(separator: ",")
+            + " WHERE id=? RETURNING rowid AS r;"
+        try db.transaction {
+            var written: [(rowid: Int, asset: Asset)] = []
+            for asset in assets {
+                let values = Self.params(asset)
+                let updated = try db.queryMap(sql, positions.map { values[$0] } + [.text(asset.id)],
+                                              transform: { $0.int("r") }).first
+                guard let rowid = try updated ?? db.queryMap(Self.assetInsertSQL.upsert, values,
+                                                             transform: { $0.int("r") }).first else { continue }
+                written.append((rowid, asset))
+            }
+            try writeSearchRows(written, comparing: true)
+        }
+    }
+
+    /// Keeps the FTS index in sync with these photos' rows; its rows share the asset's rowid
+    /// (schema v20). With `comparing`, a photo whose indexed words are already its own is left.
+    private func writeSearchRows(_ written: [(rowid: Int, asset: Asset)], comparing: Bool) throws {
+        var searchRows: [(rowid: Int, id: String, content: String)] = []
+        for (rowid, a) in written {
             // Its row changes only with the words it holds: a rating, a flag or Move to Trash leaves
             // them, and writing them again (the trigrams of every word) cost ~0.4 ms a photo.
             let content = Self.searchContent(a)
-            if updatingExisting, let row = try db.query("SELECT asset_id, content FROM asset_search WHERE rowid=?;",
-                                                        [.int(rowid)]).first,
+            if comparing, let row = try db.query("SELECT asset_id, content FROM asset_search WHERE rowid=?;",
+                                                 [.int(rowid)]).first,
                row.text("asset_id") == a.id, row.text("content") == content { continue }
             searchRows.append((rowid, a.id, content))
         }

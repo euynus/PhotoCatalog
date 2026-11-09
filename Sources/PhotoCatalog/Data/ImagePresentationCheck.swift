@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 enum ImagePresentationCheck {
     static func run() {
         MainActor.assumeIsolated {
-            LLMCheck.run { await check() }
+            CheckWait.onMain { await check() }
         }
         print("--- image presentation assertions passed ---")
     }

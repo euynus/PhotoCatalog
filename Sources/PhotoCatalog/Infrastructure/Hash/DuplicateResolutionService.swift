@@ -1,6 +1,7 @@
 // ============================================================
-//  DuplicateResolutionService - apply keep-one duplicate actions
-//  to the catalog model and, when requested, the original files.
+//  DuplicateResolutionService - works out a keep-one duplicate action:
+//  which photos go and, when requested, their original files trashed.
+//  The caller marks the photos removed in the catalog.
 // ============================================================
 import Foundation
 
@@ -16,7 +17,9 @@ struct DuplicateResolutionReport {
 }
 
 enum DuplicateResolutionService {
-    static func resolve(_ group: DuplicateGroup, keepId: String?, in assets: inout [Asset],
+    /// `current`: the group's photos as the catalog has them now. A photo of the group not among
+    /// them is skipped.
+    static func resolve(_ group: DuplicateGroup, current: [Asset], keepId: String?,
                         action: DuplicateResolutionAction) -> DuplicateResolutionReport {
         let groupIds = Set(group.items.map(\.id))
         let keptId = keepId ?? group.items.first?.id
@@ -29,20 +32,21 @@ enum DuplicateResolutionService {
 
         let removeIds = groupIds.subtracting([keptId])
         guard !removeIds.isEmpty else { return report }
+        let photos = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         for id in removeIds {
-            guard let index = assets.firstIndex(where: { $0.id == id }) else {
+            guard let asset = photos[id] else {
                 report.skippedCount += 1
                 continue
             }
 
             if action == .moveToTrash {
-                guard !assets[index].isDemo else {
+                guard !asset.isDemo else {
                     report.failedCount += 1
                     continue
                 }
                 do {
-                    report.trashedLocations[id] = try OriginalFileOperationService.trashOriginal(assets[index])
+                    report.trashedLocations[id] = try OriginalFileOperationService.trashOriginal(asset)
                     report.trashedCount += 1
                 } catch {
                     report.failedCount += 1
@@ -50,7 +54,6 @@ enum DuplicateResolutionService {
                 }
             }
 
-            assets[index].deleted = true
             report.removedIds.insert(id)
         }
 

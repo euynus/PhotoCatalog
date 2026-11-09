@@ -154,24 +154,19 @@ extension AppState {
                 let a = assets[position]
                 guard pairing.isShown(a, at: position) else { continue }
                 for k in a.keywords {
-                    if counts[k] == nil {
+                    // one lookup per keyword: the table grows exactly when the keyword is new
+                    let known = counts.count
+                    counts[k, default: 0] += 1
+                    if counts.count != known {
                         order.append(k)
                         first[k] = position
                     }
-                    counts[k, default: 0] += 1
                 }
             }
             return (order, counts, first)
         }
-        let chunk = max(chunk, 1)
-        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
-        guard chunks > 1 else { return count(assets.indices) }
-        let lock = NSLock()
-        var parts = [KeywordTally](repeating: ([], [:], [:]), count: chunks)
-        DispatchQueue.concurrentPerform(iterations: chunks) { index in
-            let part = count(index * chunk ..< min(assets.count, (index + 1) * chunk))
-            lock.withLock { parts[index] = part }
-        }
+        let parts = Chunks.map(assets.count, chunk: chunk, count)
+        guard parts.count > 1 else { return parts.first ?? ([], [:], [:]) }
         var order: [String] = []
         var counts: [String: Int] = [:]
         var first: [String: Int] = [:]
@@ -379,16 +374,7 @@ extension AppState {
             }
             return counts
         }
-        let chunk = max(chunk, 1)
-        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
-        guard chunks > 1 else { return count(assets.indices) }
-        let lock = NSLock()
-        var total = LibraryCounts()
-        DispatchQueue.concurrentPerform(iterations: chunks) { index in
-            let part = count(index * chunk ..< min(assets.count, (index + 1) * chunk))
-            lock.withLock { total.add(part) }
-        }
-        return total
+        return Chunks.map(assets.count, chunk: chunk, count).reduce(into: LibraryCounts()) { $0.add($1) }
     }
 
     /// The library's cameras and lenses, most used first: what the filter bar offers.
@@ -501,26 +487,17 @@ extension AppState {
             for position in range {
                 let value = MetadataValueCounts.value(at: position, of: assets, keyPath, pairing: pairing)
                 guard !value.isEmpty else { continue }
-                if counts[value] == nil { first[value] = position }
+                let known = counts.count
                 counts[value, default: 0] += 1
+                if counts.count != known { first[value] = position }
             }
             return (counts, first)
         }
-        let chunk = max(chunk, 1)
-        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
-        guard chunks > 1 else {
-            let whole = count(assets.indices)
-            return MetadataValueCounts(counts: whole.counts, first: whole.first)
-        }
-        let lock = NSLock()
-        var counts: [String: Int] = [:]
-        var first: [String: Int] = [:]
-        DispatchQueue.concurrentPerform(iterations: chunks) { index in
-            let part = count(index * chunk ..< min(assets.count, (index + 1) * chunk))
-            lock.withLock {
-                counts.merge(part.counts, uniquingKeysWith: +)
-                first.merge(part.first, uniquingKeysWith: min)
-            }
+        let parts = Chunks.map(assets.count, chunk: chunk, count)
+        var (counts, first) = parts.first ?? ([:], [:])
+        for part in parts.dropFirst() {
+            counts.merge(part.counts, uniquingKeysWith: +)
+            first.merge(part.first, uniquingKeysWith: min)
         }
         return MetadataValueCounts(counts: counts, first: first)
     }
@@ -794,6 +771,22 @@ extension AppState {
                                                    name: selection.name))
     }
 
+    /// Whether a live photo (not removed) has `keyword`. Keyword counts already held answer for
+    /// the photos as shown, all live; the only other live photos are JPEGs behind their RAWs.
+    /// Without counts held, a pass that stops at the first such photo: making the keyword tally
+    /// to answer this took ~18 ms at 50k photos.
+    private func livePhotoHasKeyword(_ keyword: String) -> Bool {
+        let held = keywordCountsCache?.counts
+            ?? sidebarCountIndexCache.flatMap { $0.day == sidebarDay ? $0.counts.keywords : nil }
+        guard let held else { return assets.contains { !$0.deleted && $0.keywords.contains(keyword) } }
+        if held[keyword, default: 0] > 0 { return true }
+        let positions = assetIndex
+        return assetPairing.primaryByCompanion.keys.contains { id in
+            guard let position = positions[id] else { return false }
+            return !assets[position].deleted && assets[position].keywords.contains(keyword)
+        }
+    }
+
     private func resolvePinnedSidebarItem(_ item: PinnedSidebarItem) -> PinnedSidebarItem? {
         switch item.type {
         case .folder:
@@ -806,8 +799,7 @@ extension AppState {
             guard let smart = smartAlbums.first(where: { $0.id == item.selectionId }) else { return nil }
             return PinnedSidebarItem(type: .smart, selectionId: smart.id, name: smart.name)
         case .keyword:
-            let exists = assets.contains { !$0.deleted && $0.keywords.contains(item.selectionId) }
-            guard exists else { return nil }
+            guard livePhotoHasKeyword(item.selectionId) else { return nil }
             return PinnedSidebarItem(type: .keyword, selectionId: item.selectionId, name: item.name)
         case .project:
             guard projectList.contains(where: { $0.name == item.selectionId }) else { return nil }
