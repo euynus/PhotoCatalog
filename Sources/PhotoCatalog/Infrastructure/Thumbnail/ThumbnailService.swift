@@ -108,9 +108,45 @@ final class ThumbnailService: @unchecked Sendable {
     }
 
     static func previewKind(forCachePath path: String, fallbackMaxPixel: Int) -> Kind {
-        if path.contains("/Previews/1600/") { return .preview1600 }
-        if path.contains("/Previews/2048/") { return .preview2048 }
-        return previewKind(maxPixel: fallbackMaxPixel)
+        // The path's bytes first: Foundation's contains takes microseconds a path, and this runs
+        // for every photo each time a catalog opens. A string with no UTF-8 storage of its own,
+        // or a match the byte search can't vouch for, goes to contains as before.
+        switch path.utf8.withContiguousStorageIfAvailable({ previewMarker(in: $0) }) {
+        case .kind(let kind)?: return kind
+        case .neither?: return previewKind(maxPixel: fallbackMaxPixel)
+        case .unsure?, nil:
+            if path.contains("/Previews/1600/") { return .preview1600 }
+            if path.contains("/Previews/2048/") { return .preview2048 }
+            return previewKind(maxPixel: fallbackMaxPixel)
+        }
+    }
+
+    private enum PreviewMarker { case kind(Kind), neither, unsure }
+
+    private static func previewMarker(in bytes: UnsafeBufferPointer<UInt8>) -> PreviewMarker {
+        switch find("/Previews/1600/", in: bytes) {
+        case true?: return .kind(.preview1600)
+        case false?: break
+        case nil: return .unsure
+        }
+        switch find("/Previews/2048/", in: bytes) {
+        case true?: return .kind(.preview2048)
+        case false?: return .neither
+        case nil: return .unsure
+        }
+    }
+
+    /// Whether `bytes` hold the ASCII `marker`; nil when unsure. contains compares whole
+    /// characters, so a match beside a non-ASCII byte (an accent combining with its last "/",
+    /// say) may not be one there; between ASCII bytes it always is.
+    private static func find(_ marker: StaticString, in bytes: UnsafeBufferPointer<UInt8>) -> Bool? {
+        guard let base = bytes.baseAddress,
+              let hit = memmem(base, bytes.count, marker.utf8Start, marker.utf8CodeUnitCount) else { return false }
+        let start = UnsafeRawPointer(base).distance(to: UnsafeRawPointer(hit))
+        let end = start + marker.utf8CodeUnitCount
+        let asciiBefore = start == 0 || bytes[start - 1] < 0x80
+        let asciiAfter = end == bytes.count || bytes[end] < 0x80
+        return asciiBefore && asciiAfter ? true : nil
     }
 
     /// Sharded path: <base>/ab/cd/<assetId>.jpg
