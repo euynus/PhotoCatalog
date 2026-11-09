@@ -20,8 +20,11 @@ enum AssetStatus: String, Hashable, Sendable {
 /// copying ~700 bytes each (at 500k photos, the difference between ~1 and ~4 GB). Changing a
 /// field copies that one photo's storage only when another value still shares it.
 struct Asset: Identifiable, Equatable, Sendable {
-    // Mutated only through `uniqueStorage()`, i.e. while no other value shares it.
-    private final class Storage: @unchecked Sendable {
+    /// Every field but the dates, by value in one place, so a copy of the storage is one copy of
+    /// them. Date's layout is resilient: a struct holding one has no fixed layout either, and each
+    /// of its fields would be found through the struct's metadata at run time instead of read at
+    /// a constant offset, so the dates are properties of their own.
+    private struct Fields {
         var id: String
         var pid: Int
         var ori: String
@@ -32,7 +35,6 @@ struct Asset: Identifiable, Equatable, Sendable {
         var isRaw: Bool
         var folderId: String
         var folderName: String
-        var date: Date
         var width: Int
         var height: Int
         var orientation: Int
@@ -45,8 +47,6 @@ struct Asset: Identifiable, Equatable, Sendable {
         var colorSpace: String
         var hasICCProfile: Bool
         var fileMB: Double
-        var fileModifiedAt: Date?
-        var fileCreatedAt: Date?
         var rating: Int
         var flag: Flag
         var colorLabel: ColorLabel?
@@ -62,7 +62,6 @@ struct Asset: Identifiable, Equatable, Sendable {
         var gps: (Double, Double)
         var gpsAltitude: Double?
         var status: AssetStatus
-        var importedAt: Date
         var deleted: Bool
         var localPath: String?
         var captureDateSource: String
@@ -74,64 +73,31 @@ struct Asset: Identifiable, Equatable, Sendable {
         var masterId: String?
         var copyName: String?
         var duration: Double?
+    }
 
-        init(id: String, pid: Int, ori: String, thumb: String, preview: String, filename: String, type: String, isRaw: Bool, folderId: String, folderName: String, date: Date, width: Int, height: Int, orientation: Int, camera: String, lens: String, focal: Int, aperture: Double, shutter: String, iso: Int, colorSpace: String, hasICCProfile: Bool, fileMB: Double, fileModifiedAt: Date?, fileCreatedAt: Date?, rating: Int, flag: Flag, colorLabel: ColorLabel?, keywords: [String], title: String, caption: String, author: String, copyright: String, makerNotes: String, project: String, client: String, location: String, gps: (Double, Double), gpsAltitude: Double?, status: AssetStatus, importedAt: Date, deleted: Bool, localPath: String?, captureDateSource: String, contentHash: String?, quickHash: String?, isDemo: Bool, faces: Int, perceptualHash: UInt64?, masterId: String?, copyName: String?, duration: Double?) {
-            self.id = id
-            self.pid = pid
-            self.ori = ori
-            self.thumb = thumb
-            self.preview = preview
-            self.filename = filename
-            self.type = type
-            self.isRaw = isRaw
-            self.folderId = folderId
-            self.folderName = folderName
+    // Mutated only through `uniqueStorage()`, i.e. while no other value shares it, so the runtime
+    // exclusivity check guards nothing; a class's Date properties would keep it in Release.
+    private final class Storage: @unchecked Sendable {
+        // first, so its offset is a constant (the dates' sizes are known only at run time)
+        @exclusivity(unchecked) var fields: Fields
+        @exclusivity(unchecked) var date: Date
+        @exclusivity(unchecked) var fileModifiedAt: Date?
+        @exclusivity(unchecked) var fileCreatedAt: Date?
+        @exclusivity(unchecked) var importedAt: Date
+
+        init(_ fields: Fields, date: Date, fileModifiedAt: Date?, fileCreatedAt: Date?, importedAt: Date) {
+            self.fields = fields
             self.date = date
-            self.width = width
-            self.height = height
-            self.orientation = orientation
-            self.camera = camera
-            self.lens = lens
-            self.focal = focal
-            self.aperture = aperture
-            self.shutter = shutter
-            self.iso = iso
-            self.colorSpace = colorSpace
-            self.hasICCProfile = hasICCProfile
-            self.fileMB = fileMB
             self.fileModifiedAt = fileModifiedAt
             self.fileCreatedAt = fileCreatedAt
-            self.rating = rating
-            self.flag = flag
-            self.colorLabel = colorLabel
-            self.keywords = keywords
-            self.title = title
-            self.caption = caption
-            self.author = author
-            self.copyright = copyright
-            self.makerNotes = makerNotes
-            self.project = project
-            self.client = client
-            self.location = location
-            self.gps = gps
-            self.gpsAltitude = gpsAltitude
-            self.status = status
             self.importedAt = importedAt
-            self.deleted = deleted
-            self.localPath = localPath
-            self.captureDateSource = captureDateSource
-            self.contentHash = contentHash
-            self.quickHash = quickHash
-            self.isDemo = isDemo
-            self.faces = faces
-            self.perceptualHash = perceptualHash
-            self.masterId = masterId
-            self.copyName = copyName
-            self.duration = duration
         }
 
+        // out of line, as it was when Storage listed every field: each setter stays a uniqueness
+        // check and a store where it's used, and the rare copy is a call
+        @inline(never)
         func copy() -> Storage {
-            Storage(id: id, pid: pid, ori: ori, thumb: thumb, preview: preview, filename: filename, type: type, isRaw: isRaw, folderId: folderId, folderName: folderName, date: date, width: width, height: height, orientation: orientation, camera: camera, lens: lens, focal: focal, aperture: aperture, shutter: shutter, iso: iso, colorSpace: colorSpace, hasICCProfile: hasICCProfile, fileMB: fileMB, fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt, rating: rating, flag: flag, colorLabel: colorLabel, keywords: keywords, title: title, caption: caption, author: author, copyright: copyright, makerNotes: makerNotes, project: project, client: client, location: location, gps: gps, gpsAltitude: gpsAltitude, status: status, importedAt: importedAt, deleted: deleted, localPath: localPath, captureDateSource: captureDateSource, contentHash: contentHash, quickHash: quickHash, isDemo: isDemo, faces: faces, perceptualHash: perceptualHash, masterId: masterId, copyName: copyName, duration: duration)
+            Storage(fields, date: date, fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt, importedAt: importedAt)
         }
     }
 
@@ -189,65 +155,68 @@ struct Asset: Identifiable, Equatable, Sendable {
          masterId: String? = nil,
          copyName: String? = nil,
          duration: Double? = nil) {
-        storage = Storage(id: id, pid: pid, ori: ori, thumb: thumb, preview: preview, filename: filename, type: type, isRaw: isRaw, folderId: folderId, folderName: folderName, date: date, width: width, height: height, orientation: orientation, camera: camera, lens: lens, focal: focal, aperture: aperture, shutter: shutter, iso: iso, colorSpace: colorSpace, hasICCProfile: hasICCProfile, fileMB: fileMB, fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt, rating: rating, flag: flag, colorLabel: colorLabel, keywords: keywords, title: title, caption: caption, author: author, copyright: copyright, makerNotes: makerNotes, project: project, client: client, location: location, gps: gps, gpsAltitude: gpsAltitude, status: status, importedAt: importedAt, deleted: deleted, localPath: localPath, captureDateSource: captureDateSource, contentHash: contentHash, quickHash: quickHash, isDemo: isDemo, faces: faces, perceptualHash: perceptualHash, masterId: masterId, copyName: copyName, duration: duration)
+        storage = Storage(Fields(id: id, pid: pid, ori: ori, thumb: thumb, preview: preview, filename: filename, type: type, isRaw: isRaw, folderId: folderId, folderName: folderName, width: width, height: height, orientation: orientation, camera: camera, lens: lens, focal: focal, aperture: aperture, shutter: shutter, iso: iso, colorSpace: colorSpace, hasICCProfile: hasICCProfile, fileMB: fileMB, rating: rating, flag: flag, colorLabel: colorLabel, keywords: keywords, title: title, caption: caption, author: author, copyright: copyright, makerNotes: makerNotes, project: project, client: client, location: location, gps: gps, gpsAltitude: gpsAltitude, status: status, deleted: deleted, localPath: localPath, captureDateSource: captureDateSource, contentHash: contentHash, quickHash: quickHash, isDemo: isDemo, faces: faces, perceptualHash: perceptualHash, masterId: masterId, copyName: copyName, duration: duration),
+                          date: date, fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt, importedAt: importedAt)
     }
+
+    private init(storage: Storage) { self.storage = storage }
 
     private mutating func uniqueStorage() -> Storage {
         if !isKnownUniquelyReferenced(&storage) { storage = storage.copy() }
         return storage
     }
 
-    var id: String { storage.id }
-    var pid: Int { storage.pid }
+    var id: String { storage.fields.id }
+    var pid: Int { storage.fields.pid }
     /// "p" portrait / "l" landscape.
-    var ori: String { storage.ori }
+    var ori: String { storage.fields.ori }
     /// Cached thumbnail path, or a remote URL for demo photos.
-    var thumb: String { storage.thumb }
+    var thumb: String { storage.fields.thumb }
     /// Cached preview path, or a remote URL for demo photos.
-    var preview: String { storage.preview }
+    var preview: String { storage.fields.preview }
     var filename: String {
-        get { storage.filename }
-        set { uniqueStorage().filename = newValue }
+        get { storage.fields.filename }
+        set { uniqueStorage().fields.filename = newValue }
     }
     /// ARW / CR3 / NEF / RAF / DNG / HEIC, or a video's MOV / MP4 / M4V.
-    var type: String { storage.type }
-    var isRaw: Bool { storage.isRaw }
+    var type: String { storage.fields.type }
+    var isRaw: Bool { storage.fields.isRaw }
     /// A video's length in seconds (nil for photos, or a video whose length couldn't be read).
-    var duration: Double? { storage.duration }
+    var duration: Double? { storage.fields.duration }
     /// The file types imported as videos (played, never developed).
     static let videoTypes: Set<String> = ["MOV", "MP4", "M4V"]
     /// Decided by the file type, so a video whose metadata couldn't be read is still a video.
     var isVideo: Bool { Self.videoTypes.contains(type) }
     var folderId: String {
-        get { storage.folderId }
-        set { uniqueStorage().folderId = newValue }
+        get { storage.fields.folderId }
+        set { uniqueStorage().fields.folderId = newValue }
     }
     var folderName: String {
-        get { storage.folderName }
-        set { uniqueStorage().folderName = newValue }
+        get { storage.fields.folderName }
+        set { uniqueStorage().fields.folderName = newValue }
     }
     /// Capture date (mutable for batch time shift, §4.2).
     var date: Date {
         get { storage.date }
         set { uniqueStorage().date = newValue }
     }
-    var width: Int { storage.width }
-    var height: Int { storage.height }
-    var orientation: Int { storage.orientation }
-    var camera: String { storage.camera }
-    var lens: String { storage.lens }
-    var focal: Int { storage.focal }
-    var aperture: Double { storage.aperture }
-    var shutter: String { storage.shutter }
-    var iso: Int { storage.iso }
-    var colorSpace: String { storage.colorSpace }
+    var width: Int { storage.fields.width }
+    var height: Int { storage.fields.height }
+    var orientation: Int { storage.fields.orientation }
+    var camera: String { storage.fields.camera }
+    var lens: String { storage.fields.lens }
+    var focal: Int { storage.fields.focal }
+    var aperture: Double { storage.fields.aperture }
+    var shutter: String { storage.fields.shutter }
+    var iso: Int { storage.fields.iso }
+    var colorSpace: String { storage.fields.colorSpace }
     var hasICCProfile: Bool {
-        get { storage.hasICCProfile }
-        set { uniqueStorage().hasICCProfile = newValue }
+        get { storage.fields.hasICCProfile }
+        set { uniqueStorage().fields.hasICCProfile = newValue }
     }
     var fileMB: Double {
-        get { storage.fileMB }
-        set { uniqueStorage().fileMB = newValue }
+        get { storage.fields.fileMB }
+        set { uniqueStorage().fields.fileMB = newValue }
     }
     var fileModifiedAt: Date? {
         get { storage.fileModifiedAt }
@@ -259,131 +228,129 @@ struct Asset: Identifiable, Equatable, Sendable {
     }
     // user metadata (mutable)
     var rating: Int {
-        get { storage.rating }
-        set { uniqueStorage().rating = newValue }
+        get { storage.fields.rating }
+        set { uniqueStorage().fields.rating = newValue }
     }
     var flag: Flag {
-        get { storage.flag }
-        set { uniqueStorage().flag = newValue }
+        get { storage.fields.flag }
+        set { uniqueStorage().fields.flag = newValue }
     }
     var colorLabel: ColorLabel? {
-        get { storage.colorLabel }
-        set { uniqueStorage().colorLabel = newValue }
+        get { storage.fields.colorLabel }
+        set { uniqueStorage().fields.colorLabel = newValue }
     }
     var keywords: [String] {
-        get { storage.keywords }
-        set { uniqueStorage().keywords = newValue }
+        get { storage.fields.keywords }
+        set { uniqueStorage().fields.keywords = newValue }
     }
     var title: String {
-        get { storage.title }
-        set { uniqueStorage().title = newValue }
+        get { storage.fields.title }
+        set { uniqueStorage().fields.title = newValue }
     }
     var caption: String {
-        get { storage.caption }
-        set { uniqueStorage().caption = newValue }
+        get { storage.fields.caption }
+        set { uniqueStorage().fields.caption = newValue }
     }
     var author: String {
-        get { storage.author }
-        set { uniqueStorage().author = newValue }
+        get { storage.fields.author }
+        set { uniqueStorage().fields.author = newValue }
     }
     var copyright: String {
-        get { storage.copyright }
-        set { uniqueStorage().copyright = newValue }
+        get { storage.fields.copyright }
+        set { uniqueStorage().fields.copyright = newValue }
     }
     var makerNotes: String {
-        get { storage.makerNotes }
-        set { uniqueStorage().makerNotes = newValue }
+        get { storage.fields.makerNotes }
+        set { uniqueStorage().fields.makerNotes = newValue }
     }
     var project: String {
-        get { storage.project }
-        set { uniqueStorage().project = newValue }
+        get { storage.fields.project }
+        set { uniqueStorage().fields.project = newValue }
     }
     var client: String {
-        get { storage.client }
-        set { uniqueStorage().client = newValue }
+        get { storage.fields.client }
+        set { uniqueStorage().fields.client = newValue }
     }
     var location: String {
-        get { storage.location }
-        set { uniqueStorage().location = newValue }
+        get { storage.fields.location }
+        set { uniqueStorage().fields.location = newValue }
     }
     var gps: (Double, Double) {
-        get { storage.gps }
-        set { uniqueStorage().gps = newValue }
+        get { storage.fields.gps }
+        set { uniqueStorage().fields.gps = newValue }
     }
     var gpsAltitude: Double? {
-        get { storage.gpsAltitude }
-        set { uniqueStorage().gpsAltitude = newValue }
+        get { storage.fields.gpsAltitude }
+        set { uniqueStorage().fields.gpsAltitude = newValue }
     }
     var status: AssetStatus {
-        get { storage.status }
-        set { uniqueStorage().status = newValue }
+        get { storage.fields.status }
+        set { uniqueStorage().fields.status = newValue }
     }
     var importedAt: Date {
         get { storage.importedAt }
         set { uniqueStorage().importedAt = newValue }
     }
     var deleted: Bool {
-        get { storage.deleted }
-        set { uniqueStorage().deleted = newValue }
+        get { storage.fields.deleted }
+        set { uniqueStorage().fields.deleted = newValue }
     }
     /// Original file on disk (nil for demo assets).
     var localPath: String? {
-        get { storage.localPath }
-        set { uniqueStorage().localPath = newValue }
+        get { storage.fields.localPath }
+        set { uniqueStorage().fields.localPath = newValue }
     }
     var captureDateSource: String {
-        get { storage.captureDateSource }
-        set { uniqueStorage().captureDateSource = newValue }
+        get { storage.fields.captureDateSource }
+        set { uniqueStorage().fields.captureDateSource = newValue }
     }
     var contentHash: String? {
-        get { storage.contentHash }
-        set { uniqueStorage().contentHash = newValue }
+        get { storage.fields.contentHash }
+        set { uniqueStorage().fields.contentHash = newValue }
     }
     var quickHash: String? {
-        get { storage.quickHash }
-        set { uniqueStorage().quickHash = newValue }
+        get { storage.fields.quickHash }
+        set { uniqueStorage().fields.quickHash = newValue }
     }
     /// False once scanned from a real folder.
     var isDemo: Bool {
-        get { storage.isDemo }
-        set { uniqueStorage().isDemo = newValue }
+        get { storage.fields.isDemo }
+        set { uniqueStorage().fields.isDemo = newValue }
     }
     /// Vision-detected face count (§4.3).
     var faces: Int {
-        get { storage.faces }
-        set { uniqueStorage().faces = newValue }
+        get { storage.fields.faces }
+        set { uniqueStorage().fields.faces = newValue }
     }
     /// Cached dHash for similar-photo grouping (§6.10).
     var perceptualHash: UInt64? {
-        get { storage.perceptualHash }
-        set { uniqueStorage().perceptualHash = newValue }
+        get { storage.fields.perceptualHash }
+        set { uniqueStorage().fields.perceptualHash = newValue }
     }
     /// The photo this is a virtual copy of: the same original file, with its own develop
     /// settings and metadata. Nil for a photo that owns its file.
     var masterId: String? {
-        get { storage.masterId }
-        set { uniqueStorage().masterId = newValue }
+        get { storage.fields.masterId }
+        set { uniqueStorage().fields.masterId = newValue }
     }
     /// A virtual copy's name, such as "副本 1".
     var copyName: String? {
-        get { storage.copyName }
-        set { uniqueStorage().copyName = newValue }
+        get { storage.fields.copyName }
+        set { uniqueStorage().fields.copyName = newValue }
     }
-    var isVirtualCopy: Bool { storage.masterId != nil }
+    var isVirtualCopy: Bool { storage.fields.masterId != nil }
 
     /// A virtual copy of this photo: everything carried over, with a new id and name.
     func virtualCopy(id: String, name: String) -> Asset {
-        Asset(id: id, pid: pid, ori: ori, thumb: thumb, preview: preview, filename: filename, type: type, isRaw: isRaw,
-              folderId: folderId, folderName: folderName, date: date, width: width, height: height,
-              orientation: orientation, camera: camera, lens: lens, focal: focal, aperture: aperture, shutter: shutter,
-              iso: iso, colorSpace: colorSpace, hasICCProfile: hasICCProfile, fileMB: fileMB,
-              fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt, rating: rating, flag: flag,
-              colorLabel: colorLabel, keywords: keywords, title: title, caption: caption, author: author,
-              copyright: copyright, makerNotes: makerNotes, project: project, client: client, location: location,
-              gps: gps, gpsAltitude: gpsAltitude, status: status, importedAt: .now, deleted: false,
-              localPath: localPath, captureDateSource: captureDateSource, contentHash: contentHash,
-              quickHash: quickHash, isDemo: false, faces: 0, perceptualHash: perceptualHash,
-              masterId: masterId ?? self.id, copyName: name, duration: duration)
+        var fields = storage.fields
+        fields.id = id
+        fields.deleted = false
+        fields.isDemo = false
+        fields.faces = 0
+        fields.masterId = masterId ?? self.id
+        fields.copyName = name
+        return Asset(storage: Storage(fields, date: date, fileModifiedAt: fileModifiedAt, fileCreatedAt: fileCreatedAt,
+                                      importedAt: .now))
     }
 
     /// Takes every editable field that `new` changed from `old`, leaving the rest as they are:

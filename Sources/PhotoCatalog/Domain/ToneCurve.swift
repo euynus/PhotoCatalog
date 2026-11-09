@@ -141,3 +141,15 @@ struct ToneCurve: Codable, Hashable, Sendable {
         return min(1, max(0, value))
     }
 }
+
+extension ToneCurve {
+    /// A channel missing from a stored curve is a straight line, as it is by default, rather than
+    /// a failure that would lose the photo's whole DevelopSettings.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rgb = try container.decodeIfPresent([CurvePoint].self, forKey: .rgb) ?? []
+        red = try container.decodeIfPresent([CurvePoint].self, forKey: .red) ?? []
+        green = try container.decodeIfPresent([CurvePoint].self, forKey: .green) ?? []
+        blue = try container.decodeIfPresent([CurvePoint].self, forKey: .blue) ?? []
+    }
+}

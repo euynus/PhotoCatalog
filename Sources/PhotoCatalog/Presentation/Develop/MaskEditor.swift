@@ -439,17 +439,26 @@ struct MaskMapper {
     let display: CGRect
     let settings: DevelopSettings
     let sourceSize: CGSize
+    /// Built once: a redraw maps every brush point through it.
+    private let mapping: DevelopGeometry.PointMapping
+
+    init(display: CGRect, settings: DevelopSettings, sourceSize: CGSize) {
+        self.display = display
+        self.settings = settings
+        self.sourceSize = sourceSize
+        mapping = DevelopGeometry.PointMapping(settings: settings, sourceSize: sourceSize)
+    }
 
     private var longEdge: Double { Double(max(sourceSize.width, sourceSize.height, 1)) }
 
     func source(_ screen: CGPoint) -> CGPoint {
         let finished = CGPoint(x: (screen.x - display.minX) / max(display.width, 1),
                                y: (screen.y - display.minY) / max(display.height, 1))
-        return DevelopGeometry.sourcePoint(fromFinished: finished, settings: settings, sourceSize: sourceSize)
+        return mapping.source(fromFinished: finished)
     }
 
     func screen(_ source: CGPoint) -> CGPoint {
-        let finished = DevelopGeometry.finishedPoint(fromSource: source, settings: settings, sourceSize: sourceSize)
+        let finished = mapping.finished(fromSource: source)
         return CGPoint(x: display.minX + finished.x * display.width, y: display.minY + finished.y * display.height)
     }
 

@@ -109,9 +109,11 @@ enum SmartMatcher {
             case camera(String), cameraContains(String)
             case lens(String), lensContains(String)
             case type(String)
+            // capture times as seconds since the reference date, which order as the dates do
+            // (a time that isn't a number compares false either way)
             case year(Comparison, Int, YearBounds?)
-            case within(DateInterval)
-            case from(Date), before(Date)
+            case within(start: Double, end: Double)
+            case from(Double), before(Double)
             case gps(Bool)
             case status(AssetStatus)
             case search(String)
@@ -121,11 +123,11 @@ enum SmartMatcher {
         /// the calendar's year only for times from AD 1 to 9999: before that the calendar counts
         /// BC years down, so a time outside them (or not a number) asks the calendar, as before.
         private struct YearBounds: Sendable {
-            let start: Date, end: Date
+            let start: Double, end: Double
 
-            static let comparable: DateInterval? = {
+            static let comparable: (start: Double, end: Double)? = {
                 guard let first = start(of: 1), let last = start(of: 10_000) else { return nil }
-                return DateInterval(start: first, end: last)
+                return (first, last)
             }()
 
             init?(year: Int) {
@@ -135,8 +137,9 @@ enum SmartMatcher {
                 self.end = end
             }
 
-            private static func start(of year: Int) -> Date? {
-                Calendar.captureWallClock.date(from: DateComponents(era: 1, year: year, month: 1, day: 1))
+            private static func start(of year: Int) -> Double? {
+                Calendar.captureWallClock.date(from: DateComponents(era: 1, year: year, month: 1, day: 1))?
+                    .timeIntervalSinceReferenceDate
             }
         }
 
@@ -165,11 +168,12 @@ enum SmartMatcher {
                 if c.value == "any" {
                     test = .always
                 } else {
-                    test = CaptureDates.presetInterval(c.value, now: now).map { .within($0) } ?? .never
+                    test = CaptureDates.presetInterval(c.value, now: now).map { Self.within($0) } ?? .never
                 }
             case "captureDate":
                 if let interval = CaptureDates.interval(for: c.value) {
-                    test = c.op == ">=" ? .from(interval.start) : c.op == "<=" ? .before(interval.end) : .within(interval)
+                    let start = interval.start.timeIntervalSinceReferenceDate, end = interval.end.timeIntervalSinceReferenceDate
+                    test = c.op == ">=" ? .from(start) : c.op == "<=" ? .before(end) : .within(start: start, end: end)
                 } else {
                     test = .never
                 }
@@ -186,6 +190,10 @@ enum SmartMatcher {
             case .keywords, .cameraContains, .lensContains: slot = 0
             default: slot = nil
             }
+        }
+
+        private static func within(_ interval: DateInterval) -> Test {
+            .within(start: interval.start.timeIntervalSinceReferenceDate, end: interval.end.timeIntervalSinceReferenceDate)
         }
 
         func matches(_ a: Asset) -> Bool {
@@ -208,19 +216,21 @@ enum SmartMatcher {
             case .lensContains(let needle): return memo.text(a.lens, contains: needle, slot: slot)
             case .type(let type): return a.matchesType(type)
             case .year(let comparison, let number, let bounds):
-                let date = a.date
+                let date = a.date, t = date.timeIntervalSinceReferenceDate
                 guard let bounds, let comparable = YearBounds.comparable,
-                      date >= comparable.start, date < comparable.end else {
+                      t >= comparable.start, t < comparable.end else {
                     return comparison.holds(Calendar.captureWallClock.component(.year, from: date), number)
                 }
                 switch comparison {
-                case .atLeast: return date >= bounds.start
-                case .atMost: return date < bounds.end
-                case .equal: return date >= bounds.start && date < bounds.end
+                case .atLeast: return t >= bounds.start
+                case .atMost: return t < bounds.end
+                case .equal: return t >= bounds.start && t < bounds.end
                 }
-            case .within(let interval): return CaptureDates.contains(a.date, in: interval)
-            case .from(let start): return a.date >= start
-            case .before(let end): return a.date < end
+            case .within(let start, let end):
+                let t = a.date.timeIntervalSinceReferenceDate
+                return t >= start && t < end
+            case .from(let start): return a.date.timeIntervalSinceReferenceDate >= start
+            case .before(let end): return a.date.timeIntervalSinceReferenceDate < end
             case .gps(let has): return a.hasGPS == has
             case .status(let status): return a.status == status
             // the joined text, as the search box searches it: a match can run across two fields

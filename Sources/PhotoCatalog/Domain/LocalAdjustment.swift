@@ -423,27 +423,7 @@ extension BrushStroke {
 /// before quarter turns (any scale — only its shape matters).
 extension DevelopGeometry {
     static func finishedPoint(fromSource p: CGPoint, settings s: DevelopSettings, sourceSize: CGSize) -> CGPoint {
-        let w = Double(sourceSize.width), h = Double(sourceSize.height)
-        var x = Double(p.x) * w, y = Double(p.y) * h
-        switch ((s.rotation % 4) + 4) % 4 {   // quarter turns clockwise
-        case 1: (x, y) = (h - y, x)
-        case 2: (x, y) = (w - x, h - y)
-        case 3: (x, y) = (y, w - x)
-        default: break
-        }
-        let frame = rotatedSize(sourceSize, s.rotation)
-        let fw = Double(frame.width), fh = Double(frame.height)
-        if s.flipped { x = fw - x }
-        if let perspective = perspective(s, frame: frame), let p = perspective.apply(CGPoint(x: x, y: y)) {
-            (x, y) = (Double(p.x), Double(p.y))
-        }
-        if s.straighten != 0 {
-            // y points down, so this matrix turns clockwise for a positive angle
-            let a = s.straighten * .pi / 180, dx = x - fw / 2, dy = y - fh / 2
-            (x, y) = (fw / 2 + dx * cos(a) - dy * sin(a), fh / 2 + dx * sin(a) + dy * cos(a))
-        }
-        let crop = effectiveCrop(s, frame: frame)
-        return CGPoint(x: (x / fw - crop.x) / crop.width, y: (y / fh - crop.y) / crop.height)
+        PointMapping(settings: s, sourceSize: sourceSize).finished(fromSource: p)
     }
 
     /// The manual distortion correction's strength for the Distortion slider: k of
@@ -491,25 +471,6 @@ extension DevelopGeometry {
     }
 
     static func sourcePoint(fromFinished p: CGPoint, settings s: DevelopSettings, sourceSize: CGSize) -> CGPoint {
-        let w = Double(sourceSize.width), h = Double(sourceSize.height)
-        let frame = rotatedSize(sourceSize, s.rotation)
-        let fw = Double(frame.width), fh = Double(frame.height)
-        let crop = effectiveCrop(s, frame: frame)
-        var x = (crop.x + Double(p.x) * crop.width) * fw, y = (crop.y + Double(p.y) * crop.height) * fh
-        if s.straighten != 0 {
-            let a = -s.straighten * .pi / 180, dx = x - fw / 2, dy = y - fh / 2
-            (x, y) = (fw / 2 + dx * cos(a) - dy * sin(a), fh / 2 + dx * sin(a) + dy * cos(a))
-        }
-        if let perspective = perspective(s, frame: frame), let p = perspective.inverse.apply(CGPoint(x: x, y: y)) {
-            (x, y) = (Double(p.x), Double(p.y))
-        }
-        if s.flipped { x = fw - x }
-        switch ((s.rotation % 4) + 4) % 4 {
-        case 1: (x, y) = (y, h - x)
-        case 2: (x, y) = (w - x, h - y)
-        case 3: (x, y) = (w - y, x)
-        default: break
-        }
-        return CGPoint(x: x / max(w, 1e-9), y: y / max(h, 1e-9))
+        PointMapping(settings: s, sourceSize: sourceSize).source(fromFinished: p)
     }
 }

@@ -424,13 +424,17 @@ struct CollectionNode: Identifiable {
     static func build(sets: [AlbumSet], albums: [Album], smart: [SmartAlbum]) -> [CollectionNode] {
         let known = Set(sets.map(\.id))
         func parent(_ id: String?) -> String? { id.flatMap { known.contains($0) ? $0 : nil } }
+        // each parent's contents found once, in their order, rather than every list filtered per set
+        let setsByParent = Dictionary(grouping: sets) { parent($0.parentId) }
+        let albumsByParent = Dictionary(grouping: albums) { parent($0.setId) }
+        let smartByParent = Dictionary(grouping: smart) { parent($0.setId) }
         var placed = Set<String>()   // a looped parent chain is shown once, at the top
         func nodes(in parentId: String?) -> [CollectionNode] {
-            let childSets = sets.filter { parent($0.parentId) == parentId && !placed.contains($0.id) }
+            let childSets = (setsByParent[parentId] ?? []).filter { !placed.contains($0.id) }
             childSets.forEach { placed.insert($0.id) }
             return childSets.map { CollectionNode(item: .set($0), children: nodes(in: $0.id)) }
-                + albums.filter { parent($0.setId) == parentId }.map { CollectionNode(item: .album($0), children: nil) }
-                + smart.filter { parent($0.setId) == parentId }.map { CollectionNode(item: .smart($0), children: nil) }
+                + (albumsByParent[parentId] ?? []).map { CollectionNode(item: .album($0), children: nil) }
+                + (smartByParent[parentId] ?? []).map { CollectionNode(item: .smart($0), children: nil) }
         }
         var top = nodes(in: nil)
         // sets caught in a parent loop never hang under the top level: list them there
