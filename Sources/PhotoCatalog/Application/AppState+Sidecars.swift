@@ -69,6 +69,7 @@ extension AppState {
         storeXMPSync(times)
         let settled = externallyChangedXMPIds.intersection(times.keys)
         if !settled.isEmpty { externallyChangedXMPIds.subtract(settled) }
+        if !xmpConflictIds.isEmpty { xmpConflictIds.subtract(times.keys) }
     }
 
     private func storeXMPSync(_ times: [String: Double]) {
@@ -300,19 +301,26 @@ extension AppState {
         // the check looked at a snapshot: a sidecar we wrote or read meanwhile has moved on
         let fresh = seeded.filter { xmpSyncTimes[$0.key] == nil }
         if !fresh.isEmpty { storeXMPSync(fresh) }
-        var live = Set(changed.filter { id, time in
+        let moved = Set(changed.filter { id, time in
             guard let index = assetIndex[id], !assets[index].deleted else { return false }
             return xmpSyncTimes[id].map { abs(time - $0) > 1 } ?? true
         }.keys)
+        var live = moved
         // a change an automatic write found since the check started is one it couldn't see
         live.formUnion(externallyChangedXMPIds.filter { (xmpChangeFoundAt[$0] ?? 0) > snapshot.count })
-        if externallyChangedXMPIds != live { externallyChangedXMPIds = live }
+        // a sidecar an edit won over as it was read stays shown, and is read once it changes again
+        let held = xmpConflictIds.subtracting(moved).filter { id in
+            assetIndex[id].map { !assets[$0].deleted } ?? false
+        }
+        let shown = live.union(held)
+        if externallyChangedXMPIds != shown { externallyChangedXMPIds = shown }
+        let reading = live.subtracting(held)
         // taken in the background, so not something ⌘Z should take back
-        guard autoReadChangedXMP, !live.isEmpty else { return }
+        guard autoReadChangedXMP, !reading.isEmpty else { return }
         if readingInBackground {
-            readChangedSidecarsInBackground(live)
+            readChangedSidecarsInBackground(reading)
         } else {
-            readMetadataFromFiles(live, undoable: false)
+            readMetadataFromFiles(reading, undoable: false)
         }
     }
 
@@ -346,25 +354,55 @@ extension AppState {
         let located = readableOriginals(ids)
         guard !located.isEmpty else { return nil }
         let snapshot = xmpSyncSnapshot()
+        // the photos as the read starts, to tell an edit made while it runs
+        let index = assetIndex
+        let photos = Dictionary(located.compactMap { photo in index[photo.id].map { (photo.id, assets[$0]) } },
+                                uniquingKeysWith: { _, last in last })
         let catalogURL = store?.packageURL
-        return Task { [weak self, located, snapshot] in
+        return Task { [weak self, located, snapshot, photos] in
             let read = await Task.detached(priority: .utility) {
                 Self.readSidecars(located, pairing: snapshot.pairing)
             }.value
             guard let self, self.store?.packageURL == catalogURL else { return }
-            self.takeInBackgroundRead(read, since: snapshot)
+            self.takeInBackgroundRead(read, since: snapshot, readFrom: photos)
         }
     }
 
     /// Takes in sidecars read in the background from `snapshot`, but not for a photo removed
     /// meanwhile, nor a sidecar read or written again since (see `stillCurrent`). Not undoable,
-    /// as no background read is.
-    func takeInBackgroundRead(_ read: [SidecarRead], since snapshot: XMPSyncSnapshot) {
+    /// as no background read is. A photo whose metadata was edited since the read started (as
+    /// it was then: `photos`) keeps the edit, the newer change: its sidecar's time is recorded,
+    /// so it isn't read again, and it shows as changed elsewhere until it's read or written.
+    func takeInBackgroundRead(_ read: [SidecarRead], since snapshot: XMPSyncSnapshot,
+                              readFrom photos: [String: Asset] = [:]) {
         let current = read.filter { target in
             guard let index = assetIndex[target.id], !assets[index].deleted else { return false }
             return isStillCurrent(target.id, pairingDependent: target.pairingDependent, since: snapshot)
         }
-        if !current.isEmpty { takeInSidecars(current, undoable: false) }
+        let edited = Set(current.compactMap { target -> String? in
+            guard let before = photos[target.id], let index = assetIndex[target.id],
+                  Self.editsSidecarFields(from: before, to: assets[index]) else { return nil }
+            return target.id
+        })
+        if !edited.isEmpty {
+            storeXMPSync(Dictionary(current.compactMap { target in
+                edited.contains(target.id) ? target.time.map { (target.id, $0) } : nil
+            }, uniquingKeysWith: { _, last in last }))
+            xmpConflictIds.formUnion(edited)
+            noteChangedElsewhere(edited)
+        }
+        let taken = current.filter { !edited.contains($0.id) }
+        if !taken.isEmpty { takeInSidecars(taken, undoable: false) }
+    }
+
+    /// Whether `new` differs from `old` in what reading a sidecar sets (see `XMPSidecar.apply`):
+    /// rating, label, keywords, text, credits, capture time or location.
+    nonisolated static func editsSidecarFields(from old: Asset, to new: Asset) -> Bool {
+        old.rating != new.rating || old.colorLabel != new.colorLabel || old.keywords != new.keywords
+            || old.title != new.title || old.caption != new.caption || old.author != new.author
+            || old.copyright != new.copyright || old.date != new.date
+            || old.captureDateSource != new.captureDateSource || old.location != new.location
+            || old.gps.0 != new.gps.0 || old.gps.1 != new.gps.1
     }
 
     /// A photo's sidecar as read, with its time and whether RAW+JPEG pairing decides which

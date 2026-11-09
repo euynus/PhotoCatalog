@@ -756,6 +756,9 @@ final class AppState {
     @ObservationIgnored var xmpSyncRecordedAt: [String: UInt64] = [:]
     /// When an automatic write last found a photo's sidecar changed elsewhere, on the same count.
     @ObservationIgnored var xmpChangeFoundAt: [String: UInt64] = [:]
+    /// Photos edited while their changed sidecar was read automatically: the edit won, and the
+    /// sidecar shows as changed elsewhere, unread, until it's read or written or changes again.
+    @ObservationIgnored var xmpConflictIds: Set<String> = []
     // ---------- editing in another app ----------
     /// The app photos open in for pixel editing (Photoshop, Pixelmator Pro…); asked the first time.
     var externalEditorPath: String? = UserDefaults.app.string(forKey: "pc_externalEditor") {

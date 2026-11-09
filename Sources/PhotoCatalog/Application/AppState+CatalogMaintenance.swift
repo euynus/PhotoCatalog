@@ -690,6 +690,7 @@ extension AppState {
         xmpSyncTimes = [:]
         xmpSyncRecordedAt = [:]
         externallyChangedXMPIds = []
+        xmpConflictIds = []
         pendingXMPWriteIds = []
         sourceRootPathsById = [:]
         sourceManagementModesById = [:]

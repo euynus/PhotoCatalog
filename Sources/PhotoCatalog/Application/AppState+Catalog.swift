@@ -388,6 +388,7 @@ extension AppState {
         albumSets = collections.albumSets
         xmpSyncTimes = collections.xmpSyncTimes
         externallyChangedXMPIds = []
+        xmpConflictIds = []
     }
 
     private func restoreSourceRoots(from store: CatalogStore) {
