@@ -63,32 +63,22 @@ struct ImportSheet: View {
             HStack {
                 Text("导入模式").foregroundStyle(Theme.text2)
                 Spacer()
-                Segmented(options: [
-                    SegOption(value: "referenced", label: L("原位添加")),
-                    SegOption(value: "managed", label: L("复制到目录库")),
-                ], value: app.importMode.rawValue,
-                   onChange: { app.importMode = ImportMode(rawValue: $0) ?? .referenced })
+                Segmented(options: ImportOptionLists.modes, value: app.importMode.rawValue,
+                          onChange: { app.importMode = ImportMode(rawValue: $0) ?? .referenced })
             }
             if app.importMode == .managed {
                 HStack {
                     Text("归档规则").foregroundStyle(Theme.text2)
                     Spacer()
-                    Segmented(options: [
-                        SegOption(value: "date", label: L("按日期")),
-                        SegOption(value: "camera", label: L("按相机")),
-                    ], value: app.managedArchiveRule.rawValue,
-                       onChange: { app.managedArchiveRule = ManagedArchiveRule(rawValue: $0) ?? .date })
+                    Segmented(options: ImportOptionLists.archiveRules, value: app.managedArchiveRule.rawValue,
+                              onChange: { app.managedArchiveRule = ManagedArchiveRule(rawValue: $0) ?? .date })
                 }
             }
             HStack {
                 Text("重复处理").foregroundStyle(Theme.text2)
                 Spacer()
-                Segmented(options: [
-                    SegOption(value: "groupExact", label: L("分组")),
-                    SegOption(value: "skipExact", label: L("跳过")),
-                    SegOption(value: "keep", label: L("保留")),
-                ], value: app.importDuplicateStrategy.rawValue,
-                   onChange: {
+                Segmented(options: ImportOptionLists.duplicateStrategies, value: app.importDuplicateStrategy.rawValue,
+                          onChange: {
                     app.importDuplicateStrategy = ImportDuplicateStrategy(rawValue: $0) ?? .groupExact
                 })
             }
