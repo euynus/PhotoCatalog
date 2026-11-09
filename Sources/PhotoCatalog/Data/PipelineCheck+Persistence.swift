@@ -168,14 +168,10 @@ extension PipelineCheck.Run {
         // the quick collection is kept as an album under a reserved id, and loads apart from albums
         let quickIds = [reloaded[1].id, reloaded[2].id]
         let reopenedQuick: Set<String>? = MainActor.assumeIsolated {
-            let app = AppState.selfCheckFixture(store: store)
-            app.runsBackgroundMaintenance = false
-            app.applyLoadedCatalogForScaleCheck(reloaded, from: store)
+            let app = AppState.selfCheckFixture(store: store, loading: reloaded)
             app.selectedIds = Set(quickIds)
             app.toggleQuickCollection()
-            let reopened = AppState.selfCheckFixture(store: store)
-            reopened.runsBackgroundMaintenance = false
-            reopened.applyLoadedCatalogForScaleCheck(reloaded, from: store)
+            let reopened = AppState.selfCheckFixture(store: store, loading: reloaded)
             let listedAsAlbum = reopened.albums.contains { $0.id == AppState.quickCollectionID }
             return listedAsAlbum ? nil : reopened.quickCollection
         }

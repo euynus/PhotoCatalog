@@ -5,30 +5,40 @@ import CoreGraphics
 // Part of step 4 (persist + reload roundtrip): round trips through the app, each on a scratch
 // catalog of its own with photos the reload returned.
 extension PipelineCheck.Run {
+    /// Runs `body` on the main actor with a scratch catalog of its own, `catalog` in a
+    /// `pc-<folder>-…` folder removed afterwards, and checks each result it returns as
+    /// "<label>: <name>", in name order.
+    func scratchCatalogChecks(_ label: String, folder: String, catalog: String,
+                              _ body: @MainActor (URL, CatalogStore) -> [String: Bool]) {
+        let results: [String: Bool] = MainActor.assumeIsolated {
+            let scratch = fm.temporaryDirectory.appendingPathComponent("pc-\(folder)-\(UUID().uuidString)")
+            defer { try? fm.removeItem(at: scratch) }
+            try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+            guard let store = try? CatalogStore(packageURL: scratch.appendingPathComponent(catalog))
+            else { return ["scratch catalog": false] }
+            return body(scratch, store)
+        }
+        for (name, passed) in results.sorted(by: { $0.key < $1.key }) {
+            check(passed, "\(label): \(name)")
+        }
+    }
+
     /// virtual copies: another entry for the same original, with its own settings and metadata,
     /// never taken for a duplicate, a RAW+JPEG pair or the file's owner
     func virtualCopyLifecycle(_ reloaded: [Asset]) {
-        let virtualCopies: [String: Bool] = MainActor.assumeIsolated {
+        // a scratch catalog and file of its own: renaming and removing must not touch the others
+        scratchCatalogChecks("virtual copies", folder: "virtual", catalog: "Copies.photolibrary") { scratch, store in
             var results: [String: Bool] = [:]
-            // a scratch catalog and file of its own: renaming and removing must not touch the others
-            let scratch = fm.temporaryDirectory.appendingPathComponent("pc-virtual-\(UUID().uuidString)")
-            defer { try? fm.removeItem(at: scratch) }
-            try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
-            guard let sourcePath = reloaded[3].localPath,
-                  let copyStore = try? CatalogStore(packageURL: scratch.appendingPathComponent("Copies.photolibrary"))
-            else { return ["scratch catalog": false] }
+            guard let sourcePath = reloaded[3].localPath else { return ["scratch catalog": false] }
             let scratchFile = scratch.appendingPathComponent(URL(fileURLWithPath: sourcePath).lastPathComponent)
             try? fm.copyItem(atPath: sourcePath, toPath: scratchFile.path)
             var master = reloaded[3]
             master.localPath = scratchFile.path
-            try? copyStore.upsert([master])
-            let store = copyStore
+            try? store.upsert([master])
             let undo = UndoManager()
             undo.groupsByEvent = false
-            let app = AppState.selfCheckFixture(store: store)
-            app.runsBackgroundMaintenance = false
+            let app = AppState.selfCheckFixture(store: store, loading: [master])
             app.undoManager = undo
-            app.applyLoadedCatalogForScaleCheck([master], from: store)
             var edit = DevelopSettings()
             edit.exposure = 0.6
             undo.beginUndoGrouping(); app.commitDevelop([master.id: edit], undoName: "edit"); undo.endUndoGrouping()
@@ -42,9 +52,7 @@ extension PipelineCheck.Run {
             blackAndWhite.saturation = -100
             undo.beginUndoGrouping(); app.commitDevelop([copy.id: blackAndWhite], undoName: "bw"); undo.endUndoGrouping()
             undo.beginUndoGrouping(); _ = app.applyRatingShortcut(4); undo.endUndoGrouping()
-            let reopened = AppState.selfCheckFixture(store: store)
-            reopened.runsBackgroundMaintenance = false
-            reopened.applyLoadedCatalogForScaleCheck((try? store.loadAssets()) ?? [], from: store)
+            let reopened = AppState.selfCheckFixture(store: store, loading: (try? store.loadAssets()) ?? [])
             let reopenedCopy = reopened.assets.first { $0.id == copy.id }
             let reopenedMaster = reopened.assets.first { $0.id == master.id }
             results["independent"] = reopenedCopy?.masterId == master.id && reopenedCopy?.copyName == copy.copyName
@@ -79,21 +87,13 @@ extension PipelineCheck.Run {
                 && app.assets.first { $0.id == second?.id }?.deleted == true
             return results
         }
-        for (name, passed) in virtualCopies.sorted(by: { $0.key < $1.key }) {
-            check(passed, "virtual copies: \(name)")
-        }
     }
 
     /// editing in another app: a 16-bit TIFF copy beside the untouched original, cataloged with
     /// the original's metadata and stacked with it
     func externalEditor(_ reloaded: [Asset]) {
-        let externalEdit: [String: Bool] = MainActor.assumeIsolated {
-            let scratch = fm.temporaryDirectory.appendingPathComponent("pc-edit-\(UUID().uuidString)")
-            defer { try? fm.removeItem(at: scratch) }
-            try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
-            guard let sourcePath = reloaded[2].localPath,
-                  let editStore = try? CatalogStore(packageURL: scratch.appendingPathComponent("Edit.photolibrary"))
-            else { return ["scratch catalog": false] }
+        scratchCatalogChecks("external editor", folder: "edit", catalog: "Edit.photolibrary") { scratch, editStore in
+            guard let sourcePath = reloaded[2].localPath else { return ["scratch catalog": false] }
             let originalURL = scratch.appendingPathComponent("IMG_edit.jpg")
             try? fm.copyItem(atPath: sourcePath, toPath: originalURL.path)
             let originalBytes = try? Data(contentsOf: originalURL)
@@ -104,9 +104,7 @@ extension PipelineCheck.Run {
             master.keywords = ["harbor"]
             master.title = "Harbor"
             try? editStore.upsert([master])
-            let app = AppState.selfCheckFixture(store: editStore)
-            app.runsBackgroundMaintenance = false
-            app.applyLoadedCatalogForScaleCheck([master], from: editStore)
+            let app = AppState.selfCheckFixture(store: editStore, loading: [master])
             var look = DevelopSettings()
             look.exposure = 0.5
             app.commitDevelop([master.id: look], undoName: "look")
@@ -137,25 +135,15 @@ extension PipelineCheck.Run {
                 "original untouched": (try? Data(contentsOf: originalURL)) == originalBytes,
             ]
         }
-        for (name, passed) in externalEdit.sorted(by: { $0.key < $1.key }) {
-            check(passed, "external editor: \(name)")
-        }
     }
 
     /// sidecars another app changes: noticed, read on request (or automatically), never
     /// rewritten by the read, and our own writes don't count
     func externallyChangedSidecars(_ reloaded: [Asset]) {
-        let externalXMP: [String: Bool] = MainActor.assumeIsolated {
-            let scratch = fm.temporaryDirectory.appendingPathComponent("pc-xmp-\(UUID().uuidString)")
+        scratchCatalogChecks("external XMP", folder: "xmp", catalog: "XMP.photolibrary") { scratch, xmpStore in
             let savedPreferences = PreferenceSnapshot(keys: ["pc_autoReadChangedXMP"])
-            defer {
-                try? fm.removeItem(at: scratch)
-                savedPreferences.restore()
-            }
-            try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
-            guard let sourcePath = reloaded[4].localPath,
-                  let xmpStore = try? CatalogStore(packageURL: scratch.appendingPathComponent("XMP.photolibrary"))
-            else { return ["scratch catalog": false] }
+            defer { savedPreferences.restore() }
+            guard let sourcePath = reloaded[4].localPath else { return ["scratch catalog": false] }
             let originalURL = scratch.appendingPathComponent("IMG_xmp.jpg")
             try? fm.copyItem(atPath: sourcePath, toPath: originalURL.path)
             let sidecarURL = XMPSidecar.sidecarURL(for: originalURL)
@@ -165,9 +153,7 @@ extension PipelineCheck.Run {
             photo.keywords = ["mine"]
             XMPSidecar.write(photo, to: sidecarURL)
             try? xmpStore.upsert([photo])
-            let app = AppState.selfCheckFixture(store: xmpStore)
-            app.runsBackgroundMaintenance = false
-            app.applyLoadedCatalogForScaleCheck([photo], from: xmpStore)
+            let app = AppState.selfCheckFixture(store: xmpStore, loading: [photo])
             app.checkExternalXMPChangesNow()
             var results: [String: Bool] = ["first sighting isn't a change": app.externallyChangedXMPIds.isEmpty]
             // another app rates, retags and titles the photo in its sidecar
@@ -234,25 +220,16 @@ extension PipelineCheck.Run {
             app.undoManager = nil
             return results
         }
-        for (name, passed) in externalXMP.sorted(by: { $0.key < $1.key }) {
-            check(passed, "external XMP: \(name)")
-        }
     }
 
     /// album sets: nest albums, smart albums and sets; deleting one moves its contents up
     func albumSetNesting(_ reloaded: [Asset]) {
-        let albumSets: [String: Bool] = MainActor.assumeIsolated {
-            let scratch = fm.temporaryDirectory.appendingPathComponent("pc-sets-\(UUID().uuidString)")
-            defer { try? fm.removeItem(at: scratch) }
-            guard let setStore = try? CatalogStore(packageURL: scratch.appendingPathComponent("Sets.photolibrary"))
-            else { return ["scratch catalog": false] }
+        scratchCatalogChecks("album sets", folder: "sets", catalog: "Sets.photolibrary") { _, setStore in
             try? setStore.upsert(Array(reloaded.prefix(2)))
             try? setStore.saveAlbum(Album(id: "al-trip", name: "Trip", assetIds: reloaded.prefix(2).map(\.id)))
             let rawRule = SmartRule(match: "all", conditions: [SmartCondition(field: "type", op: "=", value: "CR3")])
             try? setStore.saveSmartAlbum(SmartAlbum(id: "sm-raw", name: "RAW", rule: rawRule, count: 0))
-            let app = AppState.selfCheckFixture(store: setStore)
-            app.runsBackgroundMaintenance = false
-            app.applyLoadedCatalogForScaleCheck(Array(reloaded.prefix(2)), from: setStore)
+            let app = AppState.selfCheckFixture(store: setStore, loading: Array(reloaded.prefix(2)))
             let outer = AlbumSet(id: "as-outer", name: "2026")
             let inner = AlbumSet(id: "as-inner", name: "Summer", parentId: "as-outer")
             try? setStore.saveAlbumSet(outer)
@@ -261,9 +238,7 @@ extension PipelineCheck.Run {
             app.moveToAlbumSet("al-trip", setId: "as-inner")
             app.moveToAlbumSet("sm-raw", setId: "as-outer")
             app.moveToAlbumSet("as-outer", setId: "as-inner")   // into its own child: refused
-            let reopened = AppState.selfCheckFixture(store: setStore)
-            reopened.runsBackgroundMaintenance = false
-            reopened.applyLoadedCatalogForScaleCheck(Array(reloaded.prefix(2)), from: setStore)
+            let reopened = AppState.selfCheckFixture(store: setStore, loading: Array(reloaded.prefix(2)))
             let tree = CollectionNode.build(sets: reopened.albumSets, albums: reopened.albums, smart: reopened.smartAlbums)
             let outerChildren = tree.first { $0.id == "set:as-outer" }?.children?.map(\.id) ?? []
             let innerChildren = tree.first { $0.id == "set:as-outer" }?.children?
@@ -287,23 +262,13 @@ extension PipelineCheck.Run {
             results["looped sets still show"] = looped.count == 1 && looped[0].children?.count == 1
             return results
         }
-        for (name, passed) in albumSets.sorted(by: { $0.key < $1.key }) {
-            check(passed, "album sets: \(name)")
-        }
     }
 
     /// renaming photos: the preview matches what happens on disk and in the catalog
     func photoRenaming(_ reloaded: [Asset]) {
-        let renaming: [String: Bool] = MainActor.assumeIsolated {
-            let scratch = fm.temporaryDirectory.appendingPathComponent("pc-rename-\(UUID().uuidString)")
+        scratchCatalogChecks("rename photos", folder: "rename", catalog: "Rename.photolibrary") { scratch, renameStore in
             let savedPreferences = PreferenceSnapshot(keys: ["pc_renameTemplate"])
-            defer {
-                try? fm.removeItem(at: scratch)
-                savedPreferences.restore()
-            }
-            try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
-            guard let renameStore = try? CatalogStore(packageURL: scratch.appendingPathComponent("Rename.photolibrary"))
-            else { return ["scratch catalog": false] }
+            defer { savedPreferences.restore() }
             var photos: [Asset] = []
             for (index, title) in ["Harbor", "Harbor"].enumerated() {
                 guard let sourcePath = reloaded[index].localPath else { return ["fixture": false] }
@@ -316,9 +281,7 @@ extension PipelineCheck.Run {
                 photos.append(photo)
             }
             try? renameStore.upsert(photos)
-            let app = AppState.selfCheckFixture(store: renameStore)
-            app.runsBackgroundMaintenance = false
-            app.applyLoadedCatalogForScaleCheck(photos, from: renameStore)
+            let app = AppState.selfCheckFixture(store: renameStore, loading: photos)
             app.selectedIds = Set(photos.map(\.id))
             let targets = app.renameTargets()
             let plan = RenameService.plan(targets, template: "{title}_{seq}", start: 7)
@@ -334,9 +297,6 @@ extension PipelineCheck.Run {
                     && names.allSatisfy { fm.fileExists(atPath: scratch.appendingPathComponent($0).path) },
                 "template remembered": app.renameTemplate == "{title}_{seq}",
             ]
-        }
-        for (name, passed) in renaming.sorted(by: { $0.key < $1.key }) {
-            check(passed, "rename photos: \(name)")
         }
     }
 }
