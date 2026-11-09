@@ -2,41 +2,50 @@ import XCTest
 @testable import PhotoCatalog
 
 /// Long seeded runs of what changes the photo list — review keys (on one photo or a batch, read
-/// or not before the next step), undo and redo, a new collection, filter, search or sort, stacks
-/// folded and opened — over RAW+JPEG pairs and a removed photo. After each step the list, the
+/// or not before the next step), undo and redo, a new collection (Recently Imported too), filter
+/// (relative dates too), search or sort, stacks folded and opened, RAW+JPEG pairing turned on or
+/// off, new photos added, photos moved to the Trash and back, renamed or gone offline, and the
+/// clock passing midnight — over RAW+JPEG pairs and a removed photo. After each step the list, the
 /// positions it reports and the sidebar's counts are what a new AppState working them out afresh
 /// gives: no cache kept through a step may show the wrong photos, or the right ones out of place.
 final class ListCacheSequenceTests: CatalogTestCase {
-    private let shot = Date(timeIntervalSince1970: 1_791_800_000)
+    /// Where the sidebar clock starts. It moves on in steps of six hours, past midnight now and
+    /// then; the oracle counts relative dates at the same time as the app.
+    private let start = Date(timeIntervalSince1970: 1_791_900_000)
 
-    /// A fixed clock: the oracle counts relative dates at the same time as the app.
-    private let now = Date(timeIntervalSince1970: 1_791_900_000)
+    /// When the photos were imported, against the real clock Recently Imported counts from.
+    private let imported = Date()
+
+    private func photo(_ id: String, _ name: String, raw: Bool, index: Int, taken: Date) -> Asset {
+        var asset = Asset(id: id, pid: 0, ori: "l", thumb: "", preview: "", filename: name,
+                          type: raw ? "CR3" : "JPEG", isRaw: raw, folderId: "day", folderName: "Day",
+                          date: taken, width: 6000, height: 4000, orientation: 1,
+                          camera: "Canon EOS R5", lens: "", focal: 50, aperture: 4, shutter: "1/100", iso: 100,
+                          colorSpace: "sRGB", fileMB: Double(index % 4), rating: (index * 7) % 6,
+                          flag: [.none, .pick, .none, .reject, .none][index % 5],
+                          keywords: index % 3 == 0 ? ["trip"] : [], title: "", caption: "", location: "",
+                          gps: (0, 0), status: .ready,
+                          // over 30 days: some in Recently Imported's 14, some not
+                          importedAt: imported.addingTimeInterval(-Double(index % 30) * 86_400 - 60),
+                          localPath: scratch.appendingPathComponent(name).path)
+        asset.colorLabel = [nil, .red, nil, .yellow][index % 4]
+        return asset
+    }
 
     /// Photos of every rating, flag and color, ties in each sort key, keywords, RAW+JPEG pairs
-    /// (each JPEG with its RAW's review fields) and a removed photo.
+    /// (each JPEG with its RAW's review fields), capture days around the clock's and a removed photo.
     private func library() -> [Asset] {
         var photos: [Asset] = []
-        func photo(_ id: String, _ name: String, raw: Bool, index: Int, offset: TimeInterval) -> Asset {
-            var asset = Asset(id: id, pid: 0, ori: "l", thumb: "", preview: "", filename: name,
-                              type: raw ? "CR3" : "JPEG", isRaw: raw, folderId: "day", folderName: "Day",
-                              date: shot.addingTimeInterval(offset), width: 6000, height: 4000, orientation: 1,
-                              camera: "Canon EOS R5", lens: "", focal: 50, aperture: 4, shutter: "1/100", iso: 100,
-                              colorSpace: "sRGB", fileMB: Double(index % 4), rating: (index * 7) % 6,
-                              flag: [.none, .pick, .none, .reject, .none][index % 5],
-                              keywords: index % 3 == 0 ? ["trip"] : [], title: "", caption: "", location: "",
-                              gps: (0, 0), status: .ready, importedAt: shot.addingTimeInterval(Double(index % 3) * 3600),
-                              localPath: scratch.appendingPathComponent(name).path)
-            asset.colorLabel = [nil, .red, nil, .yellow][index % 4]
-            return asset
-        }
         for index in 0..<70 {
-            let offset = Double(index / 2) * 60   // two photos a minute
-            var single = photo("p\(index)", "IMG_\(index % 30).JPG", raw: false, index: index, offset: offset)
+            // two photos a minute, on days half a day apart from three days before the clock's
+            // start to five after, the days it passes through
+            let taken = start.addingTimeInterval(Double(index / 2) * 60 + Double(index % 17 - 6) * 43_200)
+            var single = photo("p\(index)", "IMG_\(index % 30).JPG", raw: false, index: index, taken: taken)
             single.deleted = index == 33
             photos.append(single)
             if index % 5 == 0 {
-                photos.append(photo("r\(index)", "PAIR_\(index).CR3", raw: true, index: index, offset: offset + 1))
-                photos.append(photo("r\(index)j", "PAIR_\(index).JPG", raw: false, index: index, offset: offset + 1))
+                photos.append(photo("r\(index)", "PAIR_\(index).CR3", raw: true, index: index, taken: taken + 1))
+                photos.append(photo("r\(index)j", "PAIR_\(index).JPG", raw: false, index: index, taken: taken + 1))
             }
         }
         return photos
@@ -49,9 +58,10 @@ final class ListCacheSequenceTests: CatalogTestCase {
     private let album = Album(id: "album", name: "Album", assetIds: ["p1", "p2", "r10", "r10j", "p40", "p41", "p64"])
 
     @MainActor
-    private func makeApp(_ photos: [Asset], pairs: Bool, chunk: Int) -> AppState {
+    private func makeApp(_ photos: [Asset], pairs: Bool, chunk: Int, clock: Clock) -> AppState {
         let app = AppState.selfCheckFixture()
-        app.sidebarClock = { [now] in now }
+        app.sidebarClock = { clock.now }
+        app.recentImportDays = 14
         app.pairRawAndJpeg = pairs
         app.autoStackSeconds = nil
         app.assets = photos
@@ -71,7 +81,7 @@ final class ListCacheSequenceTests: CatalogTestCase {
     /// stacks, working everything out afresh.
     @MainActor
     private func oracle(of app: AppState) -> AppState {
-        let other = makeApp(app.assets, pairs: app.pairRawAndJpeg, chunk: app.listChunk)
+        let other = makeApp(app.assets, pairs: app.pairRawAndJpeg, chunk: app.listChunk, clock: Clock(app.sidebarClock()))
         other.duplicateGroupsCache = app.duplicateGroupsCache
         other.select(app.selection)
         other.setFilters(app.filters)
@@ -111,23 +121,35 @@ final class ListCacheSequenceTests: CatalogTestCase {
         let selections = [Selection(type: .lib, id: "all", name: "All"), Selection(type: .lib, id: "unrated", name: "Unrated"),
                           Selection(type: .lib, id: "picks", name: "Picks"), Selection(type: .lib, id: "rejected", name: "Rejected"),
                           Selection(type: .smart, id: "rated", name: "Rated"), Selection(type: .album, id: "album", name: "Album"),
-                          Selection(type: .keyword, id: "trip", name: "trip"), Selection(type: .lib, id: "missing", name: "Missing")]
-        var minRating = Filters(), picks = Filters(), red = Filters()
+                          Selection(type: .keyword, id: "trip", name: "trip"), Selection(type: .lib, id: "missing", name: "Missing"),
+                          Selection(type: .lib, id: "recent", name: "Recently Imported")]
+        var minRating = Filters(), picks = Filters(), red = Filters(), today = Filters(), yesterday = Filters()
+        var lastWeekRated = Filters()
         minRating.minRating = 3
         picks.flag = Flag.pick.rawValue
         red.color = ColorLabel.red.rawValue
-        let filterChoices = [Filters(), Filters(), minRating, picks, red]
+        today.date = "today"
+        yesterday.date = "yesterday"
+        lastWeekRated.date = "last7Days"
+        lastWeekRated.minRating = 2
+        let filterChoices = [Filters(), Filters(), minRating, picks, red, today, yesterday, lastWeekRated]
+        // names that pair with photos there (a RAW hiding JPEGs, a JPEG behind a RAW) or not
+        let jpegNames = ["IMG_3.JPG", "IMG_31.JPG", "PAIR_10.JPG", "PAIR_15.JPG", "PAIR_99.JPG", "NEW.JPG"]
+        let rawNames = ["IMG_3.CR3", "IMG_7.CR3", "PAIR_15.CR3", "PAIR_99.CR3"]
         let searches = ["", "", "", "img_1", "pair"]
         let sorts = [Sort(), Sort(field: .rating, descending: true), Sort(field: .rating, descending: false),
                      Sort(field: .name, descending: false), Sort(field: .size, descending: true),
                      Sort(field: .imported, descending: false)]
         let keys = ["0", "1", "2", "3", "4", "5", "p", "x", "u", "6", "7"]
         var steps = 0
+        var midnights = 0, structural = 0
         for seed: UInt64 in [1, 2, 3, 4] {
             for pairs in [true, false] {
                 for chunk in [7, Int.max] {
                     var random = Seeded(state: seed)
-                    let app = makeApp(library(), pairs: pairs, chunk: chunk)
+                    let clock = Clock(start)
+                    let app = makeApp(library(), pairs: pairs, chunk: chunk, clock: clock)
+                    var added = 0
                     let undo = UndoManager()
                     undo.groupsByEvent = false   // no run loop here to close event groups
                     app.undoManager = undo
@@ -139,14 +161,15 @@ final class ListCacheSequenceTests: CatalogTestCase {
                     for step in 0..<120 {
                         let context = "seed \(seed), pairs \(pairs), chunk \(chunk), step \(step)"
                         let photos = app.assets.filter { !$0.deleted }
-                        switch random.next(14) {
+                        switch random.next(23) {
                         case 0: app.select(selections[random.next(selections.count)])
-                        case 1: app.setFilters(filterChoices[random.next(filterChoices.count)])
+                        case 1, 19: app.setFilters(filterChoices[random.next(filterChoices.count)])
                         case 2: app.setSearch(searches[random.next(searches.count)])
                         case 3, 4: app.setSort(sorts[random.next(sorts.count)])
                         case 5:
                             app.setAllStacksCollapsed(random.next(2) == 0)
                         case 6:
+                            guard !app.photoStacks.isEmpty else { break }
                             let stack = app.photoStacks[random.next(app.photoStacks.count)]
                             app.toggleStack(containing: stack.assetIds[0])
                         case 7, 8, 9:
@@ -170,8 +193,49 @@ final class ListCacheSequenceTests: CatalogTestCase {
                             undo.endUndoGrouping()
                         case 11, 12:
                             if undo.canUndo { undo.undo() }
-                        default:
+                        case 13:
                             if undo.canRedo { undo.redo() }
+                        case 14:
+                            app.pairRawAndJpeg.toggle()
+                        case 15:
+                            // new photos, as an import batch or a tethered shot adds them: one may
+                            // pair with a RAW already there, or bring a RAW of its own
+                            added += 1
+                            let raw = random.next(2) == 0
+                            let name = raw ? rawNames[random.next(rawNames.count)] : jpegNames[random.next(jpegNames.count)]
+                            var new = [photo("n\(added)", name, raw: raw, index: added + Int(seed),
+                                             taken: clock.now.addingTimeInterval(-Double(random.next(3)) * 43_200))]
+                            if random.next(2) == 0 {
+                                new.append(photo("n\(added)r", "NEW_\(added).CR3", raw: true, index: added, taken: new[0].date))
+                                new.append(photo("n\(added)j", "NEW_\(added).JPG", raw: false, index: added, taken: new[0].date))
+                            }
+                            app.appendAssets(new)
+                            structural += 1
+                        case 16, 17, 18:
+                            // a photo moved to the Trash or back, renamed (into or out of a pair), or
+                            // gone offline, missing or back
+                            let all = app.assets
+                            let batch = Set((0..<(1 + random.next(4))).map { _ in all[random.next(all.count)].id })
+                            let kind = random.next(3)
+                            let edits = app.positions(of: batch).map { offset -> (offset: Int, asset: Asset) in
+                                var asset = all[offset]
+                                switch kind {
+                                case 0: asset.deleted.toggle()
+                                case 1:
+                                    let names = asset.isRaw ? rawNames : jpegNames
+                                    let name = names[random.next(names.count)]
+                                    asset.filename = name
+                                    asset.localPath = scratch.appendingPathComponent(name).path
+                                default: asset.status = [.ready, .offline, .missing][random.next(3)]
+                                }
+                                return (offset, asset)
+                            }
+                            app.replaceInPlace(edits)
+                            structural += 1
+                        default:
+                            let day = CaptureDates.startOfToday(now: clock.now)
+                            clock.now = clock.now.addingTimeInterval(6 * 3_600)
+                            if CaptureDates.startOfToday(now: clock.now) != day { midnights += 1 }
                         }
                         steps += 1
                         // some steps run on without a read of the list in between
@@ -182,5 +246,13 @@ final class ListCacheSequenceTests: CatalogTestCase {
             }
         }
         XCTAssertEqual(steps, 4 * 2 * 2 * 120)
+        XCTAssertGreaterThan(midnights, 10, "the clock passed midnight")
+        XCTAssertGreaterThan(structural, 100, "photos were added, trashed, renamed and taken offline")
     }
+}
+
+/// The sidebar clock, which a run moves on.
+private final class Clock: @unchecked Sendable {
+    var now: Date
+    init(_ now: Date) { self.now = now }
 }
