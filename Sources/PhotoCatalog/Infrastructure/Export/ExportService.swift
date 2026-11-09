@@ -66,7 +66,7 @@ enum ExportService {
                 // rename never lands on a name already there; overwrite replaces the same file's
                 if fm.fileExists(atPath: target.path), conflict != .overwrite { report.skipped += 1; continue }
                 do {
-                    try placeCopy(of: src, at: target, fm: fm)
+                    try placeCopy(of: src, at: target)
                     if let attrs = try? fm.attributesOfItem(atPath: src.path),
                        let mtime = attrs[.modificationDate] as? Date {
                         try? fm.setAttributes([.modificationDate: mtime], ofItemAtPath: target.path)
@@ -113,19 +113,16 @@ enum ExportService {
     /// Copies `source` to `target` through a hidden partial file beside it, which then takes the
     /// place of whatever is there: a copy that fails (an unreadable original, a full disk) leaves
     /// an earlier export as it was, and never half a file under the real name.
-    private static func placeCopy(of source: URL, at target: URL, fm: FileManager) throws {
+    static func placeCopy(of source: URL, at target: URL) throws {
+        let fm = FileManager.default
         let partial = target.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).partial")
         do {
             try fm.copyItem(at: source, to: partial)
-            if fm.fileExists(atPath: target.path) {
-                _ = try fm.replaceItemAt(target, withItemAt: partial)
-            } else {
-                try fm.moveItem(at: partial, to: target)
-            }
         } catch {
             try? fm.removeItem(at: partial)
             throw error
         }
+        try fm.moveIntoPlace(partial, at: target)
     }
 
     private static func numbered(_ base: String, _ number: Int) -> String {
@@ -160,7 +157,7 @@ enum ExportService {
                 continue
             }
             do {
-                try placeCopy(of: source, at: target, fm: fm)
+                try placeCopy(of: source, at: target)
                 report.copied += 1
             } catch {
                 report.failed += 1
@@ -205,41 +202,38 @@ enum ExportService {
     /// Export per-asset metadata as CSV for spreadsheet workflows (PRD §6.11 EXP-003).
     @discardableResult
     static func exportMetadataCSV(_ assets: [Asset], to fileURL: URL) -> Bool {
-        let header = [
-            "assetId", "filename", "rating", "flag", "colorLabel", "keywords", "title", "caption",
-            "author", "copyright", "makerNotes", "project", "client",
-            "captureDate", "fileModifiedAt", "fileCreatedAt", "hasICCProfile",
-            "gpsLatitude", "gpsLongitude", "gpsAltitude", "camera", "lens", "originalPath",
-        ]
         let formatter = ISO8601DateFormatter()
+        // each column's name beside its value, so the header can't drift from the rows
+        let columns: [(name: String, value: (Asset) -> String)] = [
+            ("assetId", { $0.id }),
+            ("filename", { $0.filename }),
+            ("rating", { String($0.rating) }),
+            ("flag", { $0.flag.rawValue }),
+            ("colorLabel", { $0.colorLabel?.rawValue ?? "" }),
+            ("keywords", { $0.keywords.joined(separator: ";") }),
+            ("title", { $0.title }),
+            ("caption", { $0.caption }),
+            ("author", { $0.author }),
+            ("copyright", { $0.copyright }),
+            ("makerNotes", { $0.makerNotes }),
+            ("project", { $0.project }),
+            ("client", { $0.client }),
+            ("captureDate", { formatter.string(from: $0.date) }),
+            ("fileModifiedAt", { $0.fileModifiedAt.map { formatter.string(from: $0) } ?? "" }),
+            ("fileCreatedAt", { $0.fileCreatedAt.map { formatter.string(from: $0) } ?? "" }),
+            ("hasICCProfile", { $0.hasICCProfile ? "true" : "false" }),
+            ("gpsLatitude", { csvGPS($0.gps.0, asset: $0) }),
+            ("gpsLongitude", { csvGPS($0.gps.1, asset: $0) }),
+            ("gpsAltitude", { $0.gpsAltitude.map { String($0) } ?? "" }),
+            ("camera", { $0.camera }),
+            ("lens", { $0.lens }),
+            ("originalPath", { $0.localPath ?? $0.thumb }),
+        ]
+        let header = columns.map(\.name).joined(separator: ",")
         let rows = assets.map { a in
-            [
-                a.id,
-                a.filename,
-                String(a.rating),
-                a.flag.rawValue,
-                a.colorLabel?.rawValue ?? "",
-                a.keywords.joined(separator: ";"),
-                a.title,
-                a.caption,
-                a.author,
-                a.copyright,
-                a.makerNotes,
-                a.project,
-                a.client,
-                formatter.string(from: a.date),
-                a.fileModifiedAt.map { formatter.string(from: $0) } ?? "",
-                a.fileCreatedAt.map { formatter.string(from: $0) } ?? "",
-                a.hasICCProfile ? "true" : "false",
-                csvGPS(a.gps.0, asset: a),
-                csvGPS(a.gps.1, asset: a),
-                a.gpsAltitude.map { String($0) } ?? "",
-                a.camera,
-                a.lens,
-                a.localPath ?? a.thumb,
-            ].map(csvField).joined(separator: ",")
+            columns.map { csvField($0.value(a)) }.joined(separator: ",")
         }
-        let csv = ([header.joined(separator: ",")] + rows).joined(separator: "\n") + "\n"
+        let csv = ([header] + rows).joined(separator: "\n") + "\n"
         // see exportMetadataJSON: never overwrite a copied original of the same name
         guard let target = resolve(fileURL, conflict: .rename, fm: .default) else { return false }
         return (try? csv.write(to: target, atomically: true, encoding: .utf8)) != nil

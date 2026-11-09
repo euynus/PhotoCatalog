@@ -2,7 +2,6 @@
 //  Memory-card import — find cards, list their photos, copy them off
 // ============================================================
 import Foundation
-import UniformTypeIdentifiers
 
 /// A mounted volume with a camera's DCIM folder.
 struct CardVolume: Identifiable, Hashable, Sendable {
@@ -114,9 +113,7 @@ enum CardImportService {
         FileScanner.scan(root).compactMap { url -> CardFile? in
             let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
             let size = Int64(values?.fileSize ?? 0)
-            let ext = url.pathExtension.lowercased()
-            let isRaw = UTType(filenameExtension: ext)?.conforms(to: .rawImage) ?? false
-                || ["cr2", "cr3", "nef", "arw", "raf", "orf", "rw2", "dng"].contains(ext)
+            let isRaw = FileScanner.isRaw(extension: url.pathExtension.lowercased())
             var file = CardFile(url: url, size: size, modified: values?.contentModificationDate ?? .distantPast,
                                 isRaw: isRaw)
             file.alreadyImported = catalog.contains(name: url.lastPathComponent, size: size,
@@ -150,21 +147,75 @@ enum CopyNaming {
         let meta = MetadataReader.read(existing)
         return AssetPairing.isSameShot((meta.camera, meta.captureDate), (camera, date))
     }
+
+    /// `files(named:in:)` for one import: each folder listed once, at its first lookup, and the
+    /// files the import places there added as it goes, so naming a photo needn't list a folder of
+    /// thousands again. A file another app puts in the folder meanwhile isn't seen.
+    struct FolderIndex {
+        /// Folder path → lower-case stem → the names with that stem, as they are on disk (a
+        /// case-sensitive volume's files are opened by them).
+        private var byFolder: [String: [String: [String]]] = [:]
+        /// Folders listed so far.
+        private(set) var listings = 0
+
+        mutating func files(named stem: String, in directory: URL) -> [URL] {
+            let folder = directory.path
+            if byFolder[folder] == nil {
+                listings += 1
+                var stems: [String: [String]] = [:]
+                for name in (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? [] {
+                    // told apart as files(named:in:) tells them, so odd names match alike
+                    let url = directory.appendingPathComponent(name)
+                    guard url.pathExtension.lowercased() != "xmp" else { continue }
+                    stems[url.deletingPathExtension().lastPathComponent.lowercased(), default: []].append(name)
+                }
+                byFolder[folder] = stems
+            }
+            return (byFolder[folder]?[stem.lowercased()] ?? []).map { directory.appendingPathComponent($0) }
+        }
+
+        /// A file the import placed at `url`.
+        mutating func added(_ url: URL) {
+            let folder = url.deletingLastPathComponent().path
+            // a folder not listed yet is listed with the file in it
+            guard byFolder[folder] != nil, url.pathExtension.lowercased() != "xmp" else { return }
+            let stem = url.deletingPathExtension().lastPathComponent.lowercased()
+            if byFolder[folder]?[stem]?.contains(url.lastPathComponent) != true {
+                byFolder[folder]?[stem, default: []].append(url.lastPathComponent)
+            }
+        }
+
+        /// Whether the folder held `url` when it was listed, or the import placed it since (by
+        /// name in any case, as a case-insensitive volume finds it).
+        func holds(_ url: URL) -> Bool {
+            let stem = url.deletingPathExtension().lastPathComponent.lowercased()
+            let names = byFolder[url.deletingLastPathComponent().path]?[stem] ?? []
+            return names.contains { $0.caseInsensitiveCompare(url.lastPathComponent) == .orderedSame }
+        }
+    }
 }
 
 /// Copies card photos into the destination as the import reaches them: dated folders, the
 /// rename template (one sequence number per RAW+JPEG pair), XMP sidecars, and a backup copy.
-/// Used from the import's single worker thread; the lock only guards the name cache.
+/// Used from the import's single worker thread; the lock only guards the name cache and the
+/// folder index.
 final class CardCopier: ImportFilePreparer, @unchecked Sendable {
     let options: CardImportOptions
     private let sequenceByPair: [String: Int]
     private let extensionsByPair: [String: [String]]
     private let importDay: String
     private var baseNames: [String: String] = [:]
+    private var index = CopyNaming.FolderIndex()
+    /// False: each name is looked up in a fresh listing of its folder (the index's oracle in tests).
+    private let indexingFolders: Bool
     private let lock = NSLock()
 
-    init(options: CardImportOptions, files: [CardFile]) {
+    /// Folders listed to name the copies so far.
+    var folderListings: Int { lock.withLock { index.listings } }
+
+    init(options: CardImportOptions, files: [CardFile], indexingFolders: Bool = true) {
         self.options = options
+        self.indexingFolders = indexingFolders
         var sequences: [String: Int] = [:]
         var extensions: [String: [String]] = [:]
         for file in files {
@@ -205,11 +256,16 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
         let destination = directory.appendingPathComponent(base).appendingPathExtension(source.pathExtension)
         if fm.fileExists(atPath: destination.path) {
             // the base name leaves a file there only when it's this very photo, copied before —
-            // not a copy an earlier attempt cut short
-            guard Self.hasSize(destination, size) else { throw CocoaError(.fileWriteFileExists) }
+            // not a copy an earlier attempt cut short, nor a file put there since the folder was
+            // listed (which may have this photo's size)
+            guard Self.hasSize(destination, size),
+                  lock.withLock({ !indexingFolders || index.holds(destination) }) else {
+                throw CocoaError(.fileWriteFileExists)
+            }
         } else {
             try Self.placeCopy(of: source, at: destination, size: size)
         }
+        lock.withLock { index.added(destination) }
         let sidecar = XMPSidecar.sidecarURL(for: source)
         let copiedSidecar = XMPSidecar.sidecarURL(for: destination)
         if fm.fileExists(atPath: sidecar.path), !fm.fileExists(atPath: copiedSidecar.path) {
@@ -253,7 +309,10 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
             let extensions = extensionsByPair[key] ?? [source.pathExtension]
             var candidate = wanted
             var counter = 1
-            while !CopyNaming.files(named: candidate, in: directory).allSatisfy({ existing in
+            func files(named stem: String) -> [URL] {
+                indexingFolders ? index.files(named: stem, in: directory) : CopyNaming.files(named: stem, in: directory)
+            }
+            while !files(named: candidate).allSatisfy({ existing in
                 if let own = extensions.first(where: {
                     $0.caseInsensitiveCompare(existing.pathExtension) == .orderedSame
                 }) {

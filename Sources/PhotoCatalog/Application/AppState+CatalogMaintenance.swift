@@ -54,23 +54,31 @@ extension AppState {
         guard let coordinator, let packageURL = store?.packageURL else { push("无已导入照片", "warning"); return }
         let real = thumbnailMaintenanceAssets
         guard !real.isEmpty else { push("无已导入照片", "warning"); return }
+        // the backfill shares the lane below: left running, it would take turns with the rebuild
+        cancelBackfill()
         push("正在重建缩略图…", "refresh")
         let previewSize = previewMaxPixel
         Task { [weak self, coordinator, real, previewSize, packageURL] in
-            await Task.detached(priority: .utility) {
-                for a in real {
-                    if let path = a.localPath {
-                        let original = URL(fileURLWithPath: path)
-                        _ = coordinator.thumbnails.generate(from: original, assetId: a.id, kind: .thumb256)
-                        _ = coordinator.thumbnails.generate(from: original, assetId: a.id, kind: .thumb512)
-                        _ = coordinator.thumbnails.generate(
-                            from: original,
-                            assetId: a.id,
-                            kind: ThumbnailService.previewKind(forCachePath: a.preview,
-                                                               fallbackMaxPixel: previewSize))
+            // off the cooperative pool, where RAW decodes have deadlocked RawCamera: a few photos
+            // at a time on the background lane, as the backfill makes them
+            let chunkSize = 8
+            var index = 0
+            while index < real.count {
+                guard !Task.isCancelled else { return }
+                let chunk = real[index..<min(index + chunkSize, real.count)]
+                let rebuilt: Void? = await ThumbnailRepairQueue.run(.background) {
+                    for a in chunk {
+                        guard let path = a.localPath else { continue }
+                        // the original decoded once, for the preview, which the thumbnails are made
+                        // from, as an import makes them; the photo keeps its preview's size
+                        let kind = ThumbnailService.previewKind(forCachePath: a.preview, fallbackMaxPixel: previewSize)
+                        _ = coordinator.thumbnails.generateAll(from: URL(fileURLWithPath: path), assetId: a.id,
+                                                               previewMaxPixel: kind == .preview1600 ? 1600 : 2048)
                     }
                 }
-            }.value
+                guard rebuilt != nil else { return }   // cancelled while queued
+                index += chunk.count
+            }
             self?.finishThumbnailRebuild(expectedCatalogURL: packageURL)
         }
     }
@@ -110,7 +118,8 @@ extension AppState {
     ///
     /// Processed in small chunks so the pass stays cooperative: it yields between
     /// chunks, honors cancellation, and re-checks Low Power Mode mid-run rather than
-    /// only once at the start.
+    /// only once at the start. A chunk is a few files made; photos already cached go
+    /// through many at a time, so a cached catalog's pass ends in seconds.
     func backfillThumbnails() {
         guard runsBackgroundMaintenance, let coordinator, let store, !isBackfilling else { return }
         // battery saver: skip background work under Low Power Mode (§17.5)
@@ -123,11 +132,10 @@ extension AppState {
         let previewSize = previewMaxPixel
         let lowPowerSensitive = reduceBackgroundOnLowPower
         let limit = cacheLimit
-        let cacheURL = store.cacheURL, thumbnailsURL = store.thumb512URL.deletingLastPathComponent()
-        let thumbnails: [(Asset, ThumbnailService.Kind)] = real.map { ($0, .thumb512) }
-        let previews: [(Asset, ThumbnailService.Kind)] = real.sorted { $0.date > $1.date }.map {
-            ($0, ThumbnailService.previewKind(forCachePath: $0.preview, fallbackMaxPixel: previewSize))
-        }
+        let cacheURL = store.cacheURL
+        // each photo's preview kind is worked out off the main thread, as the pass reaches it
+        let thumbnails = real
+        let previews = real.sorted { $0.date > $1.date }
         let cancellation = CancellationFlag()
         backfillCancellation = cancellation
         let originHistory = taskHistory
@@ -172,8 +180,8 @@ extension AppState {
             if let originHistory { self?.recordBackgroundTask(task, originHistory: originHistory) }
             let measured = await ThumbnailRepairQueue.run(.background) {
                 () -> (used: Int64, thumbnails: Int64, limit: Int64) in
-                let used = CatalogHealth.directorySize(cacheURL)
-                return (used, CatalogHealth.directorySize(thumbnailsURL), limit.bytes(cacheBytes: used))
+                let usage = CacheService.usage(cacheURL)
+                return (usage.total, usage.thumbnails, limit.bytes(cacheBytes: usage.total))
             }
             guard let measured else {
                 task.state = .interrupted
@@ -187,7 +195,13 @@ extension AppState {
             // stopping a twentieth short of the limit leaves the end-of-pass prune nothing to take
             // back, so the next launch finds the cache full and makes nothing
             let budget = limitBytes - limitBytes / 20
-            let chunkSize = 8
+            // A hop on the lane ends after a few files made (seconds each for a RAW), or after a
+            // run of photos found cached (or with their originals gone) grows long, so
+            // cancellation and progress still come through.
+            let madePerHop = 8, foundPerHop = 256
+            let foundTimePerHop = Duration.milliseconds(20)
+            let clock = ContinuousClock()
+            var lastPublished = clock.now
             passes: for (work, isThumbnail) in [(thumbnails, true), (previews, false)] {
                 task.detail = isThumbnail ? L("正在生成缩略图") : L("正在生成预览")
                 var index = 0
@@ -199,40 +213,55 @@ extension AppState {
                         task.detail = L("低电量模式已停止预览生成")
                         break passes
                     }
-                    let chunk = Array(work[index..<min(index + chunkSize, work.count)])
+                    let start = index
                     let room = budget - (isThumbnail ? thumbnailsUsed : used)
                     // off the cooperative pool, one at a time at background QoS, so a large
                     // backfill never competes with visible repairs or the UI
                     let outcome = await ThumbnailRepairQueue.run(.background) {
-                        () -> (bytes: Int64, processed: Int, ready: Int, failures: [BackgroundTask.Failure]) in
+                        () -> (bytes: Int64, processed: Int, ready: Int, made: Int, failures: [BackgroundTask.Failure]) in
                         var added: Int64 = 0
-                        var processed = 0, ready = 0
+                        var position = start, ready = 0, made = 0, found = 0
+                        var foundTime = Duration.zero
                         var failures: [BackgroundTask.Failure] = []
-                        for (a, kind) in chunk where added < room {
+                        while position < work.count, added < room {
                             guard !cancellation.isSet else { break }
-                            processed += 1
-                            guard let path = a.localPath,
-                                  FileManager.default.fileExists(atPath: path) else {
+                            let began = clock.now
+                            let a = work[position]
+                            position += 1
+                            var tried = false
+                            if let path = a.localPath, FileManager.default.fileExists(atPath: path) {
+                                let kind: ThumbnailService.Kind = isThumbnail ? .thumb512
+                                    : ThumbnailService.previewKind(forCachePath: a.preview, fallbackMaxPixel: previewSize)
+                                let cached = coordinator.thumbnails.cachePath(assetId: a.id, kind: kind)
+                                let existed = FileManager.default.fileExists(atPath: cached.path)
+                                let file = coordinator.thumbnails.ensureCached(
+                                    from: URL(fileURLWithPath: path), fallbackPreview: nil,
+                                    catalogModificationDate: a.fileModifiedAt, assetId: a.id, kind: kind)
+                                if file != nil {
+                                    ready += 1
+                                } else {
+                                    failures.append(.init(item: a.filename, message: L("无法生成缓存图像"),
+                                                          assetID: a.id, path: path))
+                                }
+                                if !existed, let file {
+                                    added += Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+                                }
+                                // a file that was there and still is counts as found, though it may
+                                // have been remade (stale): the time bound below ends that hop
+                                tried = !existed || file == nil
+                            } else {
                                 failures.append(.init(item: a.filename, message: L("原件不可访问"),
                                                       assetID: a.id, path: a.localPath))
-                                continue
                             }
-                            let cached = coordinator.thumbnails.cachePath(assetId: a.id, kind: kind)
-                            let existed = FileManager.default.fileExists(atPath: cached.path)
-                            let made = coordinator.thumbnails.ensureCached(
-                                from: URL(fileURLWithPath: path), fallbackPreview: nil,
-                                catalogModificationDate: a.fileModifiedAt, assetId: a.id, kind: kind)
-                            if made != nil {
-                                ready += 1
+                            if tried {
+                                made += 1
                             } else {
-                                failures.append(.init(item: a.filename, message: L("无法生成缓存图像"),
-                                                      assetID: a.id, path: path))
+                                found += 1
+                                foundTime += clock.now - began
                             }
-                            if !existed, let made {
-                                added += Int64((try? made.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-                            }
+                            if made >= madePerHop || found >= foundPerHop || foundTime >= foundTimePerHop { break }
                         }
-                        return (added, processed, ready, failures)
+                        return (added, position - start, ready, made, failures)
                     }
                     guard let outcome else { break passes }
                     used += outcome.bytes
@@ -242,7 +271,11 @@ extension AppState {
                     task.succeededCount += outcome.ready
                     task.failedCount += outcome.failures.count
                     task.failures = Array((task.failures + outcome.failures).suffix(BackgroundTaskHistory.failureDetailLimit))
+                    // a pause and a Task Center update after files made; a run of photos found
+                    // goes straight on, updating it a few times a second
+                    guard outcome.made > 0 || clock.now - lastPublished >= .milliseconds(250) else { continue }
                     if let originHistory { self?.recordBackgroundTask(task, originHistory: originHistory) }
+                    lastPublished = clock.now
                     do { try await Task.sleep(for: .milliseconds(10)) } catch { break passes }
                 }
             }
@@ -342,14 +375,6 @@ extension AppState {
         thumbnailCacheGeneration &+= 1
     }
 
-    private func isVerified(_ source: String, for assetId: String) -> Bool {
-        verifiedCacheSources[assetId]?.contains(source) == true
-    }
-
-    private func markVerified(_ source: String, for assetId: String) {
-        verifiedCacheSources[assetId, default: []].insert(source)
-    }
-
     static func confirmDestructiveAction(title: String, message: String, confirmTitle: String) -> Bool {
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -358,168 +383,6 @@ extension AppState {
         alert.addButton(withTitle: confirmTitle)
         alert.addButton(withTitle: L("取消"))
         return alert.runModal() == .alertFirstButtonReturn
-    }
-
-    func visibleImageSource(for asset: Asset, requestedSource: String,
-                            kind: ThumbnailService.Kind) async -> String {
-        if requestedSource.hasPrefix("http") || asset.isDemo {
-            return requestedSource
-        }
-
-        guard let coordinator,
-              let localPath = asset.localPath else {
-            return requestedSource
-        }
-
-        let original = URL(fileURLWithPath: localPath)
-        let fallbackPreview = asset.preview.isEmpty ? nil : URL(fileURLWithPath: asset.preview)
-
-        let assetId = asset.id
-        let thumbnails = coordinator.thumbnails
-        let resolvedKind = kind.isPreview
-            ? ThumbnailService.previewKind(forCachePath: requestedSource, fallbackMaxPixel: previewMaxPixel)
-            : kind
-        if let settings = developSettings[assetId], !settings.isNeutral {
-            let edited = thumbnails.editedCachePath(assetId: assetId, kind: resolvedKind, settings: settings).path
-            if isVerified(Self.cacheCheckKey(edited, asset), for: assetId) { return edited }
-            // Rotation and crop alone start from the ordinary cached image, not a full RAW render.
-            let base = settings.withoutGeometry.isNeutral
-                ? await cachedImageSource(for: asset, requestedSource: requestedSource, kind: resolvedKind,
-                                          original: original, fallbackPreview: fallbackPreview, thumbnails: thumbnails)
-                : nil
-            return await editedImageSource(for: asset, settings: settings, kind: resolvedKind,
-                                           thumbnails: thumbnails, base: base) ?? requestedSource
-        }
-        return await cachedImageSource(for: asset, requestedSource: requestedSource, kind: resolvedKind,
-                                       original: original, fallbackPreview: fallbackPreview,
-                                       thumbnails: thumbnails) ?? requestedSource
-    }
-
-    /// What `visibleImageSource` returns, when that is already known without touching the disk
-    /// (the cache file was verified earlier this session); nil when it would have to check or
-    /// render. Lets the loupe show a prefetched neighbor in the same frame as the arrow key.
-    func verifiedImageSource(for asset: Asset, requestedSource: String, kind: ThumbnailService.Kind) -> String? {
-        if requestedSource.hasPrefix("http") || asset.isDemo { return requestedSource }
-        guard let coordinator, asset.localPath != nil else { return requestedSource }
-        let resolvedKind = kind.isPreview
-            ? ThumbnailService.previewKind(forCachePath: requestedSource, fallbackMaxPixel: previewMaxPixel)
-            : kind
-        if let settings = developSettings[asset.id], !settings.isNeutral {
-            let edited = coordinator.thumbnails.editedCachePath(assetId: asset.id, kind: resolvedKind, settings: settings).path
-            return isVerified(Self.cacheCheckKey(edited, asset), for: asset.id) ? edited : nil
-        }
-        if isVerified(Self.cacheCheckKey(requestedSource, asset), for: asset.id) { return requestedSource }
-        let own = coordinator.thumbnails.cachePath(assetId: asset.id, kind: resolvedKind).path
-        return isVerified(Self.cacheCheckKey(own, asset), for: asset.id) ? own : nil
-    }
-
-    /// A checked cache file, as of the original's modification date: one the original has
-    /// changed since is checked again.
-    private static func cacheCheckKey(_ source: String, _ asset: Asset) -> String {
-        "\(source)|\(asset.fileModifiedAt?.timeIntervalSince1970 ?? 0)"
-    }
-
-    /// The ordinary (unadjusted) cached image, repaired from the original when missing or damaged.
-    private func cachedImageSource(for asset: Asset, requestedSource: String, kind resolvedKind: ThumbnailService.Kind,
-                                   original: URL, fallbackPreview: URL?,
-                                   thumbnails: ThumbnailService) async -> String? {
-        let assetId = asset.id
-        let localPath = original.path
-        // A cache file already checked this session (exists, fresh, not a black RAW render)
-        // skips the stat + decode hops every time its cell scrolls back into view.
-        if isVerified(Self.cacheCheckKey(requestedSource, asset), for: assetId) { return requestedSource }
-        // The photo's own cache file, where a repair writes. The stored path can be another: a
-        // virtual copy's is its master's, and a catalog moved since keeps the old place. With that
-        // gone, the photo's own file is the one to look for, or a remade one would show once
-        // and then the placeholder.
-        let own = thumbnails.cachePath(assetId: assetId, kind: resolvedKind).path
-        if own != requestedSource, isVerified(Self.cacheCheckKey(own, asset), for: assetId) { return own }
-        let candidates = own == requestedSource ? [own] : [requestedSource, own]
-        let usable = await Task.detached(priority: .userInitiated) { () -> String? in
-            candidates.first { source in
-                guard !source.isEmpty, FileManager.default.fileExists(atPath: source) else { return false }
-                let cached = URL(fileURLWithPath: source)
-                return !ThumbnailService.cacheIsStale(cache: cached, originalModificationDate: asset.fileModifiedAt)
-                    && !thumbnails.cachedRepresentationNeedsRegeneration(at: cached, original: original, kind: resolvedKind)
-            }
-        }.value
-        if let usable {
-            markVerified(Self.cacheCheckKey(usable, asset), for: assetId)
-            return usable
-        }
-        // Only touch a referenced original after the local cache is missing, stale, or damaged.
-        let (originalExists, previewExists) = await Task.detached(priority: .userInitiated) {
-            [localPath, preview = asset.preview] in
-            let fm = FileManager.default
-            return (fm.fileExists(atPath: localPath),
-                    !preview.isEmpty && fm.fileExists(atPath: preview))
-        }.value
-        guard originalExists || previewExists else {
-            return nil
-        }
-        // A repair that failed isn't tried again this session: a RAW that decodes black again
-        // must not cost another multi-second decode every time its cell reappears. One that
-        // worked is remembered as a checked file instead, until a prune or a removal from the
-        // catalog drops that (it may have deleted the file), and then the file is made again.
-        let repairKey = "\(assetId)|\(resolvedKind)"
-        if repairsInFlight[repairKey] != nil {
-            await withCheckedContinuation { repairsInFlight[repairKey, default: []].append($0) }
-            // that repair is done (or was cancelled before it started): look again
-            return await cachedImageSource(for: asset, requestedSource: requestedSource, kind: resolvedKind,
-                                           original: original, fallbackPreview: fallbackPreview, thumbnails: thumbnails)
-        }
-        guard !failedCacheRepairs.contains(repairKey) else { return nil }
-        repairsInFlight[repairKey] = []
-        defer { repairsInFlight.removeValue(forKey: repairKey)?.forEach { $0.resume() } }
-        guard let restored = await ThumbnailRepairQueue.run(.visible, { () -> (url: URL?, usable: Bool) in
-            let made = thumbnails.ensureCached(from: original,
-                                               fallbackPreview: fallbackPreview,
-                                               catalogModificationDate: asset.fileModifiedAt,
-                                               assetId: assetId,
-                                               kind: resolvedKind)
-            return (made, made.map {
-                !thumbnails.cachedRepresentationNeedsRegeneration(at: $0, original: original, kind: resolvedKind)
-            } ?? false)
-        }) else {
-            return nil   // cancelled while queued; retry when shown again
-        }
-        // a remade file is as good as a checked one: the loupe can then show a prefetched
-        // neighbor in the same frame as the arrow key instead of checking the disk first
-        if restored.usable, let path = restored.url?.path {
-            markVerified(Self.cacheCheckKey(path, asset), for: assetId)
-        } else {
-            failedCacheRepairs.insert(repairKey)
-        }
-        return restored.url?.path
-    }
-
-    /// Developed rendering for an adjusted photo, rendered off the cooperative pool when missing.
-    /// `base` (an already-rendered image) replaces the original; an unavailable original falls
-    /// back to adjusting the cached preview.
-    private func editedImageSource(for asset: Asset, settings: DevelopSettings, kind: ThumbnailService.Kind,
-                                   thumbnails: ThumbnailService, base: String? = nil) async -> String? {
-        let edited = thumbnails.editedCachePath(assetId: asset.id, kind: kind, settings: settings)
-        let key = edited.path
-        if isVerified(Self.cacheCheckKey(key, asset), for: asset.id) { return key }
-        let preview = asset.preview
-        let source: (url: URL, isRaw: Bool)?
-        if let base {
-            source = (URL(fileURLWithPath: base), false)
-        } else if asset.status == .ready, let path = asset.localPath {
-            source = (URL(fileURLWithPath: path), asset.isRaw)
-        } else if !preview.isEmpty, !preview.hasPrefix("http") {
-            source = (URL(fileURLWithPath: preview), false)
-        } else {
-            source = nil
-        }
-        guard let source else { return nil }
-        let assetId = asset.id
-        guard let rendered = await ThumbnailRepairQueue.run(.visible, {
-            thumbnails.ensureEdited(from: source.url, isRaw: source.isRaw, settings: settings,
-                                    assetId: assetId, kind: kind, originalModificationDate: asset.fileModifiedAt)
-        }), let rendered else { return nil }
-        markVerified(Self.cacheCheckKey(rendered.path, asset), for: assetId)
-        return rendered.path
     }
 
     func pruneCacheToLimit() {
@@ -557,7 +420,8 @@ extension AppState {
             let result = await Task.detached(priority: .utility) {
                 let report = CacheService.prune(store.cacheURL) { passLimit ?? limit.bytes(cacheBytes: $0) }
                 let health = report.removedFiles > 0 ? CatalogHealth.check(store, assets: snapshot) : nil
-                let cacheBytes = health?.cacheBytes ?? CatalogHealth.directorySize(store.cacheURL)
+                // nothing removed: the prune's own walk has the cache's size
+                let cacheBytes = health?.cacheBytes ?? report.afterBytes + report.writingBytes
                 return (health, cacheBytes)
             }.value
             guard let self, self.store?.packageURL == packageURL else { return }
@@ -735,7 +599,7 @@ extension AppState {
             // scoped, so the live connection closes with the catalog below
             var current: URL?
             if let store {
-                try store.upsert(assets.filter { !$0.isDemo })
+                // edits are saved as they're made, so the snapshot needs no rewrite of the photos first
                 current = try BackupService.backup(store)
             }
             closeCurrentCatalog()

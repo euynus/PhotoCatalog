@@ -1,4 +1,5 @@
 import AppKit
+import CoreServices
 import Foundation
 
 @MainActor
@@ -8,7 +9,7 @@ extension AppState {
         watcher?.stop()
         let paths = prioritizedWatchedRoots(watchedRoots).map { $0.path }
         guard !paths.isEmpty else { watcher = nil; return }
-        let w = FileWatcher(paths: paths) { [weak self] _ in self?.incrementalRescan() }
+        let w = FileWatcher(paths: paths) { [weak self] events in self?.watchedFilesChanged(events) }
         w.start()
         watcher = w
     }
@@ -25,9 +26,70 @@ extension AppState {
         refreshWatcher()
     }
 
-    private func incrementalRescan() {
+    /// FSEvents reported `events` in a watched folder. A batch of only sidecars and hidden files
+    /// (an app's XMP save, Finder's .DS_Store, a copy's partial file) can't hold a photo the scan
+    /// would take, so only the sidecars are checked. Nor can it make an original go missing: an
+    /// original deleted or moved has an event of its own. (With Write XMP automatically on, each
+    /// rating writes a sidecar, and the availability scan, which looks at every original, would
+    /// start over for each.) Otherwise the rescan reads again only the files the batch names,
+    /// unless it may have missed some (see `hashedPaths`).
+    func watchedFilesChanged(_ events: [FileWatcher.Event]) {
+        if !events.isEmpty && events.allSatisfy({ Self.cannotHoldPhotos($0.path, flags: $0.flags) }) {
+            checkExternalXMPChanges()
+        } else {
+            incrementalRescan(hashing: Self.hashedPaths(for: events))
+        }
+    }
+
+    /// Whether a changed path is one the folder scan never takes: a hidden file (it skips them)
+    /// or a sidecar. Only the last component counts, so a folder under a hidden one still does;
+    /// a folder's event, or one that may stand for changes missed, never passes.
+    nonisolated static func cannotHoldPhotos(_ path: String, flags: FSEventStreamEventFlags = 0) -> Bool {
+        guard flags & (missedChangeFlags | FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir)) == 0 else {
+            return false
+        }
+        let name = (path as NSString).lastPathComponent
+        return name.hasPrefix(".") || (name as NSString).pathExtension.lowercased() == "xmp"
+    }
+
+    /// The paths whose files a rescan for `events` quick-hashes, the others compared by size and
+    /// modification time only; nil, every file, when the batch may not name each change: events
+    /// were dropped or merged into a folder's, a watched folder moved or a drive came or went, or
+    /// an event is a folder's (files moved in with it have no events of their own).
+    nonisolated static func hashedPaths(for events: [FileWatcher.Event]) -> Set<String>? {
+        guard !events.isEmpty else { return nil }
+        let itemTypes = FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsFile | kFSEventStreamEventFlagItemIsDir
+            | kFSEventStreamEventFlagItemIsSymlink | kFSEventStreamEventFlagItemIsHardlink
+            | kFSEventStreamEventFlagItemIsLastHardlink)
+        var paths = Set<String>()
+        for event in events {
+            guard event.flags & missedChangeFlags == 0,
+                  event.flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir) == 0 else { return nil }
+            // an event that doesn't say what it names is asked of the disk
+            if event.flags & itemTypes == 0 {
+                var isDirectory: ObjCBool = false
+                if FileManager.default.fileExists(atPath: event.path, isDirectory: &isDirectory),
+                   isDirectory.boolValue { return nil }
+            }
+            paths.insert(event.path)
+        }
+        return paths
+    }
+
+    /// Event flags that say changes may have gone unreported: the folder is to be looked at whole.
+    nonisolated private static var missedChangeFlags: FSEventStreamEventFlags {
+        FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagUserDropped
+            | kFSEventStreamEventFlagKernelDropped | kFSEventStreamEventFlagRootChanged
+            | kFSEventStreamEventFlagMount | kFSEventStreamEventFlagUnmount)
+    }
+
+    /// Reads the watched folders for new and changed originals. `hashing` nil quick-hashes every
+    /// cataloged file to find a change; a set, only the files with a path in it, the others
+    /// changed when their size or modification time is.
+    private func incrementalRescan(hashing: Set<String>? = nil) {
         guard let coordinator, let store else { return }
         if isIncrementalRescanning {
+            // the rescan queued behind hashes every file: the events it stands for aren't kept
             needsIncrementalRescan = true
             return
         }
@@ -52,7 +114,7 @@ extension AppState {
         // the photos read off the main thread are let go of once read: still held while the
         // results go in, they'd be copied whole by the first change in place
         let scan = Task.detached(priority: .utility) { [coordinator, store, roots, snapshot, vision, previewSize,
-                                                         readXMP, sourceInfoByPath, volumesById, probe] in
+                                                         readXMP, sourceInfoByPath, volumesById, probe, hashing] in
             // build the path index off the main thread (resolvingSymlinksInPath stats each asset)
             var knownAssetsByPath: [String: Asset] = [:]
             // a path belongs to the photo that owns the file, never to its virtual copies
@@ -63,9 +125,13 @@ extension AppState {
                     }
                 }
             }
-            var knownPaths = Set(knownAssetsByPath.keys)
+            // the paths a rescan doesn't add, each with its aliases, made once for every root (the
+            // index's keys are aliases already, and an alias's aliases are among its path's)
+            var knownAliases = Set(knownAssetsByPath.keys)
             // files an import skipped as exact duplicates of photos it cataloged stay out
-            knownPaths.formUnion((try? store.skippedDuplicatePaths()) ?? [])
+            for path in (try? store.skippedDuplicatePaths()) ?? [] {
+                knownAliases.formUnion(PathIdentity.aliases(forPath: path))
+            }
             // a photo removed from the catalog stays removed: its file, there still or saved over
             // by an editor, isn't a new one (only an import brings it back); another photo saved
             // at its path is. Removed in an earlier session, it isn't in `snapshot`.
@@ -92,10 +158,10 @@ extension AppState {
                 for file in scanned {
                     let removed = file.aliases.flatMap { removedByPath[$0] ?? [] }
                     if removed.contains(where: { ImportCoordinator.isRemovedPhoto(file.url, removed: $0) }) {
-                        knownPaths.insert(file.url.path)
+                        knownAliases.formUnion(file.aliases)
                     }
                 }
-                fresh.append(contentsOf: coordinator.scanNew(in: root, knownPaths: knownPaths,
+                fresh.append(contentsOf: coordinator.scanNew(in: root, knownAliases: knownAliases,
                                                              mode: .referenced, autoTag: vision,
                                                              readSidecar: readXMP,
                                                              previewMaxPixel: previewSize,
@@ -108,7 +174,7 @@ extension AppState {
                                                                    previewMaxPixel: previewSize,
                                                                    sourceRootId: sourceInfo?.id,
                                                                    folderName: sourceInfo?.name,
-                                                                   scanned: scanned))
+                                                                   scanned: scanned, hashing: hashing))
             }
             // the photo a rescan reads is never a removed one, whatever the file turned out to be
             return (fresh: fresh.filter { !removedIds.contains($0.id) }, changed: changed)
@@ -137,17 +203,17 @@ extension AppState {
                 return ImportCoordinator.preservingCatalogMetadata(from: current, in: refreshed, autoTag: vision)
             }
             if !trulyNew.isEmpty || !changedAssets.isEmpty {
+                // the changed files in place of what they were, the new ones after the others
+                var edits = changedAssets.compactMap { asset in indexById[asset.id].map { (offset: $0, asset: asset) } }
+                // the changed files' virtual copies take on their new state too
+                self.carryFileChanges(from: changedAssets, into: &edits)
+                // saved together, so a copy is never shown with a state the catalog didn't keep
                 do {
-                    try store.upsert(trulyNew + changedAssets)
+                    try store.upsert(trulyNew + edits.map(\.asset))
                 } catch {
                     self.push("重新扫描保存失败", "warning")
                     return
                 }
-                // the changed files in place of what they were, the new ones after the others
-                var edits = changedAssets.compactMap { asset in indexById[asset.id].map { (offset: $0, asset: asset) } }
-                // the changed files' virtual copies take on their new state too
-                let copies = self.carryFileChanges(from: changedAssets, into: &edits)
-                if !copies.isEmpty { try? store.upsert(edits.map(\.asset).filter { copies.contains($0.id) }) }
                 self.replaceInPlace(edits)
                 if !trulyNew.isEmpty { self.appendAssets(trulyNew) }
                 self.recordSidecarBaselines(trulyNew)
@@ -308,7 +374,7 @@ extension AppState {
     /// missing, else online), in one pass — per-folder scans were 20M comparisons at 500k photos.
     /// Counted in chunks on every core, a run of one folder's photos looked up once: hashing every
     /// photo's folder on one thread took ~0.1 s at 500k photos after each check of the originals.
-    nonisolated static func folderSummaries(_ sourceAssets: [Asset], chunk: Int = 65_536)
+    nonisolated static func folderSummaries(_ sourceAssets: [Asset], chunk: Int = 8_192)
         -> [String: (name: String, status: String)] {
         func rank(_ status: AssetStatus) -> Int {
             switch status {

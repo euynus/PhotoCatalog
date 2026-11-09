@@ -204,7 +204,7 @@ enum DepthMap {
         let size = (attributes[.size] as? Int64) ?? 0
         let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
         let digest = Insecure.SHA1.hash(data: Data("\(url.path)|\(size)|\(modified)".utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
+        return digest.hexString
     }
 
     private static func load(_ key: String) -> Map? {

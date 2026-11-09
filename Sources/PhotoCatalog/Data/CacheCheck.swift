@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import Observation
 import UniformTypeIdentifiers
 
 /// The cache limit: the background pass makes every thumbnail, then previews for the newest
@@ -63,11 +64,27 @@ enum CacheCheck {
         let newest = Set(real.sorted { $0.date > $1.date }.prefix(made.count).map(\.id))
         check(made == newest, "cache: the previews kept are the newest photos'")
 
-        // the next launch's pass finds the cache full and makes nothing
+        // the next launch's pass finds the cache full and makes nothing, and paces itself by what it
+        // makes: a run of cached photos goes through without a pause and a Task Center update every
+        // 8 photos (which kept a cached 14,000-photo catalog's pass going for over 35 s). The
+        // updates are counted, not timed: each update mid-pass is followed by its 10 ms pause, and
+        // those 100 ms are less than the background lane's own delays on a busy Mac.
         let before = Dictionary(uniqueKeysWithValues: files(in: store.cacheURL).map { ($0.url.path, $0.modified) })
-        backfill()
+        app.configureTaskHistory()
+        let publishes = TaskListPublishes(app)
+        app.runsBackgroundMaintenance = true
+        app.backfillThumbnails()
+        spin(60, step: 0.002) { !app.isBackfilling }
+        // from the update saying it runs, the second: not the 750 ms it waits for the window first
+        let elapsed = publishes.times.count > 1 ? Date().timeIntervalSince(publishes.times[1]) : .infinity
+        let published = publishes.times.count
+        spin(2) { false }   // the prune after the pass
+        app.runsBackgroundMaintenance = false
         let after = Dictionary(uniqueKeysWithValues: files(in: store.cacheURL).map { ($0.url.path, $0.modified) })
         check(before == after, "cache: a second pass makes and deletes nothing")
+        // queued, running and done, and at most one update on the way (8 before: one every 8 photos)
+        check(published <= 4, "cache: a pass over cached photos updates the Task Center a few times (\(published), "
+              + (elapsed.isFinite ? "\(Int(elapsed * 1000)) ms" : "never ran") + ")")
 
         // a cache full of previews with thumbnails missing (as an older prune left it): the pass
         // makes the thumbnails, and the prune makes room for them from the previews
@@ -107,9 +124,33 @@ enum CacheCheck {
         }
     }
 
-    private static func spin(_ timeout: Double = 30, until done: () -> Bool) {
+    private static func spin(_ timeout: Double = 30, step: Double = 0.02, until done: () -> Bool) {
         let deadline = Date().addingTimeInterval(timeout)
-        while !done(), Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+        while !done(), Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(step)) }
+    }
+
+    /// When `app` set its task list (`backgroundTasks`), each time from when this is made.
+    @MainActor
+    private final class TaskListPublishes {
+        private(set) var times: [Date] = []
+        private weak var app: AppState?
+
+        init(_ app: AppState) {
+            self.app = app
+            observe()
+        }
+
+        private func observe() {
+            guard let app else { return }
+            withObservationTracking { _ = app.backgroundTasks } onChange: { [weak self] in
+                // called as the list is set, on the main thread: watching again at once misses
+                // no later update
+                MainActor.assumeIsolated {
+                    self?.times.append(Date())
+                    self?.observe()
+                }
+            }
+        }
     }
 
     /// A noisy 1200 × 800 photo (so its preview has some size), each `day` a day later than the last.

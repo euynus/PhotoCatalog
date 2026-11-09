@@ -305,7 +305,7 @@ enum FullBackupService {
             if let existing = originals[canonical] {
                 path = existing
             } else {
-                let directoryID = SHA256.hash(data: Data(directory.path.utf8)).map { String(format: "%02x", $0) }.joined()
+                let directoryID = SHA256.hash(data: Data(directory.path.utf8)).hexString
                 path = "Originals/\(directoryID)/\(original.lastPathComponent)"
                 try add(original, path: path, kind: .original)
                 originals[canonical] = path
@@ -678,7 +678,7 @@ enum FullBackupService {
         // GenerativeFill.key's dependencies, with the backed-up original's stable relative path
         // in place of its absolute path and modification time
         let text = original + "|" + GenerativeFill.pixelDependencies(index: index, settings: settings)
-        let key = SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+        let key = SHA256.hash(data: Data(text.utf8)).hexString
         return "\(fillDirectory)/\(key).png"
     }
 

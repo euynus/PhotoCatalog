@@ -121,6 +121,22 @@ enum HashService {
     }
 
     private static func hex(_ digest: SHA256.Digest) -> String {
-        digest.compactMap { String(format: "%02x", $0) }.joined()
+        digest.hexString
+    }
+}
+
+private let hexDigits = Array("0123456789abcdef".utf8)
+
+extension Sequence where Element == UInt8 {
+    /// Lower-case hex, two digits a byte. Asset ids, cache shards, backup manifests and model
+    /// keys are stored in this form, so it must never change.
+    var hexString: String {
+        var text: [UInt8] = []
+        text.reserveCapacity(underestimatedCount * 2)
+        for byte in self {
+            text.append(hexDigits[Int(byte >> 4)])
+            text.append(hexDigits[Int(byte & 0x0f)])
+        }
+        return String(decoding: text, as: UTF8.self)
     }
 }
