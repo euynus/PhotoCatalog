@@ -20,6 +20,60 @@ extension AppState {
         return DevelopGeometry.rotatedSize(size, settings.rotation)
     }
 
+    /// Shrinks the crop to fit after a straighten or perspective change. The frame depends only
+    /// on the quarter turns, so every such change refits the same way.
+    func refitCrop(_ settings: inout DevelopSettings, for asset: Asset) {
+        settings.crop = DevelopGeometry.refit(settings, frame: developFrame(for: asset, settings: settings))
+    }
+
+    // ----- crop tool: shape, orientation and straighten -----
+    /// Picks a crop shape and reshapes the crop to the largest of it around the same center.
+    func setCropAspect(_ aspect: CropAspect, for asset: Asset) {
+        developCropAspect = aspect
+        let shown = developSettings(for: asset.id)
+        let frame = developFrame(for: asset, settings: shown)
+        guard let ratio = aspect.ratio(frame: frame) else { return }
+        let current = DevelopGeometry.effectiveCrop(shown, frame: frame)
+        reshapeCrop(asset, aspect: DevelopGeometry.oriented(ratio: ratio, like: current, frame: frame), around: current,
+                    frame: frame, undoName: L("裁剪比例"))
+    }
+
+    /// Turns the crop from landscape to portrait or back, keeping its shape and center.
+    func swapCropOrientation(for asset: Asset) {
+        let shown = developSettings(for: asset.id)
+        let frame = developFrame(for: asset, settings: shown)
+        let current = DevelopGeometry.effectiveCrop(shown, frame: frame)
+        let aspect = current.height * frame.height / max(current.width * frame.width, 1e-9)
+        reshapeCrop(asset, aspect: aspect, around: current, frame: frame, undoName: L("切换裁剪框横竖"))
+    }
+
+    /// The straighten slider's live preview: the angle, with the crop shrunk to fit it.
+    func draftStraighten(_ angle: Double, for asset: Asset) {
+        // shrink from the saved crop, so dragging back toward level grows it again
+        var next = developSettings[asset.id] ?? .neutral
+        next.straighten = angle
+        refitCrop(&next, for: asset)
+        updateDevelopDraft(next, for: asset.id)
+    }
+
+    /// The largest crop of `aspect` around the current one's center, inside the saved straighten
+    /// and perspective.
+    private func reshapeCrop(_ asset: Asset, aspect: Double, around current: DevelopCrop, frame: CGSize,
+                             undoName: String) {
+        commitDevelop(asset.id, undoName: undoName) { next in
+            let perspective = DevelopGeometry.perspective(next, frame: frame)
+            let largest = DevelopGeometry.inscribed(aspect: aspect, angle: next.straighten, perspective: perspective,
+                                                    frame: frame)
+            let crop = DevelopGeometry.move(largest, dx: current.midX - largest.midX, dy: current.midY - largest.midY,
+                                            angle: next.straighten, perspective: perspective, frame: frame)
+            // the whole photo's own shape is what "no crop" already means
+            let isWhole = crop == DevelopGeometry.inscribed(aspect: frame.width / max(frame.height, 1),
+                                                            angle: next.straighten, perspective: perspective,
+                                                            frame: frame)
+            next.crop = isWhole ? nil : crop
+        }
+    }
+
     /// Photos with pixels to render: a local original, or at least a local preview. Never a video.
     func canDevelop(_ asset: Asset) -> Bool {
         guard !asset.isVideo else { return false }
@@ -263,9 +317,7 @@ extension AppState {
             let asset = self.assetIndex[id].map { self.assets[$0] }
             self.commitDevelopChange([id], undoName: mode == .auto ? L("自动透视") : L("垂直透视")) { _, settings in
                 settings = found.applied(to: settings)
-                if let asset {
-                    settings.crop = DevelopGeometry.refit(settings, frame: self.developFrame(for: asset, settings: settings))
-                }
+                if let asset { self.refitCrop(&settings, for: asset) }
             }
         }
     }
@@ -286,9 +338,7 @@ extension AppState {
             let asset = self.assetIndex[id].map { self.assets[$0] }
             self.commitDevelopChange([id], undoName: L("自动拉直")) { _, settings in
                 settings.straighten = (angle * 10).rounded() / 10
-                if let asset {
-                    settings.crop = DevelopGeometry.refit(settings, frame: self.developFrame(for: asset, settings: settings))
-                }
+                if let asset { self.refitCrop(&settings, for: asset) }
             }
         }
     }
@@ -317,7 +367,7 @@ extension AppState {
             let asset = assets[index]
             var next = transfer.applied(to: developSettings[id] ?? .neutral, targetIsRaw: asset.isRaw)
             // a crop from another photo may reach past this one's straightened edges
-            next.crop = DevelopGeometry.refit(next, frame: developFrame(for: asset, settings: next))
+            refitCrop(&next, for: asset)
             changes[id] = next
         }
         guard !changes.isEmpty else { return 0 }

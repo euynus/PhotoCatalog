@@ -158,7 +158,7 @@ extension DevelopPanel {
                               // the crop shrinks from the saved one, so moving back grows it again
                               var next = app.developSettings[asset.id] ?? .neutral
                               next[keyPath: control.id] = value
-                              next.crop = DevelopGeometry.refit(next, frame: app.developFrame(for: asset, settings: next))
+                              app.refitCrop(&next, for: asset)
                               app.updateDevelopDraft(next, for: asset.id)
                           },
                           onReset: { commit(asset, control.title) { $0[keyPath: control.id] = control.neutral } },

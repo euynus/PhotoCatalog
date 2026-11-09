@@ -438,6 +438,12 @@ enum DevelopGeometry {
         return lerp(target, crop, low)
     }
 
+    /// A long : short `ratio` as pixel width / height, oriented like `crop`: landscape unless the
+    /// crop is taller than it is wide.
+    static func oriented(ratio: Double, like crop: DevelopCrop, frame: CGSize) -> Double {
+        crop.width * frame.width >= crop.height * frame.height ? ratio : 1 / ratio
+    }
+
     /// A crop that still fits once `settings`' straighten angle or perspective changed.
     static func refit(_ settings: DevelopSettings, frame: CGSize) -> DevelopCrop? {
         settings.crop.map { fit($0, angle: settings.straighten, perspective: perspective(settings, frame: frame), frame: frame) }

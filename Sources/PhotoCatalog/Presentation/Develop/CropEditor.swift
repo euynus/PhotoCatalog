@@ -132,9 +132,7 @@ struct CropEditor: View {
 
     /// Pixel width / height the crop keeps, oriented like the crop it starts from.
     private func lockedRatio(for crop: DevelopCrop, frame: CGSize) -> Double? {
-        guard let ratio = app.developCropAspect.ratio(frame: frame) else { return nil }
-        let landscape = crop.width * frame.width >= crop.height * frame.height
-        return landscape ? ratio : 1 / ratio
+        app.developCropAspect.ratio(frame: frame).map { DevelopGeometry.oriented(ratio: $0, like: crop, frame: frame) }
     }
 
     private func straighten(along start: CGPoint, _ end: CGPoint, frame: CGSize) {
