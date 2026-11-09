@@ -82,7 +82,7 @@ final class Database: @unchecked Sendable {
         exec("PRAGMA journal_mode=WAL;")
         exec("PRAGMA foreign_keys=ON;")
         exec("PRAGMA busy_timeout=4000;")
-        let checkpointer = WALCheckpointer(handle: db, lock: lock)
+        let checkpointer = WALCheckpointer(path: path)
         self.checkpointer = checkpointer
         // replaces SQLite's own checkpoint after a commit, which ran on the committing thread
         sqlite3_wal_hook(db, { context, handle, _, pages in
@@ -93,14 +93,8 @@ final class Database: @unchecked Sendable {
     }
 
     deinit {
-        // a checkpoint already running finishes first; one still queued finds the handle closed
-        // (not under the lock while waiting: the checkpoint needs it)
-        if let checkpointer {
-            lock.lock()
-            checkpointer.closed = true
-            lock.unlock()
-            checkpointer.queue.sync {}
-        }
+        // a checkpoint already running finishes first; one still queued finds the database closed
+        checkpointer?.close()
         lock.lock()
         defer { lock.unlock() }
         for stmt in statementCache.values { sqlite3_finalize(stmt) }
@@ -110,56 +104,123 @@ final class Database: @unchecked Sendable {
     /// Moves the WAL's pages into the database file in the background once a commit leaves it
     /// past `threshold` pages, as SQLite would at the end of the commit itself (on the main
     /// thread, for an edit: ~40% of putting 1000 photos in the Trash was that checkpoint and its
-    /// sync). The same passive checkpoint on the same connection, under the same lock, so it
-    /// never runs inside a transaction; only the thread changes.
+    /// sync). The same passive checkpoint, on a connection of its own: one on the catalog's
+    /// connection held its lock throughout, so the next edit or search waited for all of it,
+    /// about a second after 1,000 photos changed in a catalog of 500,000. It starts once the
+    /// catalog has had no commit for `quiet`: run beside a stream of commits, it made each of
+    /// them slower (they append to the WAL it reads).
     final class WALCheckpointer: @unchecked Sendable {
         /// SQLite's own default.
         static let threshold = 1000
         /// Past this, a commit checkpoints at once, as before: the background one hasn't kept up.
         static let ceiling = 10 * threshold
+        /// How long the catalog goes without a commit before a background checkpoint starts.
+        static let quiet = 0.25
 
+        /// Runs the background checkpoints one at a time, and whatever mustn't run beside one.
         let queue = DispatchQueue(label: "PhotoCatalog.wal-checkpoint", qos: .utility)
-        private let handle: OpaquePointer?
-        private let lock: NSRecursiveLock
-        /// Guarded by `lock`.
-        var closed = false
-        private var pending = false
-        private(set) var checkpoints = 0
+        private let path: String
+        /// Guards what's below; never held during a checkpoint.
+        private let state = NSLock()
+        private var closed = false
+        private var lastCommit = DispatchTime.now()
+        /// The checkpoint waiting for the catalog to go quiet (0: none), by a number of its own.
+        private var waiting = 0
+        private var waits = 0
+        private var checkpoints = 0
+        private var lastFrames: (wal: Int, moved: Int)?
 
-        init(handle: OpaquePointer?, lock: NSRecursiveLock) {
-            self.handle = handle
-            self.lock = lock
+        init(path: String) {
+            self.path = path
         }
 
-        /// From the WAL hook, at the end of a commit (under `lock`): `pages` are in the WAL.
+        /// From the WAL hook, at the end of a commit (under the database's lock): `pages` are in
+        /// the WAL.
         func committed(pages: Int, on connection: OpaquePointer?) {
             if pages >= Self.ceiling {
                 sqlite3_wal_checkpoint_v2(connection, nil, SQLITE_CHECKPOINT_PASSIVE, nil, nil)
-                checkpoints &+= 1
+                state.withLock { checkpoints &+= 1 }
                 return
             }
-            guard pages >= Self.threshold, !pending else { return }
-            pending = true
-            queue.async { [self] in
-                lock.lock()
-                defer { lock.unlock() }
-                pending = false
-                guard !closed else { return }
-                sqlite3_wal_checkpoint_v2(handle, nil, SQLITE_CHECKPOINT_PASSIVE, nil, nil)
-                checkpoints &+= 1
+            guard pages >= Self.threshold else { return }
+            let started = state.withLock { () -> Int? in
+                lastCommit = .now()
+                guard !closed, waiting == 0 else { return nil }
+                waits &+= 1
+                waiting = waits
+                return waits
+            }
+            if let started { start(started, after: Self.quiet) }
+        }
+
+        /// Starts checkpoint `number` once no commit has come for `quiet`, unless it's been run or
+        /// called off meanwhile.
+        private func start(_ number: Int, after delay: Double) {
+            queue.asyncAfter(deadline: .now() + delay) { [self] in
+                let remaining = state.withLock { () -> Double? in
+                    guard waiting == number, !closed else { return nil }
+                    let since = Double(DispatchTime.now().uptimeNanoseconds - lastCommit.uptimeNanoseconds) / 1e9
+                    guard since >= Self.quiet else { return Self.quiet - since }
+                    waiting = 0
+                    return 0
+                }
+                guard let remaining else { return }
+                if remaining > 0 { start(number, after: remaining) } else { checkpoint() }
             }
         }
+
+        /// A passive checkpoint through a connection opened for it, on `queue`.
+        private func checkpoint() {
+            var handle: OpaquePointer?
+            defer { sqlite3_close(handle) }
+            guard sqlite3_open_v2(path, &handle, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
+                  // a connection that hasn't read the database has no WAL open and moves nothing
+                  sqlite3_exec(handle, "SELECT 1 FROM sqlite_master LIMIT 1;", nil, nil, nil) == SQLITE_OK else { return }
+            var wal: Int32 = -1, moved: Int32 = -1
+            sqlite3_wal_checkpoint_v2(handle, nil, SQLITE_CHECKPOINT_PASSIVE, &wal, &moved)
+            state.withLock {
+                checkpoints &+= 1
+                lastFrames = (Int(wal), Int(moved))
+            }
+        }
+
+        /// Runs the checkpoint waiting for the catalog to go quiet now, if there is one; on `queue`.
+        func runWaiting() {
+            let due = state.withLock { () -> Bool in
+                defer { waiting = 0 }
+                return waiting != 0 && !closed
+            }
+            if due { checkpoint() }
+        }
+
+        /// Calls off the checkpoint waiting for the catalog to go quiet, if any (a full flush is
+        /// about to make it pointless).
+        func callOffWaiting() {
+            state.withLock { waiting = 0 }
+        }
+
+        /// No checkpoint starts after this; one running finishes first.
+        func close() {
+            state.withLock { closed = true }
+            queue.sync {}
+        }
+
+        var count: Int { state.withLock { checkpoints } }
+        /// The WAL's frames, and how many of them the last background checkpoint moved.
+        var lastCheckpointFrames: (wal: Int, moved: Int)? { state.withLock { lastFrames } }
     }
 
     /// Nil only when the database couldn't be opened.
     private var checkpointer: WALCheckpointer?
 
-    /// Waits for a background checkpoint (for tests).
-    func drainCheckpoints() { checkpointer?.queue.sync {} }
+    /// Runs a background checkpoint now rather than once the catalog goes quiet, and waits for
+    /// it (for tests).
+    func drainCheckpoints() { checkpointer?.queue.sync { checkpointer?.runWaiting() } }
 
-    /// The background checkpoints' queue and how many have run (for tests).
+    /// The background checkpoints' queue, how many have run, and what the last one moved (for tests).
     var checkpointQueue: DispatchQueue? { checkpointer?.queue }
-    var checkpointCount: Int { locked { checkpointer?.checkpoints ?? 0 } }
+    var checkpointCount: Int { checkpointer?.count ?? 0 }
+    var lastCheckpointFrames: (wal: Int, moved: Int)? { checkpointer?.lastCheckpointFrames }
 
     @discardableResult
     func exec(_ sql: String) -> Bool {
@@ -181,8 +242,15 @@ final class Database: @unchecked Sendable {
     /// the WAL was fully flushed. Unlike `PRAGMA wal_checkpoint`, this reports busy/partial
     /// checkpoints (which would otherwise leave recent commits only in the -wal sidecar).
     func walCheckpointTruncate() -> Bool {
-        locked {
-            sqlite3_wal_checkpoint_v2(db, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil) == SQLITE_OK
+        let truncate = {
+            self.locked { sqlite3_wal_checkpoint_v2(self.db, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil) == SQLITE_OK }
+        }
+        // on the background checkpoints' queue, and with none left to start: one running beside it
+        // would make it busy, and one starting after it would keep the journal mode from changing
+        guard let checkpointer else { return truncate() }
+        return checkpointer.queue.sync {
+            checkpointer.callOffWaiting()
+            return truncate()
         }
     }
 
