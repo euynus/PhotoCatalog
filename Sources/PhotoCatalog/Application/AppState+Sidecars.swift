@@ -207,14 +207,18 @@ extension AppState {
             }
             return
         }
-        let candidates = xmpCheckCandidates()
-        guard !candidates.isEmpty else { return }
+        // stops at the first original, so the list itself can be built off the main thread
+        guard assets.contains(where: Self.isXMPCandidate) else { return }
         lastXMPCheck = .now
         isCheckingXMP = true
         let known = xmpSyncTimes
         let catalogURL = store?.packageURL
         let snapshot = xmpSyncSnapshot()
-        Task { [weak self, candidates, known, snapshot] in
+        // a hop of its own: the photos it's handed are let go as it ends, rather than held while
+        // the sidecars are looked at (an edit meanwhile would copy every one of them)
+        let listing = Task.detached(priority: .utility) { [photos = assets] in Self.xmpCheckCandidates(in: photos) }
+        Task { [weak self, known, snapshot] in
+            let candidates = await listing.value
             let found = await Task.detached(priority: .utility) {
                 Self.findChangedSidecars(candidates, known: known, pairing: snapshot.pairing)
             }.value
@@ -226,12 +230,20 @@ extension AppState {
         }
     }
 
+    /// The photos whose sidecars the check looks at, among the catalog's now.
+    func xmpCheckCandidates() -> [(id: String, path: String)] { Self.xmpCheckCandidates(in: assets) }
+
     /// The photos whose sidecars the check looks at: every original the catalog owns.
-    func xmpCheckCandidates() -> [(id: String, path: String)] {
+    nonisolated static func xmpCheckCandidates(in assets: [Asset]) -> [(id: String, path: String)] {
         assets.compactMap { asset -> (id: String, path: String)? in
-            guard !asset.deleted, !asset.isDemo, !asset.isVirtualCopy, let path = asset.localPath else { return nil }
+            guard isXMPCandidate(asset), let path = asset.localPath else { return nil }
             return (asset.id, path)
         }
+    }
+
+    /// Whether the check looks at this photo's sidecar: an original the catalog owns.
+    nonisolated static func isXMPCandidate(_ asset: Asset) -> Bool {
+        !asset.deleted && !asset.isDemo && !asset.isVirtualCopy && asset.localPath != nil
     }
 
     /// Sidecars whose time moved from their starting point (changed, with the time found), and
