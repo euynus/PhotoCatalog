@@ -18,6 +18,12 @@ extension CatalogStore {
         try db.transaction { try writeDevelopSettings(settings) }
     }
 
+    /// As `saveDevelopSettings(_:)`, with the stored text of some of the values already encoded
+    /// (`DevelopHistoryStep.json`); the others are encoded here.
+    func saveDevelopSettings(_ settings: [String: DevelopSettings], json: [String: String]) throws {
+        try db.transaction { try writeDevelopSettings(settings, json: json) }
+    }
+
     /// Virtual copies with the develop settings they start from, in one transaction: a copy is
     /// never in the catalog without them.
     func saveVirtualCopies(_ copies: [Asset], developSettings: [String: DevelopSettings]) throws {
@@ -27,14 +33,14 @@ extension CatalogStore {
         }
     }
 
-    private func writeDevelopSettings(_ settings: [String: DevelopSettings]) throws {
+    private func writeDevelopSettings(_ settings: [String: DevelopSettings], json encoded: [String: String] = [:]) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         for (id, value) in settings {
             if value.isNeutral {
                 try db.run("DELETE FROM develop_settings WHERE asset_id=?;", [.text(id)])
             } else {
-                let json = String(decoding: try encoder.encode(value), as: UTF8.self)
+                let json = try encoded[id] ?? String(decoding: encoder.encode(value), as: UTF8.self)
                 try db.run("""
                 INSERT INTO develop_settings(asset_id, settings, updated_at) VALUES(?, ?, ?)
                 ON CONFLICT(asset_id) DO UPDATE SET settings=excluded.settings, updated_at=excluded.updated_at;
@@ -82,11 +88,19 @@ extension CatalogStore {
     @discardableResult
     func appendDevelopHistory(_ steps: [String: (name: String, settings: DevelopSettings)], date: Date = .now) throws
         -> [String: DevelopHistoryStep] {
+        try appendDevelopHistory(steps.mapValues { (name: $0.name, json: DevelopHistoryStep.json($0.settings)) },
+                                 date: date)
+    }
+
+    /// As above, with each step's settings already in their stored form (`DevelopHistoryStep.json`).
+    @discardableResult
+    func appendDevelopHistory(_ steps: [String: (name: String, json: String)], date: Date = .now) throws
+        -> [String: DevelopHistoryStep] {
         var stored: [String: DevelopHistoryStep] = [:]
         let created = Self.iso(date)
         try db.transaction {
             for (id, step) in steps {
-                let json = DevelopHistoryStep.json(step.settings)
+                let json = step.json
                 // one statement numbers and inserts the step
                 guard let seq = try db.queryMap("""
                 INSERT INTO develop_history(asset_id, seq, name, created_at, settings)

@@ -46,18 +46,22 @@ extension AppState {
     }
 
     /// Adds or takes away each photo's step; returns the photos whose history changed. Memory
-    /// changes only once the catalog has (without one, every photo's).
+    /// changes only once the catalog has (without one, every photo's). `json` holds settings
+    /// already in their stored form (`DevelopHistoryStep.json`), so they aren't encoded twice.
     @discardableResult
     func recordDevelopHistory(_ changed: [String: DevelopSettings], name: String,
-                              change: DevelopHistoryChange) -> Set<String> {
+                              change: DevelopHistoryChange, json encoded: [String: String] = [:]) -> Set<String> {
         guard !changed.isEmpty else { return [] }
         let recorded: Set<String>
         switch change {
         case .append:
             var stored: [String: DevelopHistoryStep] = [:]
             if let store {
+                var steps: [String: (name: String, json: String)] = [:]
+                steps.reserveCapacity(changed.count)
+                for (id, value) in changed { steps[id] = (name, encoded[id] ?? DevelopHistoryStep.json(value)) }
                 do {
-                    stored = try store.appendDevelopHistory(changed.mapValues { (name: name, settings: $0) })
+                    stored = try store.appendDevelopHistory(steps)
                 } catch {
                     push("保存历史记录失败", "warning")
                     return []
@@ -68,8 +72,8 @@ extension AppState {
                 // with a catalog, only what was stored is listed, so undo removes the same step from both
                 if store != nil, stored[id] == nil { continue }
                 let seq = stored[id]?.seq ?? (developHistoryCache[id]?.last?.seq ?? 0) + 1
-                developHistoryCache[id]?.append(stored[id] ?? DevelopHistoryStep(seq: seq, name: name, date: .now,
-                                                                                 settings: value))
+                developHistoryCache[id]?.append(stored[id] ?? DevelopHistoryStep(
+                    seq: seq, name: name, date: .now, json: encoded[id] ?? DevelopHistoryStep.json(value)))
                 if let count = developHistoryCache[id]?.count, count > DevelopHistoryStep.limit {
                     developHistoryCache[id]?.removeFirst(count - DevelopHistoryStep.limit)
                 }

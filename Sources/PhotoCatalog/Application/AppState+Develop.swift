@@ -370,15 +370,20 @@ extension AppState {
         if let draft = developDraft, settings[draft.assetId] != nil { developDraft = nil }
         let before = Dictionary(uniqueKeysWithValues: settings.keys.map { ($0, developSettings[$0] ?? .neutral) })
         guard before != settings else { return }
+        let changed = settings.filter { before[$0.key] != $0.value }
+        // each changed photo's settings encoded once, for both the settings and the history rows
+        var json: [String: String] = [:]
         do {
-            try store?.saveDevelopSettings(settings)
+            if let store {
+                json = try DevelopHistoryStep.json(changed.filter { !$0.value.isNeutral })
+                try store.saveDevelopSettings(settings, json: json)
+            }
         } catch {
             push("保存调整失败，更改未写入目录库", "warning")
             return
         }
         for (id, value) in settings { developSettings[id] = value.isNeutral ? nil : value }
-        let recorded = recordDevelopHistory(settings.filter { before[$0.key] != $0.value }, name: undoName,
-                                            change: change)
+        let recorded = recordDevelopHistory(changed, name: undoName, change: change, json: json)
         // undo takes away only the steps this edit stored; redo appends anew and keeps its own
         let opposite: DevelopHistoryChange
         if case .append = change { opposite = .revert(recorded) } else { opposite = .append }
