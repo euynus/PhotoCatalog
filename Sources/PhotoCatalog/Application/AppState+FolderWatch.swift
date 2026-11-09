@@ -8,7 +8,7 @@ extension AppState {
         watcher?.stop()
         let paths = prioritizedWatchedRoots(watchedRoots).map { $0.path }
         guard !paths.isEmpty else { watcher = nil; return }
-        let w = FileWatcher(paths: paths) { [weak self] _ in self?.incrementalRescan() }
+        let w = FileWatcher(paths: paths) { [weak self] paths in self?.watchedFilesChanged(paths) }
         w.start()
         watcher = w
     }
@@ -23,6 +23,25 @@ extension AppState {
             watchedRoots.append(newRoot)
         }
         refreshWatcher()
+    }
+
+    /// FSEvents named `paths` in a watched folder. A batch of only sidecars and hidden files (an
+    /// app's XMP save, Finder's .DS_Store, a copy's partial file) can't hold a photo the scan would
+    /// take, so only the rescan's tail runs: the originals' availability and the sidecars.
+    func watchedFilesChanged(_ paths: [String]) {
+        if !paths.isEmpty && paths.allSatisfy(Self.cannotHoldPhotos) {
+            detectMissingRealAssets()
+            checkExternalXMPChanges()
+        } else {
+            incrementalRescan()
+        }
+    }
+
+    /// Whether a changed path is one the folder scan never takes: hidden (it skips hidden files)
+    /// or a sidecar. Only the last component counts, so a folder under a hidden one still does.
+    nonisolated static func cannotHoldPhotos(_ path: String) -> Bool {
+        let name = (path as NSString).lastPathComponent
+        return name.hasPrefix(".") || (name as NSString).pathExtension.lowercased() == "xmp"
     }
 
     private func incrementalRescan() {
