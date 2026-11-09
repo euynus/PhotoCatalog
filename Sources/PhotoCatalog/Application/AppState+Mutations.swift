@@ -322,8 +322,9 @@ extension AppState {
         let ids = selectionTargetIds
         guard onboarded, !ids.isEmpty else { return false }
         let removing = ids.isSubset(of: quickCollection)
-        setQuickCollection(removing ? quickCollection.subtracting(ids) : quickCollection.union(ids),
-                           undoName: removing ? L("移出快捷收藏") : L("加入快捷收藏"))
+        // a save that failed has said so, and left the collection as it was
+        guard setQuickCollection(removing ? quickCollection.subtracting(ids) : quickCollection.union(ids),
+                                 undoName: removing ? L("移出快捷收藏") : L("加入快捷收藏")) else { return true }
         if removing {
             push("已从快捷收藏移除 \(ids.count) 张", "quick")
         } else {
@@ -332,10 +333,13 @@ extension AppState {
         return true
     }
 
-    private func setQuickCollection(_ members: Set<String>, undoName: String) {
+    /// Saves the quick collection as `members`, then shows it; false when the save failed, which
+    /// leaves it as it was (only the photos that change are written, so one kept in memory
+    /// alone would never reach the catalog).
+    @discardableResult
+    private func setQuickCollection(_ members: Set<String>, undoName: String) -> Bool {
         let before = quickCollection
-        guard members != before else { return }
-        quickCollection = members
+        guard members != before else { return true }
         if let store {
             do {
                 // only the photos that came or went: the others' rows stay
@@ -344,9 +348,12 @@ extension AppState {
                                              removing: before.subtracting(members))
             } catch {
                 push("快捷收藏保存失败", "warning")
+                return false
             }
         }
+        quickCollection = members
         registerUndoStep(undoName) { $0.setQuickCollection(before, undoName: undoName) }
+        return true
     }
 
     func createAlbumFromSelection(in setId: String? = nil) {
