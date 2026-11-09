@@ -157,10 +157,25 @@ extension AppState {
         let baselines = Dictionary(changed.compactMap { asset in xmpSyncTimes[asset.id].map { (asset.id, $0) } },
                                    uniquingKeysWith: { $1 })
         let catalogURL = store?.packageURL
+        xmpWriteStarted()
         Task { [weak self, writer, changed, sequence, baselines, catalogURL] in
             let result = await writer.write(changed, sequence: sequence, baselines: baselines)
-            self?.applyAutomaticXMPWrite(result, catalogURL: catalogURL)
+            guard let self else { return }
+            self.applyAutomaticXMPWrite(result, catalogURL: catalogURL)
+            self.xmpWriteFinished()
         }
+    }
+
+    /// A sidecar write of ours begins: a check of the sidecars waits until it's done.
+    func xmpWriteStarted() { xmpWritesInFlight += 1 }
+
+    /// A sidecar write of ours is done and its times recorded: a check that waited for the
+    /// writes runs once the last is.
+    func xmpWriteFinished() {
+        xmpWritesInFlight = max(0, xmpWritesInFlight - 1)
+        guard xmpWritesInFlight == 0, xmpCheckAwaitsWrites else { return }
+        xmpCheckAwaitsWrites = false
+        checkExternalXMPChanges()
     }
 
     /// Takes in what an automatic write did, once it's done: our write is the newest a sidecar

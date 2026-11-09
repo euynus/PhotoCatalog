@@ -43,10 +43,12 @@ extension AppState {
         let sequence = automaticXMPWriteSequence
         let writer = automaticXMPWriter
         let catalogURL = store?.packageURL
+        xmpWriteStarted()
         return Task { [weak self, writer, real, sequence, catalogURL] in
             let result = await writer.write(real, sequence: sequence, overwritingChanges: true)
             guard let self else { return }
             if self.store?.packageURL == catalogURL { self.recordWrittenSidecars(result) }
+            self.xmpWriteFinished()
             // a photo a newer write got to first has that one's values: written all the same
             let failures = result.failures + result.unavailable.count
             let count = real.count - failures
@@ -195,9 +197,16 @@ extension AppState {
     /// Looks at every original's sidecar in the background: one whose time moved since we last
     /// read or wrote it was changed by another app. A photo seen for the first time only sets
     /// its starting point, so nothing old is taken for a change. At most one check every few
-    /// seconds; one asked for sooner runs when its turn comes.
+    /// seconds; one asked for sooner runs when its turn comes. Never while a sidecar write of
+    /// ours is under way: it records the times of the sidecars it rewrote only once it's done,
+    /// so those would pass for another app's changes (and be read back over a later edit). The
+    /// check waits, and runs once the writes are done.
     func checkExternalXMPChanges() {
         guard runsBackgroundMaintenance, store != nil else { return }
+        guard xmpWritesInFlight == 0 else {
+            xmpCheckAwaitsWrites = true
+            return
+        }
         let wait = Self.xmpCheckInterval - Date.now.timeIntervalSince(lastXMPCheck ?? .distantPast)
         guard wait <= 0, !isCheckingXMP else {
             guard !xmpCheckPending else { return }
@@ -228,6 +237,12 @@ extension AppState {
             guard let self else { return }
             self.isCheckingXMP = false
             guard self.store?.packageURL == catalogURL else { return }
+            // a write that began while it looked may have rewritten sidecars it saw: it's done
+            // again once the writes are
+            guard self.xmpWritesInFlight == 0 else {
+                self.xmpCheckAwaitsWrites = true
+                return
+            }
             self.applyExternalXMPCheck(seeded: found.seeded, changed: found.changed,
                                        pairingDependent: found.pairingDependent, since: snapshot,
                                        readingInBackground: true)

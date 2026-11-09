@@ -740,6 +740,10 @@ final class AppState {
     /// check each time, and every check looks at every photo's sidecar.
     @ObservationIgnored var lastXMPCheck: Date?
     @ObservationIgnored var xmpCheckPending = false
+    /// Our own sidecar writes under way (automatic or asked for), and whether a check waits for
+    /// them: a write records the new times of the sidecars it rewrote only once it's done.
+    @ObservationIgnored var xmpWritesInFlight = 0
+    @ObservationIgnored var xmpCheckAwaitsWrites = false
     /// Reads sidecar changes other apps make as soon as they're noticed.
     var autoReadChangedXMP = UserDefaults.app.bool(forKey: "pc_autoReadChangedXMP") {
         didSet { UserDefaults.app.set(autoReadChangedXMP, forKey: "pc_autoReadChangedXMP") }
