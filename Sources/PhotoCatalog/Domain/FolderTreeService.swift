@@ -33,7 +33,7 @@ enum FolderTreeService {
                 var current = rootPath
                 for (index, component) in relativeComponents(from: rootPath, to: assetDir).enumerated() {
                     let parent = current
-                    current = (current as NSString).appendingPathComponent(component)
+                    current = appending(component, to: current)
                     if discovered.updateValue(index + 1, forKey: current) == nil {
                         subfolders[parent, default: []].append((component, current))
                     }
@@ -85,7 +85,7 @@ enum FolderTreeService {
                   !listed.contains(subfolderId(for: assetDir)) else { continue }
             var current = rootPath
             for (index, component) in relativeComponents(from: rootPath, to: assetDir).enumerated() {
-                current = (current as NSString).appendingPathComponent(component)
+                current = appending(component, to: current)
                 if !listed.contains(subfolderId(for: current)) { discovered[asset.folderId, default: [:]][current] = index + 1 }
             }
         }
@@ -246,6 +246,13 @@ enum FolderTreeService {
             pending += sorted(subfolders[path]).reversed()
         }
         return order
+    }
+
+    /// `path` and `component` joined as NSString's appendingPathComponent joins a clean path (no
+    /// trailing slash, unless it is "/") and a name without slashes, but as a native string: one
+    /// bridged from NSString hashes, compares and joins on slow paths, most of a 48k-folder build.
+    private static func appending(_ component: String, to path: String) -> String {
+        path == "/" ? "/" + component : path + "/" + component
     }
 
     private static func subfolderId(for path: String) -> String {

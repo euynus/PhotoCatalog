@@ -230,6 +230,22 @@ final class FolderTreeBuildTests: XCTestCase {
         XCTAssertLessThan(comparisons, all.count)
     }
 
+    /// The tree's folder paths are native strings, which hash and compare on fast paths (NSString's
+    /// appendingPathComponent gave bridged ones, most of a 48k-folder build).
+    func testFolderPathsAreNativeStrings() {
+        let folders = [Folder(id: "s", name: "S")]
+        let roots = ["s": "/Volumes/Photos Library"]
+        let photos = (0..<20).map { photo($0, in: "s", at: "/Volumes/Photos Library/2024/2024-03-\(10 + $0)/IMG.JPG") }
+        let tree = FolderTreeService.build(sourceFolders: folders, assets: photos, sourceRootPaths: roots)
+        let grown = FolderTreeService.adding([photo(99, in: "s", at: "/Volumes/Photos Library/2025/2025-01-01/IMG.JPG")],
+                                             to: tree, sourceRootPaths: roots)
+        XCTAssertEqual(grown.count, 1 + 21 + 2)
+        for item in grown {
+            guard let path = item.directoryPath else { continue }
+            XCTAssertNotNil(path.utf8.withContiguousStorageIfAvailable { $0.count }, path)
+        }
+    }
+
     /// Siblings whose code-point order isn't the Finder's (numbers of different widths, case,
     /// accents) are sorted the Finder's way.
     func testSiblingsOutOfCodePointOrderAreSortedTheFindersWay() {
