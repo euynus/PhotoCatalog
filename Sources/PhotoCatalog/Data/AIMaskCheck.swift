@@ -1,8 +1,6 @@
 import CoreGraphics
 import CoreImage
 import Foundation
-import ImageIO
-import UniformTypeIdentifiers
 
 /// Select Object and Select Landscape: the masks persist and are told apart; the landscape
 /// categories name labels the model has; a landscape mask covers its labels' part of the photo
@@ -50,15 +48,6 @@ enum AIMaskCheck {
         let crowded = (0..<20).reduce(ObjectPrompt()) { $0.adding(CGPoint(x: Double($1) / 20, y: 0.5), include: true) }
         assert(crowded.points.count == ObjectPrompt.maxPoints && crowded.points.last?.point.x == 0.95,
                "clicks past the model's limit replace the oldest")
-    }
-
-    /// Writes `image` to a temporary PNG, as a photo on disk.
-    private static func pngFile(_ image: CGImage) -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-aimask-\(UUID().uuidString).png")
-        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
-        CGImageDestinationAddImage(destination, image, nil)
-        CGImageDestinationFinalize(destination)
-        return url
     }
 
     /// `width` × `height`, filled by `draw` in a context whose y points up.
@@ -115,7 +104,7 @@ enum AIMaskCheck {
         let classified = SceneSegmentation.classify(photo)
         assert(classified.map { $0.width == 448 && $0.height == 448 && $0.classes.allSatisfy { Int($0) < labels.count } } == true,
                "the model labels every part of the photo")
-        let url = pngFile(photo)
+        let url = CheckImages.temporaryPNG(photo, prefix: "pc-aimask-")
         defer { try? FileManager.default.removeItem(at: url) }
         let sea = UInt8(labels.firstIndex(of: "sea")!), sky = UInt8(labels.firstIndex(of: "sky (other)")!)
         SceneSegmentation.remember(SceneSegmentation.ClassMap(width: 448, height: 448,
@@ -154,7 +143,7 @@ enum AIMaskCheck {
         }
         func inDisc(_ x: Int, _ y: Int) -> Bool { hypot(Double(x) + 0.5 - 150, Double(y) + 0.5 - 120) <= 60 }
         func inBox(_ x: Int, _ y: Int) -> Bool { x >= 420 && x < 520 && y >= 220 && y < 340 }
-        let url = pngFile(photo)
+        let url = CheckImages.temporaryPNG(photo, prefix: "pc-aimask-")
         defer { try? FileManager.default.removeItem(at: url) }
         func select(_ prompt: ObjectPrompt) -> SemanticMasks.Result? { found(ObjectSelection.lookup(prompt, url: url, isRaw: false)) }
 

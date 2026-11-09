@@ -1,7 +1,5 @@
 import Foundation
 import CoreImage
-import ImageIO
-import UniformTypeIdentifiers
 
 /// Photo Merge: HDR from bracketed exposures.
 enum MergeCheck {
@@ -53,11 +51,7 @@ enum MergeCheck {
         let context = CGContext(data: &data, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4,
                                 space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                 bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-bracket-\(UUID().uuidString).png")
-        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
-        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
-        CGImageDestinationFinalize(destination)
-        return url
+        return CheckImages.temporaryPNG(context.makeImage()!, prefix: "pc-bracket-")
     }
 
     /// How alike two images' detail is over `rect`: the correlation of their gray levels.
@@ -127,11 +121,7 @@ enum MergeCheck {
         let context = CGContext(data: &data, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
                                 space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                 bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("pc-pano-\(UUID().uuidString).png")
-        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
-        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
-        CGImageDestinationFinalize(destination)
-        return url
+        return CheckImages.temporaryPNG(context.makeImage()!, prefix: "pc-pano-")
     }
 
     private static func checkPanorama() {
