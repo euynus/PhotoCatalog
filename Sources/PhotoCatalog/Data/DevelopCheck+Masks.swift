@@ -100,7 +100,7 @@ extension DevelopCheck {
                "each person can be picked alone, or everyone together")
 
         // rendered: a lips mask brightens the lips and nothing else
-        let url = pngFile(drawn)
+        let url = CheckImages.temporaryPNG(drawn, prefix: "pc-auto-")
         defer { try? FileManager.default.removeItem(at: url) }
         PeopleMasks.remember(one, for: url)
         var settings = DevelopSettings()

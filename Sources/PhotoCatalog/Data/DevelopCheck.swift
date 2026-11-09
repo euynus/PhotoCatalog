@@ -118,9 +118,4 @@ enum DevelopCheck {
         }
         return (deviation(lumas), deviation(chromas))
     }
-
-    /// Writes `image` to a temporary PNG, as a photo on disk for the automatic adjustments.
-    static func pngFile(_ image: CGImage) -> URL {
-        CheckImages.temporaryPNG(image, prefix: "pc-auto-")
-    }
 }

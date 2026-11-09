@@ -82,7 +82,7 @@ extension DevelopCheck {
     static func checkAutoAdjustments() {
         // eyedropper: a warm gray becomes neutral where it was picked
         let warm = image { _, _ in (0.56, 0.5, 0.43) }
-        let warmFile = pngFile(warm)
+        let warmFile = CheckImages.temporaryPNG(warm, prefix: "pc-auto-")
         defer { try? FileManager.default.removeItem(at: warmFile) }
         let balance = DevelopAuto.whiteBalance(url: warmFile, isRaw: false, settings: .neutral, point: CGPoint(x: 0.5, y: 0.5))
         var s = DevelopSettings()
@@ -92,7 +92,7 @@ extension DevelopCheck {
         assert(balance != nil && abs(Int(picked.r) - Int(picked.b)) <= 6
                && abs(Int(picked.g) - (Int(picked.r) + Int(picked.b)) / 2) <= 6,
                "the eyedropper makes the picked color gray")
-        let black = pngFile(image { _, _ in (0, 0, 0) })
+        let black = CheckImages.temporaryPNG(image { _, _ in (0, 0, 0) }, prefix: "pc-auto-")
         defer { try? FileManager.default.removeItem(at: black) }
         assert(DevelopAuto.whiteBalance(url: black, isRaw: false, settings: .neutral, point: CGPoint(x: 0.5, y: 0.5)) == nil,
                "a black point can't be judged")
@@ -107,7 +107,7 @@ extension DevelopCheck {
             if x >= 32 { c = (0.35, 0.45, 0.65) }               // a blue wall
             return (min(1, c.0 * 1.12), c.1, c.2 * 0.85)       // under warm light
         }
-        let castFile = pngFile(castScene)
+        let castFile = CheckImages.temporaryPNG(castScene, prefix: "pc-auto-")
         defer { try? FileManager.default.removeItem(at: castFile) }
         let auto = DevelopAuto.autoWhiteBalance(url: castFile, isRaw: false, settings: .neutral)
         var neutralized = DevelopSettings()
@@ -125,14 +125,15 @@ extension DevelopCheck {
         assert(again.map { abs($0.temperature - (auto?.temperature ?? 0)) <= 3 && abs($0.tint - (auto?.tint ?? 0)) <= 3 } == true,
                "auto white balance finds the same answer from any start (\(String(describing: again)))")
         // a photo of nothing but a strong color gives no answer rather than a wrong one
-        let allBlue = pngFile(image { _, _ in (0.1, 0.2, 0.8) })
+        let allBlue = CheckImages.temporaryPNG(image { _, _ in (0.1, 0.2, 0.8) }, prefix: "pc-auto-")
         defer { try? FileManager.default.removeItem(at: allBlue) }
         assert(DevelopAuto.autoWhiteBalance(url: allBlue, isRaw: false, settings: .neutral) == nil,
                "auto white balance declines a photo with nothing near gray")
 
         // auto tone: dark photos brighten, bright ones darken, a full-range one barely moves
         func gradient(_ from: Double, _ to: Double) -> URL {
-            pngFile(image { x, _ in let v = from + (to - from) * Double(x) / 63; return (v, v, v) })
+            let ramp = image { x, _ in let v = from + (to - from) * Double(x) / 63; return (v, v, v) }
+            return CheckImages.temporaryPNG(ramp, prefix: "pc-auto-")
         }
         let dark = gradient(0.03, 0.3), bright = gradient(0.7, 0.97), full = gradient(0.02, 0.98)
         defer { for url in [dark, bright, full] { try? FileManager.default.removeItem(at: url) } }
