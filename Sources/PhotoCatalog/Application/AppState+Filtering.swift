@@ -218,7 +218,21 @@ extension AppState {
               sort == Sort(), collapsedStackIds.isEmpty else { return }
         // as All Photographs shows them: a RAW's JPEG is behind its tile (loaded photos are live)
         let pairing = assetPairing
-        let shown = pairing.isEmpty ? loadedAssets : loadedAssets.filter(pairing.shows)
+        let shown: [Asset]
+        if pairing.isEmpty {
+            shown = loadedAssets
+        } else if loadedAssets.withUnsafeBufferPointer({ $0.baseAddress }) == assets.withUnsafeBufferPointer({ $0.baseAddress }) {
+            // the photos the pairing was worked out from (any change since would have copied
+            // them): asked by position instead of looking up every JPEG's id
+            var visible: [Asset] = []
+            visible.reserveCapacity(loadedAssets.count)
+            for (position, asset) in loadedAssets.enumerated() where pairing.isShown(asset, at: position) {
+                visible.append(asset)
+            }
+            shown = visible
+        } else {
+            shown = loadedAssets.filter(pairing.shows)
+        }
         listCache = (currentListSignature, shown)
         uncollapsedListCache = (currentListSignature, shown)
         listIdentity &+= 1
