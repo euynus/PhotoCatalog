@@ -1,4 +1,5 @@
 import XCTest
+import Observation
 @testable import PhotoCatalog
 
 /// Tethered capture and 复位 find a photo's RAW default the way an import does: the camera's own,
@@ -77,4 +78,71 @@ final class RawDefaultLookupTests: XCTestCase {
             }
         }
     }
+
+    /// 复位 on many photos finds the RAW defaults once, not once a photo; and the Develop panel,
+    /// asking each time it draws, gets the ones it found until a choice or a preset changes.
+    func testRawDefaultsAreFoundOncePerResetAndKeptUntilAChoiceOrPresetChanges() {
+        let app = AppState.selfCheckFixture()
+        let shots = (0..<6).map { raw("shot-\($0)", camera: "Camera A") }
+        app.assets = shots
+        let soft = DevelopPreset(id: "user.soft", name: "Soft", transfer: DevelopTransfer(settings: {
+            var settings = DevelopSettings()
+            settings.contrast = -20
+            return settings
+        }(), fields: [.contrast], sourceIsRaw: true))
+        app.developPresets = [soft]
+        app.rawDefaultPresetIds = ["Camera A": "user.soft", "": "builtin.punch"]
+        var exposed = DevelopSettings()
+        exposed.exposure = 1
+        for shot in shots { app.developSettings[shot.id] = exposed }
+        app.selectedIds = Set(shots.map(\.id))
+
+        let before = app.rawDefaultsBuilds
+        app.resetDevelopSelection()
+        XCTAssertEqual(app.rawDefaultsBuilds - before, 1, "the RAW defaults were found again for each photo")
+        XCTAssertTrue(shots.allSatisfy { app.developSettings[$0.id]?.contrast == -20 }, "each photo reset to its camera's default")
+
+        for _ in 0..<5 { XCTAssertEqual(app.defaultDevelopSettings(for: shots[0]).contrast, -20) }
+        XCTAssertEqual(app.rawDefaultsBuilds - before, 1, "the panel's draws found them again")
+
+        app.rawDefaultPresetIds["Camera A"] = nil
+        XCTAssertEqual(app.defaultDevelopSettings(for: shots[0]).contrast, 35, "a choice changed: every camera's default")
+        app.rawDefaultPresetIds["Camera A"] = "user.soft"
+        XCTAssertEqual(app.defaultDevelopSettings(for: shots[0]).contrast, -20)
+        app.developPresets = []
+        XCTAssertEqual(app.defaultDevelopSettings(for: shots[0]).contrast, 35, "the camera's preset deleted: every camera's")
+        XCTAssertEqual(app.rawDefaultsBuilds - before, 4)
+    }
+
+    /// A view drawn from the kept RAW defaults draws again when a choice or a preset changes.
+    func testAViewDrawnFromKeptRawDefaultsSeesTheirChanges() {
+        let app = AppState.selfCheckFixture()
+        let shot = raw("shot", camera: "Camera A")
+        app.assets = [shot]
+        app.rawDefaultPresetIds = ["": "builtin.punch"]
+        _ = app.defaultDevelopSettings(for: shot)   // kept from here on
+        let changes: [(String, () -> Void)] = [
+            ("a choice", { app.rawDefaultPresetIds["Camera A"] = "none" }),
+            ("a preset", { app.developPresets = [DevelopPreset(id: "user.x", name: "X", transfer: DevelopTransfer(
+                settings: DevelopSettings(), fields: [.contrast], sourceIsRaw: true))] }),
+        ]
+        for (name, change) in changes {
+            _ = app.defaultDevelopSettings(for: shot)
+            let built = app.rawDefaultsBuilds
+            let redraw = Flag()
+            withObservationTracking {
+                _ = app.defaultDevelopSettings(for: shot)
+            } onChange: {
+                redraw.raised = true
+            }
+            XCTAssertEqual(app.rawDefaultsBuilds, built, "\(name): the probe: drawn from the kept defaults")
+            change()
+            XCTAssertTrue(redraw.raised, "\(name): a view drawn from the kept defaults wasn't told of the change")
+        }
+    }
+}
+
+/// Raised from an observation's change handler.
+private final class Flag: @unchecked Sendable {
+    var raised = false
 }

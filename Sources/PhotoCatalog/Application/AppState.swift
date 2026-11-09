@@ -256,8 +256,16 @@ final class AppState {
     /// model; "" is every camera without its own, and "none" keeps a camera as shot.
     var rawDefaultPresetIds: [String: String] =
         (UserDefaults.app.dictionary(forKey: "pc_rawDefaults") as? [String: String]) ?? [:] {
-        didSet { UserDefaults.app.set(rawDefaultPresetIds, forKey: "pc_rawDefaults") }
+        didSet {
+            UserDefaults.app.set(rawDefaultPresetIds, forKey: "pc_rawDefaults")
+            rawDefaultsCache = nil
+        }
     }
+    /// `rawDefaults`, made from the choices and presets above: the Develop panel asks for it each
+    /// time it draws. Dropped when either changes.
+    @ObservationIgnored var rawDefaultsCache: RawDefaults?
+    /// How many times `rawDefaults` was made (for tests).
+    @ObservationIgnored var rawDefaultsBuilds = 0
     /// After a rating / flag / color key on one photo, move to the next (Shift does it once).
     var autoAdvance: Bool = UserDefaults.app.bool(forKey: "pc_autoAdvance") {
         didSet { UserDefaults.app.set(autoAdvance, forKey: "pc_autoAdvance") }
@@ -594,7 +602,10 @@ final class AppState {
     var developClipboard: DevelopTransfer?
     /// The user's own presets; built-ins come first wherever presets are listed.
     var developPresets: [DevelopPreset] = AppState.loadJSON([DevelopPreset].self, forKey: developPresetsKey) ?? [] {
-        didSet { AppState.store(developPresets, forKey: AppState.developPresetsKey) }
+        didSet {
+            AppState.store(developPresets, forKey: AppState.developPresetsKey)
+            rawDefaultsCache = nil
+        }
     }
     /// Fields the copy / sync dialog offers checked, as last used.
     var developTransferFields: Set<DevelopField> =

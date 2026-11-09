@@ -37,20 +37,29 @@ extension AppState {
         if let preset { recordDevelopHistory(imported, name: L("导入预设“\(preset.name)”"), change: .append) }
     }
 
-    /// The RAW defaults as chosen in Settings, with the presets they name.
+    /// The RAW defaults as chosen in Settings, with the presets they name. Kept until the choices
+    /// or the presets change.
     var rawDefaults: RawDefaults {
+        // read on a hit too, so a view drawn from the kept value redraws when they change
+        let chosen = rawDefaultPresetIds
+        _ = developPresets
+        if let rawDefaultsCache { return rawDefaultsCache }
         let presets = allDevelopPresets
-        return RawDefaults(chosen: rawDefaultPresetIds) { id in presets.first { $0.id == id } }
+        let made = RawDefaults(chosen: chosen) { id in presets.first { $0.id == id } }
+        rawDefaultsCache = made
+        rawDefaultsBuilds += 1
+        return made
     }
 
     /// The preset a RAW photo starts from: its camera's, or every camera's (nil: as shot).
-    func rawDefaultPreset(for asset: Asset) -> DevelopPreset? {
-        asset.isRaw ? rawDefaults.preset(forCamera: asset.camera) : nil
+    func rawDefaultPreset(for asset: Asset, in rawDefaults: RawDefaults? = nil) -> DevelopPreset? {
+        asset.isRaw ? (rawDefaults ?? self.rawDefaults).preset(forCamera: asset.camera) : nil
     }
 
-    /// Where 复位 returns a photo: its RAW defaults, or as shot.
-    func defaultDevelopSettings(for asset: Asset) -> DevelopSettings {
-        rawDefaultPreset(for: asset).map { $0.transfer.applied(to: .neutral, targetIsRaw: asset.isRaw) } ?? .neutral
+    /// Where 复位 returns a photo: its RAW defaults, or as shot. A batch passes `rawDefaults` once.
+    func defaultDevelopSettings(for asset: Asset, in rawDefaults: RawDefaults? = nil) -> DevelopSettings {
+        rawDefaultPreset(for: asset, in: rawDefaults)
+            .map { $0.transfer.applied(to: .neutral, targetIsRaw: asset.isRaw) } ?? .neutral
     }
 
     /// Sets (or with "", clears) the RAW default of `camera` ("" for every camera).

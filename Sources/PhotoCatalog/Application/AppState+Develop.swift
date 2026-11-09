@@ -349,8 +349,9 @@ extension AppState {
         let ids = developTargetIds.filter { developSettings[$0] != nil }
         guard !ids.isEmpty else { return }
         // each photo back to its RAW defaults, or as shot
+        let rawDefaults = rawDefaults
         commitDevelop(Dictionary(uniqueKeysWithValues: ids.map { id in
-            (id, assetIndex[id].map { defaultDevelopSettings(for: assets[$0]) } ?? .neutral)
+            (id, assetIndex[id].map { defaultDevelopSettings(for: assets[$0], in: rawDefaults) } ?? .neutral)
         }), undoName: L("复位修图调整"))
     }
 
