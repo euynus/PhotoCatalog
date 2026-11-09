@@ -13,17 +13,13 @@ extension AppState {
     func applyImportDevelopSettings(to fresh: [Asset], preset: DevelopPreset?) {
         var defaults: [String: (name: String, settings: DevelopSettings)] = [:]
         var imported: [String: DevelopSettings] = [:]
+        let rawDefaults = rawDefaults
         for asset in fresh where !asset.isDemo && canDevelop(asset) {
-            var settings = developSettings[asset.id] ?? .neutral
-            if let camera = rawDefaultPreset(for: asset) {
-                let applied = camera.transfer.applied(to: settings, targetIsRaw: asset.isRaw)
-                if applied != settings { defaults[asset.id] = (camera.name, applied) }
-                settings = applied
-            }
-            if let preset {
-                let applied = preset.transfer.applied(to: settings, targetIsRaw: asset.isRaw)
-                if applied != settings { imported[asset.id] = applied }
-            }
+            let camera = asset.isRaw ? rawDefaults.preset(forCamera: asset.camera) : nil
+            let steps = DevelopPreset.importSteps(from: developSettings[asset.id] ?? .neutral, isRaw: asset.isRaw,
+                                                  cameraDefault: camera, preset: preset)
+            if let step = steps.camera { defaults[asset.id] = step }
+            if let step = steps.preset { imported[asset.id] = step.settings }
         }
         var final = defaults.mapValues(\.settings)
         final.merge(imported) { $1 }
@@ -36,17 +32,20 @@ extension AppState {
         }
         for (id, value) in final { developSettings[id] = value.isNeutral ? nil : value }
         for name in Set(defaults.values.map(\.name)) {
-            recordDevelopHistory(defaults.filter { $0.value.name == name }.mapValues(\.settings),
-                                 name: L("RAW 默认设置“\(name)”"), change: .append)
+            recordDevelopHistory(defaults.filter { $0.value.name == name }.mapValues(\.settings), name: name, change: .append)
         }
         if let preset { recordDevelopHistory(imported, name: L("导入预设“\(preset.name)”"), change: .append) }
     }
 
+    /// The RAW defaults as chosen in Settings, with the presets they name.
+    var rawDefaults: RawDefaults {
+        let presets = allDevelopPresets
+        return RawDefaults(chosen: rawDefaultPresetIds) { id in presets.first { $0.id == id } }
+    }
+
     /// The preset a RAW photo starts from: its camera's, or every camera's (nil: as shot).
     func rawDefaultPreset(for asset: Asset) -> DevelopPreset? {
-        guard asset.isRaw, let id = rawDefaultPresetIds[asset.camera] ?? rawDefaultPresetIds[""], id != "none"
-        else { return nil }
-        return allDevelopPresets.first { $0.id == id }
+        asset.isRaw ? rawDefaults.preset(forCamera: asset.camera) : nil
     }
 
     /// Where 复位 returns a photo: its RAW defaults, or as shot.
