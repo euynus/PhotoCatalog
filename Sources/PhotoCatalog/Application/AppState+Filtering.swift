@@ -283,7 +283,7 @@ extension AppState {
         let filtered = !(filters.isEmpty && q.isEmpty)
         return {
             let belongs = collection()
-            let search = LocalizedSearch()   // its own, for the filter bar's text tests
+            var search = LocalizedSearch()   // its own, for the filter bar's text tests
             return { a in
                 guard live(a), belongs(a) else { return false }
                 guard filtered else { return true }
@@ -303,7 +303,7 @@ extension AppState {
                     if let indexedSearchIds {
                         if !indexedSearchIds.contains(a.id) { return false }
                     } else {
-                        if !search.text(a.searchHaystack, contains: q) { return false }
+                        if !search.haystack(of: a, contains: q) { return false }
                     }
                 }
                 return true
