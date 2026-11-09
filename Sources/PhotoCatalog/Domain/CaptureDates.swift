@@ -166,10 +166,10 @@ enum CaptureDates {
         return days
     }
 
-    /// A capture time's day as `dayCounts` counts it, or nil for a time that isn't one.
+    /// A capture time's day as `dayCounts` counts it, or nil for a time that isn't one or whose
+    /// day an Int can't hold (beyond about 8e23 seconds either way, where converting it trapped).
     static func day(of date: Date) -> Int? {
-        let seconds = date.timeIntervalSince1970
-        return seconds.isFinite ? Int((seconds / 86_400).rounded(.down)) : nil
+        Int(exactly: (date.timeIntervalSince1970 / 86_400).rounded(.down))
     }
 
     /// Reuse the cached hierarchy instead of scanning every photo for each pinned date.
