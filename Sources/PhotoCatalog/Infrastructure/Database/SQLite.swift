@@ -221,6 +221,8 @@ final class Database: @unchecked Sendable {
     var checkpointQueue: DispatchQueue? { checkpointer?.queue }
     var checkpointCount: Int { checkpointer?.count ?? 0 }
     var lastCheckpointFrames: (wal: Int, moved: Int)? { checkpointer?.lastCheckpointFrames }
+    /// How many prepared statements this connection keeps (for tests).
+    var cachedStatementCount: Int { locked { statementCache.count } }
 
     @discardableResult
     func exec(_ sql: String) -> Bool {

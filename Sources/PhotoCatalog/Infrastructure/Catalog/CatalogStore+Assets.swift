@@ -149,16 +149,19 @@ extension CatalogStore {
         }
     }
 
+    /// One statement per column whatever the number of photos: a placeholder per photo made a
+    /// statement, cached for good, for every batch size up to 500 (~100 MB at worst). One photo,
+    /// a rating key's case, keeps its own statement and skips the JSON.
     private func updateAssetColumn(_ column: String, value: SQLValue, assetIDs: Set<String>) throws {
         guard !assetIDs.isEmpty else { return }
-        let ids = assetIDs.sorted()
         try db.transaction {
-            for start in stride(from: 0, to: ids.count, by: 500) {
-                let chunk = ids[start..<min(start + 500, ids.count)]
-                let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ",")
-                let params = [value] + chunk.map(SQLValue.text)
-                try db.run("UPDATE assets SET \(column)=? WHERE id IN (\(placeholders));", params)
+            if assetIDs.count == 1, let id = assetIDs.first {
+                try db.run("UPDATE assets SET \(column)=? WHERE id IN (?);", [value, .text(id)])
+                return
             }
+            let ids = String(decoding: try JSONSerialization.data(withJSONObject: assetIDs.sorted()), as: UTF8.self)
+            try db.run("UPDATE assets SET \(column)=? WHERE id IN (SELECT value FROM json_each(?));",
+                       [value, .text(ids)])
         }
     }
 
