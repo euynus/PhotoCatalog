@@ -62,6 +62,25 @@ final class HydrationReadConnectionTests: CatalogTestCase {
         XCTAssertEqual(try store.db.query("PRAGMA journal_mode=WAL;").first?.text("journal_mode"), "wal")
     }
 
+    /// A read aside that fails (here the reader finds no photos table; in use, busy past its
+    /// timeout) is made again through the catalog's connection: the catalog still opens. A read
+    /// the catalog's connection can't make fails as before.
+    func testAFailedReadAsideIsMadeAgainThroughTheCatalogsConnection() throws {
+        let store = try makeCatalog(rows: 300)
+        let other = scratch.appendingPathComponent("Other.sqlite").path
+        try Database(path: other).execChecked("CREATE TABLE unrelated(id INTEGER);")
+        let reader = try Database(path: other, readOnly: true)
+        XCTAssertThrowsError(try store.loadAssets(through: reader), "the probe: the reader can't read the photos")
+
+        let loaded = try store.loadAssets(aside: reader)
+        XCTAssertEqual(loaded.map(\.id), try store.loadAssets(through: store.db).map(\.id))
+        XCTAssertEqual(loaded.count, 300, "a failed read aside failed the open")
+
+        try store.db.execChecked("ALTER TABLE assets RENAME TO assets_gone;")
+        XCTAssertThrowsError(try store.loadAssets(aside: reader), "a read the catalog can't make came back empty")
+        XCTAssertThrowsError(try store.loadAssets())
+    }
+
     // MARK: - helpers
 
     /// A scratch catalog of `rows` photos, written by SQLite itself from one saved photo, each with

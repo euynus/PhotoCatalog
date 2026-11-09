@@ -168,7 +168,15 @@ extension CatalogStore {
     func loadAssets() throws -> [Asset] {
         // through a connection of its own: the read takes seconds at 500k photos, and on the
         // catalog's connection an edit or search made while a catalog opened waited for all of it
-        try loadAssets(through: db.readOnlyConnection() ?? db)
+        try loadAssets(aside: db.readOnlyConnection())
+    }
+
+    /// `loadAssets()` read through `reader` when there is one, else through the catalog's
+    /// connection. A read aside that fails (busy past its timeout, say) is made again through the
+    /// catalog's connection rather than failing the catalog's open.
+    func loadAssets(aside reader: Database?) throws -> [Asset] {
+        if let reader, let loaded = try? loadAssets(through: reader) { return loaded }
+        return try loadAssets(through: db)
     }
 
     /// `loadAssets()` read through `connection`.
