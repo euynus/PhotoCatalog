@@ -152,8 +152,10 @@ extension AppState {
     /// A shot's photos into the catalog, with the session's keywords and preset, and on screen.
     private func addTetheredShots(_ imported: [Asset], folder: URL, name: String) {
         guard let store, let coordinator else { return }
-        let known = Set(assets.map(\.id))
-        let fresh = ImportPostActionService.apply(to: imported.filter { !known.contains($0.id) }, actions: ImportPostActions(
+        // the cached id index has every photo's id, removed ones too. Not kept in a local, so
+        // appendAssets below still holds its only copy and extends it in place.
+        let unknown = imported.filter { assetIndex[$0.id] == nil }
+        let fresh = ImportPostActionService.apply(to: unknown, actions: ImportPostActions(
             keywords: ImportPostActionService.normalizeKeywords(tetherSettings.keywords), colorLabel: nil,
             author: importAuthor, copyright: importCopyright))
         guard let newest = fresh.last else { return }
