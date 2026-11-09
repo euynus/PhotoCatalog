@@ -396,10 +396,12 @@ extension AppState {
         guard let store else { push("无目录库", "warning"); return }
         let packageURL = store.packageURL
         let snapshot = assets
+        let newSince = newCacheFilesSince
         let limit = cacheLimit
-        Task { [weak self, store, packageURL, snapshot, limit] in
+        Task { [weak self, store, packageURL, snapshot, newSince, limit] in
             let result = await Task.detached(priority: .utility) {
-                let report = CacheService.prune(store.cacheURL, captureDates: Self.captureDates(of: snapshot)) {
+                let report = CacheService.prune(store.cacheURL, captureDates: Self.captureDates(of: snapshot),
+                                                orphansWrittenBefore: newSince) {
                     limit.bytes(cacheBytes: $0)
                 }
                 return (report, CatalogHealth.check(store, assets: snapshot))
@@ -423,11 +425,13 @@ extension AppState {
         guard let store else { return }
         let packageURL = store.packageURL
         let snapshot = assets
+        let newSince = newCacheFilesSince
         let limit = cacheLimit
         let passLimit = limit.chosenMB > 0 ? nil : automaticLimitBytes
-        Task { [weak self, store, packageURL, snapshot, limit, passLimit] in
+        Task { [weak self, store, packageURL, snapshot, newSince, limit, passLimit] in
             let result = await Task.detached(priority: .utility) {
-                let report = CacheService.prune(store.cacheURL, captureDates: Self.captureDates(of: snapshot)) {
+                let report = CacheService.prune(store.cacheURL, captureDates: Self.captureDates(of: snapshot),
+                                                orphansWrittenBefore: newSince) {
                     passLimit ?? limit.bytes(cacheBytes: $0)
                 }
                 let health = report.removedFiles > 0 ? CatalogHealth.check(store, assets: snapshot) : nil
@@ -443,6 +447,15 @@ extension AppState {
                 self.statusMetrics.cacheBytes = result.1
             }
         }
+    }
+
+    /// Since when a cached file of no photo in `assets` is a new photo's rather than an orphan's:
+    /// one written after the photos were read for a prune, or since the import that's running
+    /// began (it writes its photos' files before it adds them).
+    var newCacheFilesSince: Date {
+        let now = Date()
+        guard importing, let started = importRun?.startedAt else { return now }
+        return min(started, now)
     }
 
     /// When each photo was taken, by id: a prune keeps the newest photos' previews, as the

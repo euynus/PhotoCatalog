@@ -30,16 +30,18 @@ final class CacheRepairTests: CatalogTestCase {
         XCTAssertTrue(exists(preview), "showing the photo makes its missing preview")
 
         // a prune takes it again: previews go before thumbnails, and a filler thumbnail of no
-        // photo goes too
+        // photo, written before the prune (an orphan), goes before the photo's own
         let filler = store.thumb512URL.appendingPathComponent("filler.jpg")
         try FileManager.default.createDirectory(at: store.thumb512URL, withIntermediateDirectories: true)
         try Data(repeating: 1, count: 2 * 1_048_576).write(to: filler)
-        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)],
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-60)],
                                               ofItemAtPath: filler.path)
         app.cacheLimitMB = 1
         app.pruneCacheToLimit()
         try await waitUntil("the prune finished") { app.toastCenter.toasts.last?.icon == "trash" }
         XCTAssertFalse(exists(preview), "the prune deleted the repaired preview")
+        XCTAssertFalse(exists(filler.path), "the orphan filler was kept")
+        XCTAssertTrue(exists(asset.thumb), "the photo's thumbnail went before the orphan filler")
 
         let shown = await app.visibleImageSource(for: asset, requestedSource: preview, kind: .preview2048)
         XCTAssertEqual(shown, preview)

@@ -77,6 +77,27 @@ final class CachePruneOrderTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: newEdited.path))
     }
 
+    /// A file of no photo written since the cutoff (the photos read for the prune, or the import
+    /// running began) is a photo being added: it's kept longest, after the dated photos' files.
+    /// One of no photo written before the cutoff is an orphan, and still goes first.
+    func testAFileOfNoPhotoWrittenSinceTheCutoffIsKeptAsTheNewest() throws {
+        let cutoff = Date(timeIntervalSince1970: 1_800_000_000)
+        let dates = ["old": cutoff.addingTimeInterval(-30 * day), "new": cutoff.addingTimeInterval(-day)]
+        let orphan = try write("Previews/2048/00/aa/gone.jpg", written: cutoff.addingTimeInterval(-60))
+        let incoming = try write("Previews/2048/01/aa/incoming.jpg", written: cutoff.addingTimeInterval(60))
+        let old = try write("Previews/2048/02/aa/old.jpg", written: cutoff.addingTimeInterval(-120))
+        let new = try write("Previews/2048/03/aa/new.jpg", written: cutoff.addingTimeInterval(-120))
+
+        // room for one of the four
+        let report = CacheService.prune(cache, captureDates: dates, orphansWrittenBefore: cutoff) { _ in 10_000 }
+
+        XCTAssertEqual(report.removedFiles, 3)
+        for removed in [orphan, old, new] {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: removed.path), removed.lastPathComponent)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: incoming.path), "a new photo's preview went before older ones")
+    }
+
     /// Without dates, as before: the oldest written go first.
     func testWithoutDatesTheOldestWrittenGoFirst() throws {
         let now = Date()
@@ -87,5 +108,44 @@ final class CachePruneOrderTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: older.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: newer.path))
+    }
+}
+
+/// A prune while an import runs: the import writes its photos' cache files before it adds the
+/// photos, so files of no photo in the catalog written since it began are kept, while older ones
+/// (orphans) and the previews of photos taken longest ago go first.
+final class CachePruneDuringImportTests: CatalogTestCase {
+    @MainActor
+    func testAPruneDuringAnImportKeepsTheImportsNewFiles() async throws {
+        let (store, package, imported, _) = try importPhoto("a.jpg", shade: 2)
+        let app = openCatalog(package)
+        let asset = try XCTUnwrap(app.assets.first { $0.id == imported.id })
+        let now = Date()
+        func file(_ name: String, megabytes: Double, written: Date) throws -> URL {
+            let url = store.preview2048URL.appendingPathComponent("zz/\(name).jpg")
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(count: Int(megabytes * 1_048_576)).write(to: url)
+            try FileManager.default.setAttributes([.modificationDate: written], ofItemAtPath: url.path)
+            return url
+        }
+        let orphan = try file("gone", megabytes: 1, written: now.addingTimeInterval(-3_600))
+        // written by the import, its photo not yet added
+        let incoming = try file("incoming", megabytes: 0.9, written: now.addingTimeInterval(-30))
+        try Data(count: 1_048_576).write(to: URL(fileURLWithPath: asset.preview))
+
+        var run = ImportRun(source: scratch.appendingPathComponent("Card"), mode: .referenced,
+                            startedAt: now.addingTimeInterval(-60))
+        run.phase = .importing
+        app.importRun = run
+        app.importing = true
+        defer { app.importing = false }
+        app.cacheLimitMB = 1
+        app.pruneCacheToLimit()
+        try await waitUntil("the prune finished") { app.toastCenter.toasts.last?.icon == "trash" }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path), "an orphan written before the import was kept")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: asset.preview))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: incoming.path), "the photo being imported lost its preview")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: asset.thumb), "previews still go before thumbnails")
     }
 }

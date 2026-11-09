@@ -73,7 +73,9 @@ enum CacheService {
     /// prune keeps the newest photos' previews, as the background pass makes them; files of no
     /// photo there go before those, and among the rest the oldest written go first. Not by when
     /// a file was written alone: the background pass writes the newest photos' previews first.
-    static func prune(_ cacheURL: URL, captureDates: [String: Date] = [:],
+    /// A file of no photo there written since `orphansWrittenBefore` is a new photo's, which an
+    /// import writes before it adds the photo: it counts as the newest, and is kept longest.
+    static func prune(_ cacheURL: URL, captureDates: [String: Date] = [:], orphansWrittenBefore: Date? = nil,
                       maxBytes limit: (Int64) -> Int64) -> CachePruneReport {
         let (files, writingBytes) = cacheFiles(in: cacheURL)
         let before = files.reduce(Int64(0)) { $0 + $1.size }
@@ -88,8 +90,11 @@ enum CacheService {
         let fm = FileManager.default
         // previews go first and thumbnails last: the grid needs a thumbnail for every photo,
         // while a preview is only wanted when one photo is opened, and is remade then
-        let ranked = files.map { file in
-            (file: file, taken: captureDates.isEmpty ? Date.distantPast : captureDates[file.photoId] ?? .distantPast)
+        let ranked = files.map { file -> (file: CacheFile, taken: Date) in
+            guard !captureDates.isEmpty else { return (file, .distantPast) }
+            if let taken = captureDates[file.photoId] { return (file, taken) }
+            let isNew = orphansWrittenBefore.map { file.modifiedAt >= $0 } ?? false
+            return (file, isNew ? .distantFuture : .distantPast)
         }
         for (file, _) in ranked.sorted(by: {
             ($0.file.evictionRank, $0.taken, $0.file.modifiedAt) < ($1.file.evictionRank, $1.taken, $1.file.modifiedAt)
