@@ -166,12 +166,19 @@ extension CatalogStore {
     }
 
     func loadAssets() throws -> [Asset] {
+        // through a connection of its own: the read takes seconds at 500k photos, and on the
+        // catalog's connection an edit or search made while a catalog opened waited for all of it
+        try loadAssets(through: db.readOnlyConnection() ?? db)
+    }
+
+    /// `loadAssets()` read through `connection`.
+    func loadAssets(through connection: Database) throws -> [Asset] {
         // Read the table in its own order and sort in memory: ORDER BY via the capture-date
         // index fetched every row with a random seek into the table — random reads across the
         // whole file, most of a 10-20 s cold load at 500k photos. Soft-deleted rows are skipped.
         Self.readAhead(db.path)
         let decoder = AssetRowDecoder(columns: Self.columnNames)
-        let loaded = try db.queryRows(
+        let loaded = try connection.queryRows(
             "SELECT \(Self.columns) FROM assets NOT INDEXED WHERE deleted=0;",
             transform: decoder.asset(from:)
         )

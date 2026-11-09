@@ -72,8 +72,15 @@ final class Database: @unchecked Sendable {
     private var statementCache: [String: OpaquePointer] = [:]
     let path: String
 
-    init(path: String) throws {
+    /// With `readOnly`, a connection that only reads (`readOnlyConnection()`): it has no WAL hook
+    /// and runs no checkpoints, which are the catalog's own connection's to run.
+    init(path: String, readOnly: Bool = false) throws {
         self.path = path
+        if readOnly {
+            db = try Self.openReadOnly(path)
+            sqlite3_busy_timeout(db, 4000)
+            return
+        }
         if sqlite3_open(path, &db) != SQLITE_OK {
             let msg = String(cString: sqlite3_errmsg(db))
             sqlite3_close(db)
@@ -321,6 +328,20 @@ final class Database: @unchecked Sendable {
             return try query("PRAGMA integrity_check;").map { $0.text("integrity_check") } == ["ok"]
         }
         return try Self.firstColumn(of: "PRAGMA integrity_check;", on: read) == ["ok"]
+    }
+
+    /// A read-only connection of its own to this database, for a long read that shouldn't hold the
+    /// lock every edit and search on this one waits for; it closes when it's released. Nil when
+    /// there's none to be had, or the database isn't in WAL mode: there its read would keep every
+    /// commit out. As for `integrityCheck`, the catalog's security scope must be active, and no
+    /// checkpoint gets past its read while it lasts: the WAL grows by what's written meanwhile,
+    /// until the first checkpoint after it.
+    func readOnlyConnection() -> Database? {
+        guard let reader = try? Database(path: path, readOnly: true),
+              (try? reader.query("PRAGMA journal_mode;"))?.first?.text("journal_mode")?.lowercased() == "wal" else {
+            return nil
+        }
+        return reader
     }
 
     /// Each row's first column, as text, of `sql` run on `connection`.
