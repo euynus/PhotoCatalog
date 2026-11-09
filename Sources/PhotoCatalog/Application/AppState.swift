@@ -171,6 +171,8 @@ final class AppState {
     @ObservationIgnored var uncollapsedListCache: (signature: ListSignature, value: [Asset])?
     /// How many list positions patching edits into the list has looked at one by one (for tests).
     @ObservationIgnored var listPatchScannedPhotos = 0
+    /// How many list positions lookups of photos in the list have looked at one by one (for tests).
+    @ObservationIgnored var listPositionScannedPhotos = 0
     /// How many times the list's photos have been worked out from the catalog (for tests).
     @ObservationIgnored var listComputations = 0
     /// Every sidecar write, automatic or asked for, goes through the writer with the next sequence.

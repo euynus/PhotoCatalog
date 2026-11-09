@@ -84,7 +84,8 @@ extension AppState {
     /// photos those scans made a single rating take a quarter of a second).
     var listPositions: [String: Int] {
         let current = list
-        let signature = currentListSignature
+        // the signature `list` just used: building it again runs the calendar again
+        guard let signature = listCache?.signature else { return Self.positions(of: current) }
         if let cache = listPositionsCache, cache.signature == signature { return cache.positions }
         let positions = Self.positions(of: current)
         listPositionsCache = (signature, positions)
@@ -99,7 +100,7 @@ extension AppState {
 
     /// Up to this many ids are located with one pass over `list` rather than the index:
     /// the pass costs 13–25 ms at 500k photos, building the index ~110 ms.
-    static let listScanLimit = 8
+    nonisolated static let listScanLimit = 8
 
     /// Where `id` sits in `list`: the index if this list already has one, else the hint,
     /// else one pass.
@@ -111,31 +112,67 @@ extension AppState {
     func listPositions<C: Collection<String>>(of ids: C) -> [String: Int] {
         guard !ids.isEmpty else { return [:] }
         let current = list
-        let hasIndex = listPositionsCache?.signature == currentListSignature
-        if hasIndex || ids.count > Self.listScanLimit {
-            let index = listPositions
+        // the signature `list` just used: building it again runs the calendar again
+        let signature = listCache?.signature
+        if let index = listPositionsCache.flatMap({ $0.signature == signature ? $0.positions : nil })
+            ?? (ids.count > Self.listScanLimit ? listPositions : nil) {
             var found = [String: Int](minimumCapacity: ids.count)
             for id in ids { if let position = index[id] { found[id] = position } }
             return found
         }
         var found: [String: Int] = [:]
-        var wanted = Array(ids)
-        if let hint = listPositionHint, hint.position < current.count, current[hint.position].id == hint.id,
-           let slot = wanted.firstIndex(of: hint.id) {
-            found[hint.id] = hint.position
-            wanted.remove(at: slot)
+        let scanned = current.withUnsafeBufferPointer { photos in
+            Self.locate(ids, in: photos, hint: listPositionHint) { id, position in found[id] = position }
         }
-        if !wanted.isEmpty {
-            for (position, asset) in current.enumerated() {
-                let id = asset.id
-                guard wanted.contains(id) else { continue }
-                found[id] = position
-                wanted.removeAll { $0 == id }
-                if wanted.isEmpty { break }
-            }
-        }
+        listPositionScannedPhotos += scanned
         if let primaryId, let position = found[primaryId] { listPositionHint = (primaryId, position) }
         return found
+    }
+
+    /// Finds `ids` in `photos`: the hint first, when it still names a wanted photo where it was,
+    /// then one pass that reads only ids and stops once every id is found. Each id found is
+    /// reported once, at its first place, through `found`, so a single edit's lookup builds no
+    /// table. Returns how many photos the pass looked at.
+    nonisolated static func locate(_ ids: some Collection<String>, in photos: UnsafeBufferPointer<Asset>,
+                                   hint: (id: String, position: Int)?, found: (String, Int) -> Void) -> Int {
+        guard !ids.isEmpty else { return 0 }
+        var hinted: String?
+        if let hint, hint.position < photos.count, photos[hint.position].id == hint.id, ids.contains(hint.id) {
+            found(hint.id, hint.position)
+            hinted = hint.id
+        }
+        // one id, as a cursor or a single edit asks: compared directly
+        if ids.count == 1, let id = ids.first {
+            guard hinted == nil else { return 0 }
+            for position in photos.indices where photos[position].id == id {
+                found(id, position)
+                return position + 1
+            }
+            return photos.count
+        }
+        // a few ids are compared one by one, more are hashed
+        if ids.count <= listScanLimit {
+            var wanted = ids.filter { $0 != hinted }
+            guard !wanted.isEmpty else { return 0 }
+            for position in photos.indices {
+                let id = photos[position].id
+                guard wanted.contains(id) else { continue }
+                found(id, position)
+                wanted.removeAll { $0 == id }
+                if wanted.isEmpty { return position + 1 }
+            }
+            return photos.count
+        }
+        var wanted = Set(ids)
+        if let hinted { wanted.remove(hinted) }
+        guard !wanted.isEmpty else { return 0 }
+        for position in photos.indices {
+            let id = photos[position].id
+            guard wanted.remove(id) != nil else { continue }
+            found(id, position)
+            if wanted.isEmpty { return position + 1 }
+        }
+        return photos.count
     }
 
     var list: [Asset] {

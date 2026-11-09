@@ -749,28 +749,18 @@ extension AppState {
             let shows = listShows
             listCache = nil
             uncollapsedListCache = nil
-            var scanned = 0
-            visible.value.withUnsafeMutableBufferPointer { buffer in
+            let scanned = visible.value.withUnsafeMutableBufferPointer { buffer in
                 if let positions {
                     for edit in edits {
                         if let position = positions[edit.asset.id] { buffer[position] = edit.asset }
                     }
-                    return
+                    return 0
                 }
                 // a JPEG behind its RAW (a rating reaches both) or a removed photo is in no list:
                 // looking for it walked every photo
-                var pending = edits.map(\.asset).filter(shows)
-                if let hint, hint.position < buffer.count, buffer[hint.position].id == hint.id,
-                   let slot = pending.firstIndex(where: { $0.id == hint.id }) {
-                    buffer[hint.position] = pending.remove(at: slot)
-                }
-                guard !pending.isEmpty else { return }
-                for position in buffer.indices {
-                    scanned += 1
-                    let id = buffer[position].id
-                    guard let slot = pending.firstIndex(where: { $0.id == id }) else { continue }
-                    buffer[position] = pending.remove(at: slot)
-                    if pending.isEmpty { break }
+                let pending = edits.lazy.filter { shows($0.asset) }
+                return Self.locate(pending.map(\.asset.id), in: UnsafeBufferPointer(buffer), hint: hint) { id, position in
+                    if let edit = pending.first(where: { $0.asset.id == id }) { buffer[position] = edit.asset }
                 }
             }
             listPatchScannedPhotos += scanned
