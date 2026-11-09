@@ -54,6 +54,32 @@ final class WALCheckpointPriorityTests: XCTestCase {
         }
     }
 
+    /// The throttled checkpoint gives its thread its I/O policy back, and the default one when the
+    /// policy before couldn't be read: the thread doesn't stay throttled.
+    func testThrottledIOGivesTheThreadAPolicyBack() {
+        let seen = Policies()
+        let done = DispatchSemaphore(value: 0)
+        // a thread of its own: one left throttled would slow whatever ran on it next
+        let thread = Thread {
+            for previous in [getiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD), -1] {
+                var inside: Int32 = 0
+                Database.WALCheckpointer.withThrottledIO(previous: previous) {
+                    inside = getiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD)
+                }
+                seen.values.append((previous, inside, getiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD)))
+            }
+            done.signal()
+        }
+        thread.start()
+        done.wait()
+        XCTAssertEqual(seen.values.count, 2)
+        for (previous, inside, after) in seen.values {
+            XCTAssertEqual(inside, IOPOL_THROTTLE, "previous \(previous): the I/O wasn't throttled")
+            XCTAssertEqual(after, previous >= 0 ? previous : IOPOL_DEFAULT,
+                           "previous \(previous): the thread was left with another policy")
+        }
+    }
+
     /// A commit that leaves the WAL past the ceiling checkpoints there and then, and is counted apart.
     func testACheckpointPastTheCeilingIsCountedApart() throws {
         let db = try open("ceiling")
@@ -62,4 +88,9 @@ final class WALCheckpointPriorityTests: XCTestCase {
         XCTAssertEqual(db.ceilingCheckpointCount, 1)
         XCTAssertEqual(db.checkpointCount, 1)
     }
+}
+
+/// The policies a thread saw, read once it has signalled it's done.
+private final class Policies: @unchecked Sendable {
+    var values: [(previous: Int32, inside: Int32, after: Int32)] = []
 }

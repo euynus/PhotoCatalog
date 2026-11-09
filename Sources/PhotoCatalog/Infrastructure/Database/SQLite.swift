@@ -196,14 +196,17 @@ final class Database: @unchecked Sendable {
         private func checkpoint() {
             state.withLock { running = true }
             defer { state.withLock { running = false } }
-            if throttlesIO {
-                let previous = getiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD)
-                setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, IOPOL_THROTTLE)
-                defer { if previous >= 0 { setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, previous) } }
-                passiveCheckpoint()
-            } else {
-                passiveCheckpoint()
-            }
+            if throttlesIO { Self.withThrottledIO { passiveCheckpoint() } } else { passiveCheckpoint() }
+        }
+
+        /// Runs `body` with this thread's disk I/O throttled, then gives the thread `previous`, its
+        /// policy before: the default one when that couldn't be read (-1), so a pool thread never
+        /// stays throttled.
+        static func withThrottledIO(previous: Int32 = getiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD),
+                                    _ body: () -> Void) {
+            setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, IOPOL_THROTTLE)
+            defer { setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, previous >= 0 ? previous : IOPOL_DEFAULT) }
+            body()
         }
 
         private func passiveCheckpoint() {
