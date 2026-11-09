@@ -47,6 +47,33 @@ class CatalogTestCase: XCTestCase {
         guard CGImageDestinationFinalize(destination) else { throw NSError(domain: "CatalogTestSupport", code: 3) }
     }
 
+    /// A catalog in the scratch folder, `Library.photolibrary`, holding one photo imported from
+    /// its source folder `Source`: `name`, an 80×60 JPEG of `shade`.
+    func importPhoto(_ name: String, shade: Int) throws
+        -> (store: CatalogStore, package: URL, asset: Asset, original: URL) {
+        let source = scratch.appendingPathComponent("Source")
+        let original = source.appendingPathComponent(name)
+        try makeTestJPEG(at: original, shade: shade)
+        let package = scratch.appendingPathComponent("Library.photolibrary")
+        let store = try CatalogStore(packageURL: package)
+        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
+        let asset = try XCTUnwrap(ImportCoordinator(store: store)
+            .importFiles([original], from: source, sourceRootId: "source-1", folderName: "Source").first)
+        try store.upsert([asset])
+        return (store, package, asset, original)
+    }
+
+    /// `package` opened in a new, onboarded app, which runs no background maintenance unless asked to.
+    @MainActor
+    func openCatalog(_ package: URL, backgroundMaintenance: Bool = false,
+                     file: StaticString = #filePath, line: UInt = #line) -> AppState {
+        let app = AppState()
+        app.onboarded = true
+        app.runsBackgroundMaintenance = backgroundMaintenance
+        XCTAssertTrue(app.openCatalog(at: package), file: file, line: line)
+        return app
+    }
+
     /// Runs a rescan of the watched folders to its end (including any it queued behind it).
     @MainActor
     func rescanToCompletion(_ app: AppState) async throws {

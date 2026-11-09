@@ -148,19 +148,8 @@ final class AutomaticXMPWriterTests: CatalogTestCase {
     /// automatically and runs no background checks; the photo is selected.
     @MainActor
     private func appWithPhoto(_ name: String, shade: Int) throws -> (app: AppState, photo: Asset, sidecar: URL) {
-        let source = scratch.appendingPathComponent("Source")
-        let original = source.appendingPathComponent(name)
-        try makeTestJPEG(at: original, shade: shade)
-        let package = scratch.appendingPathComponent("Library.photolibrary")
-        let store = try CatalogStore(packageURL: package)
-        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
-        let imported = try XCTUnwrap(ImportCoordinator(store: store)
-            .importFiles([original], from: source, sourceRootId: "source-1", folderName: "Source").first)
-        try store.upsert([imported])
-        let app = AppState()
-        app.onboarded = true
-        app.runsBackgroundMaintenance = false
-        XCTAssertTrue(app.openCatalog(at: package))
+        let (_, package, imported, original) = try importPhoto(name, shade: shade)
+        let app = openCatalog(package)
         app.autoWriteXMPSidecar = true
         app.selectedIds = [imported.id]
         app.setPrimary(imported.id)
@@ -236,20 +225,9 @@ final class AutomaticXMPWriterTests: CatalogTestCase {
     /// Undo and redo queue each photo's sidecar write once, as the edit itself did.
     @MainActor
     func testUndoQueuesOneSidecarWrite() throws {
-        let source = scratch.appendingPathComponent("Source")
-        let original = source.appendingPathComponent("once.jpg")
-        try makeTestJPEG(at: original, shade: 6)
-        let package = scratch.appendingPathComponent("Library.photolibrary")
-        let store = try CatalogStore(packageURL: package)
-        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
-        let imported = try XCTUnwrap(ImportCoordinator(store: store)
-            .importFiles([original], from: source, sourceRootId: "source-1", folderName: "Source").first)
-        try store.upsert([imported])
+        let (_, package, imported, _) = try importPhoto("once.jpg", shade: 6)
 
-        let app = AppState()
-        app.onboarded = true
-        app.runsBackgroundMaintenance = false
-        XCTAssertTrue(app.openCatalog(at: package))
+        let app = openCatalog(package)
         app.autoWriteXMPSidecar = true
         let undo = UndoManager()
         undo.groupsByEvent = false
@@ -274,20 +252,10 @@ final class AutomaticXMPWriterTests: CatalogTestCase {
     /// is back (the availability check that follows a mount finds it).
     @MainActor
     func testEditWhileOriginalIsAwayIsWrittenWhenItIsBack() async throws {
-        let source = scratch.appendingPathComponent("Source")
-        let original = source.appendingPathComponent("away.jpg")
-        try makeTestJPEG(at: original, shade: 5)
-        let package = scratch.appendingPathComponent("Library.photolibrary")
-        let store = try CatalogStore(packageURL: package)
-        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
-        let imported = try XCTUnwrap(ImportCoordinator(store: store)
-            .importFiles([original], from: source, sourceRootId: "source-1", folderName: "Source").first)
-        try store.upsert([imported])
+        let (_, package, imported, original) = try importPhoto("away.jpg", shade: 5)
         let sidecar = XMPSidecar.sidecarURL(for: original)
 
-        let app = AppState()
-        app.onboarded = true
-        XCTAssertTrue(app.openCatalog(at: package))
+        let app = openCatalog(package, backgroundMaintenance: true)
         app.autoWriteXMPSidecar = true
         let parked = scratch.appendingPathComponent("parked.jpg")
         try FileManager.default.moveItem(at: original, to: parked)

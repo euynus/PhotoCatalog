@@ -8,19 +8,8 @@ final class PhotoContextMenuActionTests: CatalogTestCase {
     /// A catalog with one imported photo, `a.jpg`, selected.
     @MainActor
     private func openCatalogWithSelectedPhoto() throws -> AppState {
-        let source = scratch.appendingPathComponent("Source")
-        let package = scratch.appendingPathComponent("Library.photolibrary")
-        let photo = source.appendingPathComponent("a.jpg")
-        try makeTestJPEG(at: photo, shade: 3)
-        let store = try CatalogStore(packageURL: package)
-        try store.addSourceRoot(id: "source-1", displayName: "Source", path: source.path, bookmark: nil)
-        let asset = try XCTUnwrap(ImportCoordinator(store: store)
-            .importFiles([photo], from: source, sourceRootId: "source-1", folderName: "Source").first)
-        try store.upsert([asset])
-        let app = AppState()
-        app.onboarded = true
-        app.runsBackgroundMaintenance = false
-        XCTAssertTrue(app.openCatalog(at: package))
+        let (_, package, asset, _) = try importPhoto("a.jpg", shade: 3)
+        let app = openCatalog(package)
         app.prepareContextSelection(asset.id)
         return app
     }
