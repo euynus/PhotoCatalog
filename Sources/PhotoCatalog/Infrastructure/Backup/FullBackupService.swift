@@ -674,7 +674,8 @@ enum FullBackupService {
                bytes: manifest.files.reduce(0) { $0 + $1.size })
     }
 
-    private static func fillPath(original: String, index: Int, settings: DevelopSettings) -> String {
+    /// Where a backup keeps a fill, below the catalog: `original` is the photo's path in it.
+    static func fillPath(original: String, index: Int, settings: DevelopSettings) -> String {
         // GenerativeFill.key's dependencies, with the backed-up original's stable relative path
         // in place of its absolute path and modification time
         let text = original + "|" + GenerativeFill.pixelDependencies(index: index, settings: settings)

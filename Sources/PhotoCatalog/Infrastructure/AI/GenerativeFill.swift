@@ -143,7 +143,12 @@ enum GenerativeFill {
         guard let identity = fileIdentity(url) else { return nil }
         let key = "\(sourceIdentity)|\(identity)" as NSString
         if let cached = cache.object(forKey: key) { return cached.fill }
-        guard let fill = read(url), fileIdentity(url) == identity else { return nil }
+        // The bytes as read now. An image ImageIO makes from a URL decodes the file when first
+        // drawn, and again once its pixels are dropped, from whatever is at the path by then, so a
+        // fill remembered under this file's identity could show a file that replaced it.
+        guard let data = try? Data(contentsOf: url), fileIdentity(url) == identity, let fill = read(data) else {
+            return nil
+        }
         cache.setObject(Box(fill), forKey: key)
         return fill
     }
@@ -294,8 +299,8 @@ enum GenerativeFill {
         return CGImageDestinationFinalize(destination)
     }
 
-    private static func read(_ url: URL) -> Fill? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+    private static func read(_ data: Data) -> Fill? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
               image.width == side, image.height == side,
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
