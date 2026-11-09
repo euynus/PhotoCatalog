@@ -3,12 +3,27 @@ import Foundation
 extension CatalogStore {
     // ---------- develop settings ----------
     func loadDevelopSettings() throws -> [String: DevelopSettings] {
-        // only copied under the database lock; decoded after it is released
-        let rows = try db.queryRows("SELECT asset_id, settings FROM develop_settings;") { row -> (String, Data)? in
+        Self.decodeDevelopSettings(try developSettingsRows())
+    }
+
+    /// Develop settings as stored, with the count of develop-settings writes they hold
+    /// (`developSettingsWrites`). Both are read in one transaction on the catalog's connection, so
+    /// no write counted can be missing from the rows, nor one in them be left uncounted.
+    func loadDevelopSettingsCounted() throws -> (settings: [String: DevelopSettings], writes: Int) {
+        var rows: [(String, Data)] = [], writes = 0
+        try db.transaction {
+            rows = try developSettingsRows()
+            writes = developSettingsWrites.withLock { $0 }
+        }
+        return (Self.decodeDevelopSettings(rows), writes)
+    }
+
+    /// Each stored row's photo and JSON, only copied under the database lock: decoded after it's released.
+    private func developSettingsRows() throws -> [(String, Data)] {
+        try db.queryRows("SELECT asset_id, settings FROM develop_settings;") { row -> (String, Data)? in
             guard let id = row.text(0), !row.isNull(1) else { return nil }
             return (id, Data(buffer: row.bytes(1)))
         }
-        return Self.decodeDevelopSettings(rows)
     }
 
     /// Stored settings by photo, skipping any row that doesn't decode. A catalog with many
@@ -64,6 +79,8 @@ extension CatalogStore {
     private func writeDevelopSettings(_ settings: [String: DevelopSettings], json encoded: [String: String] = [:]) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
+        // before the rows change: a count that misses a write would let older settings win
+        if !settings.isEmpty { developSettingsWrites.withLock { $0 &+= 1 } }
         for (id, value) in settings {
             if value.isNeutral {
                 try db.run("DELETE FROM develop_settings WHERE asset_id=?;", [.text(id)])

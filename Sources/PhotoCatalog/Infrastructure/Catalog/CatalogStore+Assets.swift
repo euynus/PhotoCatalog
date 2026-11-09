@@ -149,26 +149,36 @@ extension CatalogStore {
         }
     }
 
+    /// One statement per column whatever the number of photos: a placeholder per photo made a
+    /// statement, cached for good, for every batch size up to 500 (~100 MB at worst). One photo,
+    /// a rating key's case, keeps its own statement and skips the JSON.
     private func updateAssetColumn(_ column: String, value: SQLValue, assetIDs: Set<String>) throws {
         guard !assetIDs.isEmpty else { return }
-        let ids = assetIDs.sorted()
         try db.transaction {
-            for start in stride(from: 0, to: ids.count, by: 500) {
-                let chunk = ids[start..<min(start + 500, ids.count)]
-                let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ",")
-                let params = [value] + chunk.map(SQLValue.text)
-                try db.run("UPDATE assets SET \(column)=? WHERE id IN (\(placeholders));", params)
+            if assetIDs.count == 1, let id = assetIDs.first {
+                try db.run("UPDATE assets SET \(column)=? WHERE id IN (?);", [value, .text(id)])
+                return
             }
+            let ids = String(decoding: try JSONSerialization.data(withJSONObject: assetIDs.sorted()), as: UTF8.self)
+            try db.run("UPDATE assets SET \(column)=? WHERE id IN (SELECT value FROM json_each(?));",
+                       [value, .text(ids)])
         }
     }
 
     func loadAssets() throws -> [Asset] {
+        // through a connection of its own: the read takes seconds at 500k photos, and on the
+        // catalog's connection an edit or search made while a catalog opened waited for all of it
+        try loadAssets(through: db.readOnlyConnection() ?? db)
+    }
+
+    /// `loadAssets()` read through `connection`.
+    func loadAssets(through connection: Database) throws -> [Asset] {
         // Read the table in its own order and sort in memory: ORDER BY via the capture-date
         // index fetched every row with a random seek into the table — random reads across the
         // whole file, most of a 10-20 s cold load at 500k photos. Soft-deleted rows are skipped.
         Self.readAhead(db.path)
         let decoder = AssetRowDecoder(columns: Self.columnNames)
-        let loaded = try db.queryRows(
+        let loaded = try connection.queryRows(
             "SELECT \(Self.columns) FROM assets NOT INDEXED WHERE deleted=0;",
             transform: decoder.asset(from:)
         )

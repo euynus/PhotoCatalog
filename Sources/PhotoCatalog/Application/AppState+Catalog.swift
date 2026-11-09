@@ -9,7 +9,9 @@ private enum DeferredCatalogLoadOutcome: Sendable {
 }
 
 private enum DeferredCatalogHydrationOutcome: Sendable {
-    case success([Asset], AppState.CatalogDerivedData)
+    /// The photos, what's derived from them, and their develop settings with the count of
+    /// develop-settings writes they hold (nil when they couldn't be read: read again on main).
+    case success([Asset], AppState.CatalogDerivedData, (settings: [String: DevelopSettings], writes: Int)?)
     case failure
 }
 
@@ -272,7 +274,10 @@ extension AppState {
                         let live = try store.loadAssets().filter { !$0.isDemo && !$0.deleted }
                         let derived = CatalogDerivedData.derive(from: live, pairsRawJpeg: pairsRawJpeg,
                                                                 recentCutoff: recentCutoff)
-                        return DeferredCatalogHydrationOutcome.success(live, derived)
+                        // decoded here rather than on main, and used there only if nothing wrote
+                        // develop settings meanwhile
+                        let develop = try? store.loadDevelopSettingsCounted()
+                        return DeferredCatalogHydrationOutcome.success(live, derived, develop)
                     } catch {
                         return DeferredCatalogHydrationOutcome.failure
                     }
@@ -280,10 +285,11 @@ extension AppState {
                 if let gate = self.catalogHydrationGate { await gate() }
                 guard self.catalogLoadGeneration == generation, !Task.isCancelled else { return }
                 switch hydration {
-                case .success(let loaded, let derived):
-                    // read now, with whatever changed in them while the photos loaded; a part that
+                case .success(let loaded, let derived, let develop):
+                    // read now, with whatever changed in them while the photos loaded (develop
+                    // settings read with the photos only if none were written since); a part that
                     // can't be read fails the open, as the photos would, rather than showing empty
-                    guard let collections = try? store.loadCatalogCollections() else {
+                    guard let collections = try? store.loadCatalogCollections(developSettings: develop) else {
                         self.discardCatalogPreview()
                         fail(L("打开目录库失败"))
                         return

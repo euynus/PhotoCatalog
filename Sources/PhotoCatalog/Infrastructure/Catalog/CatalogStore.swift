@@ -3,6 +3,7 @@
 //  (PRD §9 file structure, §10 schema, §6.12 backup)
 // ============================================================
 import Foundation
+import os
 
 // @unchecked Sendable: immutable URLs + a serialized Database (see Database).
 final class CatalogStore: @unchecked Sendable {
@@ -27,4 +28,10 @@ final class CatalogStore: @unchecked Sendable {
     // ---------- assets ----------
     /// How many photos' rows the search index was written for (for tests).
     var searchIndexWrites = 0
+
+    // ---------- develop settings ----------
+    /// How many writes to develop_settings have begun on this catalog, each counted inside its
+    /// transaction: develop settings read with the count (`loadDevelopSettingsCounted`) are still
+    /// the stored ones as long as it hasn't moved.
+    let developSettingsWrites = OSAllocatedUnfairLock(initialState: 0)
 }

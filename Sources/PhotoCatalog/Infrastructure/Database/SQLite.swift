@@ -72,8 +72,15 @@ final class Database: @unchecked Sendable {
     private var statementCache: [String: OpaquePointer] = [:]
     let path: String
 
-    init(path: String) throws {
+    /// With `readOnly`, a connection that only reads (`readOnlyConnection()`): it has no WAL hook
+    /// and runs no checkpoints, which are the catalog's own connection's to run.
+    init(path: String, readOnly: Bool = false) throws {
         self.path = path
+        if readOnly {
+            db = try Self.openReadOnly(path)
+            sqlite3_busy_timeout(db, 4000)
+            return
+        }
         if sqlite3_open(path, &db) != SQLITE_OK {
             let msg = String(cString: sqlite3_errmsg(db))
             sqlite3_close(db)
@@ -117,8 +124,16 @@ final class Database: @unchecked Sendable {
         /// How long the catalog goes without a commit before a background checkpoint starts.
         static let quiet = 0.25
 
+        /// How the background checkpoint shares the disk with the catalog's reads. Utility is the
+        /// app's choice; the others are for measuring against it (`--scale` sets this from
+        /// PC_WAL_CHECKPOINT_QOS before it opens the catalog): background QoS (its CPU and I/O
+        /// both throttled), or utility with only its I/O throttled.
+        enum Priority: String { case utility, background, throttled }
+        nonisolated(unsafe) static var priority = Priority.utility
+
         /// Runs the background checkpoints one at a time, and whatever mustn't run beside one.
-        let queue = DispatchQueue(label: "PhotoCatalog.wal-checkpoint", qos: .utility)
+        let queue: DispatchQueue
+        private let throttlesIO: Bool
         private let path: String
         /// Guards what's below; never held during a checkpoint.
         private let state = NSLock()
@@ -128,10 +143,15 @@ final class Database: @unchecked Sendable {
         private var waiting = 0
         private var waits = 0
         private var checkpoints = 0
+        private var ceilingCheckpoints = 0
+        private var running = false
         private var lastFrames: (wal: Int, moved: Int)?
 
         init(path: String) {
             self.path = path
+            let priority = Self.priority
+            queue = DispatchQueue(label: "PhotoCatalog.wal-checkpoint", qos: priority == .background ? .background : .utility)
+            throttlesIO = priority == .throttled
         }
 
         /// From the WAL hook, at the end of a commit (under the database's lock): `pages` are in
@@ -139,7 +159,10 @@ final class Database: @unchecked Sendable {
         func committed(pages: Int, on connection: OpaquePointer?) {
             if pages >= Self.ceiling {
                 sqlite3_wal_checkpoint_v2(connection, nil, SQLITE_CHECKPOINT_PASSIVE, nil, nil)
-                state.withLock { checkpoints &+= 1 }
+                state.withLock {
+                    checkpoints &+= 1
+                    ceilingCheckpoints &+= 1
+                }
                 return
             }
             guard pages >= Self.threshold else { return }
@@ -171,6 +194,19 @@ final class Database: @unchecked Sendable {
 
         /// A passive checkpoint through a connection opened for it, on `queue`.
         private func checkpoint() {
+            state.withLock { running = true }
+            defer { state.withLock { running = false } }
+            if throttlesIO {
+                let previous = getiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD)
+                setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, IOPOL_THROTTLE)
+                defer { if previous >= 0 { setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, previous) } }
+                passiveCheckpoint()
+            } else {
+                passiveCheckpoint()
+            }
+        }
+
+        private func passiveCheckpoint() {
             var handle: OpaquePointer?
             defer { sqlite3_close(handle) }
             guard sqlite3_open_v2(path, &handle, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
@@ -206,6 +242,10 @@ final class Database: @unchecked Sendable {
         }
 
         var count: Int { state.withLock { checkpoints } }
+        /// Of `count`, those a commit ran itself, past `ceiling`.
+        var ceilingCount: Int { state.withLock { ceilingCheckpoints } }
+        /// Whether a background checkpoint is running now.
+        var isRunning: Bool { state.withLock { running } }
         /// The WAL's frames, and how many of them the last background checkpoint moved.
         var lastCheckpointFrames: (wal: Int, moved: Int)? { state.withLock { lastFrames } }
     }
@@ -220,7 +260,11 @@ final class Database: @unchecked Sendable {
     /// The background checkpoints' queue, how many have run, and what the last one moved (for tests).
     var checkpointQueue: DispatchQueue? { checkpointer?.queue }
     var checkpointCount: Int { checkpointer?.count ?? 0 }
+    var ceilingCheckpointCount: Int { checkpointer?.ceilingCount ?? 0 }
+    var isCheckpointing: Bool { checkpointer?.isRunning ?? false }
     var lastCheckpointFrames: (wal: Int, moved: Int)? { checkpointer?.lastCheckpointFrames }
+    /// How many prepared statements this connection keeps (for tests).
+    var cachedStatementCount: Int { locked { statementCache.count } }
 
     @discardableResult
     func exec(_ sql: String) -> Bool {
@@ -319,6 +363,20 @@ final class Database: @unchecked Sendable {
             return try query("PRAGMA integrity_check;").map { $0.text("integrity_check") } == ["ok"]
         }
         return try Self.firstColumn(of: "PRAGMA integrity_check;", on: read) == ["ok"]
+    }
+
+    /// A read-only connection of its own to this database, for a long read that shouldn't hold the
+    /// lock every edit and search on this one waits for; it closes when it's released. Nil when
+    /// there's none to be had, or the database isn't in WAL mode: there its read would keep every
+    /// commit out. As for `integrityCheck`, the catalog's security scope must be active, and no
+    /// checkpoint gets past its read while it lasts: the WAL grows by what's written meanwhile,
+    /// until the first checkpoint after it.
+    func readOnlyConnection() -> Database? {
+        guard let reader = try? Database(path: path, readOnly: true),
+              (try? reader.query("PRAGMA journal_mode;"))?.first?.text("journal_mode")?.lowercased() == "wal" else {
+            return nil
+        }
+        return reader
     }
 
     /// Each row's first column, as text, of `sql` run on `connection`.

@@ -5,9 +5,19 @@ extension CatalogStore {
     /// Develop settings, albums, smart albums, album sets and sidecar sync times, as a catalog
     /// opens: a table that can't be read fails the open rather than showing as empty.
     func loadCatalogCollections() throws -> CatalogCollections {
-        CatalogCollections(developSettings: try loadDevelopSettings(), albums: try loadAlbums(),
-                           smartAlbums: try loadSmartAlbums(), albumSets: try loadAlbumSets(),
-                           xmpSyncTimes: try loadXMPSyncTimes())
+        try loadCatalogCollections(developSettings: nil)
+    }
+
+    /// As `loadCatalogCollections()`, with develop settings read earlier
+    /// (`loadDevelopSettingsCounted`, off the main thread as a catalog opens) taken as they are
+    /// when nothing has written develop settings since; otherwise they're read again.
+    func loadCatalogCollections(developSettings earlier: (settings: [String: DevelopSettings], writes: Int)?) throws
+        -> CatalogCollections {
+        let develop = try earlier.flatMap { $0.writes == developSettingsWrites.withLock { $0 } ? $0.settings : nil }
+            ?? loadDevelopSettings()
+        return CatalogCollections(developSettings: develop, albums: try loadAlbums(),
+                                  smartAlbums: try loadSmartAlbums(), albumSets: try loadAlbumSets(),
+                                  xmpSyncTimes: try loadXMPSyncTimes())
     }
 
     func loadAlbums() throws -> [Album] {
