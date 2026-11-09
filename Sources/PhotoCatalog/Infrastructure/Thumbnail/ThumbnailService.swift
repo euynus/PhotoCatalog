@@ -31,7 +31,43 @@ private final class ThumbnailImageBox: @unchecked Sendable {
 // per-asset cache files, so background generation is safe.
 final class ThumbnailService: @unchecked Sendable {
     let store: CatalogStore
-    init(store: CatalogStore) { self.store = store }
+    // Each kind's folders as paths, worked out once: a path is built for every cell shown, and
+    // appending to a file URL asks the disk whether each part is a folder.
+    private let thumb256Folders: Folders
+    private let thumb512Folders: Folders
+    private let preview1600Folders: Folders
+    private let preview2048Folders: Folders
+
+    init(store: CatalogStore) {
+        self.store = store
+        thumb256Folders = Folders(.thumb256, in: store)
+        thumb512Folders = Folders(.thumb512, in: store)
+        preview1600Folders = Folders(.preview1600, in: store)
+        preview2048Folders = Folders(.preview2048, in: store)
+    }
+
+    /// A kind's cache folder, and the folder its edited renderings go in.
+    private struct Folders {
+        let plain: String
+        let edited: String
+
+        init(_ kind: Kind, in store: CatalogStore) {
+            let base = kind.baseURL(store)
+            plain = base.path
+            // the kind's place below the cache, under Edited, as editedCachePath always put it
+            let relative = base.path.replacingOccurrences(of: store.cacheURL.path, with: "")
+            edited = store.cacheURL.appendingPathComponent("Edited").appendingPathComponent(relative).path
+        }
+    }
+
+    private func folders(_ kind: Kind) -> Folders {
+        switch kind {
+        case .thumb256: return thumb256Folders
+        case .thumb512: return thumb512Folders
+        case .preview1600: return preview1600Folders
+        case .preview2048: return preview2048Folders
+        }
+    }
 
     private static let quickLookPreferredExtensions: Set<String> = [
         "cr2", "cr3", "nef", "arw", "raf", "orf", "rw2", "dng", "pef", "srw", "raw",
@@ -79,18 +115,42 @@ final class ThumbnailService: @unchecked Sendable {
 
     /// Sharded path: <base>/ab/cd/<assetId>.jpg
     func cachePath(assetId: String, kind: Kind) -> URL {
-        let digest = SHA256.hash(data: Data(assetId.utf8)).hexString
-        let a = String(digest.prefix(2))
-        let b = String(digest.dropFirst(2).prefix(2))
-        return kind.baseURL(store)
-            .appendingPathComponent(a).appendingPathComponent(b)
-            .appendingPathComponent("\(assetId).jpg")
+        guard !Self.hasSlash(assetId) else { return appendedCachePath(assetId: assetId, kind: kind) }
+        return URL(fileURLWithPath: "\(folders(kind).plain)/\(Self.shard(assetId))/\(assetId).jpg",
+                   isDirectory: false)
     }
 
     /// Where a developed rendering lives; the settings fingerprint in the name means an edit
     /// never reuses an older render, and clearing the edit falls back to the untouched cache.
     func editedCachePath(assetId: String, kind: Kind, settings: DevelopSettings) -> URL {
-        let plain = cachePath(assetId: assetId, kind: kind)
+        guard !Self.hasSlash(assetId) else {
+            return appendedEditedCachePath(assetId: assetId, kind: kind, settings: settings)
+        }
+        let name = "\(assetId)-\(settings.fingerprint).jpg"
+        return URL(fileURLWithPath: "\(folders(kind).edited)/\(Self.shard(assetId))/\(name)", isDirectory: false)
+    }
+
+    /// "ab/cd": the first two bytes of the id's SHA-256 in hex, one folder level each.
+    private static func shard(_ assetId: String) -> String {
+        let hex = SHA256.hash(data: Data(assetId.utf8)).prefix(2).hexString
+        return "\(hex.prefix(2))/\(hex.dropFirst(2))"
+    }
+
+    private static func hasSlash(_ assetId: String) -> Bool {
+        assetId.utf8.contains(UInt8(ascii: "/"))
+    }
+
+    // An id with a "/" in it (none the app makes) keeps the paths URL appending gave it, which
+    // tidies slashes that a joined string would keep.
+    private func appendedCachePath(assetId: String, kind: Kind) -> URL {
+        let hex = SHA256.hash(data: Data(assetId.utf8)).prefix(2).hexString
+        return kind.baseURL(store)
+            .appendingPathComponent(String(hex.prefix(2))).appendingPathComponent(String(hex.dropFirst(2)))
+            .appendingPathComponent("\(assetId).jpg")
+    }
+
+    private func appendedEditedCachePath(assetId: String, kind: Kind, settings: DevelopSettings) -> URL {
+        let plain = appendedCachePath(assetId: assetId, kind: kind)
         let shard = plain.deletingLastPathComponent()
         let relative = shard.path.replacingOccurrences(of: store.cacheURL.path, with: "")
         return store.cacheURL.appendingPathComponent("Edited")
