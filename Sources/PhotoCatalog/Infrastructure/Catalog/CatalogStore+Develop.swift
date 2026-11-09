@@ -3,12 +3,40 @@ import Foundation
 extension CatalogStore {
     // ---------- develop settings ----------
     func loadDevelopSettings() throws -> [String: DevelopSettings] {
-        let decoder = JSONDecoder()
+        // only copied under the database lock; decoded after it is released
+        let rows = try db.queryRows("SELECT asset_id, settings FROM develop_settings;") { row -> (String, Data)? in
+            guard let id = row.text(0), !row.isNull(1) else { return nil }
+            return (id, Data(buffer: row.bytes(1)))
+        }
+        return Self.decodeDevelopSettings(rows)
+    }
+
+    /// Stored settings by photo, skipping any row that doesn't decode. A catalog with many
+    /// edited photos decodes in parallel chunks of `chunk` rows, each with its own decoder.
+    static func decodeDevelopSettings(_ rows: [(String, Data)], chunk: Int = 512,
+                                      serialBelow: Int = 1_000) -> [String: DevelopSettings] {
+        func decode(_ range: Range<Int>) -> [(String, DevelopSettings)] {
+            let decoder = JSONDecoder()
+            return rows[range].compactMap { id, json in
+                (try? decoder.decode(DevelopSettings.self, from: json)).map { (id, $0) }
+            }
+        }
+        let chunk = max(chunk, 1)
+        let chunks = rows.isEmpty ? 0 : (rows.count - 1) / chunk + 1
+        guard rows.count >= serialBelow, chunks > 1 else {
+            return Dictionary(decode(rows.indices), uniquingKeysWith: { $1 })
+        }
+        let lock = NSLock()
+        var parts = [[(String, DevelopSettings)]](repeating: [], count: chunks)
+        DispatchQueue.concurrentPerform(iterations: chunks) { index in
+            let part = decode(index * chunk ..< min(rows.count, (index + 1) * chunk))
+            lock.withLock { parts[index] = part }
+        }
         var result: [String: DevelopSettings] = [:]
-        for row in try db.query("SELECT asset_id, settings FROM develop_settings;") {
-            guard let id = row.text("asset_id"), let json = row.text("settings"),
-                  let settings = try? decoder.decode(DevelopSettings.self, from: Data(json.utf8)) else { continue }
-            result[id] = settings
+        result.reserveCapacity(rows.count)
+        // asset_id is the key, so no two rows are the same photo's
+        for part in parts {
+            for (id, settings) in part { result[id] = settings }
         }
         return result
     }
