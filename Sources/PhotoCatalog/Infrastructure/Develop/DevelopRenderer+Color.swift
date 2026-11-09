@@ -27,11 +27,7 @@ extension DevelopRenderer {
     /// (CIColorCurves converts to Display P3 for the table and back).
     static func applyCurve(_ input: CIImage, _ s: DevelopSettings) -> CIImage {
         guard !s.curve.isLinear else { return input }
-        return input.applyingFilter("CIColorCurves", parameters: [
-            "inputCurvesData": curveTable(s.curve),
-            "inputCurvesDomain": CIVector(x: 0, y: 1),
-            "inputColorSpace": outputColorSpace,
-        ])
+        return applyingCurves(input, curveTable(s.curve))
     }
 
     /// Calibration on linear light: the primaries moved by a matrix that keeps white white, then
@@ -84,11 +80,7 @@ extension DevelopRenderer {
         if !look.curve.isEmpty {
             var curve = ToneCurve()
             curve.setPoints(look.curve, for: .rgb)
-            image = image.applyingFilter("CIColorCurves", parameters: [
-                "inputCurvesData": curveTable(curve),
-                "inputCurvesDomain": CIVector(x: 0, y: 1),
-                "inputColorSpace": outputColorSpace,
-            ])
+            image = applyingCurves(image, curveTable(curve))
         }
         guard !look.mixer.isNeutral || look.saturation != 0 else { return image }
         var encoded = DevelopKernels.colorMixer(image.applyingFilter("CILinearToSRGBToneCurve"), look.mixer)

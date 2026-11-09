@@ -94,13 +94,7 @@ extension DevelopRenderer {
             if mask.exposure != 0 {
                 adjusted = adjusted.applyingFilter("CIExposureAdjust", parameters: ["inputEV": mask.exposure])
             }
-            if mask.temperature != 0 || mask.tint != 0 {
-                // the relative scale of non-RAW white balance: a cooler assumed light warms
-                adjusted = adjusted.applyingFilter("CITemperatureAndTint", parameters: [
-                    "inputNeutral": CIVector(x: 6500 + mask.temperature * 25, y: mask.tint * 0.5),
-                    "inputTargetNeutral": CIVector(x: 6500, y: 0),
-                ])
-            }
+            adjusted = relativeWhiteBalance(adjusted, temperature: mask.temperature, tint: mask.tint)
             let tone = mask.toneSettings
             adjusted = applyPresence(applyTone(adjusted, tone), tone)
             image = adjusted.applyingFilter("CIBlendWithMask", parameters: [
@@ -159,11 +153,7 @@ extension DevelopRenderer {
                 patch = DevelopKernels.heal(patch, sourceRing: surroundings(patch), targetRing: surroundings(image),
                                             extent: extent) ?? patch
             }
-            let strength = disc.applyingFilter("CIColorMatrix", parameters: [
-                "inputRVector": CIVector(x: spot.opacity / 100, y: 0, z: 0, w: 0),
-                "inputGVector": CIVector(x: 0, y: spot.opacity / 100, z: 0, w: 0),
-                "inputBVector": CIVector(x: 0, y: 0, z: spot.opacity / 100, w: 0),
-            ])
+            let strength = scaled(disc, by: spot.opacity / 100)
             image = patch.applyingFilter("CIBlendWithMask", parameters: [
                 kCIInputBackgroundImageKey: clear, kCIInputMaskImageKey: strength,
             ]).cropped(to: region).composited(over: image)
@@ -187,11 +177,7 @@ extension DevelopRenderer {
         guard let maskId, let mask = s.masks.first(where: { $0.id == maskId }),
               let weight = maskWeight(mask, s, extent: input.extent, photo: photo, rangeSource: rangeSource ?? input)
         else { return input }
-        let half = weight.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 0.55, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: 0.55, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: 0.55, w: 0),
-        ])
+        let half = scaled(weight, by: 0.55)
         let red = CIImage(color: CIColor(red: 0.95, green: 0.08, blue: 0.08)).cropped(to: input.extent)
         return red.applyingFilter("CIBlendWithMask", parameters: [
             kCIInputBackgroundImageKey: input,
