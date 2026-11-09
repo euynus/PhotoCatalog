@@ -72,6 +72,21 @@ final class AssetAppendTests: DerivedCacheTestCase {
                dropping: ["pairing"])
     }
 
+    /// A JPEG that a second RAW of its name shows again brings a keyword no photo shown had: the
+    /// keyword list takes it in where a pass first meets it, without counting every photo again.
+    @MainActor
+    func testAJpegShownAgainBringsItsOwnKeywordIntoTheList() throws {
+        let app = try catalog()
+        append([photo("m1r", "IMG_0500.CR3", offset: 500), photo("m1j", "IMG_0500.JPG", offset: 500, keywords: ["behind"])],
+               to: app, "a pair whose JPEG alone has a keyword")
+        XCTAssertTrue(app.assetPairing.isHiddenCompanion("m1j"))
+        XCTAssertNil(app.keywordList.first { $0.name == "behind" }, "behind its RAW")
+
+        append([photo("m2", "IMG_0500.NEF", offset: 500)], to: app, "a second RAW of the name, the JPEG shown again")
+        XCTAssertFalse(app.assetPairing.isHiddenCompanion("m1j"))
+        XCTAssertEqual(app.keywordList.first { $0.name == "behind" }?.count, 1)
+    }
+
     /// A pairing carried on through photos added in batches pairs as working it out from all the
     /// photos at once does, whatever the batches: the photos of the pairing oracle, cut anywhere.
     func testPairingCarriedThroughBatchesIsTheWholePairing() {

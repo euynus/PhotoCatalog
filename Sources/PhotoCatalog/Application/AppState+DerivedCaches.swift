@@ -185,9 +185,7 @@ extension AppState {
             }
             libraryCountsCache = counts
         }
-        if caches.keywords != nil, Self.carry(&caches.keywords!, changes.map { ($0.position, $0.shown) }, of: assets, from: start) {
-            keywordCountsCache = caches.keywords
-        }
+        carryKeywords(changes, in: &caches)
         carryMetadataValues(changes, in: &caches, pairing: pairing)
         if caches.sidebar != nil {
             var memos = caches.sidebar?.smartRules.map { SmartMatcher.Memo(for: $0.rule) } ?? []
@@ -253,6 +251,17 @@ extension AppState {
         (projectCountsCache, clientCountsCache, gearCountsCache, sidebarCountIndexCache) = (nil, nil, nil, nil)
         (captureDateGroupsCache, folderTreeCache, folderTreeCountCache) = (nil, nil, nil)
         return caches
+    }
+
+    /// Moves the keyword counts from each changed photo's keywords as they were counted (none when
+    /// it wasn't shown) to its keywords now (none when it isn't), and puts them back when that
+    /// leaves where a pass first meets each keyword as it was (see `patchKeywords`).
+    private func carryKeywords(_ changes: [ShownChange], in caches: inout TakenOutCaches) {
+        let keywordChanges = changes.compactMap { change -> (offset: Int, old: [String], new: [String])? in
+            let (before, after) = (change.wasShown ? change.old.keywords : [], change.shown ? change.new.keywords : [])
+            return before == after ? nil : (change.position, before, after)
+        }
+        if caches.keywords != nil, Self.patchKeywords(&caches.keywords!, keywordChanges) { keywordCountsCache = caches.keywords }
     }
 
     /// Moves the project, client, camera and lens counts from each changed photo's value as it was
@@ -383,34 +392,6 @@ extension AppState {
         guard !removed.isEmpty else { return true }
         for id in removed { index.counts.smartAlbums[id] = nil }
         index.smartRules.removeAll { removed.contains($0.id) }
-        return true
-    }
-
-    /// Counts the keywords of photos now shown in, and of photos no longer shown out, as a pass
-    /// over the photos would count them; false when that moves where a pass first meets a keyword
-    /// (to an earlier photo, or past one no longer shown), which takes counting again. Photos from
-    /// `start` on are new, after all the others.
-    nonisolated private static func carry(_ tally: inout KeywordTally, _ changes: [(position: Int, shown: Bool)],
-                                          of assets: [Asset], from start: Int) -> Bool {
-        for change in changes {
-            for keyword in assets[change.position].keywords {
-                if change.shown {
-                    if let first = tally.first[keyword] {
-                        guard first <= change.position, (tally.counts[keyword] ?? 0) > 0 else { return false }
-                    } else {
-                        guard change.position >= start else { return false }
-                        tally.order.append(keyword)
-                        tally.first[keyword] = change.position
-                    }
-                    tally.counts[keyword, default: 0] += 1
-                } else {
-                    guard tally.first[keyword] != change.position, let count = tally.counts[keyword], count > 1 else {
-                        return false
-                    }
-                    tally.counts[keyword] = count - 1
-                }
-            }
-        }
         return true
     }
 
@@ -727,11 +708,7 @@ extension AppState {
             }
             libraryCountsCache = counts
         }
-        let keywordChanges = changes.compactMap { change -> (offset: Int, old: [String], new: [String])? in
-            let (before, after) = (change.wasShown ? change.old.keywords : [], change.shown ? change.new.keywords : [])
-            return before == after ? nil : (change.position, before, after)
-        }
-        if caches.keywords != nil, Self.patchKeywords(&caches.keywords!, keywordChanges) { keywordCountsCache = caches.keywords }
+        carryKeywords(changes, in: &caches)
         carryMetadataValues(changes, in: &caches, pairing: pairing)
         // matching each photo against every smart album, out and in: past half the library,
         // recounting it (once, when the sidebar next reads) is the cheaper way
