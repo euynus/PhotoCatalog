@@ -956,6 +956,11 @@ final class AppState {
     @ObservationIgnored var faceScannedAssetIds: Set<String> = []
     /// Photos analysed before faces were told apart by SFace, waiting to be analysed again.
     @ObservationIgnored var faceOutdatedAssetIds: Set<String> = []
+    /// Bumped with every change of the two sets above (each also bumps `facesRevision`).
+    @ObservationIgnored var faceScanVersion = 0
+    /// The People banner's counts of photos not analysed and analysed by the earlier method, by
+    /// the scans, the photos' structure and the pairing they were counted for.
+    @ObservationIgnored var faceAnalysisCountsCache: (scan: Int, structure: Int, pairs: Bool, unscanned: Int, outdated: Int)?
     /// Photos the analysis found a face in: the 人物 collection's photos.
     @ObservationIgnored var faceAssetIds: Set<String> = [] {
         didSet {

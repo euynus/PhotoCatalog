@@ -27,6 +27,7 @@ extension AppState {
         // reads them again (keeping their names)
         faceOutdatedAssetIds = Set(loaded.filter { !$0.vector.isEmpty && !FaceClustering.isComparable($0) }.map(\.assetId))
         faceScannedAssetIds = ((try? store.loadFaceScannedAssetIds()) ?? []).subtracting(faceOutdatedAssetIds)
+        faceScanVersion &+= 1
         allFaceClusters = []
         facesRevision &+= 1
         refreshFaceClusters()
@@ -39,6 +40,7 @@ extension AppState {
         faceAssetIds = []
         faceScannedAssetIds = []
         faceOutdatedAssetIds = []
+        faceScanVersion &+= 1
         allFaceClusters = []
         facesRevision &+= 1
     }
@@ -90,15 +92,7 @@ extension AppState {
     }
 
     /// Photos not yet analysed (a RAW's paired JPEG is covered by the RAW).
-    var faceUnscannedCount: Int {
-        _ = facesRevision
-        let pairing = assetPairing
-        let scanned = faceScannedAssetIds
-        return assets.reduce(0) { count, a in
-            pairing.shows(a) && !a.isDemo && !a.isVirtualCopy
-                && !scanned.contains(a.id) ? count + 1 : count
-        }
-    }
+    var faceUnscannedCount: Int { faceAnalysisCounts.unscanned }
 
     var faceScannedCount: Int {
         _ = facesRevision
@@ -106,15 +100,34 @@ extension AppState {
     }
 
     /// Photos among the unanalysed whose faces an earlier, less accurate method read.
-    var faceOutdatedCount: Int {
+    var faceOutdatedCount: Int { faceAnalysisCounts.outdated }
+
+    /// Whether the analysis has still to look at a photo: not a demo photo, not a virtual copy
+    /// (its faces are its master's, and scanning it would list each face twice), not analysed yet.
+    func needsFaceAnalysis(_ a: Asset) -> Bool {
+        !a.isDemo && !a.isVirtualCopy && !faceScannedAssetIds.contains(a.id)
+    }
+
+    /// Both counts in one pass over the photos as shown, again only when the scans, the photos'
+    /// structure (removed, back, virtual copies, demo photos) or the pairing changed: a naming or
+    /// a rating on the People overview counted every photo twice (~0.1 s each at 500k photos).
+    private var faceAnalysisCounts: (unscanned: Int, outdated: Int) {
+        // read on a hit too, to register them
         _ = facesRevision
-        guard !faceOutdatedAssetIds.isEmpty else { return 0 }
+        let (structure, pairs) = (structureVersion, pairRawAndJpeg)
+        if let cache = faceAnalysisCountsCache, cache.scan == faceScanVersion, cache.structure == structure,
+           cache.pairs == pairs {
+            return (cache.unscanned, cache.outdated)
+        }
         let pairing = assetPairing
         let outdated = faceOutdatedAssetIds
-        return assets.reduce(0) { count, a in
-            pairing.shows(a) && !a.isVirtualCopy
-                && outdated.contains(a.id) ? count + 1 : count
+        var counts = (unscanned: 0, outdated: 0)
+        for (position, a) in assets.enumerated() where pairing.isShown(a, at: position) {
+            if needsFaceAnalysis(a) { counts.unscanned += 1 }
+            if !outdated.isEmpty, !a.isVirtualCopy, outdated.contains(a.id) { counts.outdated += 1 }
         }
+        faceAnalysisCountsCache = (faceScanVersion, structure, pairs, counts.unscanned, counts.outdated)
+        return counts
     }
 
     func face(_ id: String) -> FaceRecord? { faces[id] }
@@ -146,9 +159,7 @@ extension AppState {
     func startFaceAnalysis() {
         guard faceAnalysis == nil, store != nil else { return }
         // a virtual copy's faces are its master's: scanning it would list each face twice
-        let pending = presentedAssets().filter {
-            !$0.isDemo && !$0.isVirtualCopy && !faceScannedAssetIds.contains($0.id)
-        }
+        let pending = presentedAssets().filter(needsFaceAnalysis)
         guard !pending.isEmpty else { return }
         faceAnalysisGeneration &+= 1
         let generation = faceAnalysisGeneration
@@ -228,6 +239,7 @@ extension AppState {
             for face in found { faces[face.id] = face }
             if found.isEmpty { withFaces.remove(assetId) } else { withFaces.insert(assetId) }
         }
+        faceScanVersion &+= 1
         faceAssetIds = withFaces
         faceAnalysis?.done = done
         facesRevision &+= 1
