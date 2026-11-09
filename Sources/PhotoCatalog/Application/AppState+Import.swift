@@ -1,6 +1,15 @@
 import AppKit
 import Foundation
 
+/// What an import's worker reads, tags and files photos with: preferences as a new import
+/// starts, or as the job saved them for one resumed or retried.
+struct ImportWorkerSettings: Sendable {
+    let autoTag: Bool
+    let archiveRule: ManagedArchiveRule
+    let readSidecar: Bool
+    let previewMaxPixel: Int
+}
+
 @MainActor
 extension AppState {
     // ---------- real folder import (§6.3) ----------
@@ -46,26 +55,17 @@ extension AppState {
         let sourceId = coordinator.sourceId(forFolder: folder)
         // referenced assets already in this source folder can be reused on a re-import instead
         // of being re-read/re-thumbnailed/re-Vision'd (process() skips by id)
-        let knownAssetsById = Dictionary(
-            assets.filter { !$0.deleted && !$0.isDemo && $0.folderId == sourceId }.map { ($0.id, $0) },
-            uniquingKeysWith: { first, _ in first })
+        let knownAssetsById = knownAssets(inSource: sourceId)
         let run = ImportRun(source: folder, mode: mode)
         guard startPersistedImport(run, store: store), let control = importControl else { return }
-        let vision = visionEnabled
-        let previewSize = previewMaxPixel
-        let archiveRule = managedArchiveRule
-        let readXMP = readXMPSidecar
+        let settings = currentImportWorkerSettings
         cancelBackfill()  // let the import generate thumbnails without a background pass contending
         push("正在导入「\(folder.lastPathComponent)」…", "importIcon")
-        Task { [weak self, coordinator, store, folder, mode, vision, previewSize, archiveRule, readXMP, sourceId, run, control, knownAssetsById] in
-            guard let self else { return }
-            let imported = await self.runImportWorker(run, store: store) { progress in
-                coordinator.importFolder(folder, mode: mode, autoTag: vision, archiveRule: archiveRule,
-                                         readSidecar: readXMP, previewMaxPixel: previewSize, control: control,
-                                         knownAssetsById: knownAssetsById, progress: progress)
-            }
-            self.finishImport(folder: folder, imported: imported,
-                              store: store, mode: mode, runId: run.id, sourceId: sourceId)
+        launchImportWorker(run: run, store: store, folder: folder, mode: mode, sourceId: sourceId) {
+            [coordinator, folder, mode, settings, control, knownAssetsById] progress in
+            coordinator.importFolder(folder, mode: mode, autoTag: settings.autoTag, archiveRule: settings.archiveRule,
+                                     readSidecar: settings.readSidecar, previewMaxPixel: settings.previewMaxPixel,
+                                     control: control, knownAssetsById: knownAssetsById, progress: progress)
         }
     }
 
@@ -203,21 +203,16 @@ extension AppState {
         let run = ImportRun(source: root, mode: .referenced)
         guard startPersistedImport(run, store: store), let control = importControl else { return }
         copyImportRetry = retriesThroughPreparer ? (run.id, preparer) : nil
-        let vision = visionEnabled
-        let previewSize = previewMaxPixel
-        let readXMP = readXMPSidecar
+        let settings = currentImportWorkerSettings
         cancelBackfill()
         push("正在从「\(sourceName)」导入 \(urls.count) 张照片…", "importIcon")
-        Task { [weak self, coordinator, store, root, vision, previewSize, readXMP, sourceId, run,
-                control, preparer, urls] in
+        launchImportWorker(run: run, store: store, folder: root, mode: .referenced, sourceId: sourceId) {
+            [coordinator, root, settings, control, preparer, urls] progress in
+            coordinator.importFiles(urls, from: root, mode: .referenced, autoTag: settings.autoTag,
+                                    readSidecar: settings.readSidecar, previewMaxPixel: settings.previewMaxPixel,
+                                    control: control, preparer: preparer, progress: progress)
+        } finished: { [weak self] in
             guard let self else { return }
-            let imported = await self.runImportWorker(run, store: store) { progress in
-                coordinator.importFiles(urls, from: root, mode: .referenced, autoTag: vision, readSidecar: readXMP,
-                                        previewMaxPixel: previewSize, control: control,
-                                        preparer: preparer, progress: progress)
-            }
-            self.finishImport(folder: root, imported: imported,
-                              store: store, mode: .referenced, runId: run.id, sourceId: sourceId)
             let completed = self.importRun?.phase == .complete
             finished(completed ? (self.importRun?.failed ?? 0) : max(1, self.importRun?.failed ?? 0))
         }
@@ -249,6 +244,41 @@ extension AppState {
         lastImportBatchWrite = nil
         pendingImportRun = nil
         lastImportRunFlush = nil
+    }
+
+    /// The worker settings preferences give a new import.
+    var currentImportWorkerSettings: ImportWorkerSettings { importWorkerSettings(from: nil) }
+
+    /// A saved import's worker settings, with preferences as they are now for any it didn't record.
+    func importWorkerSettings(from payload: ImportJobPayload?) -> ImportWorkerSettings {
+        ImportWorkerSettings(
+            autoTag: payload?.autoTag ?? visionEnabled,
+            archiveRule: payload?.archiveRule.flatMap(ManagedArchiveRule.init(rawValue:)) ?? managedArchiveRule,
+            readSidecar: payload?.readSidecar ?? readXMPSidecar,
+            previewMaxPixel: payload?.previewMaxPixel ?? previewMaxPixel)
+    }
+
+    /// The catalog's photos in a source folder by id: importing it again reuses them instead of
+    /// reading, thumbnailing and tagging them again.
+    private func knownAssets(inSource sourceId: String) -> [String: Asset] {
+        Dictionary(assets.filter { !$0.deleted && !$0.isDemo && $0.folderId == sourceId }.map { ($0.id, $0) },
+                   uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Runs `work` off the main actor for `run`, then finishes the import. `finished` follows in
+    /// the same task, with no wait between: it reads `importRun`, which another import could replace.
+    @discardableResult
+    private func launchImportWorker(run: ImportRun, store: CatalogStore, folder: URL, mode: ImportMode,
+                                    sourceId: String?,
+                                    work: @escaping @Sendable (@escaping (ImportProgress) -> Void) -> [Asset],
+                                    finished: (@MainActor () -> Void)? = nil) -> Task<Void, Never> {
+        Task { [weak self] in
+            guard let self else { return }
+            let imported = await self.runImportWorker(run, store: store, operation: work)
+            self.finishImport(folder: folder, imported: imported,
+                              store: store, mode: mode, runId: run.id, sourceId: sourceId)
+            finished?()
+        }
     }
 
     private func runImportWorker(_ run: ImportRun, store: CatalogStore,
@@ -494,11 +524,7 @@ extension AppState {
                     push("发现暂停的导入任务", "pause")
                     return
                 }
-                restartRecoveredImport(jobId: job.id, run: run, folder: folder, mode: mode,
-                                       autoTag: payload.autoTag,
-                                       archiveRule: recoveredArchiveRule(payload),
-                                       readSidecar: payload.readSidecar ?? readXMPSidecar,
-                                       previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel, options: payload.options)
+                restartRecoveredImport(jobId: job.id, run: run, folder: folder, mode: mode, payload: payload)
             } catch {
                 var message = L("未能恢复导入：\(String(describing: error))")
                 do {
@@ -537,11 +563,7 @@ extension AppState {
             guard FileManager.default.fileExists(atPath: folder.path) else {
                 throw DBError.step(L("源文件夹不可访问"))
             }
-            restartRecoveredImport(jobId: job.id, run: run, folder: folder, mode: mode,
-                                   autoTag: payload.autoTag,
-                                   archiveRule: recoveredArchiveRule(payload),
-                                   readSidecar: payload.readSidecar ?? readXMPSidecar,
-                                   previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel, options: payload.options)
+            restartRecoveredImport(jobId: job.id, run: run, folder: folder, mode: mode, payload: payload)
         } catch {
             failImportPersistence(error, run: run, store: store, detail: L("未能恢复导入"))
             importControl = nil
@@ -550,14 +572,15 @@ extension AppState {
         }
     }
 
+    /// Starts again an import a launch or a failure interrupted, with the settings its job saved.
     private func restartRecoveredImport(jobId: String, run: ImportRun, folder: URL, mode: ImportMode,
-                                        autoTag: Bool, archiveRule: ManagedArchiveRule,
-                                        readSidecar: Bool, previewMaxPixel: Int,
-                                        options: ImportOptionsSnapshot?) {
+                                        payload: ImportJobPayload) {
         guard let coordinator, let store else { return }
+        let settings = importWorkerSettings(from: payload)
         do {
             let checkpoints = try store.loadImportCheckpoints(sessionId: run.id.uuidString)
-            prepareImportBatches(options: options ?? importOptionsSnapshot(for: folder, mode: mode), checkpoints: checkpoints)
+            prepareImportBatches(options: payload.options ?? importOptionsSnapshot(for: folder, mode: mode),
+                                 checkpoints: checkpoints)
         } catch {
             failImportPersistence(error, run: run, store: store, detail: L("未能恢复导入"))
             return
@@ -578,24 +601,17 @@ extension AppState {
         lastImportSessionPersistedCount = runningRun.processed + runningRun.failed
         let sourceId = coordinator.sourceId(forFolder: folder)
         // skip re-processing originals already cataloged before the crash (referenced mode)
-        let knownAssetsById = Dictionary(
-            assets.filter { !$0.deleted && !$0.isDemo && $0.folderId == sourceId }.map { ($0.id, $0) },
-            uniquingKeysWith: { first, _ in first })
+        let knownAssetsById = knownAssets(inSource: sourceId)
         let checkpoints = importCheckpoints
         importing = true
         sheet = "import"
         push("正在恢复导入「\(folder.lastPathComponent)」…", "refresh")
-
-        Task { [weak self, coordinator, store, folder, mode, autoTag, archiveRule, readSidecar, previewMaxPixel, sourceId, runningRun, control, knownAssetsById, checkpoints] in
-            guard let self else { return }
-            let imported = await self.runImportWorker(runningRun, store: store) { progress in
-                coordinator.importFolder(folder, mode: mode, autoTag: autoTag,
-                                         archiveRule: archiveRule, readSidecar: readSidecar,
-                                         previewMaxPixel: previewMaxPixel, control: control,
-                                         knownAssetsById: knownAssetsById, checkpoints: checkpoints, progress: progress)
-            }
-            self.finishImport(folder: folder, imported: imported,
-                              store: store, mode: mode, runId: runningRun.id, sourceId: sourceId)
+        launchImportWorker(run: runningRun, store: store, folder: folder, mode: mode, sourceId: sourceId) {
+            [coordinator, folder, mode, settings, control, knownAssetsById, checkpoints] progress in
+            coordinator.importFolder(folder, mode: mode, autoTag: settings.autoTag, archiveRule: settings.archiveRule,
+                                     readSidecar: settings.readSidecar, previewMaxPixel: settings.previewMaxPixel,
+                                     control: control, knownAssetsById: knownAssetsById, checkpoints: checkpoints,
+                                     progress: progress)
         }
     }
 
@@ -636,10 +652,6 @@ extension AppState {
         return try? JSONDecoder().decode(ImportJobPayload.self, from: data)
     }
 
-    private func recoveredArchiveRule(_ payload: ImportJobPayload) -> ManagedArchiveRule {
-        payload.archiveRule.flatMap(ManagedArchiveRule.init(rawValue:)) ?? managedArchiveRule
-    }
-
     func savedImportConfiguration(for run: ImportRun, store: CatalogStore) throws
         -> (job: JobRecord, payload: ImportJobPayload) {
         for job in try store.loadJobs(type: "scan") {
@@ -669,11 +681,8 @@ extension AppState {
             if run.phase == .failed {
                 let restored = try restoredImportRun(job: configuration.job, payload: configuration.payload,
                     folder: folder, mode: run.mode, phase: .importing, store: store, allowFailed: true)
-                let payload = configuration.payload
                 restartRecoveredImport(jobId: configuration.job.id, run: restored, folder: folder, mode: run.mode,
-                    autoTag: payload.autoTag, archiveRule: recoveredArchiveRule(payload),
-                    readSidecar: payload.readSidecar ?? readXMPSidecar,
-                    previewMaxPixel: payload.previewMaxPixel ?? previewMaxPixel, options: payload.options)
+                                       payload: configuration.payload)
                 return
             }
         } catch {
@@ -689,22 +698,14 @@ extension AppState {
             return
         }
         copyImportRetry = preparer.map { (retry.id, $0) }
-        let vision = configuration.payload.autoTag
-        let previewSize = configuration.payload.previewMaxPixel ?? previewMaxPixel
-        let archiveRule = recoveredArchiveRule(configuration.payload)
-        let readXMP = configuration.payload.readSidecar ?? readXMPSidecar
+        let settings = importWorkerSettings(from: configuration.payload)
         push("正在重试 \(files.count) 个失败文件…", "refresh")
-        Task { [weak self, coordinator, store, folder, files, retry, vision, archiveRule, readXMP, previewSize, control,
-                preparer] in
-            guard let self else { return }
-            let imported = await self.runImportWorker(retry, store: store) { progress in
-                coordinator.importFiles(files, from: folder, mode: retry.mode, autoTag: vision,
-                                        archiveRule: archiveRule, readSidecar: readXMP,
-                                        previewMaxPixel: previewSize, control: control,
-                                        preparer: preparer, progress: progress)
-            }
-            self.finishImport(folder: folder, imported: imported,
-                              store: store, mode: retry.mode, runId: retry.id)
+        launchImportWorker(run: retry, store: store, folder: folder, mode: retry.mode, sourceId: nil) {
+            [coordinator, folder, files, mode = retry.mode, settings, control, preparer] progress in
+            coordinator.importFiles(files, from: folder, mode: mode, autoTag: settings.autoTag,
+                                    archiveRule: settings.archiveRule, readSidecar: settings.readSidecar,
+                                    previewMaxPixel: settings.previewMaxPixel, control: control,
+                                    preparer: preparer, progress: progress)
         }
     }
 
@@ -719,15 +720,15 @@ extension AppState {
         let jobId = "job-" + run.id.uuidString
         let options = configuration?.options
             ?? importOptionsSnapshot(for: URL(fileURLWithPath: run.sourcePath), mode: run.mode)
+        let settings = importWorkerSettings(from: configuration)
         do {
             try store.db.transaction {
                 try store.startImportSession(id: run.id.uuidString, startedAt: run.startedAt)
                 try store.startImportJob(id: jobId, sessionId: run.id.uuidString,
                                          sourcePath: run.sourcePath, mode: run.mode,
-                                         autoTag: configuration?.autoTag ?? visionEnabled,
-                                         archiveRule: configuration.map(recoveredArchiveRule) ?? managedArchiveRule,
-                                         readSidecar: configuration?.readSidecar ?? readXMPSidecar,
-                                         previewMaxPixel: configuration?.previewMaxPixel ?? previewMaxPixel, options: options)
+                                         autoTag: settings.autoTag, archiveRule: settings.archiveRule,
+                                         readSidecar: settings.readSidecar,
+                                         previewMaxPixel: settings.previewMaxPixel, options: options)
             }
         } catch {
             failImportPersistence(error, run: run, store: store)
