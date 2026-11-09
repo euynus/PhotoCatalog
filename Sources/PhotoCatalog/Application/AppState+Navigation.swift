@@ -265,6 +265,22 @@ extension AppState {
         return true
     }
 
+    /// ⌘A, from the key or the menu: selects the list and says so.
+    @discardableResult
+    func selectAllVisibleAnnouncing() -> Bool {
+        guard selectAllVisible() else { return false }
+        push("已全选当前列表")
+        return true
+    }
+
+    /// ⇧⌘A, from the key or the menu: inverts the selection in the list and says so.
+    @discardableResult
+    func invertVisibleSelectionAnnouncing() -> Bool {
+        guard invertVisibleSelection() else { return false }
+        push("已反选当前列表")
+        return true
+    }
+
     /// The post-load step of opening a catalog, for the large-catalog benchmark.
     func applyLoadedCatalogForScaleCheck(_ loaded: [Asset], from store: CatalogStore) {
         // a check's catalog: one whose albums can't be read fails the check's own assertions
@@ -480,6 +496,12 @@ extension AppState {
     }
 
     // ---------- keyboard ----------
+    /// The ⌘ keys the menu bar owns, plus ⌘A, which `handleKey` answers itself. The key monitor
+    /// lets the menu's go through to it; while a sheet is up, every one is kept from the photos behind.
+    nonisolated static let commandShortcutKeys: Set<String> = [
+        "n", "o", "f", "i", "e", "r", ",", "b", "s", "a", "=", "+", "-", "0", "delete", "backspace",
+    ]
+
     /// Returns true if the key was handled.
     @discardableResult
     func handleKey(_ key: String, hasCommand: Bool, hasShift: Bool = false) -> Bool {
@@ -489,15 +511,7 @@ extension AppState {
         // (rating/flag/delete keys would silently mutate the selection).
         if sheet != nil {
             if !hasCommand && key == "escape" { return dismissTransientUI() }
-            if hasCommand {
-                switch key {
-                case "n", "o", "f", "i", "e", "r", ",", "b", "s", "a",
-                     "=", "+", "-", "0", "delete", "backspace":
-                    return true
-                default:
-                    return false
-                }
-            }
+            if hasCommand { return Self.commandShortcutKeys.contains(key) }
             return false
         }
         if hasCommand {
@@ -551,13 +565,7 @@ extension AppState {
                 saveCurrentFilterAsSmartAlbum()
             case "a":
                 guard canChangeVisibleSelection else { return true }
-                if hasShift {
-                    guard invertVisibleSelection() else { return false }
-                    push("已反选当前列表")
-                } else {
-                    guard selectAllVisible() else { return false }
-                    push("已全选当前列表")
-                }
+                guard hasShift ? invertVisibleSelectionAnnouncing() : selectAllVisibleAnnouncing() else { return false }
             case "=", "+":
                 adjustThumbnailSize(by: 16)
             case "-":

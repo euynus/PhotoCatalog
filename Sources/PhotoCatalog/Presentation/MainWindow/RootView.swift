@@ -83,12 +83,9 @@ struct KeyCatcher: NSViewRepresentable {
         !flags.intersection([.option, .control]).isEmpty
     }
 
+    /// The menu's ⌘ keys go on to the menu bar; ⌘A is answered here, in the selection's own way.
     nonisolated static func shouldPassThroughMenuCommand(_ key: String, hasCommand: Bool) -> Bool {
-        guard hasCommand else { return false }
-        return [
-            "n", "o", "i", ",", "e", "delete", "backspace",
-            "f", "=", "+", "-", "0", "r", "b", "s",
-        ].contains(key)
+        hasCommand && key != "a" && AppState.commandShortcutKeys.contains(key)
     }
 
     /// A menu shortcut that is also a text-editing key (⌘⌫) reaches the menu before the field being

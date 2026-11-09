@@ -296,12 +296,10 @@ struct PhotoCatalogCommands: Commands {
             NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
             return
         }
-        guard app.selectAllVisible() else { return }
-        app.push("已全选当前列表")
+        app.selectAllVisibleAnnouncing()
     }
 
     private func invertCurrentList() {
-        guard app.invertVisibleSelection() else { return }
-        app.push("已反选当前列表")
+        app.invertVisibleSelectionAnnouncing()
     }
 }
