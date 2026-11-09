@@ -118,7 +118,10 @@ extension AppState {
     /// What these edits change in the photos as they are now: how far their effects reach, and
     /// which columns saving them writes.
     func editScope(of edits: [(offset: Int, asset: Asset)]) -> AssetEditScope {
-        edits.reduce(into: AssetEditScope()) { $0.formUnion(Self.editScope(from: assets[$1.offset], to: $1.asset)) }
+        // the photos read through the observed property once, not once per edit
+        assets.withUnsafeBufferPointer { photos in
+            edits.reduce(into: AssetEditScope()) { $0.formUnion(Self.editScope(from: photos[$1.offset], to: $1.asset)) }
+        }
     }
 
     @discardableResult

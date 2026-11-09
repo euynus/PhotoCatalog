@@ -425,7 +425,9 @@ extension AppState {
     func applyAssetEdits(_ edits: [(offset: Int, asset: Asset)], scope: AssetEditScope) {
         guard !scope.contains(.structure) else {
             // a photo back in the catalog (undo, imported again) keeps cache files still to be deleted
-            let returning = edits.filter { assets[$0.offset].deleted && !$0.asset.deleted }.map(\.asset.id)
+            let returning = assets.withUnsafeBufferPointer { photos in
+                edits.filter { photos[$0.offset].deleted && !$0.asset.deleted }.map(\.asset.id)
+            }
             if !returning.isEmpty { cachePurges.cancel(returning) }
             return applyStructuralEdits(edits, scope: scope)
         }
@@ -435,72 +437,78 @@ extension AppState {
         var patchedSidebar: SidebarCountIndex?
         var projectChanges: [(offset: Int, old: String, new: String)] = []
         var clientChanges: [(offset: Int, old: String, new: String)] = []
-        let pairing = assetPairing
-        // Matching each edited photo before and after against every smart album: past half
-        // the library, recounting it (once, when the sidebar next reads) is the cheaper way.
-        if var index = sidebarCountIndexCache, index.day == sidebarDay, edits.count * 2 <= assets.count {
-            var memos = index.smartRules.map { SmartMatcher.Memo(for: $0.rule) }
-            for edit in edits where pairing.shows(edit.asset) {
-                index.move(from: assets[edit.offset], to: edit.asset, memos: &memos)
-            }
-            patchedSidebar = index
-        }
-        patchedCounts = libraryCountsCache.map { counts in
-            edits.reduce(into: counts) { counts, edit in
-                guard !pairing.isHiddenCompanion(edit.asset.id) else { return }
-                if scope.contains(.review) {
-                    counts.applyReviewChange(from: assets[edit.offset], to: edit.asset)
-                }
-                if scope.contains(.metadata) {
-                    counts.applyMetadataChange(from: assets[edit.offset], to: edit.asset)
-                }
-            }
-        }
-        let membershipCanChange = (scope.contains(.review) && listMembershipDependsOnReviewFields)
-            || (scope.contains(.metadata) && listDependsOnMetadataFields)
-        // a sort by rating lists the same photos in another order
-        let orderCanChange = scope.contains(.review) && sort.field == .rating
-        var keepsMembers = !membershipCanChange
-        // A review key that only takes photos out (rated out of Unrated, a filter or a smart album)
-        // takes them out of the cached list instead of working it out again from every photo.
         var listRemoval: (before: ListSignature, leaving: Set<String>, staying: [Asset])?
-        if membershipCanChange, scope == .review, let moves = reviewListMoves(edits) {
-            if moves.leaving.isEmpty {
-                keepsMembers = true
-            } else if !orderCanChange {
-                listRemoval = (currentListSignature, moves.leaving, moves.staying)
-            }
-        }
-        // the list's inputs before the edit, when the same photos stay in it
-        let membersBefore = keepsMembers ? currentListSignature : nil
-        let listBefore = orderCanChange ? nil : membersBefore
-        if scope.contains(.metadata) {
-            patchedKeywords = keywordCountsCache.flatMap { cache -> KeywordTally? in
-                var patched = cache
-                let changes = edits.filter { pairing.shows($0.asset) }.map {
-                    (offset: $0.offset, old: assets[$0.offset].keywords, new: $0.asset.keywords)
+        var membersBefore: ListSignature?, listBefore: ListSignature?
+        let pairing = assetPairing
+        // The photos as they are, read through the observed property once rather than once per edit
+        // (each read paid its bookkeeping); let go of before the edits are written, or the write
+        // would copy them all.
+        assets.withUnsafeBufferPointer { photos in
+            // Matching each edited photo before and after against every smart album: past half
+            // the library, recounting it (once, when the sidebar next reads) is the cheaper way.
+            if var index = sidebarCountIndexCache, index.day == sidebarDay, edits.count * 2 <= photos.count {
+                var memos = index.smartRules.map { SmartMatcher.Memo(for: $0.rule) }
+                for edit in edits where pairing.shows(edit.asset) {
+                    index.move(from: photos[edit.offset], to: edit.asset, memos: &memos)
                 }
-                return Self.patchKeywords(&patched, changes) ? patched : nil
+                patchedSidebar = index
             }
-            if patchedKeywords == nil { dropsKeywordCounts = keywordCountsCache != nil }
-            // the project and client lists move only with a project or client: a title, keyword
-            // or location edit keeps them as they are
-            for edit in edits {
-                let old = assets[edit.offset]
-                if old.project != edit.asset.project {
-                    projectChanges.append((edit.offset, MetadataValueCounts.value(of: old, \.project, pairing: pairing),
-                                           MetadataValueCounts.value(of: edit.asset, \.project, pairing: pairing)))
-                }
-                if old.client != edit.asset.client {
-                    clientChanges.append((edit.offset, MetadataValueCounts.value(of: old, \.client, pairing: pairing),
-                                          MetadataValueCounts.value(of: edit.asset, \.client, pairing: pairing)))
+            patchedCounts = libraryCountsCache.map { counts in
+                edits.reduce(into: counts) { counts, edit in
+                    guard !pairing.isHiddenCompanion(edit.asset.id) else { return }
+                    if scope.contains(.review) {
+                        counts.applyReviewChange(from: photos[edit.offset], to: edit.asset)
+                    }
+                    if scope.contains(.metadata) {
+                        counts.applyMetadataChange(from: photos[edit.offset], to: edit.asset)
+                    }
                 }
             }
+            let membershipCanChange = (scope.contains(.review) && listMembershipDependsOnReviewFields)
+                || (scope.contains(.metadata) && listDependsOnMetadataFields)
+            // a sort by rating lists the same photos in another order
+            let orderCanChange = scope.contains(.review) && sort.field == .rating
+            var keepsMembers = !membershipCanChange
+            // A review key that only takes photos out (rated out of Unrated, a filter or a smart album)
+            // takes them out of the cached list instead of working it out again from every photo.
+            if membershipCanChange, scope == .review, let moves = reviewListMoves(edits, in: photos) {
+                if moves.leaving.isEmpty {
+                    keepsMembers = true
+                } else if !orderCanChange {
+                    listRemoval = (currentListSignature, moves.leaving, moves.staying)
+                }
+            }
+            // the list's inputs before the edit, when the same photos stay in it
+            membersBefore = keepsMembers ? currentListSignature : nil
+            listBefore = orderCanChange ? nil : membersBefore
+            if scope.contains(.metadata) {
+                patchedKeywords = keywordCountsCache.flatMap { cache -> KeywordTally? in
+                    var patched = cache
+                    let changes = edits.filter { pairing.shows($0.asset) }.map {
+                        (offset: $0.offset, old: photos[$0.offset].keywords, new: $0.asset.keywords)
+                    }
+                    return Self.patchKeywords(&patched, changes) ? patched : nil
+                }
+                if patchedKeywords == nil { dropsKeywordCounts = keywordCountsCache != nil }
+                // the project and client lists move only with a project or client: a title, keyword
+                // or location edit keeps them as they are
+                for edit in edits {
+                    let old = photos[edit.offset]
+                    if old.project != edit.asset.project {
+                        projectChanges.append((edit.offset, MetadataValueCounts.value(of: old, \.project, pairing: pairing),
+                                               MetadataValueCounts.value(of: edit.asset, \.project, pairing: pairing)))
+                    }
+                    if old.client != edit.asset.client {
+                        clientChanges.append((edit.offset, MetadataValueCounts.value(of: old, \.client, pairing: pairing),
+                                              MetadataValueCounts.value(of: edit.asset, \.client, pairing: pairing)))
+                    }
+                }
+            }
+            assert(edits.allSatisfy { photos[$0.offset].id == $0.asset.id }, "an edit keeps its photo's id")
         }
         nextAssetEditScope = scope
         // the photos stay where they are: the id index outlives the edit
         let index = assetIndexCache
-        assert(edits.allSatisfy { assets[$0.offset].id == $0.asset.id }, "an edit keeps its photo's id")
         assets.withUnsafeMutableBufferPointer { buffer in
             for edit in edits { buffer[edit.offset] = edit.asset }
         }
@@ -527,7 +535,8 @@ extension AppState {
     /// they take out, and the edited photos that stay in. Nil when one comes in, or when the list
     /// can't be told this way: a search, Recently Imported (its cutoff moves with the clock, so the
     /// cached list may hold photos the test now leaves out), the collection gone.
-    private func reviewListMoves(_ edits: [(offset: Int, asset: Asset)]) -> (leaving: Set<String>, staying: [Asset])? {
+    private func reviewListMoves(_ edits: [(offset: Int, asset: Asset)],
+                                 in photos: UnsafeBufferPointer<Asset>) -> (leaving: Set<String>, staying: [Asset])? {
         guard search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !(selection.type == .lib && selection.id == "recent"),
               let makeTest = listTest(now: sidebarClock()) else { return nil }
@@ -535,7 +544,7 @@ extension AppState {
         var leaving = Set<String>()
         var staying: [Asset] = []
         for edit in edits {
-            let (was, isIn) = (test(assets[edit.offset]), test(edit.asset))
+            let (was, isIn) = (test(photos[edit.offset]), test(edit.asset))
             if isIn && !was { return nil }
             if was && !isIn { leaving.insert(edit.asset.id) } else if was { staying.append(edit.asset) }
         }
@@ -593,7 +602,8 @@ extension AppState {
     /// folder left empty, no pairing of these photos — is worked out again; the photo list and
     /// stacks always are.
     private func applyStructuralEdits(_ edits: [(offset: Int, asset: Asset)], scope: AssetEditScope) {
-        let old = edits.map { assets[$0.offset] }
+        // the photos read through the observed property once, not once per edit
+        let old = assets.withUnsafeBufferPointer { photos in edits.map { photos[$0.offset] } }
         carryStructuralEdits(edits, old: old, scope: scope)
         // The photos as they were are let go of on another thread, the last to hold them once the
         // carry's own lists are gone: freeing a drive's 50,000 took ~20 ms of the main thread.
