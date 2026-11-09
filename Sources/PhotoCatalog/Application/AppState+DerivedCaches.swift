@@ -533,14 +533,21 @@ extension AppState {
         if let patchedSidebar { sidebarCountIndexCache = patchedSidebar }
         patch(&projectCountsCache, projectChanges, \.project)
         patch(&clientCountsCache, clientChanges, \.client)
-        if let listBefore { patchListCaches(with: edits, validFor: listBefore) }
+        // The list's inputs after the edit, read once. What's kept is kept only within the day it
+        // was worked out on: past midnight, relative dates (Today, a date filter) list other photos.
+        let after = currentListSignature
+        if let listBefore, listBefore.captureDay == after.captureDay {
+            patchListCaches(with: edits, validFor: listBefore, after: after)
+        }
         // the same photos match, each where it was in `assets`: a new order (a sort by rating the
         // edit moved, or a new sort) sorts them again without a new pass
-        if let membersBefore, let cache = matchingPositionsCache, cache.signature.hasPhotosBeforeSorting(of: membersBefore) {
-            matchingPositionsCache = (currentListSignature, cache.positions)
+        if let membersBefore, membersBefore.captureDay == after.captureDay, let cache = matchingPositionsCache,
+           cache.signature.hasPhotosBeforeSorting(of: membersBefore) {
+            matchingPositionsCache = (after, cache.positions)
         }
-        if let listRemoval {
-            removeFromListCaches(listRemoval.leaving, staying: listRemoval.staying, validFor: listRemoval.before)
+        if let listRemoval, listRemoval.before.captureDay == after.captureDay {
+            removeFromListCaches(listRemoval.leaving, staying: listRemoval.staying, validFor: listRemoval.before,
+                                 after: after)
         }
         didMutateAssets()
     }
@@ -569,8 +576,8 @@ extension AppState {
     /// Takes photos review edits moved out of the list out of its photos before folding, and
     /// writes the edited photos that stay in where they are, in one pass. The next read of `list`
     /// folds stacks again (and the grid takes it as a new list). Their order can't have moved.
-    private func removeFromListCaches(_ leaving: Set<String>, staying: [Asset], validFor before: ListSignature) {
-        let after = currentListSignature
+    private func removeFromListCaches(_ leaving: Set<String>, staying: [Asset], validFor before: ListSignature,
+                                      after: ListSignature) {
         guard let matching = uncollapsedListCache, matching.signature == before else { return }
         // the index and the hint are of the folded list: the index answers for the photos before
         // folding only when nothing is folded (the hint is checked where it points)
@@ -828,8 +835,8 @@ extension AppState {
     }
 
     /// Replaces edited assets inside list caches that were current before the edit.
-    private func patchListCaches(with edits: [(offset: Int, asset: Asset)], validFor before: ListSignature) {
-        let after = currentListSignature
+    private func patchListCaches(with edits: [(offset: Int, asset: Asset)], validFor before: ListSignature,
+                                 after: ListSignature) {
         // Usual case, nothing collapsed: both caches are one array. Patch it in place by
         // position (O(edits)) after dropping the caches' references so no copy is forced.
         if collapsedStackIds.isEmpty, var visible = listCache, visible.signature == before,

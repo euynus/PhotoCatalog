@@ -1,4 +1,5 @@
 import XCTest
+import Observation
 @testable import PhotoCatalog
 
 /// A rating key in a list sorted by rating moves photos in it, but when no filter or collection
@@ -159,4 +160,68 @@ final class RatingSortReviewKeyTests: CatalogTestCase {
         XCTAssertEqual(listed(app), fresh(like: app), "Recently Imported")
         XCTAssertEqual(app.listFilterPasses, passes + 1, "Recently Imported tests its photos again")
     }
+
+    /// Midnight passes while a rating key is written, between the list's inputs read before the
+    /// write and after it. What was kept of the list (its photos re-keyed for a rating sort, the
+    /// list patched in place, photos taken out of it) was worked out for the day before: under
+    /// Today it lists other photos, so it isn't kept under the new day's inputs.
+    @MainActor
+    func testAKeyWrittenAsMidnightPassesKeepsNothingForTheNewDay() {
+        let zone = TimeZone.current
+        let day = CaptureDates.startOfToday(now: shot)   // a capture day, in wall-clock time
+        func instant(wallClock: Date) -> Date { wallClock.addingTimeInterval(-TimeInterval(zone.secondsFromGMT(for: wallClock))) }
+        let beforeMidnight = instant(wallClock: day.addingTimeInterval(86_400 - 30))
+        let afterMidnight = instant(wallClock: day.addingTimeInterval(86_400 + 30))
+        XCTAssertEqual(CaptureDates.startOfToday(now: beforeMidnight), day, "the probe: the day before")
+        XCTAssertEqual(CaptureDates.startOfToday(now: afterMidnight), day.addingTimeInterval(86_400), "the probe: the new day")
+
+        // half the photos taken that day, half the next
+        let photos = library().enumerated().map { index, photo -> Asset in
+            var photo = photo
+            photo.date = day.addingTimeInterval(index % 2 == 0 ? 12 * 3_600 + Double(index) : 86_400 + 10 + Double(index))
+            return photo
+        }
+        var today = Filters()
+        today.date = "today"
+        var ratedToday = today
+        ratedToday.minRating = 3
+        let cases: [(String, Filters, Sort, Int)] = [
+            ("a rating sort", today, Sort(field: .rating, descending: true), 5),
+            ("a list patched in place", today, Sort(), 5),
+            ("a photo taken out", ratedToday, Sort(), 1),
+        ]
+        for (name, filters, sort, rating) in cases {
+            let clock = Clock(beforeMidnight)
+            let app = makeApp(photos)
+            app.sidebarClock = { clock.now }
+            app.setFilters(filters)
+            app.setSort(sort)
+            let shown = app.list
+            XCTAssertFalse(shown.isEmpty, name)
+            XCTAssertTrue(shown.allSatisfy { $0.date < day.addingTimeInterval(86_400) }, "\(name): the probe: that day's photos")
+
+            // the clock passes midnight as the photos are written
+            withObservationTracking {
+                _ = app.assets
+            } onChange: {
+                clock.now = afterMidnight
+            }
+            XCTAssertTrue(app.setRating(rating, on: [shown[0].id]), name)
+            XCTAssertEqual(clock.now, afterMidnight, "\(name): the probe: midnight passed during the write")
+
+            let other = makeApp(app.assets, pairs: app.pairRawAndJpeg)
+            other.sidebarClock = { afterMidnight }
+            other.setFilters(filters)
+            other.setSort(sort)
+            let expected = other.list.map { "\($0.id) \($0.rating)" }
+            XCTAssertFalse(expected.isEmpty, name)
+            XCTAssertEqual(listed(app), expected, "\(name): the day before's list was kept for the new day")
+        }
+    }
+}
+
+/// A clock a test moves on, from an observation's change handler too.
+private final class Clock: @unchecked Sendable {
+    var now: Date
+    init(_ now: Date) { self.now = now }
 }
