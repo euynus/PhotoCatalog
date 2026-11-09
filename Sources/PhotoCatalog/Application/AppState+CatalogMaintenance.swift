@@ -599,7 +599,7 @@ extension AppState {
             // scoped, so the live connection closes with the catalog below
             var current: URL?
             if let store {
-                try store.upsert(assets.filter { !$0.isDemo })
+                // edits are saved as they're made, so the snapshot needs no rewrite of the photos first
                 current = try BackupService.backup(store)
             }
             closeCurrentCatalog()
