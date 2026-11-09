@@ -216,6 +216,11 @@ final class ImportCoordinator: @unchecked Sendable {
         case skipped
     }
 
+    /// One run's index of the Originals folders it copies into, used under its `copying` lock.
+    private final class CopyFolders {
+        var index = CopyNaming.FolderIndex()
+    }
+
     private func process(_ files: [URL], folder: URL, mode: ImportMode, autoTag: Bool,
                          archiveRule: ManagedArchiveRule = .date, readSidecar: Bool = true,
                          previewMaxPixel: Int, control: ImportControl?,
@@ -235,6 +240,7 @@ final class ImportCoordinator: @unchecked Sendable {
         // copying into Originals/ picks a free name, and a preparer may share staging space:
         // both one file at a time
         let copying = NSLock()
+        let copyFolders = CopyFolders()
         func importOne(_ url: URL) -> Outcome {
             if let checkpoint = checkpoints[url.path], checkpoint.matches(url) {
                 if checkpoint.outcome == .skipped { return .skipped }
@@ -259,7 +265,7 @@ final class ImportCoordinator: @unchecked Sendable {
                                             mode: mode, autoTag: autoTag, archiveRule: archiveRule,
                                             readSidecar: readSidecar, previewMaxPixel: previewMaxPixel,
                                             assetId: refreshingId, reusingRemovedIds: reusingRemovedIds,
-                                            copying: copying) {
+                                            copying: copying, copyFolders: copyFolders) {
                     return .imported(asset)
                 }
                 return .failed(ImportFailure(url: url, reason: L("无法读取图片元数据或像素尺寸")))
@@ -321,7 +327,8 @@ final class ImportCoordinator: @unchecked Sendable {
     private func makeAsset(source url: URL, folderId: String, folderName: String,
                            mode: ImportMode, autoTag: Bool, archiveRule: ManagedArchiveRule = .date,
                            readSidecar: Bool = true, previewMaxPixel: Int, assetId knownId: String? = nil,
-                           reusingRemovedIds: Bool = true, copying: NSLock) throws -> Asset? {
+                           reusingRemovedIds: Bool = true, copying: NSLock,
+                           copyFolders: CopyFolders) throws -> Asset? {
         let meta = MetadataReader.read(url)
         guard meta.width > 0, meta.height > 0 else { return nil }
         // the XMP sidecar next to the original (§6.5 META-006, §17.4): its capture time is the
@@ -331,7 +338,7 @@ final class ImportCoordinator: @unchecked Sendable {
         if mode == .managed {
             finalURL = try copying.withLock {
                 try copyToOriginals(url, date: meta.captureDate, filedAt: sidecar?.captureDate ?? meta.captureDate,
-                                    camera: meta.camera, rule: archiveRule)
+                                    camera: meta.camera, rule: archiveRule, folders: &copyFolders.index)
             }
         } else {
             finalURL = url
@@ -390,8 +397,8 @@ final class ImportCoordinator: @unchecked Sendable {
     /// Copies `url` (taken by `camera` at `date`, as its file says) into Originals, in the folder
     /// for `filedAt` (the capture time the catalog shows), with its sidecar.
     private func copyToOriginals(_ url: URL, date: Date, filedAt: Date, camera: String,
-                                 rule: ManagedArchiveRule) throws -> URL {
-        let copy = try copyOriginal(url, date: date, filedAt: filedAt, camera: camera, rule: rule)
+                                 rule: ManagedArchiveRule, folders: inout CopyNaming.FolderIndex) throws -> URL {
+        let copy = try copyOriginal(url, date: date, filedAt: filedAt, camera: camera, rule: rule, folders: &folders)
         // the sidecar too, so what other apps keep there stays with the photo; never over one
         // already there (the RAW's, which its JPEG shares, or this photo's from an earlier run)
         let fm = FileManager.default
@@ -405,7 +412,7 @@ final class ImportCoordinator: @unchecked Sendable {
     }
 
     private func copyOriginal(_ url: URL, date: Date, filedAt: Date, camera: String,
-                              rule: ManagedArchiveRule) throws -> URL {
+                              rule: ManagedArchiveRule, folders: inout CopyNaming.FolderIndex) throws -> URL {
         let c = Calendar.captureWallClock.dateComponents([.year, .month, .day], from: filedAt)
         let year = String(format: "%04d", c.year ?? 1970)
         let month = String(format: "%02d", c.month ?? 1)
@@ -430,7 +437,7 @@ final class ImportCoordinator: @unchecked Sendable {
         // shot (this JPEG's RAW, copied a moment ago) shares it.
         nameSearch: while true {
             var free = true
-            for existing in CopyNaming.files(named: dest.deletingPathExtension().lastPathComponent, in: dir) {
+            for existing in folders.files(named: dest.deletingPathExtension().lastPathComponent, in: dir) {
                 if existing.pathExtension.caseInsensitiveCompare(url.pathExtension) == .orderedSame {
                     // An identical original is already here — e.g. an import resumed after a crash
                     // re-scans files already copied. Reuse it (the photo cataloged at this path keeps
@@ -451,6 +458,7 @@ final class ImportCoordinator: @unchecked Sendable {
         let source = url.resolvingSymlinksInPath()
         let size = (try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? -1
         try CardCopier.placeCopy(of: source, at: dest, size: size)
+        folders.added(dest)
         return dest
     }
 
