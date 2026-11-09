@@ -125,8 +125,7 @@ enum FaceCheck {
             ids[3]: [face("y3", ids[3], 4, 0.06)],
         ])
         app.loadFaces(from: store)
-        let deadline = Date().addingTimeInterval(5)
-        while app.faceClusters.count < 2, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+        CheckWait.until(5) { app.faceClusters.count >= 2 }
         assert(app.faceClusters.map(\.faceIds.count) == [3, 2] && app.faceScannedCount == 4 && app.faceOutdatedCount == 0,
                "saved faces load and group into people-sized clusters")
         app.select(Selection(type: .lib, id: "people", name: "人物"))

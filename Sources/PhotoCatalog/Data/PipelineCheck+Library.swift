@@ -199,8 +199,7 @@ extension PipelineCheck.Run {
                 await saving?.value
                 saved = true
             }
-            let deadline = Date(timeIntervalSinceNow: 30)
-            while !saved, Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01)) }
+            CheckWait.until(30, poll: 0.01) { saved }
             results["the save is written"] = saved && XMPSidecar.read(sidecarURL)?.rating == 5
             app.checkExternalXMPChangesNow()
             results["our own write isn't a change"] = app.externallyChangedXMPIds.isEmpty

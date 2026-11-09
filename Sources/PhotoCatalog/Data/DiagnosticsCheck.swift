@@ -68,20 +68,15 @@ extension DiagnosticsCheck {
             return url
         }
         func prepare(_ archive: URL, version: String = "2.0", requirement: String) -> Result<URL, UpdateInstaller.Failure> {
-            let semaphore = DispatchSemaphore(value: 0)
-            nonisolated(unsafe) var result: Result<URL, UpdateInstaller.Failure> = .failure(.download)
-            Task.detached {
+            CheckWait.blocking {
                 do {
-                    result = .success(try await UpdateInstaller.prepare(
+                    return .success(try await UpdateInstaller.prepare(
                         archive: archive, version: version, identifier: identifier, requirement: requirement,
                         staging: folder.appendingPathComponent("staging-\(UUID().uuidString)")))
                 } catch {
-                    result = .failure(error as? UpdateInstaller.Failure ?? .download)
+                    return .failure(error as? UpdateInstaller.Failure ?? .download)
                 }
-                semaphore.signal()
             }
-            semaphore.wait()
-            return result
         }
         let requirement = "identifier \"\(identifier)\""
         let built = folder.appendingPathComponent("build/PhotoCatalog.app")

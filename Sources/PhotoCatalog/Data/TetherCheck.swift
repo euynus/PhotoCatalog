@@ -69,11 +69,6 @@ enum TetherCheck {
         func unplug() { onEnd?(L("相机已断开")) }
     }
 
-    private static func spin(_ timeout: Double = 20, until done: () -> Bool) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !done(), Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
-    }
-
     private static func checkSession(_ check: (Bool, String) -> Void, tmp: URL, fixture: URL) {
         let fm = FileManager.default
         guard let store = try? CatalogStore(packageURL: tmp.appendingPathComponent("Tether.photolibrary")) else {
@@ -102,7 +97,7 @@ enum TetherCheck {
         func inSession() -> [Asset] {
             app.assets.filter { $0.localPath?.hasPrefix(folder.path) == true }.sorted { $0.filename < $1.filename }
         }
-        spin { inSession().count == 2 && app.tether?.working == false }
+        CheckWait.until(20) { inSession().count == 2 && app.tether?.working == false }
         let shots = inSession()
         check(shots.map(\.filename) == ["Studio-0001.JPG", "Studio-0002.JPG"]
               && shots.allSatisfy { fm.fileExists(atPath: $0.localPath ?? "") }, "tethered shots land in the session's folder under its name, in order")
@@ -120,10 +115,10 @@ enum TetherCheck {
 
         // the shutter, then a shot after the preset is taken off
         camera.capture()
-        spin { inSession().count == 3 && app.tether?.working == false }
+        CheckWait.until(20) { inSession().count == 3 && app.tether?.working == false }
         app.setTetherPreset("")
         camera.shoot()
-        spin { inSession().count == 4 && app.tether?.working == false }
+        CheckWait.until(20) { inSession().count == 4 && app.tether?.working == false }
         let later = inSession()
         check(later.count == 4 && later[2].filename == "Studio-0003.JPG" && app.developSettings[later[3].id] == nil,
               "capturing takes a shot, and a preset changed mid-session applies to the next shots")
@@ -137,7 +132,7 @@ enum TetherCheck {
         let again = SimulatedCamera(fixture: fixture)
         check(app.startTether(settings, source: again), "a session can be picked up again")
         again.shoot()
-        spin { inSession().count == 5 && app.tether?.working == false }
+        CheckWait.until(20) { inSession().count == 5 && app.tether?.working == false }
         check(inSession().last?.filename == "Studio-0005.JPG", "a session picked up again goes on from its last number")
         app.endTether()
 
@@ -180,7 +175,7 @@ enum TetherCheck {
 
         // the folder's events (or the slow look) find a new file without being asked
         try? fm.copyItem(at: fixture, to: watched.appendingPathComponent("IMG_0003.JPG"))
-        spin(10) { arrived.count == 2 }
+        CheckWait.until(10) { arrived.count == 2 }
         check(arrived.last?.originalName == "IMG_0003.JPG", "a new file in the watched folder is noticed")
         try? fm.removeItem(at: watched)
         source.scan()

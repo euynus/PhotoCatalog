@@ -19,20 +19,8 @@ enum LLMCheck {
         print("--- llm assertions passed ---")
     }
 
-    /// `body` run to completion from synchronous code.
-    static func wait<T: Sendable>(_ body: @escaping @Sendable () async -> T) -> T {
-        let semaphore = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var result: T?
-        Task.detached {
-            result = await body()
-            semaphore.signal()
-        }
-        semaphore.wait()
-        return result!
-    }
-
     static func complete(_ request: LLMRequest, _ configuration: LLMConfiguration, key: String?) -> Result<String, LLMError> {
-        wait {
+        CheckWait.blocking {
             do { return .success(try await LLMClient.complete(request, configuration: configuration, key: key)) } catch {
                 return .failure(error as? LLMError ?? .malformed)
             }
@@ -151,15 +139,6 @@ extension LLMCheck {
 }
 
 extension LLMCheck {
-    /// Runs `body` on the main actor, turning the run loop until it's done.
-    @MainActor
-    static func run<T>(_ body: @escaping @MainActor () async -> T) -> T {
-        var result: T?
-        Task { @MainActor in result = await body() }
-        while result == nil { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01)) }
-        return result!
-    }
-
     @MainActor
     static func checkSearch(_ server: StandInServer) {
         let vocabulary = PhotoSearch.Vocabulary(cameras: ["Canon EOS R6m2"], lenses: ["RF24-105mm F4-7.1 IS STM"],
@@ -237,11 +216,11 @@ extension LLMCheck {
         app.assets = Array(DemoData.assets.prefix(40))
         app.llmConfiguration = LLMConfiguration(kind: .openAICompatible, baseURL: "http://127.0.0.1:\(server.port)/v1", model: "stand-in")
         server.reply = (200, #"{"choices":[{"message":{"content":"{\"minRating\": 3, \"text\": \"海\"}"}}]}"#)
-        let understood = run { await app.searchNaturally("三星以上的海") }
+        let understood = CheckWait.onMain { await app.searchNaturally("三星以上的海") }
         assert(understood && app.filters.minRating == 3 && app.search == "海" && app.naturalSearchQuery == "三星以上的海",
                "a sentence becomes the filter bar and the search box")
         server.reply = (200, #"{"choices":[{"message":{"content":"Sorry, I can't help with that."}}]}"#)
-        assert(!run { await app.searchNaturally("随便") } && app.filters.minRating == 3, "an answer without filters changes nothing")
+        assert(!CheckWait.onMain { await app.searchNaturally("随便") } && app.filters.minRating == 3, "an answer without filters changes nothing")
     }
 }
 
@@ -297,7 +276,7 @@ extension LLMCheck {
         configuration.acceptsImages = false
         app.llmConfiguration = configuration
         server.reply = (200, #"{"choices":[{"message":{"content":"{\"exposure\": 0.5, \"vibrance\": 20, \"explanation\": \"提亮一点\"}"}}]}"#)
-        let done = run { await app.developByText("提亮一点") }
+        let done = CheckWait.onMain { await app.developByText("提亮一点") }
         let settings = app.developSettings[photo.id]
         assert(done && settings?.exposure == 0.5 && settings?.vibrance == 20 && app.developByTextQuery == "提亮一点",
                "a described look is applied to the photo in Develop (\(String(describing: settings)))")

@@ -112,10 +112,7 @@ enum DescriptionReviewRequestCheck {
 
     @MainActor
     private static func waitForBatch(_ app: AppState) {
-        let deadline = Date().addingTimeInterval(30)
-        while app.describeProgress != nil, Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-        }
+        CheckWait.until(30, poll: 0.01) { app.describeProgress == nil }
         assert(app.describeProgress == nil, "description batch completed before its deadline")
     }
 
