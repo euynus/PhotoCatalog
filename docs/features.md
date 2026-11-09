@@ -90,7 +90,7 @@ The full reference to what PhotoCatalog does; [README](../README.md) has the ove
   - A new preset starts with the settings the photo changed ticked, as Copy Settings does: crop, rotation, perspective, masks, spots and lens blur, which belong to the one photo, start unticked and can be ticked.
   - Right-click a preset to rename it, update it from the current settings, move it to a group or a new group, or delete it (after confirming).
   - Presets import and export as `.xmp`: the app's own files round-trip completely, masks and spots included, and also carry Camera Raw's settings so Lightroom can import them. Lightroom and Camera Raw presets bring in the settings the two apps share, and the app says what it left out.
-  - RAW defaults per camera (Settings → Develop): one preset for every camera and one for each camera, or the photo as shot. They apply at import, under the import preset, and resetting a photo returns to them. Right-click a preset to make it the current camera's default.
+  - RAW defaults per camera (Settings → Develop): one preset for every camera and one for each camera, or the photo as shot. They apply at import and to tethered shots, under the import preset, and resetting a photo returns to them; a camera whose chosen preset has been deleted gets the one for every camera. Right-click a preset to make it the current camera's default.
 
 ## Merge, enhance and outside editors
 
