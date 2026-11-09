@@ -73,9 +73,8 @@ final class SettingsDecodeDefaultsTests: XCTestCase {
         try assertStoredKeys(mixer, ["hue", "luminance", "saturation"])
     }
 
-    /// ToneCurve's decoder is the synthesized one, which needs every channel; it is always
-    /// written whole, so only the round trip is locked.
     func testToneCurve() throws {
+        XCTAssertEqual(try decode(ToneCurve.self, "{}"), ToneCurve())
         var curve = ToneCurve()
         curve.rgb = ToneCurve.mediumContrast
         curve.red = [CurvePoint(x: 0, y: 0.05), CurvePoint(x: 1, y: 1)]
@@ -84,6 +83,30 @@ final class SettingsDecodeDefaultsTests: XCTestCase {
         assertEveryFieldChanged(curve, from: ToneCurve())
         XCTAssertEqual(try roundTrip(curve), curve)
         try assertStoredKeys(curve, ["blue", "green", "red", "rgb"])
+    }
+
+    /// A stored curve missing a channel reads that channel as a straight line, and the photo's
+    /// other develop settings still decode.
+    func testToneCurveMissingChannel() throws {
+        let partial = try decode(ToneCurve.self, #"{"rgb":[{"x":0,"y":0},{"x":0.5,"y":0.6},{"x":1,"y":1}],"blue":[]}"#)
+        XCTAssertEqual(partial.rgb, [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.6), CurvePoint(x: 1, y: 1)])
+        XCTAssertEqual(partial.red, [])
+        XCTAssertEqual(partial.green, [])
+        XCTAssertEqual(partial.blue, [])
+
+        var settings = DevelopSettings()
+        settings.exposure = 0.7
+        settings.curve.rgb = ToneCurve.mediumContrast
+        settings.curve.red = [CurvePoint(x: 0, y: 0.05), CurvePoint(x: 1, y: 1)]
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
+        var curve = try XCTUnwrap(object["curve"] as? [String: Any])
+        curve["red"] = nil
+        curve["green"] = nil
+        object["curve"] = curve
+        let decoded = try JSONDecoder().decode(DevelopSettings.self, from: JSONSerialization.data(withJSONObject: object))
+        var expected = settings
+        expected.curve.red = []
+        XCTAssertEqual(decoded, expected)
     }
 
     func testLocalAdjustment() throws {
