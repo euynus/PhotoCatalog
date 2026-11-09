@@ -32,7 +32,7 @@ struct GridView: View {
                         // SwiftUI updates the visible cells instead of building new ones, and never
                         // re-indexes 500k ids.
                         ForEach(0..<photos.count, id: \.self) { position in
-                            tile(photos[position], size: metrics.cellSize)
+                            tile(photos[position], at: position, size: metrics.cellSize)
                         }
                     }
                     .padding(Self.inset)
@@ -47,12 +47,13 @@ struct GridView: View {
 
     private static let inset: CGFloat = 16
 
-    private func tile(_ asset: Asset, size: CGFloat) -> some View {
+    private func tile(_ asset: Asset, at position: Int, size: CGFloat) -> some View {
         let stack = app.stackInfo(for: asset)
         let pair = app.companions(of: asset)
         // only plain values go in: a tile whose values didn't change is skipped whole, gestures
         // and all, when another photo is selected or rated
-        return GridTile(cell: GridCell(asset: asset, size: size,
+        return GridTile(position: position,
+                        cell: GridCell(asset: asset, size: size,
                                        selected: app.selectedIds.contains(asset.id),
                                        isPrimary: asset.id == app.primaryId,
                                        showInfo: app.showInfo,
@@ -107,11 +108,14 @@ struct GridView: View {
 /// outside it every visible cell was rebuilt and laid out again on any selection or rating.
 private struct GridTile: View, Equatable {
     @Environment(AppState.self) private var app
+    /// Where the list shows the photo: a click hands it on, so finding the photo again needs no pass.
+    let position: Int
     let cell: GridCell
     let pairedJPEGPath: String?
 
     nonisolated static func == (l: GridTile, r: GridTile) -> Bool {
-        l.cell == r.cell && l.pairedJPEGPath == r.pairedJPEGPath && l.cell.asset.type == r.cell.asset.type
+        l.position == r.position && l.cell == r.cell && l.pairedJPEGPath == r.pairedJPEGPath
+            && l.cell.asset.type == r.cell.asset.type
     }
 
     var body: some View {
@@ -125,12 +129,12 @@ private struct GridTile: View, Equatable {
             // the first click selects at once; the second of a double-click opens
             .onTapGesture {
                 if ClickEvent.clickCount >= 2 {
-                    app.openLoupe(asset.id)
+                    app.openLoupe(asset.id, at: position)
                     return
                 }
                 TextEditing.end()
                 let f = ClickEvent.modifierFlags
-                app.selectCell(asset.id, shift: f.contains(.shift), meta: f.contains(.command))
+                app.selectCell(asset.id, at: position, shift: f.contains(.shift), meta: f.contains(.command))
             }
             // one element per photo: tap gestures alone are invisible to VoiceOver, making the grid unusable
             .accessibilityElement(children: .ignore)
@@ -138,9 +142,9 @@ private struct GridTile: View, Equatable {
             .accessibilityAddTraits(cell.selected ? [.isButton, .isSelected] : .isButton)
             .accessibilityAction {
                 TextEditing.end()
-                app.selectCell(asset.id, shift: false, meta: false)
+                app.selectCell(asset.id, at: position, shift: false, meta: false)
             }
-            .accessibilityAction(named: "打开放大视图") { app.openLoupe(asset.id) }
+            .accessibilityAction(named: "打开放大视图") { app.openLoupe(asset.id, at: position) }
             .accessibilityAction(named: cell.stackCollapsed ? "展开堆栈" : "折叠堆栈") {
                 if stack != nil { app.toggleStack(containing: asset.id) }
             }

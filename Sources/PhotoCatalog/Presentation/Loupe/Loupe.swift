@@ -53,7 +53,7 @@ struct Loupe: View {
         let idx = max(0, app.primaryId.flatMap(app.listPosition(of:)) ?? 0)
         let target = idx + delta
         guard target >= 0, target < list.count else { return }  // clamp at ends, like the arrow keys
-        app.setPrimary(list[target].id)
+        app.setPrimary(list[target].id, at: target)
     }
 
     private func stage(_ asset: Asset) -> some View {
@@ -213,7 +213,7 @@ struct Filmstrip: View {
                         let a = photos[position]
                         FilmstripCell(asset: a, isPrimary: a.id == primaryId) {
                             TextEditing.end()
-                            app.setPrimary(a.id)
+                            app.setPrimary(a.id, at: position)
                         }
                         .equatable()
                         .id(PositionedPhoto(position: position, id: a.id))   // a position showing another photo starts fresh

@@ -185,13 +185,26 @@ extension AppState {
     }
 
     // ---------- selection ----------
-    func selectCell(_ id: String, shift: Bool, meta: Bool) {
+    /// `position` when the list as last worked out shows `id` there. A click passes the position
+    /// its tile was drawn at, so the next lookup of the photo needs no pass over the list; checked
+    /// against that list only, so a click never works the list out again, and a stale one is dropped.
+    private func checkedListPosition(_ position: Int?, of id: String) -> Int? {
+        guard let position, let cache = listCache, cache.signature == currentListSignature,
+              cache.value.indices.contains(position), cache.value[position].id == id else { return nil }
+        return position
+    }
+
+    func selectCell(_ id: String, at position: Int? = nil, shift: Bool, meta: Bool) {
+        let clicked = checkedListPosition(position, of: id)
         if shift, let anchor = anchorId {
-            let positions = listPositions(of: [anchor, id])
-            if let i1 = positions[anchor], let i2 = positions[id] {
+            // with the clicked photo's place known, only the anchor is looked for (the hint
+            // usually names it: it was the photo selected last)
+            let positions = clicked == nil ? listPositions(of: [anchor, id]) : listPositions(of: CollectionOfOne(anchor))
+            if let i1 = positions[anchor], let i2 = clicked ?? positions[id] {
                 let lo = min(i1, i2), hi = max(i1, i2)
                 selectedIds = Set(list[lo...hi].lazy.map(\.id))
                 primaryId = id
+                if let clicked { listPositionHint = (id, clicked) }
                 return
             }
         }
@@ -200,6 +213,7 @@ extension AppState {
                 selectedIds.insert(id)
                 primaryId = id
                 anchorId = id
+                if let clicked { listPositionHint = (id, clicked) }
                 return
             }
             selectedIds.remove(id)
@@ -209,8 +223,8 @@ extension AppState {
                 anchorId = primaryId
                 return
             }
-            let positions = listPositions(of: selectedIds.union([id]))
-            let from = positions[id] ?? 0
+            let positions = listPositions(of: clicked == nil ? selectedIds.union([id]) : selectedIds)
+            let from = clicked ?? positions[id] ?? 0
             let byPosition = selectedIds.sorted { (positions[$0] ?? .max) < (positions[$1] ?? .max) }
             primaryId = byPosition.first { (positions[$0] ?? .max) > from } ?? byPosition.last
             anchorId = primaryId
@@ -219,6 +233,7 @@ extension AppState {
         selectedIds = [id]
         primaryId = id
         anchorId = id
+        if let clicked { listPositionHint = (id, clicked) }
     }
 
     var canChangeVisibleSelection: Bool {
@@ -307,17 +322,23 @@ extension AppState {
         anchorId = next
     }
 
-    func openLoupe(_ id: String) {
+    /// `position`: where the list shows `id`, when the caller knows (a grid tile's).
+    func openLoupe(_ id: String, at position: Int? = nil) {
+        let clicked = checkedListPosition(position, of: id)
         primaryId = id
         selectedIds = [id]
+        if let clicked { listPositionHint = (id, clicked) }
         loupeZoom = nil
         view = .loupe
     }
 
-    func setPrimary(_ id: String) {
+    /// `position`: where the list shows `id`, when the caller knows (a filmstrip cell's).
+    func setPrimary(_ id: String, at position: Int? = nil) {
+        let clicked = checkedListPosition(position, of: id)
         primaryId = id
         selectedIds = [id]
         anchorId = id
+        if let clicked { listPositionHint = (id, clicked) }
     }
 
     // ---------- compare ----------
