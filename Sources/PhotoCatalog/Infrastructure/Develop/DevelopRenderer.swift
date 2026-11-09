@@ -37,7 +37,11 @@ enum DevelopRenderer {
         return DevelopHistogram(red: channel(0), green: channel(1), blue: channel(2))
     }
 
+    /// The image rendered into a bitmap now, on the calling queue. Core Image would defer a large
+    /// render (above roughly 11–24 Mpx) and run the whole graph again on every read of it: the
+    /// histogram, the layer showing it, each pixel read.
     static func render(_ image: CIImage) -> CGImage? {
-        context.createCGImage(image, from: image.extent.integral, format: .RGBA8, colorSpace: outputColorSpace)
+        context.createCGImage(image, from: image.extent.integral, format: .RGBA8, colorSpace: outputColorSpace,
+                              deferred: false)
     }
 }
