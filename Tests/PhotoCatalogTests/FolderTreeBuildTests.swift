@@ -197,9 +197,9 @@ final class FolderTreeBuildTests: XCTestCase {
         }
     }
 
-    /// The scale catalog's shape (years of dated folders, ~48k of them at 50k photos): the
-    /// siblings-by-name order is the listing order already, so `listingOrder` takes it after one
-    /// comparison per folder instead of sorting every whole path.
+    /// The scale catalog's shape (years of dated folders, ~48k of them at 50k photos): siblings in
+    /// code-point order are in the Finder's already, and the depth-first order is the listing
+    /// order, so `listingOrder` takes it after one comparison per folder instead of sorting.
     func testDatedFoldersNeedNoFullSort() {
         let root = "/Volumes/ScaleBench/Root3"
         var subfolders: [String: [(name: String, path: String)]] = [:]
@@ -219,9 +219,25 @@ final class FolderTreeBuildTests: XCTestCase {
                 all.append("\(yearPath)/\(name)")
             }
         }
-        let presorted = FolderTreeService.depthFirst(from: root, subfolders)
+        var comparisons = 0
+        let presorted = FolderTreeService.depthFirst(from: root, subfolders) { a, b in
+            comparisons += 1
+            return FolderTreeService.inListingOrder(a, b)
+        }
         let sorted = all.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending })
         XCTAssertEqual(presorted, sorted)
+        // one Finder comparison a folder to check its siblings' order, not a sort's ~10
+        XCTAssertLessThan(comparisons, all.count)
+    }
+
+    /// Siblings whose code-point order isn't the Finder's (numbers of different widths, case,
+    /// accents) are sorted the Finder's way.
+    func testSiblingsOutOfCodePointOrderAreSortedTheFindersWay() {
+        let root = "/r"
+        let names = ["10", "2", "b", "A", "a", "á", "Z", "１"]
+        let subfolders = ["/r": names.map { ($0, "/r/" + $0) }]
+        XCTAssertEqual(FolderTreeService.depthFirst(from: root, subfolders),
+                       names.map { "/r/" + $0 }.sorted { $0.localizedStandardCompare($1) == .orderedAscending })
     }
 }
 

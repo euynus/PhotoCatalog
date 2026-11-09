@@ -225,11 +225,19 @@ enum FolderTreeService {
     }
 
     /// The folders under `root`, each followed by its own, siblings in the Finder's order of their
-    /// names: the listing order, except where a name runs on past a sibling's (a folder "a" with
-    /// subfolders before "a b"), which `listingOrder` puts right.
-    static func depthFirst(from root: String, _ subfolders: [String: [(name: String, path: String)]]) -> [String] {
+    /// names (`inOrder`): the listing order, except where a name runs on past a sibling's (a folder
+    /// "a" with subfolders before "a b"), which `listingOrder` puts right.
+    static func depthFirst(from root: String, _ subfolders: [String: [(name: String, path: String)]],
+                           inOrder: (String, String) -> Bool = inListingOrder) -> [String] {
         func sorted(_ folders: [(name: String, path: String)]?) -> [String] {
-            (folders ?? []).sorted { inListingOrder($0.name, $1.name) }.map(\.path)
+            // by code point first, which is the Finder's order for most folder names (dates, numbers
+            // of one width, one case): checking it costs one comparison a name, where sorting by
+            // the Finder's order costs about ten
+            var siblings = (folders ?? []).sorted { $0.name < $1.name }
+            if !zip(siblings, siblings.dropFirst()).allSatisfy({ inOrder($0.name, $1.name) }) {
+                siblings.sort { inOrder($0.name, $1.name) }
+            }
+            return siblings.map(\.path)
         }
         var order: [String] = []
         var pending = Array(sorted(subfolders[root]).reversed())
