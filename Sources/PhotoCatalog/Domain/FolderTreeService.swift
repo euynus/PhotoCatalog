@@ -212,8 +212,10 @@ enum FolderTreeService {
         normalizedPath(PathString.standardized(PathString.directory(of: path)))
     }
 
-    private static func normalizedPath(_ path: String) -> String {
-        guard path.count > 1 else { return path }
+    /// Without a trailing slash: "/a/" → "/a"; "/" stays.
+    static func normalizedPath(_ path: String) -> String {
+        // most paths don't end in a slash, which the last byte tells without counting characters
+        guard path.utf8.count > 1, path.utf8.last == UInt8(ascii: "/"), path.count > 1 else { return path }
         return path.hasSuffix("/") ? String(path.dropLast()) : path
     }
 
