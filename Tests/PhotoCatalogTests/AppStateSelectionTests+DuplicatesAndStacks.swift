@@ -241,13 +241,8 @@ extension AppStateSelectionTests {
         try store.upsert(assets)
 
         let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
-        try db.execChecked("""
-        CREATE TRIGGER fail_duplicate_delete BEFORE UPDATE OF deleted ON assets
-        WHEN NEW.deleted = 1
-        BEGIN
-          SELECT RAISE(ABORT, 'forced duplicate delete failure');
-        END;
-        """)
+        try db.failWrites("fail_duplicate_delete", before: "UPDATE OF deleted", on: "assets",
+                          when: "WHEN NEW.deleted = 1", message: "forced duplicate delete failure")
 
         let app = AppState()
         app.onboarded = true

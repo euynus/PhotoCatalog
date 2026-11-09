@@ -52,26 +52,8 @@ extension PipelineCheck.Run {
               && health.missingPreviews == 0 && health.unavailableSourceRoots == 0
               && health.activeJobs == 0 && health.failedJobs == 0,
               "health check: refs, sources, and jobs ok")
-        func assetWithCache(_ base: Asset, thumb: String, preview: String) -> Asset {
-            Asset(id: base.id, pid: base.pid, ori: base.ori, thumb: thumb, preview: preview,
-                  filename: base.filename, type: base.type, isRaw: base.isRaw, folderId: base.folderId,
-                  folderName: base.folderName, date: base.date, width: base.width, height: base.height,
-                  orientation: base.orientation, camera: base.camera, lens: base.lens, focal: base.focal,
-                  aperture: base.aperture, shutter: base.shutter, iso: base.iso,
-                  colorSpace: base.colorSpace, hasICCProfile: base.hasICCProfile, fileMB: base.fileMB,
-                  fileModifiedAt: base.fileModifiedAt, fileCreatedAt: base.fileCreatedAt,
-                  rating: base.rating, flag: base.flag, colorLabel: base.colorLabel,
-                  keywords: base.keywords, title: base.title, caption: base.caption,
-                  author: base.author, copyright: base.copyright, makerNotes: base.makerNotes,
-                  project: base.project, client: base.client, location: base.location, gps: base.gps,
-                  gpsAltitude: base.gpsAltitude, status: base.status, importedAt: base.importedAt,
-                  deleted: base.deleted, localPath: base.localPath,
-                  captureDateSource: base.captureDateSource, contentHash: base.contentHash,
-                  quickHash: base.quickHash, isDemo: base.isDemo, faces: base.faces,
-                  perceptualHash: base.perceptualHash)
-        }
         var emptyCacheAssets = assets
-        emptyCacheAssets[0] = assetWithCache(emptyCacheAssets[0], thumb: "", preview: "")
+        emptyCacheAssets[0] = emptyCacheAssets[0].rebuilt(thumb: "", preview: "")
         let emptyCacheHealth = CatalogHealth.check(store, assets: emptyCacheAssets)
         check(emptyCacheHealth.missingThumbnails == 1 && emptyCacheHealth.missingPreviews == 1
               && !emptyCacheHealth.isHealthy,

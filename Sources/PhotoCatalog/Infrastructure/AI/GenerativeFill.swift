@@ -46,7 +46,7 @@ enum GenerativeFill {
     /// The key of a file at `path` last modified at `modified`: one that may be gone by now.
     static func key(index: Int, settings: DevelopSettings, path: String, modified: Date?) -> String {
         let text = "\(path)|\(modified?.timeIntervalSince1970 ?? 0)|" + pixelDependencies(index: index, settings: settings)
-        return SHA256.hash(data: Data(text.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
+        return SHA256.hash(data: Data(text.utf8)).prefix(12).hexString
     }
 
     private static func modificationDate(_ url: URL) -> Date? {

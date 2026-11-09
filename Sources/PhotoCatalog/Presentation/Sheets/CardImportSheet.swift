@@ -160,7 +160,8 @@ struct CardImportSheet: View {
             guard !Task.isCancelled, key == sourceKey else { return }
             found = await Task.detached(priority: .userInitiated) { CardImportService.scan(root, catalog: index) }.value
         }
-        guard key == sourceKey else { return }
+        // a source switched away and back meanwhile has a scan of its own on the way
+        guard !Task.isCancelled, key == sourceKey else { return }
         files = found
         selection = Set(found.filter { !$0.alreadyImported }.map(\.id))
         scanning = false

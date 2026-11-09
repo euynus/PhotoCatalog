@@ -162,4 +162,19 @@ final class CaptureDateTests: XCTestCase {
         days[-200_000] = 1   // 1422: the calendar's way, for every day
         XCTAssertEqual(CaptureDates.groups(dayCounts: days), CaptureDates.calendarGroups(dayCounts: days))
     }
+
+    /// A capture time whose day an Int can't hold, or that isn't a number, has no day (it's left
+    /// out of the date tree) rather than trapping; every other time keeps the day it had.
+    func testATimeTooFarOutForADayHasNone() {
+        for seconds in [9e23, -9e23, 1e30, -1e30, Double.greatestFiniteMagnitude, .infinity, -.infinity, .nan] {
+            XCTAssertNil(CaptureDates.day(of: Date(timeIntervalSince1970: seconds)), "\(seconds)")
+        }
+        XCTAssertEqual(CaptureDates.day(of: Date(timeIntervalSince1970: 1_791_800_000)), 20_738)
+        XCTAssertEqual(CaptureDates.day(of: Date(timeIntervalSince1970: 0)), 0)
+        XCTAssertEqual(CaptureDates.day(of: Date(timeIntervalSince1970: -0.5)), -1)
+        for date in [Date.distantPast, .distantFuture, Date(timeIntervalSince1970: 7e23), Date(timeIntervalSince1970: -7e23)] {
+            let seconds = date.timeIntervalSince1970
+            XCTAssertEqual(CaptureDates.day(of: date), Int((seconds / 86_400).rounded(.down)), "\(seconds)")
+        }
+    }
 }

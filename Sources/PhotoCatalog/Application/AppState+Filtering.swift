@@ -283,7 +283,7 @@ extension AppState {
         let filtered = !(filters.isEmpty && q.isEmpty)
         return {
             let belongs = collection()
-            let search = LocalizedSearch()   // its own, for the filter bar's text tests
+            var search = LocalizedSearch()   // its own, for the filter bar's text tests
             return { a in
                 guard live(a), belongs(a) else { return false }
                 guard filtered else { return true }
@@ -303,7 +303,7 @@ extension AppState {
                     if let indexedSearchIds {
                         if !indexedSearchIds.contains(a.id) { return false }
                     } else {
-                        if !search.text(a.searchHaystack, contains: q) { return false }
+                        if !search.haystack(of: a, contains: q) { return false }
                     }
                 }
                 return true
@@ -316,28 +316,14 @@ extension AppState {
     /// and the chunks' positions joined in order: the positions one pass finds.
     nonisolated static func matchingPositions(in assets: [Asset], chunk: Int,
                                               makeTest: () -> (Asset) -> Bool) -> [Int] {
-        let chunk = max(chunk, 1)
-        let chunks = assets.isEmpty ? 0 : (assets.count - 1) / chunk + 1
         // the photos through a pointer: threads reading one array retained its buffer by turns
-        return assets.withUnsafeBufferPointer { photos in
-            func positions(_ range: Range<Int>) -> [Int] {
+        assets.withUnsafeBufferPointer { photos in
+            Chunks.joined(Chunks.map(photos.count, chunk: chunk) { range in
                 let test = makeTest()
                 var found: [Int] = []
                 for position in range where test(photos[position]) { found.append(position) }
                 return found
-            }
-            guard chunks > 1 else { return positions(photos.indices) }
-            var parts = [[Int]](repeating: [], count: chunks)
-            parts.withUnsafeMutableBufferPointer { parts in
-                let slots = Shared(parts)
-                DispatchQueue.concurrentPerform(iterations: chunks) { index in
-                    slots.buffer[index] = positions(index * chunk ..< min(assets.count, (index + 1) * chunk))
-                }
-            }
-            var joined: [Int] = []
-            joined.reserveCapacity(parts.reduce(0) { $0 + $1.count })
-            for part in parts { joined += part }
-            return joined
+            })
         }
     }
 
@@ -398,14 +384,12 @@ extension AppState {
 
     /// `transform` of each of `0..<count`, worked out in chunks side by side on every core.
     nonisolated static func concurrentMap<T>(_ count: Int, chunk: Int, _ transform: (Int) -> T) -> [T] {
-        let chunk = max(chunk, 1)
-        guard count > chunk else { return (0..<count).map(transform) }
+        guard count > max(chunk, 1) else { return (0..<count).map(transform) }
+        // one array the chunks write into, each its own elements: no per-chunk arrays to join
         return [T](unsafeUninitializedCapacity: count) { buffer, initialized in
             let memory = Shared(buffer)
-            DispatchQueue.concurrentPerform(iterations: (count - 1) / chunk + 1) { index in
-                for i in index * chunk ..< min(count, (index + 1) * chunk) {
-                    (memory.buffer.baseAddress! + i).initialize(to: transform(i))
-                }
+            _ = Chunks.map(count, chunk: chunk) { range in
+                for i in range { (memory.buffer.baseAddress! + i).initialize(to: transform(i)) }
             }
             initialized = count
         }

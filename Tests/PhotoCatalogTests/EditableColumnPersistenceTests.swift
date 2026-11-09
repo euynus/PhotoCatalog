@@ -68,12 +68,8 @@ final class EditableColumnPersistenceTests: CatalogTestCase {
     func testAnEditThatChangesNothingWritesNoRow() throws {
         let (app, package, ids) = try openCatalog()
         let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
-        try db.execChecked("""
-        CREATE TRIGGER no_asset_update BEFORE UPDATE ON assets
-        BEGIN SELECT RAISE(ABORT, 'no row may be written'); END;
-        CREATE TRIGGER no_asset_insert BEFORE INSERT ON assets
-        BEGIN SELECT RAISE(ABORT, 'no row may be written'); END;
-        """)
+        try db.failWrites("no_asset_update", before: "UPDATE", on: "assets", message: "no row may be written")
+        try db.failWrites("no_asset_insert", before: "INSERT", on: "assets", message: "no row may be written")
         let title = try XCTUnwrap(app.asset(id: ids[0])?.title)
 
         XCTAssertTrue(app.mutate([ids[0]]) { $0.title = title })

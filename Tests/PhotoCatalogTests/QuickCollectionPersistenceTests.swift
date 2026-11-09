@@ -43,11 +43,8 @@ final class QuickCollectionPersistenceTests: CatalogTestCase {
         let (app, package, ids) = try openCatalog()
         step(app, selecting: [ids[0]])
         let db = try Database(path: package.appendingPathComponent("catalog.sqlite").path)
-        try db.execChecked("""
-        CREATE TRIGGER keep_first_member BEFORE DELETE ON album_assets
-        WHEN OLD.asset_id = '\(ids[0])'
-        BEGIN SELECT RAISE(ABORT, 'a member already in was written again'); END;
-        """)
+        try db.failWrites("keep_first_member", before: "DELETE", on: "album_assets",
+                          when: "WHEN OLD.asset_id = '\(ids[0])'", message: "a member already in was written again")
 
         step(app, selecting: [ids[2]])
 

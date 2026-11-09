@@ -66,28 +66,10 @@ extension AppState {
             || trashedOriginalIds.contains(asset.masterId ?? asset.id)
     }
 
-    /// The photos as a change made to a copy of them left them (duplicates resolved). Such a change
-    /// edits photos where they are, perhaps adding some after them: it goes in as edits in place
-    /// and an append, which carry on what's derived from every photo. Anything else is a new set
-    /// of photos, all of it worked out again. (Changes that know their photos' places make the
-    /// edits themselves, without copying the catalog: `replaceInPlace`.)
-    func replaceAssetsForMutation(_ updated: [Asset]) {
-        guard let edits = Self.editsInPlace(from: assets, to: updated) else {
-            nextAssetEditScope = .any
-            assets = updated
-            didMutateAssets()
-            return
-        }
-        replaceInPlace(edits)
-        if updated.count > assets.count { appendAssets(Array(updated[assets.count...])) }
-    }
-
     /// Photos changed where they are (by position) written back, with all their changes' effects.
     func replaceInPlace(_ edits: [(offset: Int, asset: Asset)]) {
         guard !edits.isEmpty else { return }
-        applyAssetEdits(edits, scope: edits.reduce(into: AssetEditScope()) {
-            $0.formUnion(Self.editScope(from: assets[$1.offset], to: $1.asset))
-        })
+        applyAssetEdits(edits, scope: editScope(of: edits))
     }
 
     /// Where the photos with these ids are, in order: looked up in the id index while every photo's
@@ -98,36 +80,6 @@ extension AppState {
         let index = assetIndex
         guard index.count == assets.count else { return assets.indices.filter { ids.contains(assets[$0].id) } }
         return ids.compactMap { index[$0] }.sorted()
-    }
-
-    /// The photos `updated` changed in place, by position, when it has each of `photos` where it
-    /// was (perhaps with more photos after them); nil when it hasn't. A photo left alone shares
-    /// its stored values with the one it was copied from. Compared in chunks on every core.
-    nonisolated private static func editsInPlace(from photos: [Asset], to updated: [Asset],
-                                                 chunk: Int = 65_536) -> [(offset: Int, asset: Asset)]? {
-        guard updated.count >= photos.count else { return nil }
-        func edits(_ range: Range<Int>) -> [(offset: Int, asset: Asset)]? {
-            var found: [(offset: Int, asset: Asset)] = []
-            for position in range where !updated[position].sharesStorage(with: photos[position]) {
-                guard updated[position].id == photos[position].id else { return nil }
-                found.append((position, updated[position]))
-            }
-            return found
-        }
-        let chunks = photos.isEmpty ? 0 : (photos.count - 1) / chunk + 1
-        guard chunks > 1 else { return edits(photos.indices) }
-        let lock = NSLock()
-        var parts = [[(offset: Int, asset: Asset)]?](repeating: [], count: chunks)
-        DispatchQueue.concurrentPerform(iterations: chunks) { index in
-            let part = edits(index * chunk ..< min(photos.count, (index + 1) * chunk))
-            lock.withLock { parts[index] = part }
-        }
-        var found: [(offset: Int, asset: Asset)] = []
-        for part in parts {
-            guard let part else { return nil }
-            found += part
-        }
-        return found
     }
 
     /// New photos added in one mutation, in place: `assets + new` copied the catalog for each
@@ -347,6 +299,9 @@ extension AppState {
                     : fresh.map(\.id).filter { !albums[index].assetIds.contains($0) }
                 albums[index].assetIds.append(contentsOf: added)
             } else {
+                // a new album of photos still to come counts none until they're added, as a recount
+                // gives it: a batch none of whose photos is shown (JPEGs behind their RAWs) moves nothing
+                if albumsGainOnlyPhotosToCome { sidebarCountIndexCache?.counts.albums[albumId] = 0 }
                 albums.append(Album(id: albumId, name: albumName, assetIds: fresh.map(\.id)))
             }
         }
@@ -552,7 +507,13 @@ extension AppState {
         if let patchedSidebar { sidebarCountIndexCache = patchedSidebar }
         patch(&projectCountsCache, projectChanges, \.project)
         patch(&clientCountsCache, clientChanges, \.client)
-        if let listBefore { patchListCaches(with: edits, validFor: listBefore) }
+        if let listBefore {
+            patchListCaches(with: edits, validFor: listBefore)
+            // the same photos match, each where it was in `assets`: a new sort needs no new pass
+            if let cache = matchingPositionsCache, cache.signature.hasPhotosBeforeSorting(of: listBefore) {
+                matchingPositionsCache = (currentListSignature, cache.positions)
+            }
+        }
         if let listRemoval {
             removeFromListCaches(listRemoval.leaving, staying: listRemoval.staying, validFor: listRemoval.before)
         }
