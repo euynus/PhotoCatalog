@@ -31,7 +31,7 @@ extension DevelopRenderer {
         private(set) var sourceSize: CGSize?
         /// Long edge of the original at full resolution: detail radii are given at that size and
         /// scale down with the render so a preview shows the same look as the full photo.
-        private let fullLongEdge: CGFloat
+        let fullLongEdge: CGFloat
 
         private struct RawStageKey: Equatable {
             let temperature: Double
