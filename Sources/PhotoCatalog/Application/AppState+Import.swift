@@ -692,6 +692,8 @@ extension AppState {
         let files = run.failures.map { URL(fileURLWithPath: $0.path) }
         // a card import's failures are the card's files: copied off it again, as the import would have
         let preparer = copyImportRetry?.runId == run.id ? copyImportRetry?.preparer : nil
+        // the destination as it is now: a file put there since the first pass takes its name
+        (preparer as? CardCopier)?.listFoldersAfresh()
         let retry = ImportRun(source: folder, mode: run.mode)
         guard startPersistedImport(retry, store: store, configuration: configuration.payload), let control = importControl else {
             importRun?.failures = run.failures

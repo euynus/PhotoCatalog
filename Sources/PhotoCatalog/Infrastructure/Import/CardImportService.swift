@@ -245,6 +245,16 @@ final class CardCopier: ImportFilePreparer, @unchecked Sendable {
 
     func prepare(_ source: URL) throws -> URL { try copy(source) }
 
+    /// Before another pass over the card's files (Retry Failed): every folder is listed again
+    /// and every name chosen again, so a file put there since the last pass is seen and its name
+    /// given way to. The sequence numbers stay the card's.
+    func listFoldersAfresh() {
+        lock.withLock {
+            index = CopyNaming.FolderIndex()
+            baseNames = [:]
+        }
+    }
+
     /// Copies one photo (and its sidecar) and returns the copy the catalog should reference.
     func copy(_ source: URL) throws -> URL {
         let fm = FileManager.default
