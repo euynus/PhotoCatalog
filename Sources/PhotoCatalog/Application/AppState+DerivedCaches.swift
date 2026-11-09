@@ -140,19 +140,7 @@ extension AppState {
     /// structural change; the photo list, stacks and the rest always are.
     func appendAssets(_ new: [Asset]) {
         let start = assets.count
-        // taken out of their caches, so that each is the only copy and changes in place
-        var index = assetIndexCache
-        var carried: AssetPairing? = pairRawAndJpeg
-            ? assetPairingCache.flatMap { $0.version == structureVersion ? $0.pairing : nil } : .empty
-        let library = isLoadingCatalog ? nil : libraryCountsCache
-        var keywords = keywordCountsCache
-        var projects = projectCountsCache, clients = clientCountsCache
-        var cameras = gearCountsCache?.cameras, lenses = gearCountsCache?.lenses
-        var sidebar = sidebarCountIndexCache.flatMap { $0.day == sidebarDay ? $0 : nil }
-        let dates = captureDateGroupsCache, tree = folderTreeCache, treeCounts = folderTreeCountCache
-        (assetIndexCache, assetPairingCache, libraryCountsCache, keywordCountsCache) = (nil, nil, nil, nil)
-        (projectCountsCache, clientCountsCache, gearCountsCache, sidebarCountIndexCache) = (nil, nil, nil, nil)
-        (captureDateGroupsCache, folderTreeCache, folderTreeCountCache) = (nil, nil, nil)
+        var caches = takeOutDerivedCaches()
         nextAssetEditScope = .any
         letGoOfListCaches()
         assets.append(contentsOf: new)   // drops all else that's derived
@@ -161,84 +149,64 @@ extension AppState {
             assertDerivedCachesCurrent()
         }
 
-        if index != nil {
-            for position in start ..< assets.count { index?[assets[position].id] = position }
-            assetIndexCache = index
+        if caches.index != nil {
+            for position in start ..< assets.count { caches.index?[assets[position].id] = position }
+            assetIndexCache = caches.index
         }
         // the folders come from every live photo's file, shown or not: those new photos are in
         // that the tree hasn't got are put in it
-        let grown = tree.map { FolderTreeService.adding(assets[start...], to: $0, sourceRootPaths: sourceRootPathsById) }
+        let grown = caches.tree.map { FolderTreeService.adding(assets[start...], to: $0, sourceRootPaths: sourceRootPathsById) }
         folderTreeCache = grown
         // the rest counts the photos as shown, so it's carried on only with the pairing
         var flipped: [Int] = []
         if pairRawAndJpeg {
-            guard let changed = carried?.append(assets, from: start) else { return }
+            guard let changed = caches.pairing?.append(assets, from: start) else { return }
             flipped = changed
         }
-        let pairing = carried ?? .empty
-        carried = nil   // `pairing` the only copy
+        let pairing = caches.pairing ?? .empty
+        caches.pairing = nil   // `pairing` the only copy
         if pairRawAndJpeg { assetPairingCache = (structureVersion, pairing) }
         carryStacks(appendedFrom: start, flipped: flipped)
         // the photos shown now and not before, or the other way round: the new ones shown, and
         // earlier ones that a new RAW hides or a second RAW of their name shows again
-        var changes = flipped.map { (position: $0, shown: pairing.isShown(assets[$0], at: $0)) }
+        var changes: [ShownChange] = flipped.map { position in
+            let photo = assets[position], shown = pairing.isShown(photo, at: position)
+            return (position, photo, !shown, photo, shown)
+        }
         for position in start ..< assets.count where pairing.isShown(assets[position], at: position) {
-            changes.append((position, true))
+            changes.append((position, assets[position], false, assets[position], true))
         }
 
-        if var counts = library {
+        if var counts = caches.library {
             let (cutoff, faces) = (recentCutoff, faceAssetIds)
             for position in start ..< assets.count where !assets[position].deleted { counts.countFile(assets[position]) }
             for change in changes {
-                counts.count(assets[change.position], recentCutoff: cutoff, withFaces: faces, change.shown ? 1 : -1)
+                counts.count(change.new, recentCutoff: cutoff, withFaces: faces, change.shown ? 1 : -1)
             }
             libraryCountsCache = counts
         }
-        if keywords != nil, Self.carry(&keywords!, changes, of: assets, from: start) { keywordCountsCache = keywords }
-        let photos = assets
-        func carry(_ counts: inout MetadataValueCounts?, _ keyPath: KeyPath<Asset, String>) {
-            // as an edit from no value to the photo's, or from its value to none
-            let moves = changes.compactMap { change -> (offset: Int, old: String, new: String)? in
-                let raw = photos[change.position][keyPath: keyPath]
-                let value = raw.isEmpty ? "" : listedValue(raw)
-                guard !value.isEmpty else { return nil }
-                return change.shown ? (change.position, "", value) : (change.position, value, "")
-            }
-            let carried = moves.isEmpty || counts?.apply(moves, photos: photos.count, value: {
-                MetadataValueCounts.value(at: $0, of: photos, keyPath, pairing: pairing)
-            }) == true
-            if !carried { counts = nil }
+        if caches.keywords != nil, Self.carry(&caches.keywords!, changes.map { ($0.position, $0.shown) }, of: assets, from: start) {
+            keywordCountsCache = caches.keywords
         }
-        carry(&projects, \.project)
-        carry(&clients, \.client)
-        (projectCountsCache, clientCountsCache) = (projects, clients)
-        carry(&cameras, \.camera)
-        carry(&lenses, \.lens)
-        if let cameras, let lenses { gearCountsCache = (cameras, lenses) }
-        if sidebar != nil {
-            var memos = sidebar?.smartRules.map { SmartMatcher.Memo(for: $0.rule) } ?? []
-            for change in changes { sidebar?.count(assets[change.position], change.shown ? 1 : -1, memos: &memos) }
-            if !albums.isEmpty, !changes.isEmpty {
-                let moved = Dictionary(changes.map { (assets[$0.position].id, $0.shown ? 1 : -1) }, uniquingKeysWith: +)
-                for album in albums {
-                    let change = album.assetIds.reduce(0) { $0 + (moved[$1] ?? 0) }
-                    if change != 0 { sidebar?.counts.albums[album.id, default: 0] += change }
-                }
-            }
-            sidebarCountIndexCache = sidebar
+        carryMetadataValues(changes, in: &caches, pairing: pairing)
+        if caches.sidebar != nil {
+            var memos = caches.sidebar?.smartRules.map { SmartMatcher.Memo(for: $0.rule) } ?? []
+            for change in changes { caches.sidebar?.count(change.new, change.shown ? 1 : -1, memos: &memos) }
+            moveAlbumCounts(changes, in: &caches.sidebar)
+            sidebarCountIndexCache = caches.sidebar
         }
-        if var days = dates?.days {
+        if var days = caches.dates?.days {
             for change in changes {
-                guard let day = CaptureDates.day(of: assets[change.position].date) else { continue }
+                guard let day = CaptureDates.day(of: change.new.date) else { continue }
                 let count = days[day, default: 0] + (change.shown ? 1 : -1)
                 days[day] = count == 0 ? nil : count
             }
-            captureDateGroupsCache = changes.isEmpty ? dates : (days, CaptureDates.groups(dayCounts: days))
+            captureDateGroupsCache = changes.isEmpty ? caches.dates : (days, CaptureDates.groups(dayCounts: days))
         }
-        if let grown, var counts = treeCounts {
+        if let grown, var counts = caches.treeCounts {
             Self.list(newFolders: grown, in: &counts)
-            let shown = changes.filter(\.shown).map { assets[$0.position] }
-            let hidden = changes.filter { !$0.shown }.map { assets[$0.position] }
+            let shown = changes.filter(\.shown).map(\.new)
+            let hidden = changes.filter { !$0.shown }.map(\.new)
             for (id, number) in FolderTreeService.counts(for: grown, assets: shown) where number != 0 {
                 counts[id, default: 0] += number
             }
@@ -246,6 +214,92 @@ extension AppState {
                 counts[id, default: 0] -= number
             }
             folderTreeCountCache = counts
+        }
+    }
+
+    /// What's derived from every photo, taken out of its caches so that each is the only copy and
+    /// changes in place as a change of the photos is carried through it (a copy left in its cache
+    /// would be copied whole by the first change).
+    private struct TakenOutCaches {
+        var index: [String: Int]?
+        var pairing: AssetPairing?
+        var library: LibraryCounts?
+        var keywords: KeywordTally?
+        var projects, clients, cameras, lenses: MetadataValueCounts?
+        var sidebar: SidebarCountIndex?
+        var dates: (days: [Int: Int], groups: [CaptureDateBucket])?
+        var tree: [FolderTreeItem]?
+        var treeCounts: [String: Int]?
+    }
+
+    /// A photo shown before or after a change: as it was and whether it was shown then, as it is
+    /// and whether it's shown now. A photo added wasn't shown before; one a new RAW hides, or a
+    /// second RAW of its name shows again, is itself before and after.
+    private typealias ShownChange = (position: Int, old: Asset, wasShown: Bool, new: Asset, shown: Bool)
+
+    /// Takes what's derived from every photo out of its caches before a change of the photos
+    /// carries it on: what a change can't carry stays out. The pairing only when it's of these
+    /// photos, the library counts not while a catalog loads, the sidebar's of today only.
+    private func takeOutDerivedCaches() -> TakenOutCaches {
+        let caches = TakenOutCaches(
+            index: assetIndexCache,
+            pairing: pairRawAndJpeg ? assetPairingCache.flatMap { $0.version == structureVersion ? $0.pairing : nil } : .empty,
+            library: isLoadingCatalog ? nil : libraryCountsCache,
+            keywords: keywordCountsCache, projects: projectCountsCache, clients: clientCountsCache,
+            cameras: gearCountsCache?.cameras, lenses: gearCountsCache?.lenses,
+            sidebar: sidebarCountIndexCache.flatMap { $0.day == sidebarDay ? $0 : nil },
+            dates: captureDateGroupsCache, tree: folderTreeCache, treeCounts: folderTreeCountCache)
+        (assetIndexCache, assetPairingCache, libraryCountsCache, keywordCountsCache) = (nil, nil, nil, nil)
+        (projectCountsCache, clientCountsCache, gearCountsCache, sidebarCountIndexCache) = (nil, nil, nil, nil)
+        (captureDateGroupsCache, folderTreeCache, folderTreeCountCache) = (nil, nil, nil)
+        return caches
+    }
+
+    /// Moves the project, client, camera and lens counts from each changed photo's value as it was
+    /// counted (none when it wasn't shown) to its value now (none when it isn't), and puts back
+    /// those that moved exactly.
+    private func carryMetadataValues(_ changes: [ShownChange], in caches: inout TakenOutCaches, pairing: AssetPairing) {
+        let photos = assets
+        // the changes that can move a project, client, camera or lens (a status or path changes none)
+        let valueChanges = changes.filter {
+            $0.wasShown != $0.shown || $0.old.project != $0.new.project || $0.old.client != $0.new.client
+                || $0.old.camera != $0.new.camera || $0.old.lens != $0.new.lens
+        }
+        func carry(_ counts: inout MetadataValueCounts?, _ keyPath: KeyPath<Asset, String>, _ field: (Asset) -> String) {
+            func value(_ photo: Asset, shown: Bool) -> String {
+                let raw = field(photo)
+                return shown && !raw.isEmpty ? listedValue(raw) : ""
+            }
+            let moves = valueChanges.compactMap { change -> (offset: Int, old: String, new: String)? in
+                let (before, after) = (value(change.old, shown: change.wasShown), value(change.new, shown: change.shown))
+                return before == after ? nil : (change.position, before, after)
+            }
+            let kept = moves.isEmpty || counts?.apply(moves, photos: photos.count, value: {
+                MetadataValueCounts.value(at: $0, of: photos, keyPath, pairing: pairing)
+            }) == true
+            if !kept { counts = nil }
+        }
+        // the fields read directly: through a key path, a drive's 50,000 photos took ~0.1 s
+        carry(&caches.projects, \.project) { $0.project }
+        carry(&caches.clients, \.client) { $0.client }
+        (projectCountsCache, clientCountsCache) = (caches.projects, caches.clients)
+        carry(&caches.cameras, \.camera) { $0.camera }
+        carry(&caches.lenses, \.lens) { $0.lens }
+        if let cameras = caches.cameras, let lenses = caches.lenses { gearCountsCache = (cameras, lenses) }
+    }
+
+    /// The albums' counts in the sidebar's index, moved by the photos a change showed or stopped
+    /// showing.
+    private func moveAlbumCounts(_ changes: [ShownChange], in sidebar: inout SidebarCountIndex?) {
+        guard !albums.isEmpty else { return }
+        var moved: [String: Int] = [:]
+        for change in changes where change.wasShown != change.shown {
+            moved[change.new.id, default: 0] += change.shown ? 1 : -1
+        }
+        guard !moved.isEmpty else { return }
+        for album in albums {
+            let change = album.assetIds.reduce(0) { $0 + (moved[$1] ?? 0) }
+            if change != 0 { sidebar?.counts.albums[album.id, default: 0] += change }
         }
     }
 
@@ -603,21 +657,9 @@ extension AppState {
     }
 
     private func carryStructuralEdits(_ edits: [(offset: Int, asset: Asset)], old: [Asset], scope: AssetEditScope) {
-        // taken out of their caches, so that each is the only copy and changes in place
-        let index = assetIndexCache
-        var carried: AssetPairing? = pairRawAndJpeg
-            ? assetPairingCache.flatMap { $0.version == structureVersion ? $0.pairing : nil } : .empty
-        let library = isLoadingCatalog ? nil : libraryCountsCache
-        var keywords = keywordCountsCache
-        var projects = projectCountsCache, clients = clientCountsCache
-        var cameras = gearCountsCache?.cameras, lenses = gearCountsCache?.lenses
-        var sidebar = sidebarCountIndexCache.flatMap { $0.day == sidebarDay ? $0 : nil }
-        let dates = captureDateGroupsCache, tree = folderTreeCache, treeCounts = folderTreeCountCache
-        (assetIndexCache, assetPairingCache, libraryCountsCache, keywordCountsCache) = (nil, nil, nil, nil)
-        (projectCountsCache, clientCountsCache, gearCountsCache, sidebarCountIndexCache) = (nil, nil, nil, nil)
-        (captureDateGroupsCache, folderTreeCache, folderTreeCountCache) = (nil, nil, nil)
+        var caches = takeOutDerivedCaches()
         // shown before: not removed, and not a JPEG behind its RAW
-        let wasShown = carried.map { pairing in zip(edits, old).map { pairing.isShown($1, at: $0.offset) } }
+        let wasShown = caches.pairing.map { pairing in zip(edits, old).map { pairing.isShown($1, at: $0.offset) } }
         nextAssetEditScope = scope
         assert(edits.allSatisfy { assets[$0.offset].id == $0.asset.id }, "an edit keeps its photo's id")
         letGoOfListCaches()
@@ -629,14 +671,14 @@ extension AppState {
             assertDerivedCachesCurrent()
         }
         // the photos stay where they are: the id index outlives the change
-        assetIndexCache = index
+        assetIndexCache = caches.index
         assertAssetIndexCurrent()
 
         // The folders come from every live photo's file, shown or not: those the photos are in now
         // are put in the tree, and each they've left must still have photos in it (or the tree is
         // made again). Without counts to tell, that's when the photos are in every folder they were.
         let roots = sourceRootPathsById
-        let grown = tree.map { FolderTreeService.adding(edits.lazy.map(\.asset), to: $0, sourceRootPaths: roots) }
+        let grown = caches.tree.map { FolderTreeService.adding(edits.lazy.map(\.asset), to: $0, sourceRootPaths: roots) }
         let left = grown.map { FolderTreeService.subfolderIds(of: old, in: $0, sourceRootPaths: roots) } ?? []
         func keepFoldersUncounted() {
             guard let grown,
@@ -645,20 +687,20 @@ extension AppState {
             folderTreeCache = grown
         }
         // the rest counts the photos as shown, so it's carried on only with the pairing
-        guard carried != nil, let wasShown else { return keepFoldersUncounted() }
+        guard caches.pairing != nil, let wasShown else { return keepFoldersUncounted() }
         var flipped: [Int] = []
         if pairRawAndJpeg {
-            guard let changed = carried?.replace(zip(edits, old).map { ($0.offset, $1) }, in: assets) else {
+            guard let changed = caches.pairing?.replace(zip(edits, old).map { ($0.offset, $1) }, in: assets) else {
                 return keepFoldersUncounted()
             }
             flipped = changed
         }
-        let pairing = carried ?? .empty
-        carried = nil   // `pairing` the only copy
+        let pairing = caches.pairing ?? .empty
+        caches.pairing = nil   // `pairing` the only copy
         if pairRawAndJpeg { assetPairingCache = (structureVersion, pairing) }
         // the photos shown before or now: the changed ones, and others that a change hid behind a
         // RAW or showed again (a RAW removed or renamed, a JPEG renamed next to one)
-        var changes: [(position: Int, old: Asset, wasShown: Bool, new: Asset, shown: Bool)] = []
+        var changes: [ShownChange] = []
         for (number, edit) in edits.enumerated() {
             let shown = pairing.isShown(edit.asset, at: edit.offset)
             if shown || wasShown[number] { changes.append((edit.offset, old[number], wasShown[number], edit.asset, shown)) }
@@ -673,7 +715,7 @@ extension AppState {
 
         // A photo shown before and after (a status, a path, a capture time changed) only moves
         // where what it's counted by changed: a drive unplugged changes no count but missing/offline.
-        if var counts = library {
+        if var counts = caches.library {
             let (cutoff, faces) = (recentCutoff, faceAssetIds)
             for (before, edit) in zip(old, edits) {
                 if !before.deleted { counts.countFile(before, -1) }
@@ -689,57 +731,24 @@ extension AppState {
             let (before, after) = (change.wasShown ? change.old.keywords : [], change.shown ? change.new.keywords : [])
             return before == after ? nil : (change.position, before, after)
         }
-        if keywords != nil, Self.patchKeywords(&keywords!, keywordChanges) { keywordCountsCache = keywords }
-        let photos = assets
-        // the changes that can move a project, client, camera or lens (a status or path changes none)
-        let valueChanges = changes.filter {
-            $0.wasShown != $0.shown || $0.old.project != $0.new.project || $0.old.client != $0.new.client
-                || $0.old.camera != $0.new.camera || $0.old.lens != $0.new.lens
-        }
-        func carry(_ counts: inout MetadataValueCounts?, _ keyPath: KeyPath<Asset, String>, _ field: (Asset) -> String) {
-            func value(_ photo: Asset, shown: Bool) -> String {
-                let raw = field(photo)
-                return shown && !raw.isEmpty ? listedValue(raw) : ""
-            }
-            let moves = valueChanges.compactMap { change -> (offset: Int, old: String, new: String)? in
-                let (before, after) = (value(change.old, shown: change.wasShown), value(change.new, shown: change.shown))
-                return before == after ? nil : (change.position, before, after)
-            }
-            let kept = moves.isEmpty || counts?.apply(moves, photos: photos.count, value: {
-                MetadataValueCounts.value(at: $0, of: photos, keyPath, pairing: pairing)
-            }) == true
-            if !kept { counts = nil }
-        }
-        // the fields read directly: through a key path, a drive's 50,000 photos took ~0.1 s
-        carry(&projects, \.project) { $0.project }
-        carry(&clients, \.client) { $0.client }
-        (projectCountsCache, clientCountsCache) = (projects, clients)
-        carry(&cameras, \.camera) { $0.camera }
-        carry(&lenses, \.lens) { $0.lens }
-        if let cameras, let lenses { gearCountsCache = (cameras, lenses) }
+        if caches.keywords != nil, Self.patchKeywords(&caches.keywords!, keywordChanges) { keywordCountsCache = caches.keywords }
+        carryMetadataValues(changes, in: &caches, pairing: pairing)
         // matching each photo against every smart album, out and in: past half the library,
         // recounting it (once, when the sidebar next reads) is the cheaper way
-        if sidebar != nil, changes.count * 2 <= assets.count {
-            var memos = sidebar?.smartRules.map { SmartMatcher.Memo(for: $0.rule) } ?? []
-            var moved: [String: Int] = [:]
+        if caches.sidebar != nil, changes.count * 2 <= assets.count {
+            var memos = caches.sidebar?.smartRules.map { SmartMatcher.Memo(for: $0.rule) } ?? []
             for change in changes {
                 if change.wasShown, change.shown {
-                    sidebar?.move(from: change.old, to: change.new, memos: &memos)
+                    caches.sidebar?.move(from: change.old, to: change.new, memos: &memos)
                     continue
                 }
-                if change.wasShown { sidebar?.count(change.old, -1, memos: &memos) }
-                if change.shown { sidebar?.count(change.new, 1, memos: &memos) }
-                moved[change.new.id, default: 0] += change.shown ? 1 : -1
+                if change.wasShown { caches.sidebar?.count(change.old, -1, memos: &memos) }
+                if change.shown { caches.sidebar?.count(change.new, 1, memos: &memos) }
             }
-            if !moved.isEmpty {
-                for album in albums {
-                    let change = album.assetIds.reduce(0) { $0 + (moved[$1] ?? 0) }
-                    if change != 0 { sidebar?.counts.albums[album.id, default: 0] += change }
-                }
-            }
-            sidebarCountIndexCache = sidebar
+            moveAlbumCounts(changes, in: &caches.sidebar)
+            sidebarCountIndexCache = caches.sidebar
         }
-        if let dates {
+        if let dates = caches.dates {
             var days = dates.days
             var moved = false
             for change in changes {
@@ -756,7 +765,7 @@ extension AppState {
             captureDateGroupsCache = moved ? (days, CaptureDates.groups(dayCounts: days)) : dates
         }
         guard let grown else { return }
-        guard var counts = treeCounts else { return keepFoldersUncounted() }
+        guard var counts = caches.treeCounts else { return keepFoldersUncounted() }
         Self.list(newFolders: grown, in: &counts)
         // a photo shown before and now, in the same file, is counted where it was
         let moved = changes.filter {
