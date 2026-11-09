@@ -67,7 +67,16 @@ final class AppState {
         didSet {
             // photos put in an album just before they're added (an import batch) aren't in the
             // sidebar's counts yet: adding them moves the album's count (appendAssets)
-            if albumsGainOnlyPhotosToCome { albumsGainOnlyPhotosToCome = false } else { sidebarCountIndexCache = nil }
+            if albumsGainOnlyPhotosToCome {
+                albumsGainOnlyPhotosToCome = false
+            } else if var index = sidebarCountIndexCache, index.day == sidebarDay {
+                // taken out, so its counts change in place: only albums whose photos changed are counted
+                sidebarCountIndexCache = nil
+                carryAlbumCounts(&index, from: oldValue)
+                sidebarCountIndexCache = index
+            } else {
+                sidebarCountIndexCache = nil
+            }
             pinnedSidebarFavoritesCache = nil
             listInputsVersion &+= 1
         }
@@ -75,7 +84,13 @@ final class AppState {
     @ObservationIgnored var albumsGainOnlyPhotosToCome = false
     var smartAlbums: [SmartAlbum] {
         didSet {
-            sidebarCountIndexCache = nil
+            // a rename, a move into a set, a new order or a deletion matches no photo again
+            if var index = sidebarCountIndexCache, index.day == sidebarDay {
+                sidebarCountIndexCache = nil
+                if carrySmartAlbumCounts(&index, from: oldValue) { sidebarCountIndexCache = index }
+            } else {
+                sidebarCountIndexCache = nil
+            }
             pinnedSidebarFavoritesCache = nil
             listInputsVersion &+= 1
         }

@@ -295,6 +295,43 @@ extension AppState {
         if !added.isEmpty { appendAssets(added) }
     }
 
+    /// The sidebar's album counts carried through a change of the albums: those whose photos
+    /// changed are counted again as a recount counts them (each listed photo shown, as often as
+    /// it's listed), a new one gets its count (none is a count), and those gone are dropped. A
+    /// rename, a move into a set or a new order counts nothing.
+    func carryAlbumCounts(_ index: inout SidebarCountIndex, from oldAlbums: [Album]) {
+        let old = Dictionary(oldAlbums.map { ($0.id, $0.assetIds) }, uniquingKeysWith: { $1 })
+        let ids = Set(albums.map(\.id))
+        for id in old.keys where !ids.contains(id) { index.counts.albums[id] = nil }
+        // an id listed twice is counted as a recount counts it, the last album's photos
+        let unique = ids.count == albums.count && old.count == oldAlbums.count
+        let changed = unique ? albums.filter { old[$0.id] != $0.assetIds } : albums
+        guard !changed.isEmpty else { return }
+        let positions = assetIndex
+        let pairing = assetPairing
+        for album in changed {
+            index.counts.albums[album.id] = album.assetIds.reduce(0) { count, id in
+                guard let position = positions[id], pairing.isShown(assets[position], at: position) else { return count }
+                return count + 1
+            }
+        }
+    }
+
+    /// The sidebar's smart album counts carried through a change of the smart albums: kept while
+    /// every rule left is as it was (a rename, a move into a set, a new order), those of deleted
+    /// ones dropped. False when a rule changed or one was added, which takes matching every photo.
+    func carrySmartAlbumCounts(_ index: inout SidebarCountIndex, from oldAlbums: [SmartAlbum]) -> Bool {
+        let old = Dictionary(oldAlbums.map { ($0.id, $0.rule) }, uniquingKeysWith: { $1 })
+        let new = Dictionary(smartAlbums.map { ($0.id, $0.rule) }, uniquingKeysWith: { $1 })
+        guard old.count == oldAlbums.count, new.count == smartAlbums.count,
+              new.allSatisfy({ old[$0.key] == $0.value }) else { return false }
+        let removed = Set(old.keys).subtracting(new.keys)
+        guard !removed.isEmpty else { return true }
+        for id in removed { index.counts.smartAlbums[id] = nil }
+        index.smartRules.removeAll { removed.contains($0.id) }
+        return true
+    }
+
     /// Counts the keywords of photos now shown in, and of photos no longer shown out, as a pass
     /// over the photos would count them; false when that moves where a pass first meets a keyword
     /// (to an earlier photo, or past one no longer shown), which takes counting again. Photos from
