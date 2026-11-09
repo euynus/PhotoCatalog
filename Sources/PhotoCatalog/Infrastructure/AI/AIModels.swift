@@ -103,6 +103,6 @@ enum AIModels {
             guard let data = try? Data(contentsOf: file, options: .alwaysMapped) else { return nil }
             hasher.update(data: data)
         }
-        return hasher.finalize().prefix(8).map { String(format: "%02x", $0) }.joined()
+        return hasher.finalize().prefix(8).hexString
     }
 }

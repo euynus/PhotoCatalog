@@ -226,7 +226,7 @@ enum FullBackupFiles {
             }
             try output.synchronize()
         }
-        return Fingerprint(size: bytes, sha256: hasher.finalize().map { String(format: "%02x", $0) }.joined())
+        return Fingerprint(size: bytes, sha256: hasher.finalize().hexString)
     }
 
     private static func unchanged(_ a: stat, _ b: stat) -> Bool {

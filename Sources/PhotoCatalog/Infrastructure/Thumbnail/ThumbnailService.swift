@@ -79,7 +79,7 @@ final class ThumbnailService: @unchecked Sendable {
 
     /// Sharded path: <base>/ab/cd/<assetId>.jpg
     func cachePath(assetId: String, kind: Kind) -> URL {
-        let digest = SHA256.hash(data: Data(assetId.utf8)).compactMap { String(format: "%02x", $0) }.joined()
+        let digest = SHA256.hash(data: Data(assetId.utf8)).hexString
         let a = String(digest.prefix(2))
         let b = String(digest.dropFirst(2).prefix(2))
         return kind.baseURL(store)
