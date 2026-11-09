@@ -25,13 +25,11 @@ extension PipelineCheck.Run {
             check(false, "suspected duplicate group sample")
         }
         if let group = dupes.first(where: { $0.items.count == 2 }) {
-            var resolvedAssets = assets
             let keepId = group.items[0].id
-            let report = DuplicateResolutionService.resolve(group, keepId: keepId, in: &resolvedAssets,
+            let report = DuplicateResolutionService.resolve(group, current: assets, keepId: keepId,
                                                             action: .removeFromCatalog)
-            let removed = resolvedAssets.filter { report.removedIds.contains($0.id) && $0.deleted }
-            let kept = resolvedAssets.first { $0.id == keepId }
-            check(report.affectedCount == 1 && removed.count == 1 && kept?.deleted == false,
+            let others = Set(group.items.map(\.id)).subtracting([keepId])
+            check(report.affectedCount == 1 && report.removedIds == others,
                   "duplicate resolution removed non-kept catalog item")
         } else { check(false, "duplicate resolution sample group") }
     }
