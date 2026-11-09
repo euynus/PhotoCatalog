@@ -88,13 +88,7 @@ extension AppState {
         guard !target.isEmpty else { return false }
         // Edit copies of only the targeted photos and write them back in place, with the
         // narrowest invalidation their changes need (a keyword edit keeps pairing and trees).
-        let index = assetIndex
-        let edits = target.compactMap { id -> (offset: Int, asset: Asset)? in
-            guard let offset = index[id] else { return nil }
-            var asset = assets[offset]
-            transform(&asset)
-            return (offset, asset)
-        }.sorted { $0.offset < $1.offset }
+        let edits = editedCopies(of: target, transform)
         guard !edits.isEmpty else { return false }
         guard persistChanged(edits.map(\.asset), writingSidecars: writingSidecars) else { return false }
         let before = edits.map { assets[$0.offset] }
@@ -105,6 +99,19 @@ extension AppState {
         ensurePrimaryValid()
         registerUndo(from: before, to: edits.map(\.asset), actionName: undoName)
         return true
+    }
+
+    /// Copies of the photos with these ids (those the catalog has), each changed by `transform`,
+    /// in the order the photos are in.
+    private func editedCopies(of ids: Set<String>,
+                              _ transform: (inout Asset) -> Void) -> [(offset: Int, asset: Asset)] {
+        let index = assetIndex
+        return ids.compactMap { id -> (offset: Int, asset: Asset)? in
+            guard let offset = index[id] else { return nil }
+            var asset = assets[offset]
+            transform(&asset)
+            return (offset, asset)
+        }.sorted { $0.offset < $1.offset }
     }
 
     @discardableResult
@@ -142,13 +149,7 @@ extension AppState {
         guard !ids.isEmpty else { return false }
         // Edit copies of only the targeted assets, persist, then write them back in place:
         // copying the whole array retained every string of every asset on each keystroke.
-        let index = assetIndex
-        let edits = ids.compactMap { id -> (offset: Int, asset: Asset)? in
-            guard let offset = index[id] else { return nil }
-            var asset = assets[offset]
-            transform(&asset)
-            return (offset, asset)
-        }.sorted { $0.offset < $1.offset }
+        let edits = editedCopies(of: ids, transform)
         guard !edits.isEmpty else { return false }
         let changed = edits.map(\.asset).filter { !$0.isDemo }
         if let store, !changed.isEmpty {
