@@ -69,10 +69,6 @@ final class ThumbnailService: @unchecked Sendable {
         }
     }
 
-    private static let quickLookPreferredExtensions: Set<String> = [
-        "cr2", "cr3", "nef", "arw", "raf", "orf", "rw2", "dng", "pef", "srw", "raw",
-    ]
-
     enum Kind: Sendable {
         case thumb256, thumb512, preview1600, preview2048
 
@@ -329,9 +325,7 @@ final class ThumbnailService: @unchecked Sendable {
     }
 
     private static func prefersQuickLook(for original: URL) -> Bool {
-        let ext = original.pathExtension.lowercased()
-        if quickLookPreferredExtensions.contains(ext) { return true }
-        return UTType(filenameExtension: ext)?.conforms(to: .rawImage) ?? false
+        FileScanner.isRaw(extension: original.pathExtension.lowercased())
     }
 
     private func quickLookThumbnail(from original: URL, maxPixel: Int) -> CGImage? {
