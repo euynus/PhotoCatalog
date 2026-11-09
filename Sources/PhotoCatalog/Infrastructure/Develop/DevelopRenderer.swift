@@ -37,11 +37,17 @@ enum DevelopRenderer {
         return DevelopHistogram(red: channel(0), green: channel(1), blue: channel(2))
     }
 
-    /// The image rendered into a bitmap now, on the calling queue. Core Image would defer a large
-    /// render (above roughly 11–24 Mpx) and run the whole graph again on every read of it: the
-    /// histogram, the layer showing it, each pixel read.
+    /// The image rendered into a Display P3 bitmap now, on the calling queue. Core Image would
+    /// defer a large render (above roughly 11–24 Mpx) and run the whole graph again on every read
+    /// of it: the histogram, the layer showing it, each pixel read.
     static func render(_ image: CIImage) -> CGImage? {
-        context.createCGImage(image, from: image.extent.integral, format: .RGBA8, colorSpace: outputColorSpace,
-                              deferred: false)
+        render(image, colorSpace: outputColorSpace)
+    }
+
+    /// The image rendered into a bitmap in `colorSpace`, for a destination in that space (a video's
+    /// Rec. 709) that would otherwise convert it on every draw. A separate overload, not a
+    /// default argument, so `render` still passes as a `(CIImage) -> CGImage?`.
+    static func render(_ image: CIImage, colorSpace: CGColorSpace) -> CGImage? {
+        context.createCGImage(image, from: image.extent.integral, format: .RGBA8, colorSpace: colorSpace, deferred: false)
     }
 }

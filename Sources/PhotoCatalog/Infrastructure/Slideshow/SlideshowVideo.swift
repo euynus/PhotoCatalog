@@ -167,7 +167,8 @@ private final class SlideRenderer: @unchecked Sendable {
         self.settings = settings
     }
 
-    /// Photo `index` rendered big enough for its largest zoom.
+    /// Photo `index` rendered big enough for its largest zoom, in the video's color space so
+    /// drawing it into each frame needs no conversion.
     private func image(_ index: Int) -> CGImage? {
         if let image = rendered[index] { return image }
         let item = slides[index].item
@@ -175,7 +176,7 @@ private final class SlideRenderer: @unchecked Sendable {
         let fit = min(size.width / aspect, size.height) * 1.15
         let pixels = CGSize(width: (fit * aspect).rounded(), height: fit.rounded())
         guard let developed = item.developed(forLongEdge: Double(max(pixels.width, pixels.height))),
-              let image = DevelopRenderer.render(developed) else { return nil }
+              let image = DevelopRenderer.render(developed, colorSpace: space) else { return nil }
         // the photos showing now and next; earlier ones are let go
         rendered = rendered.filter { $0.key >= index - 1 }
         rendered[index] = image
