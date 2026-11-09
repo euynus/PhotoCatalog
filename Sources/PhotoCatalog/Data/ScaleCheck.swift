@@ -11,6 +11,11 @@ enum ScaleCheck {
             ?? FileManager.default.temporaryDirectory.appendingPathComponent("pc-scale-\(count).photolibrary")
         report("catalog \(url.path)")
         let baseline = footprint()
+        // PC_WAL_CHECKPOINT_QOS=background|throttled: how the background checkpoint shares the disk
+        if let priority = ProcessInfo.processInfo.environment["PC_WAL_CHECKPOINT_QOS"]
+            .flatMap(Database.WALCheckpointer.Priority.init(rawValue:)) {
+            Database.WALCheckpointer.priority = priority
+        }
 
         guard let store = try? CatalogStore(packageURL: url) else {
             report("could not open the catalog")
@@ -308,16 +313,37 @@ enum ScaleCheck {
         stackParts(app)
         report("footprint \(delta(footprint(), baseline)) MB since start, \(megabytes(footprint())) MB total")
         // measured after the footprint, so the lines above stay comparable with earlier runs
-        laterSteps(app, ids: ids)
+        let search = laterSteps(app, ids: ids)
         if withSourceRoots, !subfolderList(app) { return 1 }
+        walCheckpoints(store, search: search, url: url)
         return 0
     }
 
     /// Steps added after the first lines were settled, each on a line of its own: a rating key in
     /// Unrated, a search every photo matches, a photo added to a large Quick Collection, the
     /// People banner's counts, the Analysis view's statistics and the thumbnail backfill's lists.
+    /// The search's view of the background WAL checkpoint: whether one was running as it began,
+    /// and how many ran while it did.
+    struct SearchCheckpoints {
+        var runningAtStart = false
+        var during = 0
+    }
+
+    /// The WAL's checkpoints over the run: background ones, ones a commit ran itself past the
+    /// ceiling (the waits the background ones are there to spare), the search's overlap with them,
+    /// and the WAL's size at the end.
+    private static func walCheckpoints(_ store: CatalogStore, search: SearchCheckpoints, url: URL) {
+        let wal = url.appendingPathComponent("catalog.sqlite-wal").path
+        let walBytes = ((try? FileManager.default.attributesOfItem(atPath: wal))?[.size] as? NSNumber)?.uint64Value ?? 0
+        let ceiling = store.db.ceilingCheckpointCount
+        report("wal checkpoints: priority \(Database.WALCheckpointer.priority.rawValue)"
+            + " · background \(store.db.checkpointCount - ceiling) · at ceiling \(ceiling)"
+            + " · running as search began \(search.runningAtStart ? 1 : 0) · during search \(search.during)"
+            + " · wal MB " + String(format: "%.1f", Double(walBytes) / 1_048_576))
+    }
+
     @MainActor
-    private static func laterSteps(_ app: AppState, ids: [String]) {
+    private static func laterSteps(_ app: AppState, ids: [String]) -> SearchCheckpoints {
         func ms(_ value: Double) -> String { String(format: "%.1f", value) }
         func time(_ body: () -> Void) -> Double {
             let start = ContinuousClock.now
@@ -338,10 +364,14 @@ enum ScaleCheck {
         app.select(all)
         _ = app.list.count
 
+        var checkpoints = SearchCheckpoints()
+        let checkpointsBefore = app.store?.db.checkpointCount ?? 0
+        checkpoints.runningAtStart = app.store?.db.isCheckpointing ?? false
         let search = time {
             app.search = "IMG"
             _ = app.list.count
         }
+        checkpoints.during = (app.store?.db.checkpointCount ?? 0) - checkpointsBefore
         app.search = ""
         _ = app.list.count
         report("search ms: IMG " + ms(search))
@@ -386,6 +416,7 @@ enum ScaleCheck {
             }
         }
         report("backfill prep ms: " + ms(prep) + " · \(previews2048) at 2048 px")
+        return checkpoints
     }
 
     /// A dated folder of one source folder, chosen in the sidebar (median of three, back to All

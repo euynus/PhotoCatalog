@@ -124,8 +124,16 @@ final class Database: @unchecked Sendable {
         /// How long the catalog goes without a commit before a background checkpoint starts.
         static let quiet = 0.25
 
+        /// How the background checkpoint shares the disk with the catalog's reads. Utility is the
+        /// app's choice; the others are for measuring against it (`--scale` sets this from
+        /// PC_WAL_CHECKPOINT_QOS before it opens the catalog): background QoS (its CPU and I/O
+        /// both throttled), or utility with only its I/O throttled.
+        enum Priority: String { case utility, background, throttled }
+        nonisolated(unsafe) static var priority = Priority.utility
+
         /// Runs the background checkpoints one at a time, and whatever mustn't run beside one.
-        let queue = DispatchQueue(label: "PhotoCatalog.wal-checkpoint", qos: .utility)
+        let queue: DispatchQueue
+        private let throttlesIO: Bool
         private let path: String
         /// Guards what's below; never held during a checkpoint.
         private let state = NSLock()
@@ -135,10 +143,15 @@ final class Database: @unchecked Sendable {
         private var waiting = 0
         private var waits = 0
         private var checkpoints = 0
+        private var ceilingCheckpoints = 0
+        private var running = false
         private var lastFrames: (wal: Int, moved: Int)?
 
         init(path: String) {
             self.path = path
+            let priority = Self.priority
+            queue = DispatchQueue(label: "PhotoCatalog.wal-checkpoint", qos: priority == .background ? .background : .utility)
+            throttlesIO = priority == .throttled
         }
 
         /// From the WAL hook, at the end of a commit (under the database's lock): `pages` are in
@@ -146,7 +159,10 @@ final class Database: @unchecked Sendable {
         func committed(pages: Int, on connection: OpaquePointer?) {
             if pages >= Self.ceiling {
                 sqlite3_wal_checkpoint_v2(connection, nil, SQLITE_CHECKPOINT_PASSIVE, nil, nil)
-                state.withLock { checkpoints &+= 1 }
+                state.withLock {
+                    checkpoints &+= 1
+                    ceilingCheckpoints &+= 1
+                }
                 return
             }
             guard pages >= Self.threshold else { return }
@@ -178,6 +194,19 @@ final class Database: @unchecked Sendable {
 
         /// A passive checkpoint through a connection opened for it, on `queue`.
         private func checkpoint() {
+            state.withLock { running = true }
+            defer { state.withLock { running = false } }
+            if throttlesIO {
+                let previous = getiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD)
+                setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, IOPOL_THROTTLE)
+                defer { if previous >= 0 { setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, previous) } }
+                passiveCheckpoint()
+            } else {
+                passiveCheckpoint()
+            }
+        }
+
+        private func passiveCheckpoint() {
             var handle: OpaquePointer?
             defer { sqlite3_close(handle) }
             guard sqlite3_open_v2(path, &handle, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
@@ -213,6 +242,10 @@ final class Database: @unchecked Sendable {
         }
 
         var count: Int { state.withLock { checkpoints } }
+        /// Of `count`, those a commit ran itself, past `ceiling`.
+        var ceilingCount: Int { state.withLock { ceilingCheckpoints } }
+        /// Whether a background checkpoint is running now.
+        var isRunning: Bool { state.withLock { running } }
         /// The WAL's frames, and how many of them the last background checkpoint moved.
         var lastCheckpointFrames: (wal: Int, moved: Int)? { state.withLock { lastFrames } }
     }
@@ -227,6 +260,8 @@ final class Database: @unchecked Sendable {
     /// The background checkpoints' queue, how many have run, and what the last one moved (for tests).
     var checkpointQueue: DispatchQueue? { checkpointer?.queue }
     var checkpointCount: Int { checkpointer?.count ?? 0 }
+    var ceilingCheckpointCount: Int { checkpointer?.ceilingCount ?? 0 }
+    var isCheckpointing: Bool { checkpointer?.isRunning ?? false }
     var lastCheckpointFrames: (wal: Int, moved: Int)? { checkpointer?.lastCheckpointFrames }
     /// How many prepared statements this connection keeps (for tests).
     var cachedStatementCount: Int { locked { statementCache.count } }
