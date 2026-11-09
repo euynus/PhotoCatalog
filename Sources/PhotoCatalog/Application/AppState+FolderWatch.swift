@@ -373,7 +373,7 @@ extension AppState {
     /// missing, else online), in one pass — per-folder scans were 20M comparisons at 500k photos.
     /// Counted in chunks on every core, a run of one folder's photos looked up once: hashing every
     /// photo's folder on one thread took ~0.1 s at 500k photos after each check of the originals.
-    nonisolated static func folderSummaries(_ sourceAssets: [Asset], chunk: Int = 65_536)
+    nonisolated static func folderSummaries(_ sourceAssets: [Asset], chunk: Int = 8_192)
         -> [String: (name: String, status: String)] {
         func rank(_ status: AssetStatus) -> Int {
             switch status {
