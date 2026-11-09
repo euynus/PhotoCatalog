@@ -137,17 +137,17 @@ extension AppState {
                 return ImportCoordinator.preservingCatalogMetadata(from: current, in: refreshed, autoTag: vision)
             }
             if !trulyNew.isEmpty || !changedAssets.isEmpty {
+                // the changed files in place of what they were, the new ones after the others
+                var edits = changedAssets.compactMap { asset in indexById[asset.id].map { (offset: $0, asset: asset) } }
+                // the changed files' virtual copies take on their new state too
+                self.carryFileChanges(from: changedAssets, into: &edits)
+                // saved together, so a copy is never shown with a state the catalog didn't keep
                 do {
-                    try store.upsert(trulyNew + changedAssets)
+                    try store.upsert(trulyNew + edits.map(\.asset))
                 } catch {
                     self.push("重新扫描保存失败", "warning")
                     return
                 }
-                // the changed files in place of what they were, the new ones after the others
-                var edits = changedAssets.compactMap { asset in indexById[asset.id].map { (offset: $0, asset: asset) } }
-                // the changed files' virtual copies take on their new state too
-                let copies = self.carryFileChanges(from: changedAssets, into: &edits)
-                if !copies.isEmpty { try? store.upsert(edits.map(\.asset).filter { copies.contains($0.id) }) }
                 self.replaceInPlace(edits)
                 if !trulyNew.isEmpty { self.appendAssets(trulyNew) }
                 self.recordSidecarBaselines(trulyNew)
