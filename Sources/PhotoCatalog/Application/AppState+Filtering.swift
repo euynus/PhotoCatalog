@@ -182,6 +182,8 @@ extension AppState {
     var list: [Asset] {
         let signature = currentListSignature
         if let cache = listCache, cache.signature == signature { return cache.value }
+        // the lists this one replaces, freed off the main thread once the new ones are in place
+        let replaced = [listCache?.value, uncollapsedListCache?.value].compactMap { $0 }
         // folding a stack or opening one leaves the photos before folding as they were
         let matching: [Asset]
         if let cache = uncollapsedListCache, cache.signature.hasPhotosBeforeFolding(of: signature) {
@@ -195,6 +197,7 @@ extension AppState {
             : PhotoStackService.visibleAssets(matching, stacks: photoStacks, collapsedStackIds: collapsedStackIds)
         listCache = (signature, value)
         listIdentity &+= 1
+        releaseOffMain(replaced)
         return value
     }
 
@@ -259,10 +262,10 @@ extension AppState {
         return Self.sorted(assets, at: positions, by: sort, run: listChunk)
     }
 
-    /// Whether a photo is in the list before stacks fold — live, in the collection and through the
-    /// filter bar — as a test made afresh for each pass over the photos (see `collectionTest`).
-    /// Nil when the collection is gone.
-    func listTest(now: Date) -> (() -> (Asset) -> Bool)? {
+    /// Whether a photo, at its position in `assets`, is in the list before stacks fold — live, in
+    /// the collection and through the filter bar — as a test made afresh for each pass over the
+    /// photos (see `collectionTest`). Nil when the collection is gone.
+    func listTest(now: Date) -> (() -> (Asset, Int) -> Bool)? {
         // Snapshot observed properties: reading them inside the per-asset filter and the
         // sort comparator paid observation bookkeeping tens of thousands of times.
         let filters = self.filters
@@ -279,13 +282,15 @@ extension AppState {
         let lensQuery = filters.lens.trimmingCharacters(in: .whitespacesAndNewlines)
         let dateInterval = filters.captureDateInterval(now: now)
         guard let collection = collectionTest(now: now) else { return nil }
-        let live = listShows
+        // as `listShows`, asked by position: looking each photo's id up in the pairing took most
+        // of a pass over the photos
+        let live = selection.type == .lib && selection.id == "missing" ? .empty : pairing
         let filtered = !(filters.isEmpty && q.isEmpty)
         return {
             let belongs = collection()
             var search = LocalizedSearch()   // its own, for the filter bar's text tests
-            return { a in
-                guard live(a), belongs(a) else { return false }
+            return { a, position in
+                guard live.isShown(a, at: position), belongs(a) else { return false }
                 guard filtered else { return true }
                 if filters.minRating > 0 && a.rating < filters.minRating { return false }
                 if filters.flag != "any" && a.flag.rawValue != filters.flag { return false }
@@ -315,13 +320,13 @@ extension AppState {
     /// `chunk` side by side on every core, each chunk with a test of its own from `makeTest`,
     /// and the chunks' positions joined in order: the positions one pass finds.
     nonisolated static func matchingPositions(in assets: [Asset], chunk: Int,
-                                              makeTest: () -> (Asset) -> Bool) -> [Int] {
+                                              makeTest: () -> (Asset, Int) -> Bool) -> [Int] {
         // the photos through a pointer: threads reading one array retained its buffer by turns
         assets.withUnsafeBufferPointer { photos in
             Chunks.joined(Chunks.map(photos.count, chunk: chunk) { range in
                 let test = makeTest()
                 var found: [Int] = []
-                for position in range where test(photos[position]) { found.append(position) }
+                for position in range where test(photos[position], position) { found.append(position) }
                 return found
             })
         }

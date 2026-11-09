@@ -184,6 +184,11 @@ final class AppState {
     var thumbnailCacheGeneration = 0
     @ObservationIgnored var listCache: (signature: ListSignature, value: [Asset])?
     @ObservationIgnored var uncollapsedListCache: (signature: ListSignature, value: [Asset])?
+    /// Where photo lists the list's caches no longer hold are let go of, off the main thread
+    /// (tests hold it shut).
+    @ObservationIgnored var listReleaseQueue = DispatchQueue.global(qos: .utility)
+    /// How many such lists were handed to `listReleaseQueue` (for tests).
+    @ObservationIgnored var listsReleasedOffMain = 0
     /// How many list positions patching edits into the list has looked at one by one (for tests).
     @ObservationIgnored var listPatchScannedPhotos = 0
     /// How many list positions lookups of photos in the list have looked at one by one (for tests).
