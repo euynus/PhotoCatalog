@@ -39,7 +39,7 @@ extension AppState {
         let selection: Selection
         let filters: Filters
         let search: String
-        let sort: Sort
+        var sort: Sort
         var collapsed: Set<String>
         let recentDays: Int
         let captureDay: Date
@@ -49,6 +49,14 @@ extension AppState {
             var unfolded = self
             unfolded.collapsed = other.collapsed
             return unfolded == other
+        }
+
+        /// Whether `other` lists the same photos in some order: only the sort and which stacks are
+        /// folded differ.
+        func hasPhotosBeforeSorting(of other: ListSignature) -> Bool {
+            var unsorted = self
+            unsorted.sort = other.sort
+            return unsorted.hasPhotosBeforeFolding(of: other)
         }
     }
 
@@ -249,6 +257,7 @@ extension AppState {
         let lists = [listCache?.value, uncollapsedListCache?.value].compactMap { $0 }
             .filter { list in list.withUnsafeBufferPointer { $0.baseAddress } != photos }
         (listCache, uncollapsedListCache) = (nil, nil)
+        matchingPositionsCache = nil   // positions in the photos as they were
         if !lists.isEmpty { DispatchQueue.global(qos: .utility).async { withExtendedLifetime(lists) {} } }
     }
 

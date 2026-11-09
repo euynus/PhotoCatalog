@@ -175,6 +175,11 @@ final class AppState {
     @ObservationIgnored var listPositionScannedPhotos = 0
     /// How many times the list's photos have been worked out from the catalog (for tests).
     @ObservationIgnored var listComputations = 0
+    /// Where in `assets` the photos of the last pass over them are, in catalog order: a change of
+    /// sort sorts these again. Positions in the photos as they were, so keyed by the list's inputs.
+    @ObservationIgnored var matchingPositionsCache: (signature: ListSignature, positions: [Int])?
+    /// How many passes over every photo have tested them for the list (for tests).
+    @ObservationIgnored var listFilterPasses = 0
     /// Every sidecar write, automatic or asked for, goes through the writer with the next sequence.
     @ObservationIgnored var automaticXMPWriter = AutomaticXMPWriter()
     @ObservationIgnored var automaticXMPWriteSequence: UInt64 = 0

@@ -187,7 +187,7 @@ extension AppState {
         if let cache = uncollapsedListCache, cache.signature.hasPhotosBeforeFolding(of: signature) {
             matching = cache.value
         } else {
-            matching = computeList()
+            matching = computeList(for: signature)
         }
         uncollapsedListCache = (signature, matching)
         // the stacks are worked out for folded ones only
@@ -224,16 +224,24 @@ extension AppState {
         listIdentity &+= 1
     }
 
-    private func computeList() -> [Asset] {
+    private func computeList(for signature: ListSignature) -> [Asset] {
         listComputations += 1
         let sort = self.sort
+        // Another order of the same photos sorts the positions the last pass found, without the
+        // pass or a search of the index. Not in Recently Imported, whose cutoff moves with the clock.
+        if let cache = matchingPositionsCache, cache.signature.hasPhotosBeforeSorting(of: signature),
+           !(selection.type == .lib && selection.id == "recent") {
+            return Self.sorted(assets, at: cache.positions, by: sort, run: listChunk)
+        }
         // relative dates as the sidebar counts them
         guard let test = listTest(now: sidebarClock()) else { return [] }
         // Live, in the collection and through the filter bar: one pass split across the cores. On
         // one thread, looking up every photo's pairing alone took most of the ~0.3 s All
         // Photographs took at 500k photos, and a smart album's full-text search (which no memo
         // can answer: it searches each photo's own text) ~1.4 s.
+        listFilterPasses += 1
         let positions = Self.matchingPositions(in: assets, chunk: listChunk, makeTest: test)
+        matchingPositionsCache = (signature, positions)
         return Self.sorted(assets, at: positions, by: sort, run: listChunk)
     }
 
