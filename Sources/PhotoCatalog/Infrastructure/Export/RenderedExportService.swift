@@ -136,19 +136,12 @@ enum RenderedExportService {
                                                   collision: settings.collision) else {
             return .skipped
         }
-        let partial = folder.appendingPathComponent(".\(UUID().uuidString).partial")
         do {
-            try FileManager.default.copyItem(at: source, to: partial)
-            if FileManager.default.fileExists(atPath: destination.path) {
-                _ = try FileManager.default.replaceItemAt(destination, withItemAt: partial)
-            } else {
-                try FileManager.default.moveItem(at: partial, to: destination)
-            }
-            return .written(destination)
+            try ExportService.placeCopy(of: source, at: destination)
         } catch {
-            try? FileManager.default.removeItem(at: partial)
             return .failed(L("\(item.baseName)：无法复制视频"))
         }
+        return .written(destination)
     }
 
     /// One GPU render straight into memory. (A CGImage from `createCGImage` renders lazily, and
@@ -197,13 +190,8 @@ enum RenderedExportService {
             return .failed(L("\(item.baseName)：写入失败"))
         }
         do {
-            if FileManager.default.fileExists(atPath: destination.path) {
-                _ = try FileManager.default.replaceItemAt(destination, withItemAt: partial)
-            } else {
-                try FileManager.default.moveItem(at: partial, to: destination)
-            }
+            try FileManager.default.moveIntoPlace(partial, at: destination)
         } catch {
-            try? FileManager.default.removeItem(at: partial)
             return .failed(L("\(item.baseName)：\(error.localizedDescription)"))
         }
         return .written(destination)

@@ -66,7 +66,7 @@ enum ExportService {
                 // rename never lands on a name already there; overwrite replaces the same file's
                 if fm.fileExists(atPath: target.path), conflict != .overwrite { report.skipped += 1; continue }
                 do {
-                    try placeCopy(of: src, at: target, fm: fm)
+                    try placeCopy(of: src, at: target)
                     if let attrs = try? fm.attributesOfItem(atPath: src.path),
                        let mtime = attrs[.modificationDate] as? Date {
                         try? fm.setAttributes([.modificationDate: mtime], ofItemAtPath: target.path)
@@ -113,19 +113,16 @@ enum ExportService {
     /// Copies `source` to `target` through a hidden partial file beside it, which then takes the
     /// place of whatever is there: a copy that fails (an unreadable original, a full disk) leaves
     /// an earlier export as it was, and never half a file under the real name.
-    private static func placeCopy(of source: URL, at target: URL, fm: FileManager) throws {
+    static func placeCopy(of source: URL, at target: URL) throws {
+        let fm = FileManager.default
         let partial = target.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).partial")
         do {
             try fm.copyItem(at: source, to: partial)
-            if fm.fileExists(atPath: target.path) {
-                _ = try fm.replaceItemAt(target, withItemAt: partial)
-            } else {
-                try fm.moveItem(at: partial, to: target)
-            }
         } catch {
             try? fm.removeItem(at: partial)
             throw error
         }
+        try fm.moveIntoPlace(partial, at: target)
     }
 
     private static func numbered(_ base: String, _ number: Int) -> String {
@@ -160,7 +157,7 @@ enum ExportService {
                 continue
             }
             do {
-                try placeCopy(of: source, at: target, fm: fm)
+                try placeCopy(of: source, at: target)
                 report.copied += 1
             } catch {
                 report.failed += 1

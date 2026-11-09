@@ -378,17 +378,7 @@ final class ThumbnailService: @unchecked Sendable {
             try? fm.removeItem(at: tmp)
             return nil
         }
-        do {
-            if fm.fileExists(atPath: out.path) {
-                _ = try fm.replaceItemAt(out, withItemAt: tmp)
-            } else {
-                try fm.moveItem(at: tmp, to: out)
-            }
-            return out
-        } catch {
-            try? fm.removeItem(at: tmp)
-            return nil
-        }
+        return (try? fm.moveIntoPlace(tmp, at: out)) != nil ? out : nil
     }
 
     private static func imageIsUniformBlack(at url: URL) -> Bool {
