@@ -79,7 +79,8 @@ struct ZoomablePhoto: View {
         let settings = app.developSettings[asset.id]
         if let settings, !settings.isNeutral {
             guard asset.status == .ready, let path = asset.localPath else { return nil }
-            return .init(path: path, isRaw: asset.isRaw, settings: settings, version: asset.imageVersion)
+            return .init(path: path, isRaw: asset.isRaw, settings: settings,
+                         fingerprint: app.developFingerprint(for: asset.id), version: asset.imageVersion)
         }
         let jpeg = app.companions(of: asset).first { $0.status == .ready && $0.localPath != nil }
         if let jpeg, let path = jpeg.localPath {
@@ -178,7 +179,17 @@ final class FullResolutionLoader: ObservableObject {
         let settings: DevelopSettings?
         /// The file's `Asset.imageVersion`: saved over elsewhere, it's decoded again.
         let version: String
-        var key: String { "\(path)|\(version)" + (settings.map { "|\($0.fingerprint)" } ?? "") }
+        /// Made once: views ask for it several times a frame.
+        let key: String
+
+        /// `fingerprint` is `settings`' (the photo's `AppState.developFingerprint`), made here when nil.
+        init(path: String, isRaw: Bool, settings: DevelopSettings?, fingerprint: String? = nil, version: String) {
+            self.path = path
+            self.isRaw = isRaw
+            self.settings = settings
+            self.version = version
+            key = "\(path)|\(version)" + (settings.map { "|\(fingerprint ?? $0.fingerprint)" } ?? "")
+        }
     }
 
     @Published private var loaded: (key: String, image: CGImage)?

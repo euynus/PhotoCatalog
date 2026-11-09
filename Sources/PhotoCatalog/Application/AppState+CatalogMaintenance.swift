@@ -705,6 +705,7 @@ extension AppState {
         albumSets = []
         folders = demo ? DemoData.folders : []
         developSettings = [:]
+        developFingerprintCache = [:]
         clearDevelopRecordCaches()
         clearFaces()
         // sidecar state is the catalog's (a loaded one reads its own)

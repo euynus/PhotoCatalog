@@ -461,6 +461,9 @@ final class AppState {
         didSet { developSettingsVersion &+= 1 }
     }
     @ObservationIgnored var developSettingsVersion = 0
+    /// Each photo's settings fingerprint, with the settings it was made from: views ask for it
+    /// many times a frame, and a masked edit's takes a fraction of a millisecond to make.
+    @ObservationIgnored var developFingerprintCache: [String: (settings: DevelopSettings, fingerprint: String)] = [:]
     /// Settings while a slider drags — drives the live preview; saved on release.
     var developDraft: DevelopDraft?
     /// Before / after (\): show the photo as shot.

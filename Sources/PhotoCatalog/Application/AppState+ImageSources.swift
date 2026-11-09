@@ -29,15 +29,15 @@ extension AppState {
         let resolvedKind = kind.isPreview
             ? ThumbnailService.previewKind(forCachePath: requestedSource, fallbackMaxPixel: previewMaxPixel)
             : kind
-        if let settings = developSettings[assetId], !settings.isNeutral {
-            let edited = thumbnails.editedCachePath(assetId: assetId, kind: resolvedKind, settings: settings).path
+        if let settings = developSettings[assetId], !settings.isNeutral, let fingerprint = developFingerprint(for: assetId) {
+            let edited = thumbnails.editedCachePath(assetId: assetId, kind: resolvedKind, fingerprint: fingerprint).path
             if isVerified(Self.cacheCheckKey(edited, asset), for: assetId) { return edited }
             // Rotation and crop alone start from the ordinary cached image, not a full RAW render.
             let base = settings.withoutGeometry.isNeutral
                 ? await cachedImageSource(for: asset, requestedSource: requestedSource, kind: resolvedKind,
                                           original: original, fallbackPreview: fallbackPreview, thumbnails: thumbnails)
                 : nil
-            return await editedImageSource(for: asset, settings: settings, kind: resolvedKind,
+            return await editedImageSource(for: asset, settings: settings, fingerprint: fingerprint, kind: resolvedKind,
                                            thumbnails: thumbnails, base: base) ?? requestedSource
         }
         return await cachedImageSource(for: asset, requestedSource: requestedSource, kind: resolvedKind,
@@ -54,8 +54,9 @@ extension AppState {
         let resolvedKind = kind.isPreview
             ? ThumbnailService.previewKind(forCachePath: requestedSource, fallbackMaxPixel: previewMaxPixel)
             : kind
-        if let settings = developSettings[asset.id], !settings.isNeutral {
-            let edited = coordinator.thumbnails.editedCachePath(assetId: asset.id, kind: resolvedKind, settings: settings).path
+        if let settings = developSettings[asset.id], !settings.isNeutral, let fingerprint = developFingerprint(for: asset.id) {
+            let edited = coordinator.thumbnails.editedCachePath(assetId: asset.id, kind: resolvedKind,
+                                                                fingerprint: fingerprint).path
             return isVerified(Self.cacheCheckKey(edited, asset), for: asset.id) ? edited : nil
         }
         if isVerified(Self.cacheCheckKey(requestedSource, asset), for: asset.id) { return requestedSource }
@@ -146,9 +147,10 @@ extension AppState {
     /// Developed rendering for an adjusted photo, rendered off the cooperative pool when missing.
     /// `base` (an already-rendered image) replaces the original; an unavailable original falls
     /// back to adjusting the cached preview.
-    private func editedImageSource(for asset: Asset, settings: DevelopSettings, kind: ThumbnailService.Kind,
-                                   thumbnails: ThumbnailService, base: String? = nil) async -> String? {
-        let edited = thumbnails.editedCachePath(assetId: asset.id, kind: kind, settings: settings)
+    private func editedImageSource(for asset: Asset, settings: DevelopSettings, fingerprint: String,
+                                   kind: ThumbnailService.Kind, thumbnails: ThumbnailService,
+                                   base: String? = nil) async -> String? {
+        let edited = thumbnails.editedCachePath(assetId: asset.id, kind: kind, fingerprint: fingerprint)
         let key = edited.path
         if isVerified(Self.cacheCheckKey(key, asset), for: asset.id) { return key }
         let preview = asset.preview
