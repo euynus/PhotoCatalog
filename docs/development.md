@@ -33,7 +33,7 @@ swift test --filter SmartMatcherTests   # one XCTest class
 ./.build/release/PhotoCatalog --scale 500000 /tmp/scale.photolibrary   # large-catalog benchmark
 ```
 
-The selfcheck and the `--…-check` modes verify with `assert`, so they need a Debug build: a Release binary refuses them with exit status 2 rather than report a pass it never checked. `--pipeline`, `--import-memory-check` and `--scale` judge their own results and run in either configuration.
+The selfcheck and the `--…-check` modes verify with `assert`, so they need a Debug build: a Release binary refuses them with exit status 2 rather than report a pass it never checked. `--pipeline`, `--import-memory-check` and `--scale` judge their own results and run in either configuration. Any other `--` option (a typo, `--help`, a mode another version had) prints the usage and exits with status 2 rather than open the app, which would use your own catalog and settings.
 
 For `swift test`, pass `--sdk /path/to/MacOSX.sdk` when the default SDK is incompatible with the active compiler; the SDK must come from a full Xcode installation.
 

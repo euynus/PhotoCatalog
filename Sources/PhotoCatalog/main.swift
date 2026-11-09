@@ -1,5 +1,5 @@
 // ============================================================
-//  Entry point. `--selfcheck` runs a headless dataset sanity check
+//  Entry point. `--selfcheck` and the other modes in LaunchOptions run headless checks
 //  (used in CI / verification); otherwise the SwiftUI app launches.
 // ============================================================
 import Foundation
@@ -65,6 +65,13 @@ if CommandLine.arguments.contains("--selfcheck") {
 
 if CommandLine.arguments.contains("--pipeline") {
     PipelineCheck.run()   // calls exit() itself
+}
+
+// An option this binary doesn't take (a typo, `--help`, a check flag from another version) would
+// otherwise open the app, on the user's catalog and settings: print the usage and stop instead.
+if let option = LaunchOptions.unknownOption(in: CommandLine.arguments) {
+    FileHandle.standardError.write(Data("PhotoCatalog: unknown option \(option)\n\n\(LaunchOptions.usage)".utf8))
+    exit(2)
 }
 
 PhotoCatalogApp.main()
