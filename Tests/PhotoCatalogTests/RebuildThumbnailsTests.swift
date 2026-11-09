@@ -62,4 +62,21 @@ final class RebuildThumbnailsTests: CatalogTestCase {
                            "\(asset.filename): a preview of the other size")
         }
     }
+
+    /// The rebuild runs on the backfill's lane: a backfill under way is stopped, not left to take
+    /// turns with it.
+    @MainActor
+    func testRebuildStopsARunningBackfill() async throws {
+        let (app, _, _) = try openCatalogWithTwoPreviewSizes()
+        app.runsBackgroundMaintenance = true
+        app.backfillThumbnails()
+        app.runsBackgroundMaintenance = false
+        XCTAssertTrue(app.isBackfilling)
+
+        let generation = app.thumbnailCacheGeneration
+        app.rebuildThumbnails()
+
+        XCTAssertFalse(app.isBackfilling, "the backfill runs on beside the rebuild")
+        try await waitForRebuild(app, since: generation)
+    }
 }

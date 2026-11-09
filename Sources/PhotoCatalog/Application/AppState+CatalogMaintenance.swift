@@ -54,12 +54,21 @@ extension AppState {
         guard let coordinator, let packageURL = store?.packageURL else { push("无已导入照片", "warning"); return }
         let real = thumbnailMaintenanceAssets
         guard !real.isEmpty else { push("无已导入照片", "warning"); return }
+        // the backfill shares the lane below: left running, it would take turns with the rebuild
+        cancelBackfill()
         push("正在重建缩略图…", "refresh")
         let previewSize = previewMaxPixel
         Task { [weak self, coordinator, real, previewSize, packageURL] in
-            await Task.detached(priority: .utility) {
-                for a in real {
-                    if let path = a.localPath {
+            // off the cooperative pool, where RAW decodes have deadlocked RawCamera: a few photos
+            // at a time on the background lane, as the backfill makes them
+            let chunkSize = 8
+            var index = 0
+            while index < real.count {
+                guard !Task.isCancelled else { return }
+                let chunk = real[index..<min(index + chunkSize, real.count)]
+                let rebuilt: Void? = await ThumbnailRepairQueue.run(.background) {
+                    for a in chunk {
+                        guard let path = a.localPath else { continue }
                         // the original decoded once, for the preview, which the thumbnails are made
                         // from, as an import makes them; the photo keeps its preview's size
                         let kind = ThumbnailService.previewKind(forCachePath: a.preview, fallbackMaxPixel: previewSize)
@@ -67,7 +76,9 @@ extension AppState {
                                                                previewMaxPixel: kind == .preview1600 ? 1600 : 2048)
                     }
                 }
-            }.value
+                guard rebuilt != nil else { return }   // cancelled while queued
+                index += chunk.count
+            }
             self?.finishThumbnailRebuild(expectedCatalogURL: packageURL)
         }
     }
