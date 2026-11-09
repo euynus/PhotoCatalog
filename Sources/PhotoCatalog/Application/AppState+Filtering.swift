@@ -121,8 +121,12 @@ extension AppState {
             return found
         }
         var found: [String: Int] = [:]
+        let hint = listPositionHint
+        let departed = listDepartedIds.flatMap { $0.signature == signature ? $0.ids : nil }
         let scanned = current.withUnsafeBufferPointer { photos in
-            Self.locate(ids, in: photos, hint: listPositionHint) { id, position in found[id] = position }
+            // photos an edit just took out of this list aren't looked for
+            guard let departed else { return Self.locate(ids, in: photos, hint: hint) { found[$0] = $1 } }
+            return Self.locate(ids.lazy.filter { !departed.contains($0) }, in: photos, hint: hint) { found[$0] = $1 }
         }
         listPositionScannedPhotos += scanned
         if let primaryId, let position = found[primaryId] { listPositionHint = (primaryId, position) }
@@ -222,10 +226,24 @@ extension AppState {
 
     private func computeList() -> [Asset] {
         listComputations += 1
+        let sort = self.sort
+        // relative dates as the sidebar counts them
+        guard let test = listTest(now: sidebarClock()) else { return [] }
+        // Live, in the collection and through the filter bar: one pass split across the cores. On
+        // one thread, looking up every photo's pairing alone took most of the ~0.3 s All
+        // Photographs took at 500k photos, and a smart album's full-text search (which no memo
+        // can answer: it searches each photo's own text) ~1.4 s.
+        let positions = Self.matchingPositions(in: assets, chunk: listChunk, makeTest: test)
+        return Self.sorted(assets, at: positions, by: sort, run: listChunk)
+    }
+
+    /// Whether a photo is in the list before stacks fold — live, in the collection and through the
+    /// filter bar — as a test made afresh for each pass over the photos (see `collectionTest`).
+    /// Nil when the collection is gone.
+    func listTest(now: Date) -> (() -> (Asset) -> Bool)? {
         // Snapshot observed properties: reading them inside the per-asset filter and the
         // sort comparator paid observation bookkeeping tens of thousands of times.
         let filters = self.filters
-        let sort = self.sort
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
         let pairing = assetPairing
         // an index that can't answer leaves the search to the photos in memory, as for short queries
@@ -237,17 +255,11 @@ extension AppState {
         }
         let cameraQuery = filters.camera.trimmingCharacters(in: .whitespacesAndNewlines)
         let lensQuery = filters.lens.trimmingCharacters(in: .whitespacesAndNewlines)
-        // relative dates as the sidebar counts them
-        let now = sidebarClock()
         let dateInterval = filters.captureDateInterval(now: now)
-        guard let collection = collectionTest(now: now) else { return [] }
+        guard let collection = collectionTest(now: now) else { return nil }
         let live = listShows
         let filtered = !(filters.isEmpty && q.isEmpty)
-        // Live, in the collection and through the filter bar: one pass split across the cores. On
-        // one thread, looking up every photo's pairing alone took most of the ~0.3 s All
-        // Photographs took at 500k photos, and a smart album's full-text search (which no memo
-        // can answer: it searches each photo's own text) ~1.4 s.
-        let positions = Self.matchingPositions(in: assets, chunk: listChunk) {
+        return {
             let belongs = collection()
             let search = LocalizedSearch()   // its own, for the filter bar's text tests
             return { a in
@@ -275,7 +287,6 @@ extension AppState {
                 return true
             }
         }
-        return Self.sorted(assets, at: positions, by: sort, run: listChunk)
     }
 
     /// The positions in `assets` of the photos a test takes, in order. Tested in chunks of

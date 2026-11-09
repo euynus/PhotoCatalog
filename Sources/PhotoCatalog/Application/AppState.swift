@@ -903,6 +903,10 @@ final class AppState {
     /// they just moved to, so this answers them without a scan; it is verified on every use.
     @ObservationIgnored var listPositionHint: (id: String, position: Int)?
 
+    /// Photos a review edit just took out of the list (rated out of Unrated, say), for the list
+    /// they left: looking them up again would walk the whole list for nothing.
+    @ObservationIgnored var listDepartedIds: (signature: ListSignature, ids: Set<String>)?
+
     /// Changes whenever `list` is rebuilt (other photos or another order may follow), but not
     /// when edits are patched into the same positions.
     @ObservationIgnored var listIdentity = 0

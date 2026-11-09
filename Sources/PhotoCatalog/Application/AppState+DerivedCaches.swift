@@ -383,8 +383,9 @@ extension AppState {
 
     /// Writes edited copies back at their offsets in one mutation (one didSet, no array copy).
     /// Review edits also patch the library and sidebar counts and — when the current collection,
-    /// filters and sort ignore review fields — the cached list, instead of rescanning
-    /// and re-sorting every asset. Structural edits carry what's derived on through them.
+    /// filters and sort ignore review fields, or the edits only take photos out — the cached list,
+    /// instead of rescanning and re-sorting every asset. Structural edits carry what's derived on
+    /// through them.
     func applyAssetEdits(_ edits: [(offset: Int, asset: Asset)], scope: AssetEditScope) {
         guard !scope.contains(.structure) else {
             // a photo back in the catalog (undo, imported again) keeps cache files still to be deleted
@@ -423,6 +424,16 @@ extension AppState {
         let membershipCanChange = (scope.contains(.review) && listDependsOnReviewFields)
             || (scope.contains(.metadata) && listDependsOnMetadataFields)
         if !membershipCanChange { listBefore = currentListSignature }
+        // A review key that only takes photos out (rated out of Unrated, a filter or a smart album)
+        // takes them out of the cached list instead of working it out again from every photo.
+        var listRemoval: (before: ListSignature, leaving: Set<String>, staying: [Asset])?
+        if membershipCanChange, scope == .review, let moves = reviewListMoves(edits) {
+            if moves.leaving.isEmpty {
+                listBefore = currentListSignature
+            } else {
+                listRemoval = (currentListSignature, moves.leaving, moves.staying)
+            }
+        }
         if scope.contains(.metadata) {
             patchedKeywords = keywordCountsCache.flatMap { cache -> KeywordTally? in
                 var patched = cache
@@ -461,7 +472,67 @@ extension AppState {
         patch(&projectCountsCache, projectChanges, \.project)
         patch(&clientCountsCache, clientChanges, \.client)
         if let listBefore { patchListCaches(with: edits, validFor: listBefore) }
+        if let listRemoval {
+            removeFromListCaches(listRemoval.leaving, staying: listRemoval.staying, validFor: listRemoval.before)
+        }
         didMutateAssets()
+    }
+
+    /// How review edits move photos through a list that depends on review fields: the photos they
+    /// take out, and the edited photos that stay in. Nil when one comes in, or when the list can't
+    /// be told this way: a search, a sort by rating (the order moves), Recently Imported (its
+    /// cutoff moves with the clock, so the cached list may hold photos the test now leaves out),
+    /// the collection gone.
+    private func reviewListMoves(_ edits: [(offset: Int, asset: Asset)]) -> (leaving: Set<String>, staying: [Asset])? {
+        guard sort.field != .rating, search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !(selection.type == .lib && selection.id == "recent"),
+              let makeTest = listTest(now: sidebarClock()) else { return nil }
+        let test = makeTest()
+        var leaving = Set<String>()
+        var staying: [Asset] = []
+        for edit in edits {
+            let (was, isIn) = (test(assets[edit.offset]), test(edit.asset))
+            if isIn && !was { return nil }
+            if was && !isIn { leaving.insert(edit.asset.id) } else if was { staying.append(edit.asset) }
+        }
+        return (leaving, staying)
+    }
+
+    /// Takes photos review edits moved out of the list out of its photos before folding, and
+    /// writes the edited photos that stay in where they are, in one pass. The next read of `list`
+    /// folds stacks again (and the grid takes it as a new list). Their order can't have moved.
+    private func removeFromListCaches(_ leaving: Set<String>, staying: [Asset], validFor before: ListSignature) {
+        let after = currentListSignature
+        guard let matching = uncollapsedListCache, matching.signature == before else { return }
+        // the index and the hint are of the folded list: the index answers for the photos before
+        // folding only when nothing is folded (the hint is checked where it points)
+        let positions = before.collapsed.isEmpty ? listPositionsCache.flatMap { $0.signature == before ? $0.positions : nil }
+            : nil
+        let hint = listPositionHint
+        (listCache, uncollapsedListCache) = (nil, nil)   // the one array they share, taken out
+        let edited = Dictionary(staying.map { ($0.id, $0) }, uniquingKeysWith: { $1 })
+        var places: [(position: Int, asset: Asset?)] = []   // without an asset: the photo leaves
+        let ids = leaving.union(edited.keys)
+        if let positions {
+            for id in ids { if let position = positions[id] { places.append((position, edited[id])) } }
+        } else {
+            let scanned = matching.value.withUnsafeBufferPointer { photos in
+                Self.locate(ids, in: photos, hint: hint) { places.append(($1, edited[$0])) }
+            }
+            listPatchScannedPhotos += scanned
+        }
+        places.sort { $0.position < $1.position }
+        var kept: [Asset] = []
+        kept.reserveCapacity(matching.value.count)
+        var start = 0
+        for (position, asset) in places {
+            kept.append(contentsOf: matching.value[start..<position])
+            if let asset { kept.append(asset) }
+            start = position + 1
+        }
+        kept.append(contentsOf: matching.value[start...])
+        uncollapsedListCache = (after, kept)
+        listDepartedIds = (after, leaving)
     }
 
     /// Edits of photos where they are that move what's derived from every photo: a file renamed,
