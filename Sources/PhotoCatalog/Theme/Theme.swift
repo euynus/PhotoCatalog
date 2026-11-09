@@ -115,10 +115,8 @@ enum Theme {
     static let mono = Font.system(size: 11, design: .monospaced)
 }
 
-/// Color-label palette — port of `COLOR_LABELS` in data.jsx.
-enum ColorLabel: String, CaseIterable, Identifiable, Hashable, Sendable {
-    case red, orange, yellow, green, blue, purple
-    var id: String { rawValue }
+/// The color labels' colors — port of `COLOR_LABELS` in data.jsx.
+extension ColorLabel {
     var hex: Color {
         switch self {
         case .red: return Color(hex: "#ff453a")
@@ -127,16 +125,6 @@ enum ColorLabel: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .green: return Color(hex: "#30d158")
         case .blue: return Color(hex: "#0a84ff")
         case .purple: return Color(hex: "#bf5af2")
-        }
-    }
-    var name: String {
-        switch self {
-        case .red: return L("红")
-        case .orange: return L("橙")
-        case .yellow: return L("黄")
-        case .green: return L("绿")
-        case .blue: return L("蓝")
-        case .purple: return L("紫")
         }
     }
 }
