@@ -231,6 +231,44 @@ final class Database: @unchecked Sendable {
         guard status == SQLITE_OK else { throw DBError.step("backup could not finish (\(status))") }
     }
 
+    /// `PRAGMA integrity_check` through a read-only connection of its own: the check reads the
+    /// whole file (seconds on a large catalog, tens of them cold), and on this connection it held
+    /// the lock every edit waits for. True when SQLite reports nothing wrong. Like `snapshot`, it needs the catalog's
+    /// security scope active and the WAL's -shm there, as it is while this connection is open; its
+    /// read holds back background checkpoints until it ends, so the WAL grows by what is written
+    /// meanwhile (the ceiling still bounds it).
+    func integrityCheck() throws -> Bool {
+        let read = try Self.openReadOnly(path)
+        defer { sqlite3_close(read) }
+        sqlite3_busy_timeout(read, 4000)
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(read, "PRAGMA integrity_check;", -1, &statement, nil) == SQLITE_OK,
+              let statement else {
+            throw DBError.prepare(String(cString: sqlite3_errmsg(read)))
+        }
+        defer { sqlite3_finalize(statement) }
+        var rows: [String] = []
+        while true {
+            let rc = sqlite3_step(statement)
+            if rc == SQLITE_DONE { break }
+            guard rc == SQLITE_ROW else { throw DBError.step(String(cString: sqlite3_errmsg(read))) }
+            rows.append(sqlite3_column_text(statement, 0).map { String(cString: $0) } ?? "")
+        }
+        return rows == ["ok"]
+    }
+
+    /// A read-only connection of its own to the database at `path`, for work that shouldn't wait
+    /// on this connection's lock. The caller closes it.
+    private static func openReadOnly(_ path: String) throws -> OpaquePointer {
+        var handle: OpaquePointer?
+        guard sqlite3_open_v2(path, &handle, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let handle else {
+            let message = handle.map { String(cString: sqlite3_errmsg($0)) } ?? "out of memory"
+            sqlite3_close(handle)
+            throw DBError.open(message)
+        }
+        return handle
+    }
+
     func run(_ sql: String, _ params: [SQLValue] = []) throws {
         try locked {
             let stmt = try preparedStatement(sql, params)
